@@ -59,7 +59,8 @@ export class DungeonSlotGenerator {
   }
 
   /**
-   * Adds character context to cards and sprites, and resolves the previous
+   * Adds character context to cards, owner context and facing to sprites,
+   * and resolves the previous
    * card's progression lock.
    * @param slot - Slot about to run
    * @param slots - Every slot in the same dungeon package
@@ -72,7 +73,7 @@ export class DungeonSlotGenerator {
     const progression = await this.assets.progressionFor(slot, slots);
     if (slot.kind === "sprite-sheet") {
       return {
-        prompt: withCharacterContext(slot, slots, "Sprite request"),
+        prompt: withSpriteOwnerContext(slot, slots),
         slot,
       };
     }
@@ -81,7 +82,7 @@ export class DungeonSlotGenerator {
     }
     return {
       progression,
-      prompt: withCharacterContext(slot, slots, "Card request"),
+      prompt: withCharacterContext(slot, slots),
       slot,
     };
   }
@@ -149,21 +150,49 @@ export class DungeonSlotGenerator {
   }
 }
 
+/** Facing line for a party member's sprite. */
+export const CHARACTER_SPRITE_FACING =
+  "Facing: right. This is a party member, standing on the left of battle and facing the enemies.";
+
+/** Facing line for an enemy's sprite. */
+export const ENEMY_SPRITE_FACING =
+  "Facing: left. This is an enemy, standing on the right of battle and facing the player's party.";
+
 /**
- * @param slot - Card or sprite slot owned by a character
+ * @param slot - Card slot owned by a character
  * @param slots - Every slot in the package
- * @param label - Heading for the slot's own request
- * @returns The character's prompt above the slot's prompt, or the slot's
+ * @returns The character's prompt above the card's prompt, or the card's
  * prompt alone when the character slot is missing
  */
 function withCharacterContext(
-  slot: Extract<StoredDungeonSlot, { characterSlotId: string }>,
+  slot: Extract<StoredDungeonSlot, { kind: "playable-card" }>,
   slots: readonly StoredDungeonSlot[],
-  label: string,
 ): string {
   const character = slots.find((entry) => entry.id === slot.characterSlotId);
   if (character === undefined) {
     return slot.prompt;
   }
-  return `Character:\n${character.prompt}\n\n${label}:\n${slot.prompt}`;
+  return `Character:\n${character.prompt}\n\nCard request:\n${slot.prompt}`;
+}
+
+/**
+ * Puts the sprite's owner prompt above the sprite request and states which
+ * way the sprite faces: right for a party member, left for an enemy.
+ * @param slot - Sprite slot owned by a character or enemy
+ * @param slots - Every slot in the package
+ * @returns The owner's prompt and facing above the sprite's prompt, or the
+ * sprite's prompt alone when the owner is missing or cannot fight
+ */
+function withSpriteOwnerContext(
+  slot: Extract<StoredDungeonSlot, { kind: "sprite-sheet" }>,
+  slots: readonly StoredDungeonSlot[],
+): string {
+  const owner = slots.find((entry) => entry.id === slot.ownerSlotId);
+  if (owner?.kind === "card-character") {
+    return `Character:\n${owner.prompt}\n\nSprite request:\n${CHARACTER_SPRITE_FACING}\n${slot.prompt}`;
+  }
+  if (owner?.kind === "enemy") {
+    return `Enemy:\n${owner.prompt}\n\nSprite request:\n${ENEMY_SPRITE_FACING}\n${slot.prompt}`;
+  }
+  return slot.prompt;
 }

@@ -1,6 +1,8 @@
+import clsx from "clsx";
 import { ArrowLeft, Gem } from "lucide-react";
 import { useEffect } from "react";
 import { playSound } from "../audio/sound";
+import { useTweenedNumber } from "./countUp";
 import styles from "./shell.module.scss";
 
 interface ScreenHeaderProps {
@@ -13,7 +15,8 @@ interface ScreenHeaderProps {
 
 /**
  * Header for the menu's sub-screens: a back button (also bound to Escape),
- * the title, and the player's essence.
+ * the title, and the player's essence, which rolls to its new value and
+ * glows when it changes.
  * @param essence - Essence to show, when relevant
  * @param eyebrow - Small line above the title
  * @param onBack - Returns to the previous screen
@@ -26,6 +29,10 @@ export const ScreenHeader = ({
   onBack,
   title,
 }: ScreenHeaderProps) => {
+  const purse = useTweenedNumber(essence ?? 0, {
+    duration: 700,
+    instant: false,
+  });
   useEffect(() => {
     /**
      * @param event - Key press anywhere on the page
@@ -59,8 +66,13 @@ export const ScreenHeader = ({
       {essence === undefined ? (
         <span />
       ) : (
-        <span className={styles.essenceBadge}>
-          <Gem size={16} /> {essence}
+        <span
+          className={clsx(
+            styles.essenceBadge,
+            purse.rolling && styles.essenceRolling,
+          )}
+        >
+          <Gem size={16} /> {purse.value}
         </span>
       )}
     </header>

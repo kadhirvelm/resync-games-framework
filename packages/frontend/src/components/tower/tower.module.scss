@@ -134,24 +134,43 @@
   font-size: 16px;
   gap: 8px;
   justify-content: center;
+  overflow: hidden;
   padding: 9px 20px;
+  position: relative;
   transition:
-    transform 180ms $ease-out,
+    transform 220ms $ease-spring,
     box-shadow 180ms $ease-out,
     filter 160ms ease,
     background 160ms ease;
 
+  /* A glint of light crosses the button under the pointer. */
+  &::after {
+    background: linear-gradient(110deg, transparent 30%, rgba(#fff, 0.45) 48%, transparent 64%);
+    content: "";
+    inset: 0;
+    pointer-events: none;
+    position: absolute;
+    transform: translateX(-130%);
+  }
+
   &:hover:not(:disabled) {
     box-shadow:
-      0 6px 14px rgba($jade-dark, 0.3),
+      0 8px 18px rgba($jade-dark, 0.32),
+      0 0 0 3px rgba($jade-glow, 0.18),
       inset 0 1px 0 rgba(#fff, 0.3);
-    filter: brightness(1.06);
-    transform: translateY(-2px);
+    filter: brightness(1.08);
+    transform: translateY(-3px) scale(1.02);
+
+    &::after {
+      transform: translateX(130%);
+      transition: transform 720ms $ease-out;
+    }
   }
 
   &:active:not(:disabled) {
     box-shadow: 0 1px 0 rgba($jade-dark, 0.45);
-    transform: translateY(1px);
+    transform: translateY(1px) scale(0.95);
+    transition-duration: 80ms;
   }
 
   &:focus-visible {
@@ -170,6 +189,10 @@
   border-color: rgba($stone, 0.8);
   box-shadow: none;
   color: $ink;
+
+  &::after {
+    background: linear-gradient(110deg, transparent 30%, rgba($gold-light, 0.45) 48%, transparent 64%);
+  }
 
   &:hover:not(:disabled) {
     background: rgba($sage, 0.25);
@@ -195,6 +218,10 @@
     stroke: $jade-dark;
     stroke-width: 1.5;
   }
+}
+
+.leafIcon path:first-child {
+  transition: fill 320ms ease;
 }
 
 .leafFilled path:first-child {
@@ -364,9 +391,14 @@
   &:hover {
     border-color: $gold;
     box-shadow:
-      0 18px 30px rgba($jade-dark, 0.25),
-      0 0 0 3px rgba($gold, 0.25);
-    transform: translateY(-10px) rotate(-1.5deg) scale(1.03);
+      0 22px 34px rgba($jade-dark, 0.28),
+      0 0 0 3px rgba($gold, 0.3),
+      0 0 26px rgba($gold-light, 0.45);
+    transform: perspective(700px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) translateY(-12px) scale(1.05);
+    transition:
+      transform 140ms $ease-out,
+      box-shadow 220ms $ease-out,
+      border-color 160ms ease;
 
     &::after {
       opacity: 1;
@@ -375,7 +407,7 @@
   }
 
   &:active {
-    transform: translateY(-4px) scale(0.99);
+    transform: perspective(700px) translateY(-4px) scale(0.97);
   }
 
   &:focus-visible {
@@ -385,8 +417,33 @@
 }
 
 .cardHighlighted {
+  animation: highlight-breathe 2.4s ease-in-out infinite;
   border-color: $gold;
   box-shadow: 0 0 0 3px rgba($gold, 0.35);
+}
+
+@keyframes highlight-breathe {
+  50% {
+    box-shadow:
+      0 0 0 3px rgba($gold, 0.5),
+      0 0 18px rgba($gold-light, 0.6);
+  }
+}
+
+/* Light that follows the pointer across a tilted card. */
+.cardGlare {
+  background: radial-gradient(circle at var(--glare-x, 50%) var(--glare-y, 0%), rgba(#fff, 0.6), rgba(#fff, 0) 55%);
+  inset: 0;
+  mix-blend-mode: soft-light;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  transition: opacity 220ms ease;
+  z-index: 2;
+
+  .cardButton:hover & {
+    opacity: 1;
+  }
 }
 
 .cardCost {
@@ -525,9 +582,9 @@
 }
 
 .offer {
-  @include rise(18px);
-
   align-items: flex-start;
+  animation: offer-deal 680ms $ease-spring both;
+  animation-delay: calc(var(--i, 0) * 120ms);
   background:
     radial-gradient(ellipse at 0% 0%, rgba($sage, 0.22), transparent 45%),
     rgba($paper, 0.65);
@@ -537,14 +594,69 @@
   flex-direction: column;
   gap: 12px;
   padding: 16px;
+  position: relative;
   transition:
     border-color 200ms ease,
-    box-shadow 240ms $ease-out;
+    box-shadow 240ms $ease-out,
+    translate 260ms $ease-out;
 
   &:hover {
     border-color: rgba($jade, 0.7);
-    box-shadow: 0 12px 28px rgba($jade-dark, 0.12);
+    box-shadow: 0 16px 34px rgba($jade-dark, 0.16);
+    translate: 0 -3px;
   }
+}
+
+@keyframes offer-deal {
+  from {
+    opacity: 0;
+    transform: translateX(70px) rotate(2.5deg) scale(0.96);
+  }
+}
+
+/* A second copy would merge, so this offer glows gold. */
+.offerMergeable {
+  border-color: rgba($gold, 0.65);
+
+  &::before {
+    animation: merge-ready 2.4s ease-in-out infinite;
+    border-radius: inherit;
+    content: "";
+    inset: -1px;
+    pointer-events: none;
+    position: absolute;
+  }
+}
+
+.offer.offerChosen {
+  animation: offer-chosen 620ms $ease-spring forwards;
+  border-color: $gold;
+  z-index: 3;
+}
+
+@keyframes offer-chosen {
+  40% {
+    box-shadow:
+      0 0 0 4px rgba($gold, 0.45),
+      0 0 50px rgba($gold-light, 0.8);
+    transform: scale(1.025);
+  }
+
+  100% {
+    box-shadow:
+      0 0 0 3px rgba($gold, 0.35),
+      0 0 30px rgba($gold-light, 0.5);
+    transform: scale(1.01);
+  }
+}
+
+.offer.offerDismissed {
+  animation: choice-dismissed 420ms ease-in forwards;
+  pointer-events: none;
+}
+
+.offerChosen .button:disabled {
+  opacity: 1;
 }
 
 .offerHeader {
@@ -643,6 +755,33 @@
   display: flex;
   gap: 14px;
   padding: 12px;
+  transition:
+    border-color 200ms ease,
+    box-shadow 240ms $ease-out;
+
+  &:hover {
+    border-color: rgba($ember, 0.7);
+    box-shadow: 0 10px 26px rgba($ember, 0.16);
+
+    .portrait {
+      animation: menace 520ms ease-in-out;
+    }
+  }
+}
+
+/* An enemy bristles when looked at. */
+@keyframes menace {
+  20% {
+    transform: translateX(-3px) rotate(-2deg) scale(1.04);
+  }
+
+  45% {
+    transform: translateX(3px) rotate(2deg) scale(1.06);
+  }
+
+  70% {
+    transform: translateX(-2px) rotate(-1deg) scale(1.03);
+  }
 }
 
 .enemyBody h4 {
@@ -719,7 +858,20 @@
   transition:
     box-shadow 220ms $ease-out,
     border-color 200ms ease,
-    opacity 200ms ease;
+    opacity 200ms ease,
+    translate 260ms $ease-spring,
+    scale 260ms $ease-spring;
+
+  .portrait {
+    animation: breathe 3.4s ease-in-out infinite;
+    animation-delay: calc(var(--i, 0) * -0.45s);
+  }
+}
+
+@keyframes breathe {
+  50% {
+    transform: translateY(-3px) scale(1.015);
+  }
 }
 
 .memberMovable {
@@ -727,12 +879,22 @@
 
   &:hover {
     border-color: rgba($jade, 0.7);
-    box-shadow: 0 10px 22px rgba($jade-dark, 0.14);
+    box-shadow: 0 12px 26px rgba($jade-dark, 0.16);
+    translate: 0 -4px;
   }
 
   &:active {
     cursor: grabbing;
   }
+}
+
+.memberDropTarget {
+  border: 2px dashed $gold;
+  box-shadow:
+    0 0 0 4px rgba($gold, 0.2),
+    0 0 24px rgba($gold-light, 0.5);
+  scale: 1.04;
+  translate: 0 -6px;
 }
 
 .memberCultivator {
@@ -744,6 +906,7 @@
 
 .memberDragging {
   opacity: 0.35;
+  scale: 0.94;
 }
 
 .memberPosition {
@@ -848,6 +1011,17 @@
   display: flex;
   flex: 1;
   gap: 10px;
+
+  > svg {
+    animation: arrow-nudge 1.3s ease-in-out infinite;
+    color: $gold;
+  }
+}
+
+@keyframes arrow-nudge {
+  50% {
+    transform: translateX(5px);
+  }
 }
 
 @keyframes merge-ready {
@@ -893,6 +1067,19 @@
   display: grid;
   gap: 16px;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+
+  > * {
+    animation: card-deal 620ms $ease-spring both;
+  }
+
+  > :nth-child(2) {
+    animation-delay: 110ms;
+  }
+
+  .healthChoice {
+    height: 100%;
+    width: 100%;
+  }
 }
 
 .healthChoice {
@@ -928,15 +1115,40 @@
 
   &:hover {
     border-color: $jade;
-    box-shadow: 0 14px 28px rgba($jade-dark, 0.16);
-    transform: translateY(-5px);
+    box-shadow:
+      0 16px 30px rgba($jade-dark, 0.18),
+      0 0 0 3px rgba($jade-glow, 0.2);
+    transform: translateY(-6px);
 
     svg {
-      transform: scale(1.2);
+      animation: heartbeat 900ms ease-in-out infinite;
     }
   }
 
+  &:active {
+    transform: translateY(-2px) scale(0.98);
+  }
+
   @include focus-ring;
+}
+
+@keyframes heartbeat {
+  0%,
+  100% {
+    transform: scale(1.15);
+  }
+
+  15% {
+    transform: scale(1.35);
+  }
+
+  30% {
+    transform: scale(1.15);
+  }
+
+  45% {
+    transform: scale(1.3);
+  }
 }
 
 /* End */
@@ -984,6 +1196,28 @@
   min-height: 280px;
   overflow: hidden;
   position: relative;
+
+  /* A slow band of light passes over the room now and then. */
+  &::after {
+    animation: hero-sweep 7s ease-in-out 800ms infinite;
+    background: linear-gradient(105deg, transparent 38%, rgba($gold-light, 0.16) 50%, transparent 62%);
+    content: "";
+    inset: 0;
+    pointer-events: none;
+    position: absolute;
+    transform: translateX(-110%);
+  }
+}
+
+@keyframes hero-sweep {
+  0% {
+    transform: translateX(-110%);
+  }
+
+  45%,
+  100% {
+    transform: translateX(110%);
+  }
 }
 
 .roomHeroArt {
@@ -1020,6 +1254,7 @@
   }
 
   h1 {
+    animation: hero-title 1s $ease-out 150ms both;
     font-family: $display;
     font-size: clamp(34px, 5vw, 52px);
     font-weight: 600;
@@ -1037,7 +1272,16 @@
   }
 }
 
+@keyframes hero-title {
+  from {
+    filter: blur(6px);
+    letter-spacing: 0.12em;
+    opacity: 0;
+  }
+}
+
 .roomHeroBoss {
+  animation: boss-dread 2.6s ease-in-out infinite;
   box-shadow:
     0 0 0 2px rgba($gold, 0.7),
     0 16px 50px rgba($gold, 0.25);
@@ -1059,6 +1303,15 @@
   gap: 6px;
   margin-top: 6px;
   padding: 5px 14px;
+}
+
+@keyframes boss-dread {
+  50% {
+    box-shadow:
+      0 0 0 2px rgba($gold, 0.95),
+      0 16px 70px rgba($ember, 0.4),
+      0 0 40px rgba($gold-light, 0.35);
+  }
 }
 
 /* Floor track */
@@ -1125,9 +1378,33 @@
 }
 
 .progressCleared .progressNode {
-  background: $jade;
+  background: radial-gradient(circle at 40% 35%, $jade-glow, $jade 65%);
   border-color: $jade-dark;
   color: #fff;
+}
+
+/* A halo that glides along the vine behind the party's floor. */
+.progressClimber {
+  animation: climber-glow 1.8s ease-in-out infinite;
+  background: radial-gradient(circle, rgba($gold-light, 0.9), rgba($jade-glow, 0.45) 45%, transparent 70%);
+  border-radius: 50%;
+  height: 48px;
+  left: calc(20px + (100% - 40px) * var(--progress, 0%) / 100%);
+  list-style: none;
+  margin-left: -24px;
+  pointer-events: none;
+  position: absolute;
+  top: -8px;
+  transition: left 1100ms $ease-out;
+  width: 48px;
+  z-index: 0;
+}
+
+@keyframes climber-glow {
+  50% {
+    opacity: 0.6;
+    transform: scale(0.85);
+  }
 }
 
 .progressCurrent {
@@ -1135,10 +1412,22 @@
   font-weight: 700;
 
   .progressNode {
-    animation: node-pulse 2s ease-in-out infinite;
+    animation:
+      node-arrive 700ms $ease-spring both,
+      node-pulse 2s ease-in-out 700ms infinite;
     border-color: $jade;
     color: $jade-dark;
     transform: scale(1.18);
+  }
+}
+
+@keyframes node-arrive {
+  0% {
+    transform: scale(0.6);
+  }
+
+  55% {
+    transform: scale(1.45);
   }
 }
 
@@ -1219,6 +1508,18 @@
   }
 }
 
+/* The leaf the next pick will fill nods for attention. */
+.pickLeafNext {
+  animation: pick-next 1.4s ease-in-out infinite;
+}
+
+@keyframes pick-next {
+  50% {
+    filter: drop-shadow(0 0 6px rgba($gold-light, 0.9));
+    transform: scale(1.2) rotate(-8deg);
+  }
+}
+
 /* Rewards and the end */
 
 .clearedSeal {
@@ -1247,6 +1548,31 @@
   }
 }
 
+.clearedSeal {
+  position: relative;
+
+  &::after {
+    animation: seal-ripple 1.2s $ease-out 500ms both;
+    border: 3px solid rgba($gold-light, 0.9);
+    border-radius: 50%;
+    content: "";
+    inset: 0;
+    position: absolute;
+  }
+}
+
+@keyframes seal-ripple {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
 .endScreen {
   max-width: 860px;
 }
@@ -1260,6 +1586,65 @@
   justify-content: center;
   margin-bottom: 10px;
   width: 96px;
+}
+
+.endEmblem {
+  isolation: isolate;
+  position: relative;
+}
+
+/* Rays of light turn slowly behind the summit crown. */
+.endVictory .endEmblem::before {
+  animation: emblem-spin 14s linear infinite;
+  background: repeating-conic-gradient(rgba($gold-light, 0.55) 0deg 7deg, transparent 7deg 20deg);
+  border-radius: 50%;
+  content: "";
+  inset: -70px;
+  mask: radial-gradient(circle, #000 25%, transparent 70%);
+  position: absolute;
+  z-index: -1;
+}
+
+@keyframes emblem-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Ink blooms slowly behind a fallen climb. */
+.endDefeat {
+  position: relative;
+
+  &::before {
+    animation: ink-bloom 2.8s $ease-out both;
+    background:
+      radial-gradient(ellipse 45% 55% at 50% 35%, rgba($ink, 0.2), transparent 70%),
+      radial-gradient(ellipse 30% 40% at 38% 50%, rgba($jade-dark, 0.12), transparent 70%);
+    content: "";
+    filter: blur(4px);
+    inset: -40px -10%;
+    pointer-events: none;
+    position: absolute;
+    z-index: -1;
+  }
+
+  h1 {
+    animation: ink-settle 1.8s $ease-out both;
+  }
+}
+
+@keyframes ink-bloom {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+}
+
+@keyframes ink-settle {
+  from {
+    filter: blur(8px);
+    opacity: 0;
+  }
 }
 
 .endVictory .endEmblem {
@@ -1323,6 +1708,33 @@
   }
 }
 
+.tallyLanded dd {
+  animation: tally-pop 420ms $ease-spring;
+}
+
+@keyframes tally-pop {
+  40% {
+    color: $gold;
+    transform: scale(1.35);
+  }
+}
+
+.tallyTotal.tallyLanded dd {
+  animation: total-pop 700ms $ease-spring;
+  text-shadow: 0 0 22px rgba($jade-glow, 0.8);
+}
+
+@keyframes total-pop {
+  0% {
+    transform: scale(1);
+  }
+
+  35% {
+    color: $gold;
+    transform: scale(1.5) rotate(-3deg);
+  }
+}
+
 .tallyTotal {
   font-family: $display;
   font-size: 26px;
@@ -1334,8 +1746,10 @@
 
   dd {
     color: $jade-dark;
+    display: inline-block;
     font-size: 40px;
     font-weight: 700;
+    transition: text-shadow 400ms ease;
   }
 }
 
@@ -1386,10 +1800,216 @@
   z-index: 50;
 
   &:hover {
-    transform: scale(1.08);
+    transform: scale(1.1) rotate(90deg);
   }
 
   @include focus-ring;
+}
+
+/* Picks: the chosen option swells and bursts, the rest sink away. */
+
+.choiceSlot {
+  position: relative;
+}
+
+.choiceSlot.choiceChosen {
+  animation: choice-chosen 620ms $ease-spring forwards;
+  z-index: 3;
+}
+
+@keyframes choice-chosen {
+  0% {
+    filter: none;
+    transform: none;
+  }
+
+  40% {
+    filter: drop-shadow(0 0 22px rgba($gold-light, 0.95)) brightness(1.12);
+    transform: translateY(-18px) scale(1.12);
+  }
+
+  100% {
+    filter: drop-shadow(0 0 14px rgba($gold-light, 0.7));
+    transform: translateY(-12px) scale(1.06);
+  }
+}
+
+.choiceSlot.choiceDismissed {
+  animation: choice-dismissed 420ms ease-in forwards;
+  pointer-events: none;
+}
+
+@keyframes choice-dismissed {
+  to {
+    filter: grayscale(0.7);
+    opacity: 0;
+    transform: translateY(40px) scale(0.9) rotate(-4deg);
+  }
+}
+
+.rerollButton svg {
+  transition: transform 520ms $ease-spring;
+}
+
+.rerollButton:hover:not(:disabled) svg {
+  transform: rotate(180deg) scale(1.15);
+}
+
+/* Burst: leaves and sparks thrown from the middle of the parent. */
+
+.burst {
+  height: 0;
+  left: 50%;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  width: 0;
+  z-index: 5;
+}
+
+.burstFlash {
+  animation: burst-flash 720ms $ease-out both;
+  background: radial-gradient(circle, rgba($gold-light, 0.95), rgba($jade-glow, 0.35) 40%, transparent 70%);
+  border-radius: 50%;
+  height: 200px;
+  left: -100px;
+  position: absolute;
+  top: -100px;
+  width: 200px;
+}
+
+@keyframes burst-flash {
+  from {
+    opacity: 1;
+    transform: scale(0.2);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(1.7);
+  }
+}
+
+.burstLeaf,
+.burstSpark {
+  animation: burst-fly 950ms $ease-out var(--delay, 0ms) both;
+  background: var(--color, #{$gold-light});
+  left: 0;
+  position: absolute;
+  top: 0;
+}
+
+.burstLeaf {
+  border-radius: 2px 70% / 2px 70%;
+  height: calc(var(--size, 10px) * 1.5);
+  margin: calc(var(--size, 10px) * -0.75) 0 0 calc(var(--size, 10px) * -0.5);
+  width: var(--size, 10px);
+}
+
+.burstSpark {
+  border-radius: 50%;
+  box-shadow: 0 0 10px 3px var(--color, #{$gold-light});
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  width: 6px;
+}
+
+@keyframes burst-fly {
+  0% {
+    opacity: 1;
+    transform: rotate(var(--angle)) translateX(0) rotate(0deg) scale(0.3);
+  }
+
+  70% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: rotate(var(--angle)) translateX(var(--distance)) rotate(var(--spin)) scale(1);
+  }
+}
+
+/* Leaf rain: a summit's worth of gold and jade leaves. */
+
+.leafRain {
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: fixed;
+  z-index: 5;
+
+  span {
+    animation: rain-fall var(--duration, 4s) linear var(--delay, 0s) 3 both;
+    background: var(--color, #{$gold});
+    border-radius: 2px 70% / 2px 70%;
+    box-shadow: 0 0 8px rgba($gold-light, 0.4);
+    height: var(--size, 14px);
+    left: var(--x, 50vw);
+    opacity: 0;
+    position: absolute;
+    top: -40px;
+    width: calc(var(--size, 14px) * 0.7);
+  }
+}
+
+@keyframes rain-fall {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) rotate(0deg);
+  }
+
+  8% {
+    opacity: 0.95;
+  }
+
+  85% {
+    opacity: 0.85;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(var(--drift, 0), 110vh) rotate(var(--spin, 360deg));
+  }
+}
+
+/* Tier leaves that grow in one after another. */
+
+.tierLeavesPop > * {
+  animation: leaf-pop 560ms $ease-spring both;
+}
+
+@for $index from 1 through 4 {
+  .tierLeavesPop > :nth-child(#{$index}) {
+    animation-delay: #{650 + ($index - 1) * 170}ms;
+  }
+}
+
+@keyframes leaf-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0) rotate(-90deg);
+  }
+
+  60% {
+    filter: drop-shadow(0 0 8px $gold-light);
+    transform: scale(1.45) rotate(12deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .burst,
+  .leafRain {
+    display: none;
+  }
+
+  .member .portrait,
+  .progressClimber,
+  .cardHighlighted,
+  .roomHero::after,
+  .pickLeafNext {
+    animation: none;
+  }
 }
 
 @media (width <= 720px) {

@@ -1,22 +1,19 @@
 import type Phaser from "phaser";
-import { playSound } from "../tower/audio/sound";
-import { cardTargeting, describeEffect } from "../tower/logic/cardRules";
+import { playSound, type SoundName } from "../tower/audio/sound";
+import { type CardTargeting, cardTargeting } from "../tower/logic/cardRules";
 import {
   automaticTarget,
   type CombatCard,
   type CombatEvent,
   type CombatState,
   type CombatStep,
-  type CombatUnit,
   canAfford,
   createCombat,
-  type EnemyUnit,
   endTurn,
-  enemyIntent,
   incomingDamage,
   isAlive,
   livingEnemies,
-  type PartyUnit,
+  livingParty,
   playCard,
 } from "../tower/logic/combat";
 import { describeTarget } from "../tower/logic/enemyMoves";
@@ -26,114 +23,99 @@ import {
   partyAccentIndex,
 } from "../tower/ownerColors";
 import {
-  BACKDROP_IMAGE_KEY,
+  type BattleRoomInfo,
   type BattleSceneInput,
-  cardImageKey,
   listBattleAssetRequests,
-  unitImageKey,
 } from "./battleAssetRequests";
+import { type BattleLayout, layoutBattle } from "./battleLayout";
+import { isHeavyImpact, paced, soundForEvent } from "./battleMotion";
+import { BattlePainter, PALETTE, rgb } from "./battlePaint";
+import { BattleSpriteDirector, type SpriteUnit } from "./battleSprites";
 import {
-  type BattleLayout,
-  type CardSlot,
-  layoutBattle,
-  layoutCardPanels,
-  layoutHealthBar,
-  type UnitSlot,
-} from "./battleLayout";
+  arrowCurve,
+  arrowMarkCount,
+  type CardRelease,
+  resolveCardRelease,
+} from "./cardAim";
+import { type CardPose, layoutHandFan, pickHandCard } from "./handFan";
+import { DASH_IMPACT_MS, scheduleStep } from "./stepTimeline";
+import { BattleHud, type EndTurnState } from "./views/battleHud";
+import { BattleStage, DEPTH } from "./views/battleStage";
+import { CardView } from "./views/cardView";
 import {
-  isHeavyImpact,
-  paced,
-  roomTitleCard,
-  stepSounds,
-} from "./battleMotion";
-import { BattleSpriteDirector } from "./battleSprites";
-import { approach, CARD_HOVER_SETTLE_MS, cardHoverMotion } from "./cardHover";
-import { containedScale } from "./containedScale";
-import { hashSeed, leafOutline, type PaintPoint, washBlots } from "./leafShape";
+  type AimMark,
+  type UnitCues,
+  UnitView,
+  type ViewKit,
+} from "./views/unitView";
 
-const PAPER = 0xf3efe4;
-const PAPER_LIGHT = 0xfffdf6;
-const JADE = 0x4e8f6a;
-const JADE_DARK = 0x2f5e45;
-const SAGE = 0x9db89a;
-const STONE = 0x8a8f8c;
-const STONE_DARK = 0x5d625f;
-const EMBER = 0xb5543f;
-const DEW = 0x3f9e95;
-const STEEL = 0x557a90;
-const GOLD = 0xc49a3a;
-const INK = "#24332b";
-const INK_SOFT = "#4b5a52";
-const DAMAGE_TEXT = "#b5432f";
-const BLOCK_TEXT = "#3f6f8c";
-const AETHER_TEXT = "#2f8a80";
-const HEADING_FONT = "Georgia, 'Times New Roman', serif";
-const HOVER_DEPTH = 100;
-const SELECTED_LIFT_SHARE = 0.35;
-const HINT_TEXT = "#7a5810";
-const STEP_DELAY_MS = 720;
 const FINISH_DELAY_MS = 1700;
 const FADE_MS = 450;
-const DEFEAT_VEIL = 0x1b2620;
-const AMBIENT_MOTE_COUNT = 14;
-const BURST_LEAF_COUNT = 26;
+/** Pointer travel under which a press and release count as a click. */
+const CLICK_SLOP_PX = 12;
+/** Press length under which a press and release count as a click. */
+const CLICK_MS = 260;
+/** Gap between cards arriving from the draw pile. */
+const DRAW_STAGGER_MS = 75;
+/** Distance between chevrons on the aiming arrow. */
+const ARROW_SPACING = 34;
+/** Freeze on a heavy blow, so it lands with weight. */
+const HIT_STOP_MS = 70;
 
 type PhaserRuntime = typeof import("phaser");
 
-type AmbientMote = {
-  drift: number;
-  spin: number;
-  sway: number;
-  view: Phaser.GameObjects.Graphics;
-  vx: number;
-  vy: number;
-};
-
-type HandCard = {
-  cardId: string;
-  container: Phaser.GameObjects.Container;
-  height: number;
-  hit: Phaser.Geom.Rectangle;
-  hoverScale: number;
-  hoverY: number;
-  index: number;
-  lift: number;
-  restY: number;
-  targetScale: number;
-  targetY: number;
-  width: number;
+/** A card the player has picked up. */
+type HeldCard = {
+  /** "drag" while the button is down; "hold" after a click picked it up */
+  mode: "drag" | "hold";
+  pressedAt: number;
+  startX: number;
+  startY: number;
+  /** Unit under the arrow that the card may be played on */
+  targetId?: string;
+  targeting: CardTargeting;
+  view: CardView;
 };
 
 /**
- * @returns Text resolution matched to the screen, capped for performance
+ * @param room - Room the fight takes place in
+ * @returns The banner naming the room
  */
-function textResolution(): number {
-  if (typeof window === "undefined") {
-    return 1;
+function floorLabel(room: BattleRoomInfo): string {
+  if (room.isBoss) {
+    return `Summit · ${room.title}`;
   }
-  return Math.min(2, window.devicePixelRatio || 1);
+  return `Floor ${room.floor} of ${room.floorCount} · ${room.title}`;
 }
 
 /**
- * @param color - Phaser color number
- * @returns Red, green, and blue channels from 0 to 255, for camera fades
+ * @param room - Room the fight took place in
+ * @param victory - Whether the party won
+ * @returns The line under the outcome title
  */
-function rgb(color: number): [number, number, number] {
-  return [(color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff];
+function finishSubtitle(room: BattleRoomInfo, victory: boolean): string {
+  if (!victory) {
+    return "The tower keeps its secrets";
+  }
+  if (room.isBoss) {
+    return "The Tower Heart is quiet";
+  }
+  return `Floor ${room.floor} cleared`;
 }
 
 /**
- * @param color - Phaser color number
- * @returns CSS hex color
+ * @param sound - Effect to play
  */
-function cssColor(color: number): string {
-  return `#${color.toString(16).padStart(6, "0")}`;
+function playVaried(sound: SoundName): void {
+  playSound(sound, { pitch: 0.92 + Math.random() * 0.16 });
 }
 
 /**
  * Builds the battle scene class for one fight.
  * The scene owns the combat state while the fight lasts and reports the
- * result through `input.onFinish`.
+ * result through `input.onFinish`. Rules resolve at once in `combat`; the
+ * scene replays each resulting step on a timeline so every blow reads,
+ * while the player stays free to keep playing cards.
  * @param Phaser - Phaser module namespace
  * @param input - Party, enemies, deck, and room for this fight
  * @returns Scene class Phaser can instantiate
@@ -151,6 +133,18 @@ export function createBattleSceneClass(
   const ownerName = new Map(
     input.setup.party.map((unit) => [unit.id, unit.name]),
   );
+  const spriteUnits: SpriteUnit[] = [
+    ...input.setup.party.map((unit) => ({
+      id: unit.id,
+      side: "party" as const,
+      sprite: unit.sprite,
+    })),
+    ...input.setup.enemies.map((enemy) => ({
+      id: enemy.id,
+      side: "enemy" as const,
+      sprite: enemy.sprite,
+    })),
+  ];
 
   /**
    * @param ms - Duration at normal battle speed
@@ -158,37 +152,31 @@ export function createBattleSceneClass(
    */
   const wait = (ms: number): number => paced(ms, input.pace);
 
-  /**
-   * @param points - Outline in canvas pixels
-   * @returns The same points as Phaser vectors, for polygon fills
-   */
-  const vectors = (points: PaintPoint[]): Phaser.Math.Vector2[] =>
-    points.map((point) => new Phaser.Math.Vector2(point.x, point.y));
-
   return class BattleScene extends Phaser.Scene {
-    private ambient: AmbientMote[] = [];
-    private ambientLayer!: Phaser.GameObjects.Container;
-    private busy = false;
+    private animating = false;
+    private arrow!: Phaser.GameObjects.Graphics;
     private combat!: CombatState;
-    private field!: Phaser.GameObjects.Graphics;
     private finished = false;
-    private floaters!: Phaser.GameObjects.Container;
-    private hand: HandCard[] = [];
-    private hud!: Phaser.GameObjects.Container;
+    private hand: CardView[] = [];
+    private held?: HeldCard;
+    private hovered?: number;
+    private hud?: BattleHud;
+    private inputLocked = true;
+    private kit!: ViewKit;
     private layout!: BattleLayout;
-    private notice?: Phaser.GameObjects.Text;
-    private selectedCardId?: string;
-    private tooltip?: Phaser.GameObjects.Container;
+    private queue: CombatStep[] = [];
     private sprites!: BattleSpriteDirector;
-    private unitViews = new Map<string, Phaser.GameObjects.Container>();
-    private units!: Phaser.GameObjects.Container;
+    private stage!: BattleStage;
+    private tooltip?: Phaser.GameObjects.Container;
+    private tooltipUnitId?: string;
+    private unitViews = new Map<string, UnitView>();
 
     public constructor() {
       super({ key: "BattleScene" });
     }
 
     /**
-     * Queues the backdrop, portraits, party sprites, and card art for this fight.
+     * Queues the backdrop, portraits, unit sprites, and card art.
      */
     public preload(): void {
       this.load.setCORS("anonymous");
@@ -199,70 +187,72 @@ export function createBattleSceneClass(
       this.sprites = new BattleSpriteDirector(
         Phaser,
         this,
-        input.setup.party,
+        spriteUnits,
         input.pace,
       );
       this.sprites.preload();
     }
 
     /**
-     * Opens the first turn and wires input and resizing.
+     * Sets up the field, then plays the title card and deals the first hand.
      */
     public create(): void {
       const opening = createCombat(input.setup);
       this.combat = opening.state;
       this.sprites.create();
-      this.field = this.add.graphics();
-      this.units = this.add.container(0, 0);
-      this.ambientLayer = this.add.container(0, 0);
-      this.hud = this.add.container(0, 0);
-      this.floaters = this.add.container(0, 0).setDepth(300);
-      this.scale.on("resize", this.draw, this);
-      this.input.on("pointerdown", this.onScenePointerDown, this);
+      this.kit = {
+        Phaser,
+        painter: new BattlePainter(Phaser, this),
+        reducedMotion: input.reducedMotion,
+        scene: this,
+        sprites: this.sprites,
+        wait,
+      };
+      this.stage = new BattleStage(this.kit, input.room);
+      this.arrow = this.add.graphics().setDepth(DEPTH.arrow);
+      this.buildField();
+      this.stage.createAmbient();
+
+      this.scale.on("resize", this.buildField, this);
+      this.input.on("pointermove", this.onPointerMove, this);
+      this.input.on("pointerdown", this.onPointerDown, this);
+      this.input.on("pointerup", this.onPointerUp, this);
+      this.input.on("gameout", this.onPointerLeave, this);
       this.input.keyboard?.on("keydown", this.onKeyDown, this);
       this.events.once("shutdown", () => {
         this.load.off("loaderror", this.onAssetLoadError);
-        this.scale.off("resize", this.draw, this);
+        this.scale.off("resize", this.buildField, this);
       });
-      this.draw();
-      this.createAmbient();
-      const [red, green, blue] = rgb(PAPER);
+
+      const [red, green, blue] = rgb(PALETTE.paper);
       this.cameras.main.fadeIn(wait(FADE_MS), red, green, blue);
-      this.showTitleCard();
+      if (input.room.isBoss) {
+        playSound("heavy-hit");
+      }
+      this.stage.showTitleCard(() => {
+        if (!this.finished) {
+          this.enqueue(opening);
+        }
+      });
     }
 
     /**
-     * Eases each hand card toward its rest, hovered, or selected pose, and
-     * drifts the ambient leaves.
+     * Eases every hand card toward its pose, drifts the ambient leaves,
+     * and redraws the aiming arrow.
      * @param time - Scene time in milliseconds
      * @param delta - Frame time in milliseconds
      */
     public update(time: number, delta: number): void {
-      this.driftAmbient(time, delta);
+      this.stage.driftAmbient(time, delta, this.layout.groundY + 40);
       for (const card of this.hand) {
-        const y = approach(
-          card.container.y,
-          card.targetY,
-          delta,
-          CARD_HOVER_SETTLE_MS,
-        );
-        const scale = approach(
-          card.container.scaleX,
-          card.targetScale,
-          delta,
-          CARD_HOVER_SETTLE_MS,
-          0.002,
-        );
-        card.container.setPosition(card.container.x, y);
-        card.container.setScale(scale);
-        if (card.targetY === card.restY && y === card.restY) {
-          card.container.setDepth(card.index);
-        }
+        card.ease(delta);
       }
+      this.held?.view.ease(delta);
+      this.drawArrow();
     }
 
     /**
-     * Logs an asset URL Phaser could not fetch. The slot keeps its stand-in.
+     * Logs an asset URL Phaser could not fetch. The unit keeps its stand-in.
      * @param file - Loader file that failed
      */
     private readonly onAssetLoadError = (file: {
@@ -274,1692 +264,977 @@ export function createBattleSceneClass(
     };
 
     /**
-     * Repaints the whole battle for the current state and canvas size.
+     * Lays the field out for the current view size and rebuilds the room,
+     * units, and HUD. Hand cards keep their objects and glide to new poses.
      */
-    private readonly draw = (): void => {
+    private buildField(): void {
       this.layout = layoutBattle(this.scale.width, this.scale.height, {
         enemies: this.combat.enemies.length,
-        hand: this.combat.hand.length,
         party: this.combat.party.length,
       });
+      this.stage.paintBackdrop(this.layout);
       for (const view of this.unitViews.values()) {
-        this.tweens.killTweensOf(view);
+        view.destroy();
       }
       this.unitViews.clear();
-      this.sprites.clear();
-      this.field.clear();
-      this.units.removeAll(true);
-      this.hud.removeAll(true);
-      this.hideTooltip();
-      this.clearHand();
-
-      this.paintBackdrop();
-      const incoming = incomingDamage(this.combat);
+      const cues = this.unitCues(this.combat);
       this.combat.party.forEach((unit, index) => {
         const slot = this.layout.party[index];
-        if (slot) {
-          this.drawPartyUnit(unit, slot, incoming.get(unit.id) ?? 0);
+        if (!slot) {
+          return;
         }
+        const accent = ownerColor.get(unit.id) ?? PALETTE.jade;
+        const view = new UnitView(
+          this.kit,
+          unit,
+          "party",
+          slot,
+          accent,
+          cues.get(unit.id) ?? {},
+        );
+        view.container.setDepth(DEPTH.units);
+        this.unitViews.set(unit.id, view);
       });
       this.combat.enemies.forEach((enemy, index) => {
         const slot = this.layout.enemies[index];
-        if (slot) {
-          this.drawEnemy(enemy, slot);
-        }
-      });
-      for (const slot of this.layout.cards) {
-        this.hand.push(this.createHandCard(slot));
-      }
-      this.drawHud();
-      this.startIdleBob();
-    };
-
-    /**
-     * Lets every living unit breathe with a slow bob. The views are rebuilt
-     * on each redraw, so this runs after every draw.
-     */
-    private startIdleBob(): void {
-      if (input.reducedMotion) {
-        return;
-      }
-      const living = new Set(
-        [...this.combat.party, ...this.combat.enemies]
-          .filter(isAlive)
-          .map((unit) => unit.id),
-      );
-      let offset = 0;
-      for (const [unitId, view] of this.unitViews) {
-        if (!living.has(unitId)) {
-          continue;
-        }
-        this.tweens.add({
-          delay: offset * 170,
-          duration: 1700 + (hashSeed(unitId) % 500),
-          ease: "Sine.easeInOut",
-          repeat: -1,
-          targets: view,
-          y: view.y - 4,
-          yoyo: true,
-        });
-        offset += 1;
-      }
-    }
-
-    /**
-     * Scatters slow leaves and motes over the room. They live in their own
-     * layer so redraws keep them, and wrap at the edges so resizes need
-     * no repositioning.
-     */
-    private createAmbient(): void {
-      if (input.reducedMotion) {
-        return;
-      }
-      const { width, height } = this.scale;
-      for (let index = 0; index < AMBIENT_MOTE_COUNT; index += 1) {
-        const view = this.add.graphics();
-        const isLeaf = index % 3 !== 0;
-        if (isLeaf) {
-          this.paintLeaf(
-            0,
-            0,
-            10 + (index % 4) * 3,
-            0,
-            index % 2 === 0 ? JADE : SAGE,
-            0.4,
-            view,
-          );
-        } else {
-          view.fillStyle(PAPER_LIGHT, 0.55);
-          view.fillCircle(0, 0, 2 + (index % 3));
-        }
-        view.setPosition(
-          Phaser.Math.Between(0, Math.max(1, width)),
-          Phaser.Math.Between(0, Math.max(1, height * 0.75)),
-        );
-        view.setRotation(Phaser.Math.FloatBetween(0, Math.PI * 2));
-        this.ambientLayer.add(view);
-        this.ambient.push({
-          drift: Phaser.Math.FloatBetween(0, Math.PI * 2),
-          spin: Phaser.Math.FloatBetween(-0.0006, 0.0006),
-          sway: Phaser.Math.FloatBetween(0.015, 0.035),
-          view,
-          vx: Phaser.Math.FloatBetween(0.008, 0.022),
-          vy: Phaser.Math.FloatBetween(0.006, 0.016),
-        });
-      }
-    }
-
-    /**
-     * Moves each ambient mote down and across, swaying, and wraps it back
-     * to the top left when it leaves the room.
-     * @param time - Scene time in milliseconds
-     * @param delta - Frame time in milliseconds
-     */
-    private driftAmbient(time: number, delta: number): void {
-      const { width, height } = this.scale;
-      const floor = this.layout ? this.layout.groundY + 40 : height;
-      for (const mote of this.ambient) {
-        const { view } = mote;
-        const sway = Math.sin(time * 0.001 + mote.drift) * mote.sway;
-        view.x += (mote.vx + sway) * delta;
-        view.y += mote.vy * delta;
-        view.rotation += mote.spin * delta;
-        if (view.x > width + 20) {
-          view.x = -20;
-        }
-        if (view.y > floor) {
-          view.y = -20;
-          view.x = Phaser.Math.Between(-20, Math.max(1, width));
-        }
-      }
-    }
-
-    /**
-     * Fills the room: generated backdrop when loaded, otherwise a painted wash.
-     */
-    private paintBackdrop(): void {
-      const { width, height } = this.scale;
-      this.field.fillStyle(PAPER, 1);
-      this.field.fillRect(0, 0, width, height);
-      if (this.textures.exists(BACKDROP_IMAGE_KEY)) {
-        const image = this.add.image(width / 2, height / 2, BACKDROP_IMAGE_KEY);
-        image.setScale(Math.max(width / image.width, height / image.height));
-        image.setAlpha(0.92);
-        this.units.add(image);
-        this.units.sendToBack(image);
-      } else {
-        this.paintWash(
-          width * 0.22,
-          height * 0.3,
-          width * 0.26,
-          SAGE,
-          11,
-          this.field,
-          0.55,
-        );
-        this.paintWash(
-          width * 0.8,
-          height * 0.28,
-          width * 0.22,
-          STONE,
-          23,
-          this.field,
-          0.45,
-        );
-        this.paintWash(
-          width * 0.5,
-          -height * 0.05,
-          width * 0.3,
-          JADE,
-          37,
-          this.field,
-          0.4,
-        );
-        for (let index = 0; index < 9; index += 1) {
-          this.paintLeaf(
-            (index / 8) * width,
-            height * (0.04 + (index % 3) * 0.025),
-            34 + (index % 4) * 8,
-            Math.PI / 2 + (index % 2 === 0 ? 0.4 : -0.5),
-            index % 2 === 0 ? JADE : SAGE,
-            0.35,
-          );
-        }
-      }
-      // A paper wash over the bottom keeps the hand readable on busy art.
-      const band = this.add.graphics();
-      band.fillGradientStyle(PAPER, PAPER, PAPER, PAPER, 0, 0, 0.85, 0.85);
-      band.fillRect(
-        0,
-        this.layout.groundY + 8,
-        width,
-        height - this.layout.groundY,
-      );
-      band.fillStyle(JADE_DARK, 0.12);
-      band.fillEllipse(width * 0.25, this.layout.groundY, width * 0.44, 26);
-      band.fillEllipse(width * 0.75, this.layout.groundY, width * 0.44, 26);
-      this.units.add(band);
-    }
-
-    /**
-     * @param x - Wash center x
-     * @param y - Wash center y
-     * @param radius - Wash radius
-     * @param color - Pigment
-     * @param seed - Layout seed
-     * @param graphics - Target graphics. Defaults to the field layer.
-     * @param strength - Multiplier on each blot's opacity
-     */
-    private paintWash(
-      x: number,
-      y: number,
-      radius: number,
-      color: number,
-      seed: number,
-      graphics: Phaser.GameObjects.Graphics = this.field,
-      strength = 1,
-    ): void {
-      for (const blot of washBlots(x, y, radius, seed)) {
-        graphics.fillStyle(color, blot.alpha * strength);
-        graphics.fillCircle(blot.x, blot.y, blot.radius);
-      }
-    }
-
-    /**
-     * @param x - Leaf center x
-     * @param y - Leaf center y
-     * @param length - Stem-to-tip length
-     * @param angle - Stem-to-tip direction in radians
-     * @param color - Fill color
-     * @param alpha - Fill opacity
-     * @param graphics - Target graphics. Defaults to the field layer.
-     */
-    private paintLeaf(
-      x: number,
-      y: number,
-      length: number,
-      angle: number,
-      color: number,
-      alpha: number,
-      graphics: Phaser.GameObjects.Graphics = this.field,
-    ): void {
-      const points = leafOutline(x, y, length, length * 0.48, angle);
-      graphics.fillStyle(color, alpha);
-      graphics.fillPoints(vectors(points), true);
-      graphics.lineStyle(1, JADE_DARK, alpha * 0.8);
-      const cos = Math.cos(angle);
-      const sin = Math.sin(angle);
-      graphics.lineBetween(
-        x - (cos * length) / 2,
-        y - (sin * length) / 2,
-        x + (cos * length) / 2.4,
-        y + (sin * length) / 2.4,
-      );
-    }
-
-    /**
-     * Draws a portrait in a paper frame, or a painted stand-in.
-     * @param view - Unit container, centered on the portrait
-     * @param slot - Portrait box
-     * @param unitId - Unit id, used for the texture key and wash seed
-     * @param glyph - Letter painted on the stand-in when there is no art
-     * @param accent - Frame color
-     */
-    private drawPortrait(
-      view: Phaser.GameObjects.Container,
-      slot: UnitSlot,
-      unitId: string,
-      glyph: string,
-      accent: number,
-    ): void {
-      const frame = this.add.graphics();
-      const left = -slot.width / 2;
-      const top = -slot.height / 2;
-      frame.fillStyle(0x000000, 0.12);
-      frame.fillRoundedRect(left + 4, top + 6, slot.width, slot.height, 14);
-      frame.fillStyle(PAPER_LIGHT, 0.94);
-      frame.fillRoundedRect(left, top, slot.width, slot.height, 14);
-      view.add(frame);
-      const key = unitImageKey(unitId);
-      if (this.textures.exists(key)) {
-        this.addContainedImage(
-          key,
-          0,
-          0,
-          slot.width - 10,
-          slot.height - 10,
-          view,
-        );
-      } else {
-        const wash = this.add.graphics();
-        this.paintWash(0, 0, slot.width * 0.55, accent, hashSeed(unitId), wash);
-        this.paintLeaf(
-          slot.width * 0.22,
-          slot.height * 0.28,
-          slot.width * 0.32,
-          -0.7,
-          accent,
-          0.5,
-          wash,
-        );
-        view.add(wash);
-        view.add(
-          this.makeText(0, -slot.height * 0.04, glyph, {
-            color: cssColor(accent),
-            fontSize: Math.round(slot.height * 0.42),
-          }),
-        );
-      }
-      const border = this.add.graphics();
-      border.lineStyle(3, accent, 0.9);
-      border.strokeRoundedRect(left, top, slot.width, slot.height, 14);
-      view.add(border);
-    }
-
-    /**
-     * Draws one party member: animated sprite or portrait, order, tier,
-     * health, block, and the damage it will take if the turn ends now.
-     * @param unit - Party member
-     * @param slot - Where it stands
-     * @param incoming - Telegraphed damage before block
-     */
-    private drawPartyUnit(
-      unit: PartyUnit,
-      slot: UnitSlot,
-      incoming: number,
-    ): void {
-      const accent = ownerColor.get(unit.id) ?? JADE;
-      const view = this.createUnitView(unit, slot);
-      const glyph = unit.isCultivator
-        ? CULTIVATOR_GLYPH
-        : unit.name.charAt(0).toUpperCase();
-      if (!this.sprites.draw(view, unit, slot, accent, isAlive(unit))) {
-        this.drawPortrait(view, slot, unit.id, glyph, accent);
-      }
-      this.drawUnitFooter(view, slot, unit, accent);
-
-      const order = slot.index === 0 ? "Front" : `#${slot.index + 1}`;
-      view.add(
-        this.makeText(
-          0,
-          -slot.height / 2 - 14,
-          unit.isCultivator ? `${order} · You` : order,
-          {
-            color: INK,
-            fontSize: 14,
-            stroke: true,
-          },
-        ),
-      );
-      if (!unit.isCultivator) {
-        this.drawTierLeaves(
-          view,
-          slot.width / 2 - 10,
-          -slot.height / 2 + 14,
-          unit.tier,
-        );
-      }
-      if (isAlive(unit) && incoming > 0) {
-        const covered = unit.block >= incoming;
-        const label = covered
-          ? `${incoming} incoming · blocked`
-          : `${incoming} incoming${unit.block > 0 ? ` (−${unit.block})` : ""}`;
-        view.add(
-          this.makeText(0, -slot.height / 2 - 34, label, {
-            color: covered ? BLOCK_TEXT : DAMAGE_TEXT,
-            fontSize: 14,
-            stroke: true,
-          }),
-        );
-      }
-      if (!isAlive(unit)) {
-        view.setAlpha(0.35);
-      }
-    }
-
-    /**
-     * Draws one enemy with its telegraphed intent and its place in the
-     * right-to-left action order.
-     * @param enemy - Enemy
-     * @param slot - Where it stands
-     */
-    private drawEnemy(enemy: EnemyUnit, slot: UnitSlot): void {
-      const view = this.createUnitView(enemy, slot);
-      this.drawPortrait(
-        view,
-        slot,
-        enemy.id,
-        enemy.name.charAt(0).toUpperCase(),
-        enemy.isBoss ? GOLD : EMBER,
-      );
-      this.drawUnitFooter(view, slot, enemy, EMBER);
-      if (!isAlive(enemy)) {
-        view.setAlpha(0.3);
-        return;
-      }
-      const living = livingEnemies(this.combat);
-      const actsAt = living.length - living.indexOf(enemy);
-      const move = enemyIntent(enemy);
-      if (!move) {
-        return;
-      }
-      const bubbleY = -slot.height / 2 - 36;
-      const bubble = this.add.graphics();
-      const width = Math.max(120, slot.width * 0.95);
-      const color = move.kind === "attack" ? EMBER : STEEL;
-      bubble.fillStyle(PAPER_LIGHT, 0.95);
-      bubble.fillRoundedRect(-width / 2, bubbleY - 20, width, 42, 18);
-      bubble.lineStyle(2, color, 0.9);
-      bubble.strokeRoundedRect(-width / 2, bubbleY - 20, width, 42, 18);
-      view.add(bubble);
-      const headline =
-        move.kind === "attack"
-          ? `Attack ${move.amount}`
-          : `Defend ${move.amount}`;
-      const detail =
-        move.kind === "attack"
-          ? `→ ${describeTarget(move.target)}`
-          : "gains block";
-      view.add(
-        this.makeText(0, bubbleY - 6, headline, {
-          color: cssColor(color),
-          fontSize: 16,
-        }),
-      );
-      view.add(
-        this.makeText(0, bubbleY + 11, `${detail} · acts ${ordinal(actsAt)}`, {
-          color: INK_SOFT,
-          fontSize: 12,
-        }),
-      );
-      if (enemy.isBoss) {
-        view.add(
-          this.makeText(0, -slot.height / 2 - 70, "Tower Heart", {
-            color: cssColor(GOLD),
-            fontSize: 15,
-            stroke: true,
-          }),
-        );
-      }
-    }
-
-    /**
-     * Creates the container a unit is drawn in, with hover and targeting.
-     * @param unit - Party member or enemy
-     * @param slot - Portrait box
-     * @returns The container, already on the unit layer
-     */
-    private createUnitView(
-      unit: CombatUnit,
-      slot: UnitSlot,
-    ): Phaser.GameObjects.Container {
-      const view = this.add.container(slot.x, slot.y);
-      this.units.add(view);
-      this.unitViews.set(unit.id, view);
-      const shadow = this.add.graphics();
-      shadow.fillStyle(0x000000, 0.14);
-      shadow.fillEllipse(0, slot.height / 2 + 2, slot.width * 0.9, 18);
-      view.add(shadow);
-      if (!isAlive(unit)) {
-        return view;
-      }
-      const isTarget = this.isSelectableTarget(unit.id);
-      if (isTarget) {
-        const ring = this.add.graphics();
-        ring.lineStyle(5, GOLD, 0.9);
-        ring.strokeRoundedRect(
-          -slot.width / 2 - 8,
-          -slot.height / 2 - 8,
-          slot.width + 16,
-          slot.height + 16,
-          18,
-        );
-        view.add(ring);
-        this.tweens.add({
-          alpha: 0.35,
-          duration: 520,
-          repeat: -1,
-          targets: ring,
-          yoyo: true,
-        });
-      }
-      const hit = new Phaser.Geom.Rectangle(
-        -slot.width / 2,
-        -slot.height / 2,
-        slot.width,
-        slot.height + 50,
-      );
-      view.setInteractive({
-        hitArea: hit,
-        hitAreaCallback: Phaser.Geom.Rectangle.Contains,
-        useHandCursor: isTarget,
-      });
-      view.on("pointerover", () => this.showTooltip(unit.id, slot));
-      view.on("pointerout", () => this.hideTooltip());
-      view.on(
-        "pointerdown",
-        (
-          pointer: Phaser.Input.Pointer,
-          _x: number,
-          _y: number,
-          event: Phaser.Types.Input.EventData,
-        ) => {
-          if (pointer.rightButtonDown() || !isTarget || !this.selectedCardId) {
-            return;
-          }
-          event.stopPropagation();
-          this.resolvePlay(this.selectedCardId, unit.id);
-        },
-      );
-      return view;
-    }
-
-    /**
-     * Draws a unit's name, health bar, and block badge.
-     * @param view - Unit container
-     * @param slot - Portrait box
-     * @param unit - Party member or enemy
-     * @param accent - Bar color
-     */
-    private drawUnitFooter(
-      view: Phaser.GameObjects.Container,
-      slot: UnitSlot,
-      unit: CombatUnit,
-      accent: number,
-    ): void {
-      view.add(
-        this.makeText(0, slot.height / 2 + 12, unit.name, {
-          color: INK,
-          fontSize: 14,
-          stroke: true,
-          wrapWidth: Math.max(120, slot.width * 1.3),
-        }),
-      );
-      const bar = layoutHealthBar(
-        { ...slot, x: 0, y: 0 },
-        unit.hitPoints,
-        unit.maxHitPoints,
-      );
-      const graphics = this.add.graphics();
-      const left = bar.x - bar.width / 2;
-      const top = bar.y - bar.height / 2;
-      graphics.fillStyle(STONE, 0.45);
-      graphics.fillRoundedRect(left, top, bar.width, bar.height, 8);
-      if (bar.fillRatio > 0) {
-        graphics.fillStyle(accent, 0.95);
-        graphics.fillRoundedRect(
-          left,
-          top,
-          Math.max(10, bar.width * bar.fillRatio),
-          bar.height,
-          8,
-        );
-      }
-      graphics.lineStyle(1.5, STONE_DARK, 0.9);
-      graphics.strokeRoundedRect(left, top, bar.width, bar.height, 8);
-      view.add(graphics);
-      view.add(
-        this.makeText(bar.x, bar.y, isAlive(unit) ? bar.label : "Fallen", {
-          color: "#ffffff",
-          fontSize: 12,
-          stroke: true,
-        }),
-      );
-      if (unit.block > 0) {
-        const badgeX = left - 4;
-        const badge = this.add.graphics();
-        badge.fillStyle(STEEL, 1);
-        badge.fillPoints(
-          vectors([
-            { x: badgeX - 13, y: bar.y - 12 },
-            { x: badgeX + 13, y: bar.y - 12 },
-            { x: badgeX + 11, y: bar.y + 4 },
-            { x: badgeX, y: bar.y + 14 },
-            { x: badgeX - 11, y: bar.y + 4 },
-          ]),
-          true,
-        );
-        view.add(badge);
-        view.add(
-          this.makeText(badgeX, bar.y - 1, String(unit.block), {
-            color: "#ffffff",
-            fontSize: 13,
-          }),
-        );
-      }
-    }
-
-    /**
-     * Four small leaves, filled up to the Coreborn's tier.
-     * @param view - Unit container
-     * @param x - Right edge of the row
-     * @param y - Row center
-     * @param tier - Tier from 1 through 4
-     */
-    private drawTierLeaves(
-      view: Phaser.GameObjects.Container,
-      x: number,
-      y: number,
-      tier: number,
-    ): void {
-      const graphics = this.add.graphics();
-      for (let index = 0; index < 4; index += 1) {
-        const filled = index < tier;
-        const points = leafOutline(
-          x - (3 - index) * 13,
-          y,
-          14,
-          7,
-          -Math.PI / 2 - 0.3,
-        );
-        graphics.fillStyle(filled ? JADE : PAPER_LIGHT, filled ? 0.95 : 0.8);
-        graphics.fillPoints(vectors(points), true);
-        graphics.lineStyle(1, JADE_DARK, 0.8);
-        graphics.strokePoints(vectors(points), true);
-      }
-      view.add(graphics);
-    }
-
-    /**
-     * Draws Aether, piles, the end-turn button, the room banner, and hints.
-     */
-    private drawHud(): void {
-      const {
-        aether,
-        banner,
-        discardPile,
-        drawPile,
-        endTurn: button,
-      } = this.layout;
-      const graphics = this.add.graphics();
-      this.hud.add(graphics);
-
-      // Aether is a dew drop held in a leaf, per the art direction.
-      graphics.fillStyle(JADE, 0.9);
-      graphics.fillPoints(
-        vectors(
-          leafOutline(
-            aether.x,
-            aether.y,
-            aether.radius * 2.5,
-            aether.radius * 1.75,
-            -Math.PI / 2 + 0.5,
-          ),
-        ),
-        true,
-      );
-      graphics.fillStyle(DEW, 1);
-      graphics.fillCircle(aether.x, aether.y + 2, aether.radius * 0.62);
-      graphics.fillStyle(0xffffff, 0.45);
-      graphics.fillCircle(
-        aether.x - aether.radius * 0.2,
-        aether.y - aether.radius * 0.15,
-        aether.radius * 0.18,
-      );
-      this.hud.add(
-        this.makeText(
-          aether.x,
-          aether.y + 3,
-          `${this.combat.aether}/${this.combat.aetherPerTurn}`,
-          {
-            color: "#ffffff",
-            fontSize: Math.round(aether.radius * 0.5),
-            stroke: true,
-          },
-        ),
-      );
-      this.hud.add(
-        this.makeText(aether.x, aether.y + aether.radius + 14, "Aether", {
-          color: INK_SOFT,
-          fontSize: 13,
-        }),
-      );
-
-      this.drawPile(
-        graphics,
-        drawPile.x,
-        drawPile.y,
-        `Draw ${this.combat.drawPile.length}`,
-      );
-      this.drawPile(
-        graphics,
-        discardPile.x,
-        discardPile.y,
-        `Discard ${this.combat.discardPile.length}`,
-      );
-
-      const enabled = !this.busy && this.combat.phase === "player";
-      const buttonView = this.add.container(button.x, button.y);
-      const face = this.add.graphics();
-      face.fillStyle(enabled ? JADE : STONE, 1);
-      face.fillRoundedRect(
-        -button.width / 2,
-        -button.height / 2,
-        button.width,
-        button.height,
-        { bl: 22, br: 6, tl: 6, tr: 22 },
-      );
-      face.lineStyle(2, JADE_DARK, 1);
-      face.strokeRoundedRect(
-        -button.width / 2,
-        -button.height / 2,
-        button.width,
-        button.height,
-        { bl: 22, br: 6, tl: 6, tr: 22 },
-      );
-      buttonView.add(face);
-      buttonView.add(
-        this.makeText(0, -1, this.busy ? "Enemies act…" : "End Turn", {
-          color: "#ffffff",
-          fontSize: 17,
-        }),
-      );
-      buttonView.add(
-        this.makeText(0, button.height / 2 + 12, "E", {
-          color: INK_SOFT,
-          fontSize: 11,
-        }),
-      );
-      if (enabled) {
-        buttonView.setInteractive({
-          hitArea: new Phaser.Geom.Rectangle(
-            -button.width / 2,
-            -button.height / 2,
-            button.width,
-            button.height,
-          ),
-          hitAreaCallback: Phaser.Geom.Rectangle.Contains,
-          useHandCursor: true,
-        });
-        buttonView.on(
-          "pointerdown",
-          (
-            _pointer: Phaser.Input.Pointer,
-            _x: number,
-            _y: number,
-            event: Phaser.Types.Input.EventData,
-          ) => {
-            event.stopPropagation();
-            this.runEnemyTurn();
-          },
-        );
-      }
-      this.hud.add(buttonView);
-
-      const floorLabel = input.room.isBoss
-        ? `Summit · ${input.room.title}`
-        : `Floor ${input.room.floor} of ${input.room.floorCount} · ${input.room.title}`;
-      this.hud.add(
-        this.makeText(banner.x, banner.y, floorLabel, {
-          color: INK,
-          fontSize: 20,
-          stroke: true,
-        }),
-      );
-      this.hud.add(
-        this.makeText(banner.x, banner.y + 24, `Turn ${this.combat.turn}`, {
-          color: INK_SOFT,
-          fontSize: 14,
-          stroke: true,
-        }),
-      );
-
-      const selected = this.selectedCard();
-      if (selected) {
-        const targeting = cardTargeting(selected.definition.rules);
-        const hint =
-          targeting === "enemy"
-            ? `Choose an enemy for ${selected.definition.rules.name} · right-click to cancel`
-            : `Choose an ally to shield with ${selected.definition.rules.name} · right-click to cancel`;
-        this.hud.add(
-          this.makeText(banner.x, banner.y + 50, hint, {
-            color: HINT_TEXT,
-            fontSize: 15,
-            stroke: true,
-          }),
-        );
-      }
-    }
-
-    /**
-     * @param graphics - HUD graphics
-     * @param x - Pile center x
-     * @param y - Pile center y
-     * @param label - Count label
-     */
-    private drawPile(
-      graphics: Phaser.GameObjects.Graphics,
-      x: number,
-      y: number,
-      label: string,
-    ): void {
-      for (let index = 2; index >= 0; index -= 1) {
-        graphics.fillStyle(index === 0 ? PAPER_LIGHT : SAGE, 1);
-        graphics.fillRoundedRect(
-          x - 18 + index * 3,
-          y - 24 - index * 3,
-          36,
-          48,
-          6,
-        );
-        graphics.lineStyle(1.5, STONE_DARK, 0.8);
-        graphics.strokeRoundedRect(
-          x - 18 + index * 3,
-          y - 24 - index * 3,
-          36,
-          48,
-          6,
-        );
-      }
-      this.hud.add(
-        this.makeText(x, y + 36, label, { color: INK_SOFT, fontSize: 13 }),
-      );
-    }
-
-    /**
-     * Builds one interactive hand card. Hover lifts it; click plays or selects it.
-     * @param slot - Positioned hand slot
-     * @returns Card state the scene eases each frame
-     */
-    private createHandCard(slot: CardSlot): HandCard {
-      const card = this.combat.hand[slot.index] as CombatCard;
-      const motion = cardHoverMotion(slot.y, slot.height);
-      // A card waiting for a target rises less than a hovered one, so the
-      // units it can be aimed at stay visible above it.
-      const selectedY = motion.rest.y - motion.lift * SELECTED_LIFT_SHARE;
-      const container = this.add.container(slot.x, slot.y);
-      this.drawCardFace(container, card, slot);
-      const affordable = canAfford(this.combat, card.instanceId) && !this.busy;
-      container.setAlpha(affordable ? 1 : 0.5);
-      const hit = new Phaser.Geom.Rectangle(
-        -slot.width / 2,
-        -slot.height / 2,
-        slot.width,
-        slot.height,
-      );
-      container.setInteractive({
-        hitArea: hit,
-        hitAreaCallback: Phaser.Geom.Rectangle.Contains,
-        useHandCursor: true,
-      });
-      const isSelected = card.instanceId === this.selectedCardId;
-      const handCard: HandCard = {
-        cardId: card.instanceId,
-        container,
-        height: slot.height,
-        hit,
-        hoverScale: motion.hover.scale,
-        hoverY: motion.hover.y,
-        index: slot.index,
-        lift: motion.lift,
-        restY: motion.rest.y,
-        targetScale: isSelected ? motion.hover.scale : motion.rest.scale,
-        targetY: isSelected ? selectedY : motion.rest.y,
-        width: slot.width,
-      };
-      if (isSelected) {
-        container.setDepth(HOVER_DEPTH);
-        container.setPosition(slot.x, selectedY);
-        container.setScale(motion.hover.scale);
-      } else {
-        container.setDepth(slot.index);
-      }
-      this.bindCardHover(handCard);
-      container.on(
-        "pointerdown",
-        (
-          pointer: Phaser.Input.Pointer,
-          _x: number,
-          _y: number,
-          event: Phaser.Types.Input.EventData,
-        ) => {
-          if (pointer.rightButtonDown()) {
-            return;
-          }
-          event.stopPropagation();
-          this.onCardClicked(card.instanceId);
-        },
-      );
-      return handCard;
-    }
-
-    /**
-     * Paints a card: leaf-cornered paper, cost leaf, title, art, rules, owner.
-     * @param container - Card container, centered on the card
-     * @param card - Card in hand
-     * @param slot - Card size
-     */
-    private drawCardFace(
-      container: Phaser.GameObjects.Container,
-      card: CombatCard,
-      slot: CardSlot,
-    ): void {
-      const { rules } = card.definition;
-      const accent = ownerColor.get(card.ownerId) ?? JADE;
-      const left = -slot.width / 2;
-      const top = -slot.height / 2;
-      const body = this.add.graphics();
-      const radius = { bl: 18, br: 6, tl: 6, tr: 18 };
-      body.fillStyle(0x000000, 0.16);
-      body.fillRoundedRect(left + 3, top + 5, slot.width, slot.height, radius);
-      body.fillStyle(PAPER_LIGHT, 1);
-      body.fillRoundedRect(left, top, slot.width, slot.height, radius);
-      body.lineStyle(
-        card.instanceId === this.selectedCardId ? 4 : 2,
-        card.instanceId === this.selectedCardId ? GOLD : STONE_DARK,
-        1,
-      );
-      body.strokeRoundedRect(left, top, slot.width, slot.height, radius);
-      body.fillStyle(accent, 0.9);
-      body.fillRect(left + 6, top + slot.height - 16, slot.width - 12, 10);
-      container.add(body);
-
-      const panels = layoutCardPanels({
-        height: slot.height,
-        width: slot.width,
-        x: 0,
-        y: 0,
-      });
-      const artKey = cardImageKey(card.definition.id);
-      if (this.textures.exists(artKey)) {
-        this.addContainedImage(
-          artKey,
-          panels.art.x,
-          panels.art.y,
-          panels.art.width,
-          panels.art.height,
-          container,
-        );
-      } else {
-        const wash = this.add.graphics();
-        this.paintWash(
-          panels.art.x,
-          panels.art.y,
-          panels.art.width * 0.5,
-          kindColor(rules.effects[0]?.kind),
-          hashSeed(card.definition.id),
-          wash,
-        );
-        this.paintLeaf(
-          panels.art.x,
-          panels.art.y,
-          panels.art.height * 0.7,
-          -Math.PI / 2 + 0.6,
-          kindColor(rules.effects[0]?.kind),
-          0.55,
-          wash,
-        );
-        container.add(wash);
-      }
-      container.add(
-        this.makeText(panels.title.x + 8, panels.title.y, rules.name, {
-          color: INK,
-          fontSize: Math.max(
-            9,
-            Math.min(13, Math.round(slot.width * 0.105)) -
-              (rules.name.length > 14 ? 2 : 0),
-          ),
-          wrapWidth: panels.title.width - 20,
-        }),
-      );
-      const rulesText = rules.effects.map(describeEffect).join("\n");
-      container.add(
-        this.makeText(panels.rules.x, panels.rules.y - 4, rulesText, {
-          color: INK,
-          fontSize: Math.max(9, Math.min(12, Math.round(slot.width * 0.092))),
-          wrapWidth: panels.rules.width,
-        }),
-      );
-      container.add(
-        this.makeText(
-          0,
-          top + slot.height - 11,
-          ownerName.get(card.ownerId) ?? "",
-          {
-            color: "#ffffff",
-            fontSize: 9,
-          },
-        ),
-      );
-
-      const cost = this.add.graphics();
-      cost.fillStyle(JADE, 1);
-      cost.fillPoints(
-        vectors(leafOutline(left + 10, top + 10, 34, 24, -Math.PI / 4)),
-        true,
-      );
-      cost.lineStyle(1.5, JADE_DARK, 1);
-      cost.strokePoints(
-        vectors(leafOutline(left + 10, top + 10, 34, 24, -Math.PI / 4)),
-        true,
-      );
-      container.add(cost);
-      container.add(
-        this.makeText(left + 10, top + 10, String(rules.aetherCost), {
-          color: "#ffffff",
-          fontSize: 15,
-          stroke: true,
-        }),
-      );
-    }
-
-    /**
-     * Points a card at its hovered pose, then back at the hand on leave.
-     * A selected card stays lifted.
-     * @param card - Card to bind
-     */
-    private bindCardHover(card: HandCard): void {
-      const left = -card.width / 2;
-      const top = -card.height / 2;
-      card.container.on("pointerover", () => {
-        card.hit.setTo(left, top, card.width, card.height + card.lift);
-        card.container.setDepth(HOVER_DEPTH);
-        card.targetScale = card.hoverScale;
-        card.targetY = card.hoverY;
-      });
-      card.container.on("pointerout", () => {
-        if (card.cardId === this.selectedCardId) {
+        if (!slot) {
           return;
         }
-        card.hit.setTo(left, top, card.width, card.height);
-        card.targetScale = 1;
-        card.targetY = card.restY;
+        const accent = enemy.isBoss ? PALETTE.gold : PALETTE.ember;
+        const view = new UnitView(
+          this.kit,
+          enemy,
+          "enemy",
+          slot,
+          accent,
+          cues.get(enemy.id) ?? {},
+        );
+        view.container.setDepth(DEPTH.units);
+        this.unitViews.set(enemy.id, view);
+      });
+      this.hud?.destroy();
+      this.hud = new BattleHud(this.kit, this.layout, floorLabel(input.room));
+      this.hud.container.setDepth(DEPTH.hud);
+      this.refan();
+    }
+
+    /**
+     * @param state - Battle to read
+     * @returns Incoming damage for each party member and action order for each enemy
+     */
+    private unitCues(state: CombatState): Map<string, UnitCues> {
+      const cues = new Map<string, UnitCues>();
+      const incoming = incomingDamage(state);
+      for (const unit of state.party) {
+        cues.set(unit.id, { incoming: incoming.get(unit.id) ?? 0 });
+      }
+      const living = livingEnemies(state);
+      living.forEach((enemy, index) => {
+        cues.set(enemy.id, { actsAt: living.length - index });
+      });
+      return cues;
+    }
+
+    // ---- Hand -------------------------------------------------------------
+
+    /**
+     * Fans the hand around the hovered card, leaving out the held card.
+     */
+    private refan(): void {
+      const poses = layoutHandFan(
+        this.hand.length,
+        this.layout.hand,
+        this.held ? undefined : this.hovered,
+      );
+      this.hand.forEach((card, index) => {
+        const pose = poses[index];
+        if (!pose) {
+          return;
+        }
+        card.target = pose;
+        const raised = index === this.hovered && !this.held;
+        card.container.setDepth(
+          raised ? DEPTH.cardHovered : DEPTH.card + index,
+        );
+      });
+      this.refreshGlows();
+    }
+
+    /**
+     * @returns Each hand card's resting pose, for picking
+     */
+    private restPoses(): CardPose[] {
+      return layoutHandFan(this.hand.length, this.layout.hand);
+    }
+
+    /**
+     * Shows which cards can be played now, whether letting go of the held
+     * card would play it, and the HUD.
+     */
+    private refreshGlows(): void {
+      for (const card of this.hand) {
+        const affordable = canAfford(this.combat, card.id);
+        const playable = affordable && !this.inputLocked;
+        card.setGlow(playable ? "playable" : "none", affordable);
+      }
+      const held = this.held;
+      if (held) {
+        const ready = this.releaseNow().kind === "play";
+        held.view.setGlow(ready ? "ready" : "playable", true);
+      }
+      this.refreshHud();
+    }
+
+    /**
+     * Brings cards that are in the step's hand, and still in the true hand,
+     * in from the draw pile one after another.
+     * @param state - State after the draw
+     */
+    private dealFrom(state: CombatState): void {
+      const shown = new Set(this.hand.map((card) => card.id));
+      const live = new Set(this.combat.hand.map((card) => card.instanceId));
+      const heldId = this.held?.view.id;
+      const arriving = state.hand.filter(
+        (card) =>
+          !shown.has(card.instanceId) &&
+          live.has(card.instanceId) &&
+          card.instanceId !== heldId,
+      );
+      arriving.forEach((card, index) => {
+        this.time.delayedCall(wait(DRAW_STAGGER_MS) * index, () => {
+          this.addCardView(card);
+          playVaried("draw");
+        });
       });
     }
 
     /**
-     * Plays a card at once when it needs no choice, otherwise selects it.
-     * Clicking the selected card again puts it back.
-     * @param cardId - Hand card instance id
+     * Adds one card to the hand, appearing at the draw pile, in the same
+     * order as the true hand.
+     * @param card - Card drawn
      */
-    private onCardClicked(cardId: string): void {
-      if (this.busy || this.combat.phase !== "player") {
-        return;
-      }
-      if (this.selectedCardId === cardId) {
-        this.selectedCardId = undefined;
-        this.draw();
-        return;
-      }
-      const card = this.combat.hand.find(
-        (entry) => entry.instanceId === cardId,
+    private addCardView(card: CombatCard): void {
+      const present =
+        this.hand.some((view) => view.id === card.instanceId) ||
+        this.held?.view.id === card.instanceId;
+      const live = this.combat.hand.some(
+        (entry) => entry.instanceId === card.instanceId,
       );
+      if (this.finished || present || !live) {
+        return;
+      }
+      const { drawPile, hand } = this.layout;
+      const view = new CardView(
+        this.kit,
+        card,
+        { height: hand.cardHeight, width: hand.cardWidth },
+        ownerColor.get(card.ownerId) ?? PALETTE.jade,
+        ownerName.get(card.ownerId) ?? "",
+        { rotation: -0.5, scale: 0.25, x: drawPile.x, y: drawPile.y },
+      );
+      this.hand.push(view);
+      this.sortHand();
+      this.refan();
+    }
+
+    /**
+     * Orders the hand views the same way as the true hand.
+     */
+    private sortHand(): void {
+      const order = new Map(
+        this.combat.hand.map((entry, index) => [entry.instanceId, index]),
+      );
+      this.hand.sort(
+        (left, right) => (order.get(left.id) ?? 0) - (order.get(right.id) ?? 0),
+      );
+    }
+
+    /**
+     * Sends cards to the discard pile, leaving the hand one by one.
+     * @param cards - Cards leaving the hand
+     */
+    private discardViews(cards: CardView[]): void {
+      const { discardPile } = this.layout;
+      cards.forEach((card, index) => {
+        card.container.setDepth(DEPTH.cardFlying);
+        card.flyTo(
+          { rotation: 0.6, scale: 0.2, x: discardPile.x, y: discardPile.y },
+          wait(320),
+          { alpha: 0.4, delay: wait(45) * index, ease: "Cubic.easeIn" },
+          () => card.destroy(),
+        );
+      });
+    }
+
+    /**
+     * Burns cards out of the hand when their owner falls.
+     * @param ownerId - Fallen party member
+     */
+    private burnCardsOf(ownerId: string): void {
+      const lost = this.hand.filter((card) => card.card.ownerId === ownerId);
+      if (lost.length === 0) {
+        return;
+      }
+      this.hand = this.hand.filter((card) => card.card.ownerId !== ownerId);
+      for (const card of lost) {
+        const { rotation, x, y } = card.container;
+        card.flyTo(
+          { rotation, scale: 0.8, x, y: y - 80 },
+          wait(500),
+          { alpha: 0, ease: "Quad.easeIn" },
+          () => card.destroy(),
+        );
+      }
+      this.refan();
+    }
+
+    // ---- Input ------------------------------------------------------------
+
+    /**
+     * Moves the held card and arrow, or hovers hand cards, the End Turn
+     * button, and units.
+     * @param pointer - Pointer that moved
+     */
+    private onPointerMove(pointer: Phaser.Input.Pointer): void {
+      if (this.held) {
+        this.moveHeld(pointer.x, pointer.y);
+        return;
+      }
+      if (this.finished) {
+        return;
+      }
+      const onButton = this.hud?.isOnButton(pointer.x, pointer.y) ?? false;
+      this.hud?.setButtonHover(onButton && !this.inputLocked);
+      const index = this.pickCard(pointer.x, pointer.y);
+      if (index !== this.hovered) {
+        this.hovered = index;
+        if (index !== undefined) {
+          playSound("hover");
+        }
+        this.refan();
+      }
+      const overUnit =
+        index === undefined ? this.unitAt(pointer.x, pointer.y) : undefined;
+      this.showTooltip(overUnit);
+      const interactive = onButton || index !== undefined;
+      this.input.setDefaultCursor(
+        interactive && !this.inputLocked ? "pointer" : "default",
+      );
+    }
+
+    /**
+     * Picks up a card, presses End Turn, settles a card held by a click,
+     * or cancels on right click.
+     * @param pointer - Pointer that was pressed
+     */
+    private onPointerDown(pointer: Phaser.Input.Pointer): void {
+      if (pointer.rightButtonDown()) {
+        this.cancelHeld();
+        return;
+      }
+      if (this.held?.mode === "hold") {
+        this.moveHeld(pointer.x, pointer.y);
+        this.releaseHeld();
+        return;
+      }
+      if (this.inputLocked || this.finished) {
+        return;
+      }
+      if (this.hud?.isOnButton(pointer.x, pointer.y)) {
+        this.runEnemyTurn();
+        return;
+      }
+      const index = this.pickCard(pointer.x, pointer.y);
+      const card = index === undefined ? undefined : this.hand[index];
+      if (card) {
+        this.pickUp(card, pointer.x, pointer.y, "drag");
+      }
+    }
+
+    /**
+     * Plays or returns a dragged card. A quick click instead keeps the
+     * card held until the next click.
+     * @param pointer - Pointer that was released
+     */
+    private onPointerUp(pointer: Phaser.Input.Pointer): void {
+      const held = this.held;
+      if (held?.mode !== "drag") {
+        return;
+      }
+      const travel = Math.hypot(
+        pointer.x - held.startX,
+        pointer.y - held.startY,
+      );
+      const quick = this.time.now - held.pressedAt < CLICK_MS;
+      if (travel < CLICK_SLOP_PX && quick) {
+        held.mode = "hold";
+        return;
+      }
+      this.moveHeld(pointer.x, pointer.y);
+      this.releaseHeld();
+    }
+
+    /**
+     * Drops hover state when the pointer leaves the canvas.
+     */
+    private onPointerLeave(): void {
+      if (this.held?.mode === "drag") {
+        this.cancelHeld();
+      }
+      this.hovered = undefined;
+      this.showTooltip(undefined);
+      this.hud?.setButtonHover(false);
+      this.refan();
+    }
+
+    /**
+     * Number keys pick up or play cards, E ends the turn, Escape cancels.
+     * @param event - Keyboard event
+     */
+    private onKeyDown(event: KeyboardEvent): void {
+      if (event.key === "Escape") {
+        this.cancelHeld();
+        return;
+      }
+      if (this.inputLocked || this.finished) {
+        return;
+      }
+      if (event.key === "e" || event.key === "E") {
+        this.runEnemyTurn();
+        return;
+      }
+      const index = Number.parseInt(event.key, 10) - 1;
+      const card = Number.isNaN(index) ? undefined : this.hand[index];
       if (!card) {
         return;
       }
-      if (!canAfford(this.combat, cardId)) {
-        this.showNotice("Not enough Aether");
-        return;
+      this.cancelHeld();
+      const automatic = automaticTarget(this.combat, card.card);
+      const targeting = cardTargeting(card.card.definition.rules);
+      const playsAtOnce = targeting === "none" || automatic !== undefined;
+      const pointer = this.input.activePointer;
+      this.pickUp(card, pointer.x, pointer.y, "hold");
+      if (playsAtOnce && this.held) {
+        this.play(this.held, automatic);
       }
-      const needsChoice =
-        cardTargeting(card.definition.rules) !== "none" &&
-        automaticTarget(this.combat, card) === undefined;
-      if (needsChoice) {
-        playSound("select");
-        this.selectedCardId = cardId;
-        this.draw();
-        return;
-      }
-      this.resolvePlay(cardId);
     }
 
     /**
-     * Plays a card and animates what it did.
-     * @param cardId - Hand card instance id
-     * @param targetId - Chosen enemy or ally
+     * @param x - Pointer x
+     * @param y - Pointer y
+     * @returns Index of the hand card under the pointer
      */
-    private resolvePlay(cardId: string, targetId?: string): void {
-      const result = playCard(this.combat, cardId, targetId);
-      this.selectedCardId = undefined;
-      if (!result.ok) {
-        this.showNotice(
-          result.reason === "not-enough-aether"
-            ? "Not enough Aether"
-            : "That card needs a target",
-        );
-        this.draw();
-        return;
-      }
-      this.applyStep(result.step);
-      this.checkFinished();
+    private pickCard(x: number, y: number): number | undefined {
+      const index = this.hovered;
+      const view = index === undefined ? undefined : this.hand[index];
+      const raised =
+        view && index !== undefined ? { index, pose: view.target } : undefined;
+      const { cardHeight, cardWidth } = this.layout.hand;
+      return pickHandCard(
+        { x, y },
+        this.restPoses(),
+        { height: cardHeight, width: cardWidth },
+        raised,
+      );
     }
 
     /**
-     * Ends the turn and plays each enemy action one at a time.
+     * Lifts a card out of the hand. An aimed card moves to the middle and
+     * an arrow follows the pointer; any other card follows the pointer.
+     * @param view - Card picked up
+     * @param x - Pointer x
+     * @param y - Pointer y
+     * @param mode - Dragging with the button down, or held after a click
      */
-    private runEnemyTurn(): void {
-      if (this.busy || this.combat.phase !== "player") {
+    private pickUp(
+      view: CardView,
+      x: number,
+      y: number,
+      mode: HeldCard["mode"],
+    ): void {
+      if (!canAfford(this.combat, view.id)) {
+        view.refuse();
+        this.stage.showNotice("Not enough Aether", this.layout.playLineY - 50);
         return;
       }
-      this.busy = true;
-      this.selectedCardId = undefined;
-      const steps = endTurn(this.combat);
-      this.combat = {
-        ...this.combat,
-        discardPile: [...this.combat.discardPile, ...this.combat.hand],
-        hand: [],
+      playSound("select");
+      this.hand = this.hand.filter((card) => card !== view);
+      this.hovered = undefined;
+      this.showTooltip(undefined);
+      view.container.setDepth(DEPTH.cardHeld);
+      this.held = {
+        mode,
+        pressedAt: this.time.now,
+        startX: x,
+        startY: y,
+        targeting: cardTargeting(view.card.definition.rules),
+        view,
       };
-      this.draw();
-      this.showBanner("Enemy turn");
-      steps.forEach((step, index) => {
-        this.time.delayedCall(wait(STEP_DELAY_MS) * (index + 1), () => {
-          const isLast = index === steps.length - 1;
-          if (isLast) {
-            this.busy = false;
-          }
-          this.applyStep(step);
-          if (isLast) {
-            this.checkFinished();
-          }
-        });
+      this.moveHeld(x, y);
+      this.refan();
+    }
+
+    /**
+     * Moves the held card or its arrow, and marks what it would land on.
+     * @param x - Pointer x
+     * @param y - Pointer y
+     */
+    private moveHeld(x: number, y: number): void {
+      const held = this.held;
+      if (!held) {
+        return;
+      }
+      const { aimPose, hand } = this.layout;
+      held.view.target =
+        held.targeting === "none"
+          ? { rotation: 0, scale: 1.12, x, y: y + hand.cardHeight * 0.2 }
+          : { rotation: 0, scale: 1.12, x: aimPose.x, y: aimPose.y };
+      held.targetId = this.targetAt(x, y, held.targeting);
+      for (const [unitId, view] of this.unitViews) {
+        view.setAim(this.aimMarkFor(unitId, held));
+      }
+      this.refreshGlows();
+    }
+
+    /**
+     * @param unitId - Unit to mark
+     * @param held - Card being aimed
+     * @returns Locked under the arrow, candidate when it is a legal target
+     */
+    private aimMarkFor(unitId: string, held: HeldCard): AimMark {
+      if (!this.isLegalTarget(unitId, held.targeting)) {
+        return "none";
+      }
+      return unitId === held.targetId ? "locked" : "candidate";
+    }
+
+    /**
+     * @returns What letting go of the held card right now would do
+     */
+    private releaseNow(): CardRelease {
+      const held = this.held;
+      if (!held) {
+        return { kind: "cancel" };
+      }
+      return resolveCardRelease({
+        hoveredTargetId: held.targetId,
+        onlyTargetId: automaticTarget(this.combat, held.view.card),
+        playLineY: this.layout.playLineY,
+        pointerY: this.input.activePointer.y,
+        targeting: held.targeting,
       });
     }
 
     /**
-     * Shows one step: new state, then floaters and motion for its events.
-     * @param step - State and the events that produced it
+     * Plays the held card where it was let go, or returns it to the hand.
      */
-    private applyStep(step: CombatStep): void {
-      this.combat = step.state;
-      this.draw();
-      for (const sound of stepSounds(step.events)) {
-        playSound(sound);
+    private releaseHeld(): void {
+      const held = this.held;
+      if (!held) {
+        return;
       }
-      let stack = 0;
-      for (const event of step.events) {
-        this.animateEvent(event, stack);
-        stack += 1;
+      const release = this.releaseNow();
+      if (release.kind === "cancel") {
+        this.cancelHeld();
+        return;
+      }
+      this.play(held, release.targetId);
+    }
+
+    /**
+     * Returns the held card to the hand.
+     */
+    private cancelHeld(): void {
+      const held = this.held;
+      if (!held) {
+        return;
+      }
+      this.held = undefined;
+      this.clearAim();
+      this.hand.push(held.view);
+      this.sortHand();
+      this.refan();
+    }
+
+    /**
+     * Clears the arrow and every reticle.
+     */
+    private clearAim(): void {
+      this.arrow.clear();
+      for (const view of this.unitViews.values()) {
+        view.setAim("none");
       }
     }
 
     /**
-     * @param event - One combat event
-     * @param stack - Position among this step's events, used to offset floaters
+     * Resolves the held card, flies it out, and queues its effects.
+     * @param held - Card being played
+     * @param targetId - Unit it was played on
      */
-    private animateEvent(event: CombatEvent, stack: number): void {
-      const delay = stack * 90;
-      this.sprites.play(event);
-      if (event.kind === "damage") {
-        const target = this.unitViews.get(event.targetId);
-        this.lunge(event.sourceId, event.targetId);
-        if (target) {
-          this.shake(target);
-          if (event.dealt > 0) {
-            this.flash(event.targetId, target);
+    private play(held: HeldCard, targetId: string | undefined): void {
+      const result = playCard(this.combat, held.view.id, targetId);
+      if (!result.ok) {
+        held.view.refuse();
+        const reason =
+          result.reason === "not-enough-aether"
+            ? "Not enough Aether"
+            : "Aim it at a target";
+        this.stage.showNotice(reason, this.layout.playLineY - 50);
+        this.cancelHeld();
+        return;
+      }
+      this.held = undefined;
+      this.clearAim();
+      this.combat = result.step.state;
+      playVaried("whoosh");
+      this.flyPlayedCard(held.view, targetId);
+      this.refan();
+      this.enqueue(result.step);
+    }
+
+    /**
+     * Snaps a played card toward its target, then lets it fold into the
+     * discard pile.
+     * @param view - Played card
+     * @param targetId - Unit it was played on
+     */
+    private flyPlayedCard(view: CardView, targetId: string | undefined): void {
+      const { aimPose, discardPile } = this.layout;
+      const target = targetId ? this.unitViews.get(targetId) : undefined;
+      view.container.setDepth(DEPTH.cardFlying);
+      const toward = target
+        ? {
+            x: aimPose.x + (target.chest.x - aimPose.x) * 0.25,
+            y: aimPose.y + (target.chest.y - aimPose.y) * 0.25,
           }
-          if (isHeavyImpact(event)) {
-            this.shakeCamera();
-          }
-          const text = event.dealt > 0 ? `−${event.dealt}` : "Blocked";
-          this.floatAt(
-            target.x,
-            target.y - 20,
-            text,
-            event.dealt > 0 ? DAMAGE_TEXT : BLOCK_TEXT,
-            delay,
-            event.dealt > 0 ? 34 : 24,
-          );
-          if (event.blocked > 0 && event.dealt > 0) {
-            this.floatAt(
-              target.x,
-              target.y + 14,
-              `${event.blocked} blocked`,
-              BLOCK_TEXT,
-              delay + 60,
-              16,
-            );
-          }
+        : { x: aimPose.x, y: aimPose.y - 30 };
+      view.flyTo(
+        { rotation: 0, scale: 1.18, x: toward.x, y: toward.y },
+        wait(140),
+        { ease: "Quad.easeOut" },
+        () =>
+          view.flyTo(
+            { rotation: 0.8, scale: 0.2, x: discardPile.x, y: discardPile.y },
+            wait(340),
+            { alpha: 0.3, delay: wait(120), ease: "Cubic.easeIn" },
+            () => view.destroy(),
+          ),
+      );
+    }
+
+    /**
+     * Ends the turn: the hand is discarded and each enemy acts in turn.
+     */
+    private runEnemyTurn(): void {
+      if (this.inputLocked || this.finished || this.combat.phase !== "player") {
+        return;
+      }
+      this.cancelHeld();
+      const steps = endTurn(this.combat);
+      const last = steps[steps.length - 1];
+      if (!last) {
+        return;
+      }
+      playSound("confirm");
+      this.inputLocked = true;
+      this.hovered = undefined;
+      this.showTooltip(undefined);
+      this.discardViews(this.hand);
+      this.hand = [];
+      this.combat = last.state;
+      this.hud?.setButtonHover(false);
+      this.input.setDefaultCursor("default");
+      this.refreshGlows();
+      this.stage.showBanner(
+        "Enemy Turn",
+        this.layout.groundY * 0.4,
+        PALETTE.damageText,
+      );
+      this.time.delayedCall(wait(650), () => {
+        for (const step of steps) {
+          this.enqueue(step);
         }
+      });
+    }
+
+    /**
+     * @param x - Pointer x
+     * @param y - Pointer y
+     * @param targeting - What the held card aims at
+     * @returns The legal target under the pointer, if any
+     */
+    private targetAt(
+      x: number,
+      y: number,
+      targeting: CardTargeting,
+    ): string | undefined {
+      if (targeting === "none") {
+        return undefined;
+      }
+      const unitId = this.unitAt(x, y);
+      if (unitId === undefined || !this.isLegalTarget(unitId, targeting)) {
+        return undefined;
+      }
+      return unitId;
+    }
+
+    /**
+     * @param x - Pointer x
+     * @param y - Pointer y
+     * @returns The standing unit whose figure is under the pointer
+     */
+    private unitAt(x: number, y: number): string | undefined {
+      for (const [unitId, view] of this.unitViews) {
+        const { bottom, left, right, top } = view.bounds;
+        const inside = x >= left && x <= right && y >= top && y <= bottom;
+        if (inside && view.standing) {
+          return unitId;
+        }
+      }
+      return undefined;
+    }
+
+    /**
+     * @param unitId - Unit to test
+     * @param targeting - What the card aims at
+     * @returns Whether the card may be played on this unit now
+     */
+    private isLegalTarget(unitId: string, targeting: CardTargeting): boolean {
+      if (targeting === "enemy") {
+        return livingEnemies(this.combat).some((enemy) => enemy.id === unitId);
+      }
+      if (targeting === "ally") {
+        return livingParty(this.combat).some((unit) => unit.id === unitId);
+      }
+      return false;
+    }
+
+    /**
+     * Draws the curved chevron arrow from the held card to the pointer.
+     * It turns ember over an enemy and jade over an ally.
+     */
+    private drawArrow(): void {
+      const held = this.held;
+      this.arrow.clear();
+      if (!held || held.targeting === "none") {
+        return;
+      }
+      const pointer = this.input.activePointer;
+      const from = held.view.top;
+      const to = { x: pointer.x, y: pointer.y };
+      const marks = arrowCurve(
+        from,
+        to,
+        arrowMarkCount(from, to, ARROW_SPACING),
+      );
+      let color: number = PALETTE.paperLight;
+      if (held.targetId !== undefined) {
+        color = held.targeting === "enemy" ? PALETTE.ember : PALETTE.jade;
+      }
+      marks.forEach((mark, index) => {
+        const isHead = index === marks.length - 1;
+        const size = isHead ? 20 : 7 + (index / marks.length) * 6;
+        this.drawChevron(mark.x, mark.y, mark.angle, size, color, isHead);
+      });
+    }
+
+    /**
+     * @param x - Chevron tip x
+     * @param y - Chevron tip y
+     * @param angle - Heading in radians
+     * @param size - Chevron length
+     * @param color - Fill color
+     * @param filled - Draw a solid arrowhead instead of an open chevron
+     */
+    private drawChevron(
+      x: number,
+      y: number,
+      angle: number,
+      size: number,
+      color: number,
+      filled: boolean,
+    ): void {
+      const back = angle + Math.PI;
+      const wing = 0.6;
+      const left = {
+        x: x + Math.cos(back - wing) * size,
+        y: y + Math.sin(back - wing) * size,
+      };
+      const right = {
+        x: x + Math.cos(back + wing) * size,
+        y: y + Math.sin(back + wing) * size,
+      };
+      if (filled) {
+        const tipX = x + Math.cos(angle) * 3;
+        const tipY = y + Math.sin(angle) * 3;
+        this.arrow.fillStyle(PALETTE.inkNumber, 0.9);
+        this.arrow.fillTriangle(tipX, tipY, left.x, left.y, right.x, right.y);
+        this.arrow.fillStyle(color, 1);
+        this.arrow.fillTriangle(x, y, left.x, left.y, right.x, right.y);
+        return;
+      }
+      this.arrow.lineStyle(7, PALETTE.inkNumber, 0.85);
+      this.arrow.lineBetween(left.x, left.y, x, y);
+      this.arrow.lineBetween(right.x, right.y, x, y);
+      this.arrow.lineStyle(4, color, 1);
+      this.arrow.lineBetween(left.x, left.y, x, y);
+      this.arrow.lineBetween(right.x, right.y, x, y);
+    }
+
+    // ---- Step playback ----------------------------------------------------
+
+    /**
+     * Adds a step to the playback queue, starting it if nothing is playing.
+     * @param step - State and the events that produced it
+     */
+    private enqueue(step: CombatStep): void {
+      this.queue.push(step);
+      if (!this.animating) {
+        this.playNext();
+      }
+    }
+
+    /**
+     * Plays the next queued step on its timeline, then settles the field
+     * to its state and moves on. When the queue empties, a finished
+     * battle shows its outcome.
+     */
+    private playNext(): void {
+      const step = this.queue.shift();
+      if (!step) {
+        this.animating = false;
+        this.afterPlayback();
+        return;
+      }
+      this.animating = true;
+      const timeline = scheduleStep(step.events, input.pace);
+      for (const beat of timeline.beats) {
+        const { event } = beat;
+        if (beat.windupAt !== undefined && event.kind === "damage") {
+          this.time.delayedCall(beat.windupAt, () => this.windUp(event));
+        }
+        this.time.delayedCall(beat.at, () =>
+          this.animateEvent(event, step.state),
+        );
+      }
+      this.time.delayedCall(timeline.duration, () => {
+        this.settle(step.state);
+        this.playNext();
+      });
+    }
+
+    /**
+     * Snaps every unit to the shown state, so health, block, and intents
+     * are exact once a step's motion is done. While more steps wait, the
+     * step's own state is shown; once caught up, the true state is.
+     * @param state - State after the step
+     */
+    private settle(state: CombatState): void {
+      const source = this.queue.length === 0 ? this.combat : state;
+      const cues = this.unitCues(source);
+      for (const unit of [...source.party, ...source.enemies]) {
+        this.unitViews.get(unit.id)?.sync(unit, cues.get(unit.id) ?? {});
+      }
+      const live = new Set(this.combat.hand.map((card) => card.instanceId));
+      const stale = this.hand.filter((card) => !live.has(card.id));
+      if (stale.length > 0) {
+        this.hand = this.hand.filter((card) => live.has(card.id));
+        this.discardViews(stale);
+      }
+      this.refan();
+    }
+
+    /**
+     * Starts an attacker's dash and swing so the blow lands on the beat.
+     * @param event - The blow
+     */
+    private windUp(event: Extract<CombatEvent, { kind: "damage" }>): void {
+      const source = this.unitViews.get(event.sourceId);
+      const target = this.unitViews.get(event.targetId);
+      if (!source || !target) {
+        return;
+      }
+      playVaried("slash");
+      source.container.setDepth(DEPTH.units + 1);
+      source.dash(target.feet.x, wait(DASH_IMPACT_MS));
+      this.sprites.playMove(event.sourceId, "attack");
+      this.time.delayedCall(wait(DASH_IMPACT_MS + 400), () =>
+        source.container.setDepth(DEPTH.units),
+      );
+    }
+
+    /**
+     * Shows one event as it lands.
+     * @param event - One combat event
+     * @param state - State after the step it belongs to
+     */
+    private animateEvent(event: CombatEvent, state: CombatState): void {
+      const sound = soundForEvent(event);
+      if (sound && event.kind !== "card-played") {
+        playVaried(sound);
+      }
+      if (event.kind === "damage") {
+        this.showHit(event);
         return;
       }
       if (event.kind === "block") {
-        const target = this.unitViews.get(event.targetId);
-        if (target) {
-          this.floatAt(
-            target.x,
-            target.y - 10,
-            `+${event.amount} block`,
-            BLOCK_TEXT,
-            delay,
-            22,
-          );
+        this.sprites.play(event);
+        const view = this.unitViews.get(event.targetId);
+        if (view) {
+          view.gainBlock(event.amount);
+          const { x, y } = view.chest;
+          this.stage.popNumber(x, y, `+${event.amount}`, PALETTE.blockText, 26);
         }
         return;
       }
       if (event.kind === "aether") {
-        this.floatAt(
-          this.layout.aether.x,
-          this.layout.aether.y - 40,
-          `+${event.amount} Aether`,
-          AETHER_TEXT,
-          delay,
-          22,
-        );
+        const { aether } = this.layout;
+        const text = `+${event.amount} Aether`;
+        this.stage.float(aether.x, aether.y - 50, text, PALETTE.aetherText, 22);
         return;
       }
       if (event.kind === "draw") {
-        this.floatAt(
-          this.layout.drawPile.x + 30,
-          this.layout.drawPile.y - 50,
-          `+${event.count} ${event.count === 1 ? "card" : "cards"}`,
-          INK,
-          delay,
-          18,
-        );
+        this.dealFrom(state);
         return;
       }
       if (event.kind === "shuffle") {
-        this.floatAt(
-          this.layout.drawPile.x + 30,
-          this.layout.drawPile.y - 76,
-          "Reshuffled",
-          INK_SOFT,
-          delay,
-          15,
-        );
+        const { drawPile } = this.layout;
+        const x = drawPile.x + 40;
+        this.stage.float(x, drawPile.y - 70, "Reshuffled", PALETTE.inkSoft, 15);
         return;
       }
       if (event.kind === "combo") {
-        this.floatAt(
-          this.scale.width / 2,
-          this.layout.groundY - 40,
-          event.triggered ? "Combo!" : "Combo fizzles",
-          event.triggered ? cssColor(GOLD) : INK_SOFT,
-          delay,
-          event.triggered ? 30 : 18,
-        );
+        this.showCombo(event.triggered);
         return;
       }
       if (event.kind === "death") {
-        const view = this.unitViews.get(event.unitId);
-        if (view) {
-          const lost =
-            event.cardsRemoved > 0
-              ? `Fallen · ${event.cardsRemoved} cards lost`
-              : "Defeated";
-          this.floatAt(view.x, view.y + 40, lost, INK, delay + 200, 18);
-          this.shakeCamera();
-        }
+        this.showDeath(event.unitId, event.cardsRemoved);
         return;
       }
       if (event.kind === "enemy-move") {
         const view = this.unitViews.get(event.enemyId);
-        const slot = this.slotFor(event.enemyId);
-        if (view && slot) {
-          this.floatAt(
-            view.x,
-            view.y - slot.height / 2 - 90,
-            event.move.text,
-            INK,
-            0,
-            15,
-            1200,
-          );
+        if (view) {
+          view.announce(event.move);
+          const { x } = view.chest;
+          const y = view.bounds.top - 70;
+          this.stage.float(x, y, event.move.text, PALETTE.ink, 15, 1300);
         }
         return;
       }
-      if (event.kind === "turn-start" && event.turn > 1) {
-        this.showBanner(`Turn ${event.turn}`);
+      if (event.kind === "turn-start") {
+        this.inputLocked = false;
+        if (event.turn > 1) {
+          this.stage.showBanner("Your Turn", this.layout.groundY * 0.4);
+        }
+        this.refreshGlows();
       }
     }
 
     /**
-     * Nudges the attacker toward its target and back.
-     * @param sourceId - Attacking unit
-     * @param targetId - Unit being hit
+     * @param triggered - Whether the combo's chain was met
      */
-    private lunge(sourceId: string, targetId: string): void {
-      const source = this.unitViews.get(sourceId);
-      const target = this.unitViews.get(targetId);
-      if (!source || !target || source === target) {
+    private showCombo(triggered: boolean): void {
+      const x = this.scale.width / 2;
+      const y = this.layout.groundY * 0.55;
+      if (!triggered) {
+        this.stage.float(x, y, "Combo fizzles", PALETTE.inkSoft, 18);
         return;
       }
-      const direction = Math.sign(target.x - source.x) || 1;
-      this.tweens.add({
-        duration: wait(130),
-        ease: "Quad.easeOut",
-        targets: source,
-        x: source.x + direction * 26,
-        yoyo: true,
-      });
+      this.stage.float(x, y, "Combo!", "#a37a1f", 34);
+      this.stage.spark(x, y, PALETTE.gold, 70);
     }
 
     /**
-     * @param view - Unit container that was hit
+     * A blow lands: the target recoils and flinches, sparks fly, and the
+     * number pops out. A heavy blow also freezes for a beat and shakes
+     * the room.
+     * @param event - The blow
      */
-    private shake(view: Phaser.GameObjects.Container): void {
-      const startX = view.x;
-      this.tweens.add({
-        duration: wait(55),
-        onComplete: () => view.setX(startX),
-        repeat: 3,
-        targets: view,
-        x: startX + 7,
-        yoyo: true,
-      });
-    }
-
-    /**
-     * Washes a hit unit's portrait in ember for a moment.
-     * @param unitId - Unit that took damage
-     * @param view - Its container
-     */
-    private flash(unitId: string, view: Phaser.GameObjects.Container): void {
-      const slot = this.slotFor(unitId);
-      if (input.reducedMotion || !slot) {
+    private showHit(event: Extract<CombatEvent, { kind: "damage" }>): void {
+      const target = this.unitViews.get(event.targetId);
+      if (!target) {
         return;
       }
-      if (this.sprites.flash(unitId, EMBER, wait(160))) {
-        return;
-      }
-      const overlay = this.add.graphics();
-      overlay.fillStyle(EMBER, 1);
-      overlay.fillRoundedRect(
-        -slot.width / 2,
-        -slot.height / 2,
-        slot.width,
-        slot.height,
-        14,
+      const source = this.unitViews.get(event.sourceId);
+      this.sprites.play(event);
+      target.takeHit(
+        event.dealt,
+        event.blocked,
+        source?.feet.x ?? target.feet.x,
       );
-      overlay.setAlpha(0.55);
-      view.add(overlay);
-      this.tweens.add({
-        alpha: 0,
-        duration: wait(260),
-        ease: "Quad.easeOut",
-        onComplete: () => overlay.destroy(),
-        targets: overlay,
+      const { x, y } = target.chest;
+      const wounded = event.dealt > 0;
+      const sparkColor = wounded ? PALETTE.ember : PALETTE.steel;
+      this.stage.spark(x, y, sparkColor, wounded ? 54 : 38);
+      this.stage.popNumber(
+        x,
+        y - 20,
+        wounded ? String(event.dealt) : "Blocked",
+        wounded ? PALETTE.damageText : PALETTE.blockText,
+        wounded ? 40 : 24,
+      );
+      if (wounded && event.blocked > 0) {
+        const text = `${event.blocked} blocked`;
+        this.stage.float(x, y + 24, text, PALETTE.blockText, 16);
+      }
+      if (isHeavyImpact(event) && !input.reducedMotion) {
+        this.hitStop();
+        this.cameras.main.shake(wait(200), 0.007);
+      }
+    }
+
+    /**
+     * Freezes motion for a moment so a heavy blow lands with weight. The
+     * step timeline runs on scene time and is not delayed.
+     */
+    private hitStop(): void {
+      this.tweens.pauseAll();
+      this.anims.pauseAll();
+      this.time.delayedCall(HIT_STOP_MS, () => {
+        this.tweens.resumeAll();
+        this.anims.resumeAll();
       });
     }
 
     /**
-     * A short camera shake for heavy hits and deaths.
+     * A unit falls; a fallen party member's cards burn out of the hand.
+     * @param unitId - Unit that fell
+     * @param cardsRemoved - Cards lost with it
      */
-    private shakeCamera(): void {
-      if (input.reducedMotion) {
+    private showDeath(unitId: string, cardsRemoved: number): void {
+      const view = this.unitViews.get(unitId);
+      if (!view) {
         return;
       }
-      this.cameras.main.shake(wait(200), 0.006);
-    }
-
-    /**
-     * Opens the battle with the room's name, then the first turn banner.
-     * The card lives on its own layer so redraws underneath keep it.
-     */
-    private showTitleCard(): void {
-      const copy = roomTitleCard(input.room);
-      const { width, height } = this.scale;
-      const centerY = height * 0.36;
-      const card = this.add.container(width / 2, centerY).setDepth(350);
-      const accent = input.room.isBoss ? GOLD : JADE;
-      const band = this.add.graphics();
-      band.fillStyle(PAPER_LIGHT, 0.86);
-      band.fillRect(-width / 2, -70, width, 140);
-      band.lineStyle(2, accent, 0.8);
-      band.lineBetween(-width * 0.3, -70, width * 0.3, -70);
-      band.lineBetween(-width * 0.3, 70, width * 0.3, 70);
-      card.add(band);
-      card.add(
-        this.makeText(0, -38, copy.eyebrow.toUpperCase(), {
-          color: cssColor(input.room.isBoss ? GOLD : JADE_DARK),
-          fontSize: 16,
-        }),
-      );
-      const title = this.makeText(0, 4, copy.title, {
-        color: INK,
-        fontSize: 44,
-        stroke: true,
-        wrapWidth: width * 0.8,
-      });
-      if (input.room.isBoss) {
-        title.setShadow(0, 0, cssColor(GOLD), 16, true, true);
-      }
-      card.add(title);
-      if (copy.subtitle) {
-        card.add(
-          this.makeText(0, 46, copy.subtitle, {
-            color: DAMAGE_TEXT,
-            fontSize: 18,
-            stroke: true,
-          }),
-        );
-      }
-      card.setAlpha(0);
+      view.fall();
+      this.burnCardsOf(unitId);
+      const { x, y } = view.chest;
+      this.stage.burstLeaves(x, y, 12, 140);
+      const text =
+        cardsRemoved > 0 ? `Fallen · ${cardsRemoved} cards lost` : "Defeated";
+      this.stage.float(x, view.feet.y + 20, text, PALETTE.ink, 18, 1200);
       if (!input.reducedMotion) {
-        card.setY(centerY + 24);
-      }
-      this.tweens.add({
-        alpha: 1,
-        delay: wait(150),
-        duration: wait(450),
-        ease: "Quad.easeOut",
-        targets: card,
-        y: centerY,
-      });
-      this.tweens.add({
-        alpha: 0,
-        delay: wait(1900),
-        duration: wait(400),
-        ease: "Quad.easeIn",
-        onComplete: () => {
-          card.destroy();
-          if (!this.finished) {
-            playSound("turn");
-            this.showBanner("Turn 1");
-          }
-        },
-        targets: card,
-        y: centerY - 16,
-      });
-      if (input.room.isBoss) {
-        playSound("heavy-hit");
+        this.cameras.main.shake(wait(220), 0.006);
       }
     }
 
     /**
-     * Throws leaves outward from a point and lets them fall and fade.
-     * @param x - Burst center x
-     * @param y - Burst center y
+     * Shows the outcome once the last step has played, then reports once.
      */
-    private burstLeaves(x: number, y: number): void {
-      if (input.reducedMotion) {
-        return;
-      }
-      for (let index = 0; index < BURST_LEAF_COUNT; index += 1) {
-        const leaf = this.add.graphics().setDepth(402);
-        const colors = [JADE, SAGE, GOLD];
-        this.paintLeaf(
-          0,
-          0,
-          14 + (index % 4) * 4,
-          0,
-          colors[index % colors.length] as number,
-          0.9,
-          leaf,
-        );
-        leaf.setPosition(x, y);
-        const angle = (index / BURST_LEAF_COUNT) * Math.PI * 2;
-        const distance = Phaser.Math.Between(140, 320);
-        this.tweens.add({
-          alpha: { from: 1, to: 0 },
-          duration: wait(1400),
-          ease: "Cubic.easeOut",
-          onComplete: () => leaf.destroy(),
-          rotation: Phaser.Math.FloatBetween(-4, 4),
-          targets: leaf,
-          x: x + Math.cos(angle) * distance,
-          y: y + Math.sin(angle) * distance * 0.7 + 60,
-        });
-      }
-    }
-
-    /**
-     * Floats a short result up and fades it out. Floaters survive redraws.
-     * @param x - Horizontal center
-     * @param y - Starting vertical center
-     * @param text - Result copy
-     * @param color - CSS color
-     * @param delay - Milliseconds before it appears
-     * @param fontSize - Font size in pixels
-     * @param duration - Milliseconds it stays visible
-     */
-    private floatAt(
-      x: number,
-      y: number,
-      text: string,
-      color: string,
-      delay: number,
-      fontSize: number,
-      duration = 900,
-    ): void {
-      const label = this.makeText(x, y, text, {
-        color,
-        fontSize,
-        stroke: true,
-        wrapWidth: 260,
-      });
-      label.setAlpha(0);
-      this.floaters.add(label);
-      this.tweens.add({
-        alpha: { from: 1, to: 0 },
-        delay: wait(delay),
-        duration: wait(duration),
-        ease: "Quad.easeIn",
-        onComplete: () => label.destroy(),
-        targets: label,
-        y: y - 46,
-      });
-    }
-
-    /**
-     * Shows a centered line of text that fades.
-     * @param text - Banner copy
-     */
-    private showBanner(text: string): void {
-      const label = this.makeText(
-        this.scale.width / 2,
-        this.layout.groundY * 0.42,
-        text,
-        {
-          color: INK,
-          fontSize: 34,
-          stroke: true,
-        },
-      );
-      label.setAlpha(0);
-      this.floaters.add(label);
-      this.tweens.add({
-        alpha: { from: 0, to: 1 },
-        duration: wait(260),
-        hold: wait(500),
-        onComplete: () => label.destroy(),
-        targets: label,
-        yoyo: true,
-      });
-    }
-
-    /**
-     * @param text - Short warning, such as missing Aether
-     */
-    private showNotice(text: string): void {
-      playSound("denied");
-      this.notice?.destroy();
-      const notice = this.makeText(
-        this.scale.width / 2,
-        this.layout.banner.y + 50,
-        text,
-        {
-          color: DAMAGE_TEXT,
-          fontSize: 17,
-          stroke: true,
-        },
-      );
-      this.floaters.add(notice);
-      this.notice = notice;
-      this.tweens.add({
-        alpha: 0,
-        delay: wait(900),
-        duration: wait(400),
-        onComplete: () => notice.destroy(),
-        targets: notice,
-      });
-    }
-
-    /**
-     * Shows a unit's lore and, for enemies, its full cycle with the next move marked.
-     * @param unitId - Hovered unit
-     * @param slot - Its portrait box
-     */
-    private showTooltip(unitId: string, slot: UnitSlot): void {
-      this.hideTooltip();
-      const enemy = this.combat.enemies.find((entry) => entry.id === unitId);
-      const party = this.combat.party.find((entry) => entry.id === unitId);
-      const lines: string[] = [];
-      if (enemy) {
-        lines.push(enemy.name, "", enemy.description, "", "Cycle:");
-        enemy.moves.forEach((move, index) => {
-          const marker = index === enemy.moveIndex ? "▶ " : "   ";
-          const target =
-            move.kind === "attack" ? ` → ${describeTarget(move.target)}` : "";
-          lines.push(`${marker}${move.text}${target}`);
-        });
-      } else if (party) {
-        const cards = [
-          ...this.combat.drawPile,
-          ...this.combat.discardPile,
-          ...this.combat.hand,
-        ].filter((card) => card.ownerId === party.id).length;
-        lines.push(
-          party.name,
-          party.isCultivator
-            ? "Your cultivator. If you fall, the run ends."
-            : `Tier ${party.tier} Coreborn`,
-          `${cards} cards in the deck`,
-        );
-      } else {
-        return;
-      }
-      const width = 270;
-      const text = this.makeText(0, 0, lines.join("\n"), {
-        align: "left",
-        color: INK,
-        fontSize: 13,
-        wrapWidth: width - 24,
-      });
-      text.setOrigin(0, 0);
-      const height = text.height + 20;
-      const onRight = slot.x < this.scale.width / 2;
-      const x = Math.min(
-        this.scale.width - width - 8,
-        Math.max(
-          8,
-          onRight
-            ? slot.x + slot.width / 2 + 12
-            : slot.x - slot.width / 2 - width - 12,
-        ),
-      );
-      const y = Math.max(
-        8,
-        Math.min(this.scale.height - height - 8, slot.y - height / 2),
-      );
-      const panel = this.add.graphics();
-      panel.fillStyle(PAPER_LIGHT, 0.97);
-      panel.fillRoundedRect(0, 0, width, height, 12);
-      panel.lineStyle(2, JADE, 0.9);
-      panel.strokeRoundedRect(0, 0, width, height, 12);
-      text.setPosition(12, 10);
-      const tooltip = this.add.container(x, y, [panel, text]);
-      tooltip.setDepth(250);
-      this.tooltip = tooltip;
-    }
-
-    /**
-     * Removes the hover panel, if one is showing.
-     */
-    private hideTooltip(): void {
-      this.tooltip?.destroy();
-      this.tooltip = undefined;
-    }
-
-    /**
-     * Shows the outcome, then reports the result to the run once.
-     */
-    private checkFinished(): void {
+    private afterPlayback(): void {
       if (this.combat.phase === "player" || this.finished) {
         return;
       }
       this.finished = true;
-      this.hideTooltip();
+      this.inputLocked = true;
+      this.cancelHeld();
+      this.showTooltip(undefined);
       const victory = this.combat.phase === "victory";
       playSound(victory ? "victory" : "defeat");
-      const { width, height } = this.scale;
-      const veil = this.add.graphics().setDepth(400);
-      veil.fillStyle(victory ? PAPER : DEFEAT_VEIL, victory ? 0.7 : 0.78);
-      veil.fillRect(0, 0, width, height);
-      veil.setAlpha(0);
-      this.tweens.add({ alpha: 1, duration: wait(500), targets: veil });
-      const titleY = height * 0.4;
-      const title = this.makeText(
-        width / 2,
-        titleY,
-        victory ? "Victory" : "The cultivator falls",
-        {
-          color: victory ? cssColor(JADE_DARK) : DAMAGE_TEXT,
-          fontSize: 58,
-          stroke: true,
-        },
-      ).setDepth(401);
-      if (victory) {
-        title.setShadow(0, 0, cssColor(GOLD), 22, true, true);
-      }
-      title.setAlpha(0).setScale(input.reducedMotion ? 1 : 0.7);
-      this.tweens.add({
-        alpha: 1,
-        duration: wait(520),
-        ease: "Back.easeOut",
-        scale: 1,
-        targets: title,
-      });
-      const subtitle = this.makeText(
-        width / 2,
-        titleY + 54,
-        this.finishSubtitle(victory),
-        {
-          color: victory ? INK_SOFT : cssColor(PAPER_LIGHT),
-          fontSize: 20,
-          stroke: victory,
-        },
-      ).setDepth(401);
-      subtitle.setAlpha(0);
-      this.tweens.add({
-        alpha: 1,
-        delay: wait(260),
-        duration: wait(420),
-        targets: subtitle,
-      });
-      if (victory) {
-        this.burstLeaves(width / 2, titleY);
-      }
+      this.discardViews(this.hand);
+      this.hand = [];
+      this.refreshHud();
+      this.stage.showOutcome(victory, finishSubtitle(input.room, victory));
       const report = {
         outcome: victory ? ("victory" as const) : ("defeat" as const),
         party: this.combat.party.map((unit) => ({
@@ -1970,223 +1245,143 @@ export function createBattleSceneClass(
       };
       this.time.delayedCall(wait(FINISH_DELAY_MS), () => {
         const fade = wait(FADE_MS);
-        const [red, green, blue] = rgb(victory ? PAPER : DEFEAT_VEIL);
+        const veil = victory ? PALETTE.paper : PALETTE.defeatVeil;
+        const [red, green, blue] = rgb(veil);
         this.cameras.main.fadeOut(fade, red, green, blue);
         this.time.delayedCall(fade + 30, () => input.onFinish(report));
       });
     }
 
     /**
-     * @param victory - Whether the party won
-     * @returns The line under the outcome title
+     * Shows Aether, piles, turn, and the End Turn state. While enemies
+     * act, the numbers come from the step on screen, not the turn ahead.
      */
-    private finishSubtitle(victory: boolean): string {
-      if (!victory) {
-        return "The tower keeps its secrets";
+    private refreshHud(): void {
+      const state = this.combat;
+      let endTurnState: EndTurnState = "ready";
+      if (this.inputLocked || this.finished) {
+        endTurnState = "waiting";
+      } else if (
+        !state.hand.some((card) => canAfford(state, card.instanceId))
+      ) {
+        endTurnState = "suggested";
       }
-      if (input.room.isBoss) {
-        return "The Tower Heart is quiet";
-      }
-      return `Floor ${input.room.floor} cleared`;
-    }
-
-    /**
-     * Right-click or a click on empty ground cancels a selected card.
-     * @param pointer - Pointer that was pressed
-     */
-    private onScenePointerDown(pointer: Phaser.Input.Pointer): void {
-      if (!this.selectedCardId) {
-        return;
-      }
-      if (pointer.rightButtonDown() || pointer.y < this.layout.groundY + 60) {
-        this.selectedCardId = undefined;
-        this.draw();
-      }
-    }
-
-    /**
-     * Number keys pick cards, E ends the turn, Escape cancels a selection.
-     * @param event - Keyboard event
-     */
-    private onKeyDown(event: KeyboardEvent): void {
-      if (event.key === "Escape" && this.selectedCardId) {
-        this.selectedCardId = undefined;
-        this.draw();
-        return;
-      }
-      if (event.key === "e" || event.key === "E") {
-        this.runEnemyTurn();
-        return;
-      }
-      const index = Number.parseInt(event.key, 10) - 1;
-      const card = Number.isNaN(index) ? undefined : this.combat.hand[index];
-      if (card) {
-        this.onCardClicked(card.instanceId);
-      }
-    }
-
-    /**
-     * @param unitId - Unit under the pointer
-     * @returns Whether the selected card can be aimed at this unit
-     */
-    private isSelectableTarget(unitId: string): boolean {
-      const card = this.selectedCard();
-      if (!card) {
-        return false;
-      }
-      const targeting = cardTargeting(card.definition.rules);
-      if (targeting === "enemy") {
-        return this.combat.enemies.some(
-          (enemy) => enemy.id === unitId && isAlive(enemy),
-        );
-      }
-      if (targeting === "ally") {
-        return this.combat.party.some(
-          (unit) => unit.id === unitId && isAlive(unit),
-        );
-      }
-      return false;
-    }
-
-    /**
-     * @param unitId - Party member or enemy id
-     * @returns Where that unit stands in the current layout
-     */
-    private slotFor(unitId: string): UnitSlot | undefined {
-      const partyIndex = this.combat.party.findIndex(
-        (unit) => unit.id === unitId,
-      );
-      if (partyIndex >= 0) {
-        return this.layout.party[partyIndex];
-      }
-      const enemyIndex = this.combat.enemies.findIndex(
-        (enemy) => enemy.id === unitId,
-      );
-      return enemyIndex >= 0 ? this.layout.enemies[enemyIndex] : undefined;
-    }
-
-    /**
-     * @returns The card waiting for a target, if any
-     */
-    private selectedCard(): CombatCard | undefined {
-      return this.combat.hand.find(
-        (card) => card.instanceId === this.selectedCardId,
-      );
-    }
-
-    /**
-     * Destroys the current hand before a repaint.
-     */
-    private clearHand(): void {
-      for (const card of this.hand) {
-        card.container.destroy();
-      }
-      this.hand = [];
-    }
-
-    /**
-     * Draws a texture scaled to fit inside a frame.
-     * @param key - Texture key
-     * @param x - Frame center x
-     * @param y - Frame center y
-     * @param frameWidth - Maximum display width
-     * @param frameHeight - Maximum display height
-     * @param parent - Container that owns the image
-     */
-    private addContainedImage(
-      key: string,
-      x: number,
-      y: number,
-      frameWidth: number,
-      frameHeight: number,
-      parent: Phaser.GameObjects.Container,
-    ): void {
-      const image = this.add.image(x, y, key);
-      image.setScale(
-        containedScale(image.width, image.height, frameWidth, frameHeight),
-      );
-      parent.add(image);
-    }
-
-    /**
-     * Creates centered serif text.
-     * @param x - Horizontal center
-     * @param y - Vertical center
-     * @param text - Copy
-     * @param options.align - Line alignment. Defaults to center
-     * @param options.color - CSS color
-     * @param options.fontSize - Size in pixels
-     * @param options.stroke - Whether to outline the text in paper for legibility on art
-     * @param options.wrapWidth - Wrap width in pixels
-     * @returns The text object, not yet in any container
-     */
-    private makeText(
-      x: number,
-      y: number,
-      text: string,
-      options: {
-        align?: "left" | "center";
-        color: string;
-        fontSize: number;
-        stroke?: boolean;
-        wrapWidth?: number;
-      },
-    ): Phaser.GameObjects.Text {
-      const label = this.add.text(x, y, text, {
-        align: options.align ?? "center",
-        color: options.color,
-        fontFamily: HEADING_FONT,
-        fontSize: `${options.fontSize}px`,
-        resolution: textResolution(),
-        wordWrap: options.wrapWidth
-          ? { useAdvancedWrap: true, width: options.wrapWidth }
-          : undefined,
+      this.hud?.update({
+        aether: this.inputLocked ? 0 : state.aether,
+        aetherPerTurn: state.aetherPerTurn,
+        discardCount: state.discardPile.length,
+        drawCount: state.drawPile.length,
+        endTurn: endTurnState,
+        turn: Math.max(1, state.turn),
       });
-      if (options.stroke) {
-        label.setStroke(
-          options.color === "#ffffff" ? INK : cssColor(PAPER_LIGHT),
-          Math.max(3, options.fontSize / 6),
-        );
+      this.hud?.setHint(this.hintText());
+    }
+
+    /**
+     * @returns Guidance for the held card, or empty
+     */
+    private hintText(): string {
+      const held = this.held;
+      if (!held) {
+        return "";
       }
-      label.setOrigin(0.5);
-      return label;
+      const name = held.view.card.definition.rules.name;
+      if (held.targeting === "enemy") {
+        return `Aim ${name} at an enemy · right-click to cancel`;
+      }
+      if (held.targeting === "ally") {
+        return `Aim ${name} at an ally to shield · right-click to cancel`;
+      }
+      return `Release above the hand to play ${name}`;
+    }
+
+    // ---- Tooltip ----------------------------------------------------------
+
+    /**
+     * Shows a unit's lore and, for enemies, its full cycle with the next
+     * move marked. Passing nothing hides it.
+     * @param unitId - Hovered unit
+     */
+    private showTooltip(unitId: string | undefined): void {
+      if (unitId === this.tooltipUnitId) {
+        return;
+      }
+      this.tooltipUnitId = unitId;
+      this.tooltip?.destroy();
+      this.tooltip = undefined;
+      const view = unitId ? this.unitViews.get(unitId) : undefined;
+      const lines = unitId ? this.tooltipLines(unitId) : [];
+      if (!view || lines.length === 0) {
+        return;
+      }
+      const width = 270;
+      const text = this.kit.painter.text(0, 0, lines.join("\n"), {
+        align: "left",
+        color: PALETTE.ink,
+        fontSize: 13,
+        wrapWidth: width - 24,
+      });
+      text.setOrigin(0, 0);
+      const height = text.height + 20;
+      const { bottom, left, right, top } = view.bounds;
+      const onRight = (left + right) / 2 < this.scale.width / 2;
+      const x = Math.min(
+        this.scale.width - width - 8,
+        Math.max(8, onRight ? right + 12 : left - width - 12),
+      );
+      const y = Math.max(
+        8,
+        Math.min(
+          this.scale.height - height - 8,
+          (top + bottom) / 2 - height / 2,
+        ),
+      );
+      const panel = this.add.graphics();
+      panel.fillStyle(PALETTE.paperLight, 0.97);
+      panel.fillRoundedRect(0, 0, width, height, 12);
+      panel.lineStyle(2, PALETTE.jade, 0.9);
+      panel.strokeRoundedRect(0, 0, width, height, 12);
+      text.setPosition(12, 10);
+      this.tooltip = this.add
+        .container(x, y, [panel, text])
+        .setDepth(DEPTH.tooltip);
+    }
+
+    /**
+     * @param unitId - Hovered unit
+     * @returns Tooltip lines for that unit
+     */
+    private tooltipLines(unitId: string): string[] {
+      const enemy = this.combat.enemies.find((entry) => entry.id === unitId);
+      if (enemy) {
+        const cycle = enemy.moves.map((move, index) => {
+          const marker = index === enemy.moveIndex ? "▶ " : "   ";
+          const target =
+            move.kind === "attack" ? ` → ${describeTarget(move.target)}` : "";
+          return `${marker}${move.text}${target}`;
+        });
+        return [enemy.name, "", enemy.description, "", "Cycle:", ...cycle];
+      }
+      const party = this.combat.party.find((entry) => entry.id === unitId);
+      if (!party) {
+        return [];
+      }
+      const cards = [
+        ...this.combat.drawPile,
+        ...this.combat.discardPile,
+        ...this.combat.hand,
+      ].filter((card) => card.ownerId === party.id).length;
+      const glyph = party.isCultivator ? `${CULTIVATOR_GLYPH} ` : "";
+      const role = party.isCultivator
+        ? "Your cultivator. If you fall, the run ends."
+        : `Tier ${party.tier} Coreborn`;
+      const status = isAlive(party) ? "" : "Fallen";
+      return [
+        `${glyph}${party.name}`,
+        role,
+        `${cards} cards in the deck`,
+        status,
+      ].filter((line) => line !== "");
     }
   };
-}
-
-/**
- * @param kind - A card's first effect kind
- * @returns The wash color for its painted stand-in
- */
-function kindColor(kind: string | undefined): number {
-  if (kind === "attack") {
-    return EMBER;
-  }
-  if (kind === "defend") {
-    return STEEL;
-  }
-  if (kind === "aether") {
-    return DEW;
-  }
-  if (kind === "combo") {
-    return GOLD;
-  }
-  return JADE;
-}
-
-/**
- * @param position - 1-based position
- * @returns "1st", "2nd", "3rd", ...
- */
-function ordinal(position: number): string {
-  if (position === 1) {
-    return "1st";
-  }
-  if (position === 2) {
-    return "2nd";
-  }
-  if (position === 3) {
-    return "3rd";
-  }
-  return `${position}th`;
 }

@@ -8,7 +8,7 @@ import { DungeonSlotCard } from "./DungeonSlotCard";
 import {
   cardsForCharacter,
   slotsStartedWith,
-  spriteForCharacter,
+  spriteForOwner,
 } from "./dungeonSlotGroups";
 import { type PendingJob, PendingJobCard } from "./PendingJobCard";
 
@@ -123,9 +123,9 @@ interface DungeonPackageProps {
 }
 
 /**
- * One saved package: its JSON link, then rooms, enemies, and each character
- * with that character's card prompts and battle sprite. Generating a
- * character also starts its sprite.
+ * One saved package: its JSON link, then rooms, each enemy with its battle
+ * sprite, and each character with that character's battle sprite and card
+ * prompts. Generating a character or an enemy also starts its sprite.
  * @param dungeon - Package returned by the API
  * @param slotJobs - Runs that should show as generating on their prompt
  * @param onGenerateSlot - Starts one prompt's agent
@@ -191,21 +191,36 @@ function DungeonPackage({
       </div>
       <span className={styles.dungeonGroupLabel}>Enemies</span>
       <div className={styles.enemyGrid}>
-        {enemies.map((slot) => (
-          <DungeonSlotCard
-            dungeonId={dungeon.id}
-            key={slot.id}
-            onAssociate={onAssociateSlot}
-            onGenerate={generateSlot}
-            onStop={onStopSlot}
-            slot={slot}
-            slotJob={jobForSlot(slotJobs, slot.id)}
-            slots={dungeon.slots}
-          />
-        ))}
+        {enemies.map((enemy) => {
+          const sprite = spriteForOwner(dungeon.slots, enemy.id);
+          return (
+            <div className={styles.dungeonEnemy} key={enemy.id}>
+              <DungeonSlotCard
+                dungeonId={dungeon.id}
+                onAssociate={onAssociateSlot}
+                onGenerate={generateSlot}
+                onStop={onStopSlot}
+                slot={enemy}
+                slotJob={jobForSlot(slotJobs, enemy.id)}
+                slots={dungeon.slots}
+              />
+              {sprite !== undefined && (
+                <DungeonSlotCard
+                  dungeonId={dungeon.id}
+                  onAssociate={onAssociateSlot}
+                  onGenerate={generateSlot}
+                  onStop={onStopSlot}
+                  slot={sprite}
+                  slotJob={jobForSlot(slotJobs, sprite.id)}
+                  slots={dungeon.slots}
+                />
+              )}
+            </div>
+          );
+        })}
       </div>
       {characters.map((character) => {
-        const sprite = spriteForCharacter(dungeon.slots, character.id);
+        const sprite = spriteForOwner(dungeon.slots, character.id);
         return (
           <article className={styles.dungeonCharacter} key={character.id}>
             <DungeonSlotCard

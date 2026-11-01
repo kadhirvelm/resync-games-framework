@@ -64,13 +64,25 @@ describe("stepSounds", () => {
     ).toEqual(["block"]);
   });
 
-  test("a heavy hit replaces ordinary hits in the same step", () => {
+  test("a heavy hit or a death replaces ordinary hits in the same step", () => {
     expect(
       stepSounds([
         { blocked: 0, dealt: 3, kind: "damage", sourceId: "e", targetId: "a" },
         { cardsRemoved: 2, kind: "death", unitId: "a" },
       ]),
+    ).toEqual(["death"]);
+    expect(
+      stepSounds([
+        { blocked: 0, dealt: 3, kind: "damage", sourceId: "e", targetId: "a" },
+        { blocked: 0, dealt: 12, kind: "damage", sourceId: "e", targetId: "b" },
+      ]),
     ).toEqual(["heavy-hit"]);
+  });
+
+  test("combos, Aether, and fizzles each sound right", () => {
+    expect(stepSounds([{ kind: "combo", triggered: true }])).toEqual(["combo"]);
+    expect(stepSounds([{ kind: "combo", triggered: false }])).toEqual([]);
+    expect(stepSounds([{ amount: 1, kind: "aether" }])).toEqual(["aether"]);
   });
 
   test("only later turns chime; the opening card handles turn 1", () => {

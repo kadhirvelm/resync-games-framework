@@ -8,8 +8,8 @@ import type {
 
 /**
  * Asset kinds a dungeon package can ask another agent to create.
- * The counts are fixed: 2 rooms, 3 characters, 4 cards and 1 sprite sheet
- * for each character, and 2 enemies.
+ * The counts are fixed: 2 rooms, 3 characters with 4 cards and 1 sprite
+ * sheet each, and 2 enemies with 1 sprite sheet each.
  */
 export const DUNGEON_SLOT_KINDS = [
   "battle-background",
@@ -101,13 +101,13 @@ export interface DungeonCardSlot extends DungeonSlotBase {
 }
 
 /**
- * Prompt for the animated battle sprite of one character. The character
- * fights as this sprite: idle between turns, attack, defend, and hurt.
+ * Prompt for the animated battle sprite of one character or enemy. That
+ * unit fights as this sprite: idle between turns, attack, defend, and hurt.
  */
 export interface DungeonSpriteSlot extends DungeonSlotBase {
-  /** Character slot this sprite animates */
-  characterSlotId: string;
   kind: "sprite-sheet";
+  /** Id of the `card-character` or `enemy` slot this sprite animates */
+  ownerSlotId: string;
 }
 
 /**
@@ -122,8 +122,8 @@ export type DungeonSlot =
   | DungeonSpriteSlot;
 
 /**
- * A dungeon package: the prompts for its rooms, characters, cards, and enemies,
- * plus any assets already linked to those prompts.
+ * A dungeon package: the prompts for its rooms, characters, cards, enemies,
+ * and battle sprites, plus any assets already linked to those prompts.
  */
 export interface DungeonBlueprint {
   createdAt: string;

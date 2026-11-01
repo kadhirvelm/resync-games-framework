@@ -27,6 +27,22 @@ This is a Bun and TypeScript monorepo:
 - `packages/database` — Prisma schema and database package
 - `toc-cli` — local development tooling
 
+## Game experiences
+
+The home route is an experience selector rather than a single game entry
+point. Each registered experience is loaded only after it is selected:
+
+- **Towers of Coreborn** keeps the existing two-dimensional climb, local saves,
+  and Phaser battle renderer unchanged.
+- **3D Sandbox** is an isolated, client-only Babylon.js prototype with its own
+  disposable engine and scene. It currently renders a bundled low-poly shrine;
+  the glTF loader is present for the validated GLB asset pipeline planned next.
+
+Experience metadata and lazy entry components live in
+`packages/frontend/src/components/game-experiences/`. Babylon-only code lives in
+`packages/frontend/src/components/babylonGame/`, so selecting or returning from
+one runtime never mounts Phaser and Babylon in the same scene.
+
 ## Local development
 
 Prerequisites:

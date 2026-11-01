@@ -3,7 +3,7 @@ import type { DungeonSlot } from "@towers-of-coreborn/api";
 import {
   cardsForCharacter,
   slotsStartedWith,
-  spriteForCharacter,
+  spriteForOwner,
 } from "../dungeonSlotGroups";
 
 const character: DungeonSlot = {
@@ -14,15 +14,32 @@ const character: DungeonSlot = {
   title: "Bell keeper",
 };
 
+const enemy: DungeonSlot = {
+  id: "beast",
+  kind: "enemy",
+  prompt: "A moss-covered bell beast",
+  status: "planned",
+  title: "Bell beast",
+};
+
+const enemySprite: DungeonSlot = {
+  id: "beast-sprite",
+  kind: "sprite-sheet",
+  ownerSlotId: "beast",
+  prompt: "Rears up and slams its shell",
+  status: "planned",
+  title: "Bell beast sprite",
+};
+
 /**
  * @param status - Sprite slot status
  * @returns The keeper's sprite slot in that status
  */
 function sprite(status: DungeonSlot["status"]): DungeonSlot {
   return {
-    characterSlotId: "keeper",
     id: "keeper-sprite",
     kind: "sprite-sheet",
+    ownerSlotId: "keeper",
     prompt: "Swings a bell hammer",
     status,
     title: "Bell keeper sprite",
@@ -47,11 +64,19 @@ describe("dungeon slot groups", () => {
     ]);
   });
 
-  test("finds the sprite that animates a character", () => {
-    expect(
-      spriteForCharacter([character, sprite("planned")], "keeper")?.id,
-    ).toBe("keeper-sprite");
-    expect(spriteForCharacter([character], "keeper")).toBeUndefined();
+  test("finds the sprite that animates a character or an enemy", () => {
+    const slots = [character, sprite("planned"), enemy, enemySprite];
+    expect(spriteForOwner(slots, "keeper")?.id).toBe("keeper-sprite");
+    expect(spriteForOwner(slots, "beast")?.id).toBe("beast-sprite");
+    expect(spriteForOwner([character], "keeper")).toBeUndefined();
+  });
+
+  test("starts a planned sprite with its enemy", () => {
+    const slots = [character, sprite("ready"), enemy, enemySprite];
+    expect(slotsStartedWith(enemy, slots).map((slot) => slot.id)).toEqual([
+      "beast",
+      "beast-sprite",
+    ]);
   });
 
   test("starts a planned or failed sprite with its character", () => {

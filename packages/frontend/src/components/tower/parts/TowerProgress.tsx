@@ -41,7 +41,8 @@ export function RewardIcon({
 /**
  * The climb as a path of floor nodes joined by a vine that fills as the
  * party climbs. Each node shows its reward; the current one glows.
- * Rooms are linear, so this is a progress track, not a map.
+ * Rooms are linear, so this is a progress track, not a map. A glowing
+ * leaf marks the party on the vine and slides up as floors are cleared.
  * @param rooms - Every floor, entrance first
  * @param floorIndex - Index of the current floor
  * @returns The progress track
@@ -62,6 +63,7 @@ export const TowerProgress = ({
       } as React.CSSProperties
     }
   >
+    <li aria-hidden="true" className={styles.progressClimber} />
     {rooms.map((room, index) => {
       const label = room.isBoss
         ? "Tower Heart"

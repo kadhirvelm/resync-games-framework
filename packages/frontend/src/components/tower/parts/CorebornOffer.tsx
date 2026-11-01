@@ -1,7 +1,9 @@
+import clsx from "clsx";
 import { Heart } from "lucide-react";
 import { tierHitPoints } from "../logic/characterRoles";
 import type { CorebornRole, CorebornTemplate } from "../logic/towerTypes";
 import styles from "../tower.module.scss";
+import { Burst } from "./Burst";
 import { Button } from "./Button";
 import { GameCard } from "./GameCard";
 import { UnitPortrait } from "./UnitPortrait";
@@ -15,6 +17,8 @@ export const ROLE_LABELS: Record<CorebornRole, string> = {
 };
 
 interface CorebornOfferProps {
+  /** Template being recruited right now; it bursts and the rest fall away */
+  chosenId?: string;
   /** Copies of each template already in the party */
   ownedCounts: Map<string, number>;
   onRecruit: (templateId: string) => void;
@@ -24,12 +28,15 @@ interface CorebornOfferProps {
 /**
  * Coreborn the player can recruit, each with its full card progression so
  * the pick is informed: the tier 1 card joins now, merges unlock the rest.
+ * One already in the party glows gold, since a second copy can merge.
+ * @param chosenId - Template being recruited, while its pick celebrates
  * @param ownedCounts - Copies already in the party, keyed by template id
  * @param onRecruit - Called with the chosen template id
  * @param templates - Coreborn on offer
  * @returns One panel per Coreborn
  */
 export const CorebornOffer = ({
+  chosenId,
   ownedCounts,
   onRecruit,
   templates,
@@ -39,7 +46,18 @@ export const CorebornOffer = ({
       const owned = ownedCounts.get(template.id) ?? 0;
       const firstTier = template.tiers[0];
       return (
-        <article className={styles.offer} key={template.id}>
+        <article
+          className={clsx(
+            styles.offer,
+            owned > 0 && styles.offerMergeable,
+            chosenId === template.id && styles.offerChosen,
+            chosenId !== undefined &&
+              chosenId !== template.id &&
+              styles.offerDismissed,
+          )}
+          key={template.id}
+        >
+          {chosenId === template.id ? <Burst count={24} reach={220} /> : null}
           <header className={styles.offerHeader}>
             <UnitPortrait
               accent="#4e8f6a"
@@ -80,7 +98,10 @@ export const CorebornOffer = ({
               </div>
             ))}
           </div>
-          <Button onClick={() => onRecruit(template.id)}>
+          <Button
+            disabled={chosenId !== undefined}
+            onClick={() => onRecruit(template.id)}
+          >
             Recruit {template.name}
           </Button>
         </article>

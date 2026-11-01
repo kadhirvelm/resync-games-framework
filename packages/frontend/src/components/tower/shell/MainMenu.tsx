@@ -6,6 +6,7 @@ import { ProductNowConnection } from "@/components/productNow/ProductNowConnecti
 import { playSound } from "../audio/sound";
 import type { PlayerProfile } from "../logic/progression";
 import type { SavedClimb } from "../logic/saveGame";
+import { pointerParallax } from "../parts/tilt";
 import { AmbientBackdrop } from "./AmbientBackdrop";
 import { ascensionNumeral, formatTimeAgo } from "./formatTime";
 import styles from "./shell.module.scss";
@@ -46,7 +47,25 @@ function moveMenuFocus(event: React.KeyboardEvent<HTMLElement>): void {
 }
 
 /**
- * The title scene: the tower at dusk and the main menu. Continue leads when
+ * Writes the pointer's offset from the middle of the scene as `--px` and
+ * `--py`, which the backdrop's layers use to drift at different depths.
+ * @param event - Pointer move over the scene
+ */
+function trackParallax(event: React.PointerEvent<HTMLElement>): void {
+  const element = event.currentTarget;
+  const offset = pointerParallax(
+    event.clientX,
+    event.clientY,
+    element.clientWidth,
+    element.clientHeight,
+  );
+  element.style.setProperty("--px", String(offset.x));
+  element.style.setProperty("--py", String(offset.y));
+}
+
+/**
+ * The title scene: the tower at dusk and the main menu. The mountains, the
+ * tower, and the moon drift at different depths as the pointer moves. Continue leads when
  * a climb is saved; otherwise a new climb does.
  * @param props - Profile, latest save, and menu actions
  * @returns The main menu
@@ -83,7 +102,10 @@ export const MainMenu = ({
     : undefined;
 
   return (
-    <div className={styles.menuScene}>
+    <div
+      className={styles.menuScene}
+      onPointerMove={reducedMotion ? undefined : trackParallax}
+    >
       <AmbientBackdrop reducedMotion={reducedMotion} variant="dusk" />
       <div className={styles.menuTopBar}>
         <Link className={styles.menuQuietLink} href="/assets">

@@ -58,15 +58,83 @@ describe("removeBackground", () => {
     expect(alphaAt(image, 11, 10)).toBe(255);
   });
 
-  test("clears a pale fringe pixel touching the background", () => {
+  test("clears a near-white fringe pixel touching the background", () => {
+    const image = createImage(12, 12, WHITE);
+    fillRect(image, { bottom: 9, left: 3, right: 9, top: 3 }, OUTLINE);
+    fillRect(image, { bottom: 4, left: 3, right: 4, top: 3 }, [230, 230, 230]);
+
+    removeBackground(image, 50);
+
+    expect(alphaAt(image, 3, 3)).toBe(0);
+    expect(alphaAt(image, 5, 5)).toBe(255);
+  });
+
+  test("turns a pale fringe pixel into a faint outline pixel instead of a white one", () => {
     const image = createImage(12, 12, WHITE);
     fillRect(image, { bottom: 9, left: 3, right: 9, top: 3 }, OUTLINE);
     fillRect(image, { bottom: 4, left: 3, right: 4, top: 3 }, [200, 200, 200]);
 
     removeBackground(image, 50);
 
-    expect(alphaAt(image, 3, 3)).toBe(0);
+    const alpha = alphaAt(image, 3, 3);
+    expect(alpha).toBeGreaterThanOrEqual(1);
+    expect(alpha).toBeLessThan(128);
+    expect(Math.max(...rgbAt(image, 3, 3))).toBeLessThan(60);
     expect(alphaAt(image, 5, 5)).toBe(255);
+  });
+
+  test("softens an anti-aliased rim into partial alpha with the character's color", () => {
+    const red: [number, number, number] = [200, 40, 40];
+    const image = createImage(30, 30, WHITE);
+    fillRect(
+      image,
+      { bottom: 23, left: 7, right: 23, top: 7 },
+      mix(red, 1 / 3),
+    );
+    fillRect(
+      image,
+      { bottom: 22, left: 8, right: 22, top: 8 },
+      mix(red, 2 / 3),
+    );
+    fillRect(image, { bottom: 21, left: 9, right: 21, top: 9 }, red);
+    fillRect(image, { bottom: 16, left: 14, right: 16, top: 14 }, WHITE);
+
+    removeBackground(image, 50);
+
+    expect(alphaAt(image, 0, 0)).toBe(0);
+    expect(alphaAt(image, 6, 15)).toBe(0);
+    expect(alphaAt(image, 7, 15)).toBe(85);
+    expect(alphaAt(image, 8, 15)).toBe(170);
+    expect(alphaAt(image, 9, 15)).toBe(255);
+    for (const x of [7, 8, 9]) {
+      expectNear(rgbAt(image, x, 15), red);
+    }
+    expect(alphaAt(image, 14, 14)).toBe(255);
+    expect(rgbAt(image, 14, 14)).toEqual(WHITE);
+  });
+
+  test("keeps a white highlight just behind a solid outline", () => {
+    const image = createImage(14, 14, WHITE);
+    fillRect(image, { bottom: 12, left: 2, right: 12, top: 2 }, OUTLINE);
+    fillRect(image, { bottom: 8, left: 3, right: 4, top: 6 }, WHITE);
+
+    removeBackground(image, 50);
+
+    expect(alphaAt(image, 2, 6)).toBe(255);
+    expect(alphaAt(image, 3, 6)).toBe(255);
+    expect(rgbAt(image, 3, 6)).toEqual(WHITE);
+  });
+
+  test("leaves a thin dark stroke fully opaque", () => {
+    const gray: [number, number, number] = [120, 120, 120];
+    const image = createImage(12, 12, WHITE);
+    fillRect(image, { bottom: 10, left: 5, right: 7, top: 2 }, gray);
+
+    removeBackground(image, 50);
+
+    expect(alphaAt(image, 5, 5)).toBe(255);
+    expect(alphaAt(image, 6, 5)).toBe(255);
+    expect(rgbAt(image, 5, 5)).toEqual(gray);
   });
 });
 
@@ -248,4 +316,40 @@ function fillRect(
  */
 function alphaAt(image: RgbaImage, x: number, y: number): number {
   return image.data[(y * image.width + x) * 4 + 3] ?? -1;
+}
+
+/**
+ * @param image - Image to read
+ * @param x - Column
+ * @param y - Row
+ * @returns RGB at that pixel
+ */
+function rgbAt(image: RgbaImage, x: number, y: number): number[] {
+  const offset = (y * image.width + x) * 4;
+  return Array.from(image.data.subarray(offset, offset + 3));
+}
+
+/**
+ * @param color - Foreground color
+ * @param coverage - Foreground share from 0 to 1
+ * @returns `color` blended over white, as an anti-aliased edge would be painted
+ */
+function mix(
+  color: [number, number, number],
+  coverage: number,
+): [number, number, number] {
+  const blend = (channel: number) =>
+    Math.round(channel * coverage + 255 * (1 - coverage));
+  return [blend(color[0]), blend(color[1]), blend(color[2])];
+}
+
+/**
+ * Expects each channel to be within a few levels of the wanted color.
+ * @param actual - Measured RGB
+ * @param expected - Wanted RGB
+ */
+function expectNear(actual: number[], expected: readonly number[]): void {
+  actual.forEach((channel, index) => {
+    expect(Math.abs(channel - (expected[index] ?? 0))).toBeLessThan(4);
+  });
 }

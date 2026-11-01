@@ -107,14 +107,11 @@ export const TowerGame = () => {
   };
 
   /**
+   * The reward screen has already celebrated the pick.
    * @param choice - Reward pick, or skip
    */
-  const claim = (choice: RewardChoice) => {
-    if (choice.kind !== "skip") {
-      playSound("reward");
-    }
+  const claim = (choice: RewardChoice) =>
     cover(() => actions.claimReward(choice));
-  };
 
   /**
    * @param pair - Merge to make
@@ -151,6 +148,7 @@ export const TowerGame = () => {
           styles.page,
           settings.reducedMotion && styles.reducedMotion,
         )}
+        data-reduced-motion={settings.reducedMotion || undefined}
       >
         {screen === "menu" ? (
           <MainMenu
@@ -246,6 +244,7 @@ export const TowerGame = () => {
         styles.page,
         settings.reducedMotion && styles.reducedMotion,
       )}
+      data-reduced-motion={settings.reducedMotion || undefined}
     >
       <AmbientBackdrop reducedMotion={settings.reducedMotion} variant="paper" />
       {isOver ? null : (
@@ -262,6 +261,7 @@ export const TowerGame = () => {
               playSound("confirm");
               actions.recruit(templateId);
             }}
+            reducedMotion={settings.reducedMotion}
             run={run}
           />
         ) : null}
@@ -283,6 +283,7 @@ export const TowerGame = () => {
             content={content}
             onClaim={claim}
             onReroll={actions.rerollReward}
+            reducedMotion={settings.reducedMotion}
             run={run}
           />
         ) : null}
@@ -306,6 +307,7 @@ export const TowerGame = () => {
       {celebrated && celebration ? (
         <MergeCelebration
           onDone={closeCelebration}
+          reducedMotion={settings.reducedMotion}
           template={celebrated}
           tier={celebration.tier}
         />

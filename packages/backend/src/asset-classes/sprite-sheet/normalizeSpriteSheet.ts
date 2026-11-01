@@ -180,7 +180,9 @@ async function renderStrip(
 }
 
 /**
- * Copies opaque pixels from one image onto another, clipped to a column range.
+ * Copies every visible pixel, soft-edge partial alpha included, from one
+ * image onto another, clipped to a column range. The destination starts
+ * transparent and frames never overlap, so values are copied, not composited.
  * @param from - Source pixels
  * @param to - Destination pixels; written in place
  * @param left - Destination x of the source's left edge

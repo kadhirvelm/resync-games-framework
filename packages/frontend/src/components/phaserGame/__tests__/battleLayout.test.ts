@@ -6,7 +6,7 @@ import {
 } from "../battleLayout";
 
 describe("layoutBattle", () => {
-  const layout = layoutBattle(1280, 800, { enemies: 2, hand: 5, party: 3 });
+  const layout = layoutBattle(1280, 800, { enemies: 2, party: 3 });
 
   test("puts the party front nearest the middle and enemies left to right", () => {
     const partyX = layout.party.map((slot) => slot.x);
@@ -21,22 +21,21 @@ describe("layoutBattle", () => {
     for (const slot of [...layout.party, ...layout.enemies]) {
       expect(slot.y + slot.height / 2).toBeCloseTo(layout.groundY);
     }
-    const handTop = Math.min(
-      ...layout.cards.map((card) => card.y - card.height / 2),
-    );
+    const handTop = layout.hand.restY - layout.hand.cardHeight / 2;
     expect(layout.groundY).toBeLessThan(handTop);
   });
 
-  test("overlaps a large hand instead of overflowing the screen", () => {
-    const crowded = layoutBattle(800, 700, { enemies: 1, hand: 8, party: 1 });
-    const left = Math.min(
-      ...crowded.cards.map((card) => card.x - card.width / 2),
-    );
-    const right = Math.max(
-      ...crowded.cards.map((card) => card.x + card.width / 2),
-    );
-    expect(left).toBeGreaterThanOrEqual(0);
-    expect(right).toBeLessThanOrEqual(800);
+  test("tucks resting cards partly below the view and plays them from above", () => {
+    const { hand, playLineY } = layout;
+    expect(hand.restY + hand.cardHeight / 2).toBeGreaterThan(800);
+    expect(hand.restY - hand.cardHeight / 2).toBeLessThan(800);
+    expect(playLineY).toBeLessThan(hand.restY - hand.cardHeight / 2);
+  });
+
+  test("keeps the fan clear of the piles in the corners", () => {
+    const { discardPile, drawPile, hand } = layout;
+    expect(hand.centerX - hand.maxSpan / 2).toBeGreaterThan(drawPile.x);
+    expect(hand.centerX + hand.maxSpan / 2).toBeLessThan(discardPile.x);
   });
 });
 

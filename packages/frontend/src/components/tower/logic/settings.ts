@@ -4,6 +4,8 @@ export type BattleSpeed = "relaxed" | "normal" | "swift";
 /** Player preferences, saved in the browser. */
 export interface GameSettings {
   battleSpeed: BattleSpeed;
+  /** Plays the generative background music */
+  music: boolean;
   muted: boolean;
   /** Turns off ambient motion and shortens transitions */
   reducedMotion: boolean;
@@ -14,6 +16,7 @@ export interface GameSettings {
 /** Settings for a first visit. */
 export const DEFAULT_SETTINGS: GameSettings = {
   battleSpeed: "normal",
+  music: true,
   muted: false,
   reducedMotion: false,
   volume: 0.6,
@@ -42,6 +45,8 @@ export function parseSettings(raw: unknown): GameSettings {
       typeof speed === "string" && speed in BATTLE_PACE
         ? (speed as BattleSpeed)
         : DEFAULT_SETTINGS.battleSpeed,
+    music:
+      typeof stored.music === "boolean" ? stored.music : DEFAULT_SETTINGS.music,
     muted:
       typeof stored.muted === "boolean" ? stored.muted : DEFAULT_SETTINGS.muted,
     reducedMotion:

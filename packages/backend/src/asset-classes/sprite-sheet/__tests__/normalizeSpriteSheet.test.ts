@@ -8,6 +8,7 @@ import {
 const COLUMNS = 6;
 const ROWS = 4;
 const CELL = 64;
+const FIGURE = [40, 30, 60];
 
 describe("normalizeSpriteSheet", () => {
   test("splits rows into strips and locks every frame to one baseline and center", async () => {
@@ -84,6 +85,26 @@ describe("normalizeSpriteSheet", () => {
       "no visible frames",
     );
   });
+
+  test("keeps a soft edge with the character's color in every strip, scaled or not", async () => {
+    const sheet = await paintSheet(
+      (row) => ({ driftX: 0, driftY: 0, height: row === 2 ? 30 : 36 }),
+      true,
+    );
+
+    const result = await normalizeSpriteSheet(sheet, {
+      columns: COLUMNS,
+      rows: ROWS,
+    });
+
+    for (const animation of result.animations) {
+      const edges = await partialAlphaPixels(animation.strip);
+      expect(edges).not.toHaveLength(0);
+      for (const edge of edges) {
+        expect(Math.max(...edge.rgb)).toBeLessThan(90);
+      }
+    }
+  });
 });
 
 describe("removeSpriteBackground", () => {
@@ -105,6 +126,29 @@ describe("removeSpriteBackground", () => {
     expect(metadata.width).toBe(16);
     expect(metadata.height).toBe(36);
   });
+
+  test("keeps the soft edge of the identity anchor", async () => {
+    const anchor = await paintSheet(
+      () => ({ driftX: 0, driftY: 0, height: 36 }),
+      true,
+    );
+    const single = await sharp(anchor)
+      .extract({ height: CELL, left: 0, top: 0, width: CELL })
+      .png()
+      .toBuffer();
+
+    const trimmed = await removeSpriteBackground(single);
+    const metadata = await sharp(trimmed).metadata();
+    const edges = await partialAlphaPixels(trimmed);
+
+    expect(metadata.width).toBe(18);
+    expect(metadata.height).toBe(38);
+    expect(edges).not.toHaveLength(0);
+    for (const edge of edges) {
+      expect(edge.alpha).toBe(128);
+      expect(edge.rgb).toEqual(FIGURE);
+    }
+  });
 });
 
 interface PaintedFrame {
@@ -116,10 +160,12 @@ interface PaintedFrame {
 /**
  * Paints a white sheet with one outlined figure per cell, drifted inside its cell.
  * @param figure - Size and drift for each cell, or undefined to leave it empty
+ * @param softEdge - Adds a one-pixel ring of the figure blended half and half with white
  * @returns PNG bytes
  */
 async function paintSheet(
   figure: (row: number, column: number) => PaintedFrame | undefined,
+  softEdge = false,
 ): Promise<Buffer> {
   const width = CELL * COLUMNS;
   const height = CELL * ROWS;
@@ -132,9 +178,17 @@ async function paintSheet(
       }
       const left = column * CELL + 24 + painted.driftX;
       const bottom = row * CELL + 56 - painted.driftY;
+      if (softEdge) {
+        const ring = FIGURE.map((channel) => (channel + 255) / 2);
+        for (let y = bottom - painted.height - 1; y < bottom + 1; y += 1) {
+          for (let x = left - 1; x < left + 17; x += 1) {
+            data.set([...ring, 255], (y * width + x) * 4);
+          }
+        }
+      }
       for (let y = bottom - painted.height; y < bottom; y += 1) {
         for (let x = left; x < left + 16; x += 1) {
-          data.set([40, 30, 60, 255], (y * width + x) * 4);
+          data.set([...FIGURE, 255], (y * width + x) * 4);
         }
       }
     }
@@ -182,4 +236,23 @@ async function measureStrip(
       height: bottom - top + 1,
     };
   });
+}
+
+/**
+ * @param png - PNG bytes
+ * @returns Every pixel that is neither fully transparent nor fully opaque
+ */
+async function partialAlphaPixels(
+  png: Buffer,
+): Promise<{ alpha: number; rgb: number[] }[]> {
+  const { data } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+  const pixels: { alpha: number; rgb: number[] }[] = [];
+  for (let offset = 0; offset < data.length; offset += 4) {
+    const alpha = data[offset + 3] ?? 0;
+    if (alpha === 0 || alpha === 255) {
+      continue;
+    }
+    pixels.push({ alpha, rgb: Array.from(data.subarray(offset, offset + 3)) });
+  }
+  return pixels;
 }

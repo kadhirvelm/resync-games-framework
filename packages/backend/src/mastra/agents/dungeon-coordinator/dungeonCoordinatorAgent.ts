@@ -65,7 +65,18 @@ const characterPromptSchema = titledPromptSchema.extend({
     .min(1)
     .max(2000)
     .describe(
-      "How this character looks and moves as an animated battle sprite: full-body silhouette, outfit, weapon or focus, the motion of their signature attack and any single effect it makes, and how they guard.",
+      "How this character looks and moves as an animated battle sprite facing right, toward the enemies: full-body silhouette, outfit, weapon or focus, the motion of their signature attack and any single effect it makes, and how they guard.",
+    ),
+});
+
+const enemyPromptSchema = titledPromptSchema.extend({
+  spritePrompt: z
+    .string()
+    .trim()
+    .min(1)
+    .max(2000)
+    .describe(
+      "How this enemy looks and moves as an animated battle sprite facing left, toward the player's party: full-body silhouette, anatomy or armor, natural weapons, the motion of its signature attack and any single effect it makes, and how it guards.",
     ),
 });
 
@@ -96,7 +107,8 @@ Call consult-productnow once before planning, and ground the package in what
 it finds about this place, its factions, and its threats.
 
 Then record exactly 2 backgrounds, 3 characters, 4 cards for each character,
-and 2 enemies. These counts are fixed even if the user asks for different
+and 2 enemies. Every character and every enemy also gets one sprite prompt.
+These counts are fixed even if the user asks for different
 counts. Plan backgrounds, characters, and enemies before cards. Cards must
 use the exact characterSlotId returned by plan-dungeon-character.
 
@@ -104,9 +116,11 @@ Keep every prompt in one shared location, faction, threat, color palette, and
 story hook. Background prompts describe one battle room each. Character prompts
 make each role distinct and describe a person who can be painted at four
 strengths. Card prompts name that character and one technique that belongs to
-them. Each character call also takes a sprite prompt for the animated
-figure that fights in battle: describe the full-body look, the attack motion,
-and the guard so it matches that character's role and technique. For each
+them. Every unit fights in battle as an animated sprite, so each character
+call and each enemy call also takes a sprite prompt: describe the full-body
+look, the attack motion, and the guard so it matches that unit's role and
+fighting style. Party members face right, toward the enemies; enemies face
+left, toward the party. For each
 character, plan levels 1, 2, 3, and 4 in that order. Level 1
 chooses the technique. Levels 2 through 4 keep its aether cost and effect
 kinds, and raise the amounts. Enemy prompts describe distinct threats that
@@ -129,18 +143,15 @@ interface PlannedDungeonSlotBase {
   title: string;
 }
 
-/** Slot kinds that belong to one character. */
-type CharacterOwnedSlotKind = "playable-card" | "sprite-sheet";
+/** Slot kinds that belong to another slot: cards to a character, sprites to a character or enemy. */
+type OwnedSlotKind = "playable-card" | "sprite-sheet";
 
 /** A planned room, character, or enemy prompt. */
 export type PlannedDungeonAssetSlot = {
-  [Kind in Exclude<
-    DungeonSlotKind,
-    CharacterOwnedSlotKind
-  >]: PlannedDungeonSlotBase & {
+  [Kind in Exclude<DungeonSlotKind, OwnedSlotKind>]: PlannedDungeonSlotBase & {
     kind: Kind;
   };
-}[Exclude<DungeonSlotKind, CharacterOwnedSlotKind>];
+}[Exclude<DungeonSlotKind, OwnedSlotKind>];
 
 /** A planned card prompt with required ownership and progression level. */
 export interface PlannedDungeonCardSlot extends PlannedDungeonSlotBase {
@@ -149,10 +160,11 @@ export interface PlannedDungeonCardSlot extends PlannedDungeonSlotBase {
   level: CardCharacterLevelNumber;
 }
 
-/** A planned battle sprite prompt for one character. */
+/** A planned battle sprite prompt for one character or enemy. */
 export interface PlannedDungeonSpriteSlot extends PlannedDungeonSlotBase {
-  characterSlotId: string;
   kind: "sprite-sheet";
+  /** Character or enemy slot this sprite animates */
+  ownerSlotId: string;
 }
 
 /** One prompt the planner recorded for a later agent. */
@@ -173,10 +185,15 @@ interface PlannedCharacter {
   sprite: PlannedDungeonSpriteSlot;
 }
 
+interface PlannedEnemy {
+  slot: PlannedDungeonSlot;
+  sprite: PlannedDungeonSpriteSlot;
+}
+
 interface DungeonPlanState {
   backgrounds: PlannedDungeonSlot[];
   characters: Map<string, PlannedCharacter>;
-  enemies: PlannedDungeonSlot[];
+  enemies: PlannedEnemy[];
 }
 
 /**
@@ -281,13 +298,7 @@ export class DungeonCoordinatorAgent
             "character",
           );
           const slot = createSlot("card-character", input);
-          const sprite: PlannedDungeonSpriteSlot = {
-            characterSlotId: slot.id,
-            id: randomUUID(),
-            kind: "sprite-sheet",
-            prompt: input.spritePrompt,
-            title: `${input.title} sprite`,
-          };
+          const sprite = createSpriteSlot(slot.id, input);
           state.characters.set(slot.id, { cards: [], slot, sprite });
           return { characterSlotId: slot.id };
         },
@@ -337,15 +348,18 @@ export class DungeonCoordinatorAgent
       }),
       [PLAN_DUNGEON_ENEMY_TOOL_ID]: createTool({
         description:
-          "Record the prompt for one enemy. Describe how it fights and that its health should fit the rooms. Does not paint it.",
-        execute: async (input: z.infer<typeof titledPromptSchema>) => {
+          "Record the prompt for one enemy and its animated battle sprite. Describe how it fights and that its health should fit the rooms. Does not paint the enemy or the sprite.",
+        execute: async (input: z.infer<typeof enemyPromptSchema>) => {
           requireCapacity(state.enemies.length, DUNGEON_ENEMY_COUNT, "enemy");
           const slot = createSlot("enemy", input);
-          state.enemies.push(slot);
+          state.enemies.push({
+            slot,
+            sprite: createSpriteSlot(slot.id, input),
+          });
           return { slotId: slot.id };
         },
         id: PLAN_DUNGEON_ENEMY_TOOL_ID,
-        inputSchema: titledPromptSchema,
+        inputSchema: enemyPromptSchema,
         outputSchema: enemyOutputSchema,
       }),
     };
@@ -357,9 +371,7 @@ export class DungeonCoordinatorAgent
  * @param input - Title and prompt from the planner
  * @returns A slot with a new id
  */
-function createSlot<
-  Kind extends Exclude<DungeonSlotKind, CharacterOwnedSlotKind>,
->(
+function createSlot<Kind extends Exclude<DungeonSlotKind, OwnedSlotKind>>(
   kind: Kind,
   input: { prompt: string; title: string },
 ): Extract<PlannedDungeonAssetSlot, { kind: Kind }> {
@@ -369,6 +381,24 @@ function createSlot<
     prompt: input.prompt,
     title: input.title,
   } as Extract<PlannedDungeonAssetSlot, { kind: Kind }>;
+}
+
+/**
+ * @param ownerSlotId - Character or enemy slot the sprite animates
+ * @param input - Owner title and the planner's sprite prompt
+ * @returns A sprite slot with a new id, titled after its owner
+ */
+function createSpriteSlot(
+  ownerSlotId: string,
+  input: { spritePrompt: string; title: string },
+): PlannedDungeonSpriteSlot {
+  return {
+    id: randomUUID(),
+    kind: "sprite-sheet",
+    ownerSlotId,
+    prompt: input.spritePrompt,
+    title: `${input.title} sprite`,
+  };
 }
 
 /**
@@ -436,7 +466,7 @@ function isCompletePlan(state: DungeonPlanState): boolean {
  * @param state - Prompts recorded by the planning tools
  * @param summary - Coordinator closing text, when it had a step left to write one
  * @returns Rooms, then each character with that character's cards and
- * sprite, then enemies
+ * sprite, then each enemy with its sprite
  */
 function planResult(
   state: DungeonPlanState,
@@ -447,7 +477,9 @@ function planResult(
   for (const character of state.characters.values()) {
     slots.push(character.slot, ...character.cards, character.sprite);
   }
-  slots.push(...state.enemies);
+  for (const enemy of state.enemies) {
+    slots.push(enemy.slot, enemy.sprite);
+  }
   return {
     slots,
     summary: text === "" ? DUNGEON_PROMPTS_READY : text,

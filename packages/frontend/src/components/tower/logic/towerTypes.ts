@@ -99,6 +99,8 @@ export interface EnemyTemplate {
   maxHitPoints: number;
   moves: EnemyMove[];
   name: string;
+  /** Animated battle figure, when the enemy has a sprite sheet */
+  sprite?: UnitSprite;
 }
 
 /** Backdrop and story for one room. */
@@ -154,6 +156,8 @@ export interface EnemySpawn {
   maxHitPoints: number;
   moves: EnemyMove[];
   name: string;
+  /** Animated figure drawn in place of the portrait, when one exists */
+  sprite?: UnitSprite;
   templateId: string;
 }
 

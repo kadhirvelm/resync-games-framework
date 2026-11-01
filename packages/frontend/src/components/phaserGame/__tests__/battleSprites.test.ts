@@ -5,6 +5,7 @@ import {
   spriteAnimationKey,
   spriteCuesForEvent,
   spriteDisplayScale,
+  spriteNeedsFlip,
   spriteTextureKey,
   spriteTimeScale,
 } from "../battleSprites";
@@ -155,5 +156,14 @@ describe("spriteTimeScale", () => {
     expect(spriteTimeScale(1)).toBe(1);
     expect(spriteTimeScale(0.5)).toBe(2);
     expect(spriteTimeScale(Number.NaN)).toBe(1);
+  });
+});
+
+describe("spriteNeedsFlip", () => {
+  test("party members face right and enemies face left", () => {
+    expect(spriteNeedsFlip({ facing: "right" }, "party")).toBe(false);
+    expect(spriteNeedsFlip({ facing: "left" }, "party")).toBe(true);
+    expect(spriteNeedsFlip({ facing: "left" }, "enemy")).toBe(false);
+    expect(spriteNeedsFlip({ facing: "right" }, "enemy")).toBe(true);
   });
 });

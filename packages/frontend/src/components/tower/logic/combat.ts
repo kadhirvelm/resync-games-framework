@@ -52,6 +52,8 @@ export interface EnemyUnit extends CombatUnit {
   /** Index of the move it will make next. This is the telegraphed intent. */
   moveIndex: number;
   moves: EnemyMove[];
+  /** Animated figure drawn in place of the portrait, when one exists */
+  sprite?: UnitSprite;
 }
 
 /** Whether the battle is waiting on the player or finished. */
@@ -148,6 +150,7 @@ export function createCombat(setup: CombatSetup): CombatStep {
       moveIndex: 0,
       moves: enemy.moves,
       name: enemy.name,
+      ...(enemy.sprite ? { sprite: enemy.sprite } : {}),
     })),
     hand: [],
     party: setup.party.map((unit) => ({ ...unit, block: 0 })),

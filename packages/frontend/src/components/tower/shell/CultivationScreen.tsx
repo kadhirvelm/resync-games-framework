@@ -9,6 +9,7 @@ import {
   type UpgradeId,
   upgradeRank,
 } from "../logic/progression";
+import { Burst } from "../parts/Burst";
 import { LeafIcon } from "../parts/LeafIcon";
 import { ScreenHeader } from "./ScreenHeader";
 import styles from "./shell.module.scss";
@@ -21,7 +22,8 @@ interface CultivationScreenProps {
 
 /**
  * Permanent upgrades bought with Jade Essence. Each card shows its ranks as
- * leaves and what the next rank costs; a purchase glows briefly.
+ * leaves and what the next rank costs. A purchase bursts with light, rings
+ * a coin, and pops its new rank leaf in.
  * @param onBack - Returns to the main menu
  * @param onPurchase - Buys the next rank of an upgrade
  * @param profile - Player profile
@@ -54,21 +56,19 @@ export const CultivationScreen = ({
           const rank = upgradeRank(profile, upgrade.id);
           const cost = nextUpgradeCost(profile, upgrade.id);
           const affordable = cost !== undefined && profile.essence >= cost;
+          const bought = justBought?.id === upgrade.id;
           return (
             <article
               className={clsx(
                 styles.upgradeCard,
                 cost === undefined && styles.upgradeMastered,
                 affordable && styles.upgradeAffordable,
-                justBought?.id === upgrade.id && styles.upgradeGlow,
+                bought && styles.upgradeGlow,
               )}
-              key={
-                justBought?.id === upgrade.id
-                  ? `${upgrade.id}-${justBought.stamp}`
-                  : upgrade.id
-              }
+              key={bought ? `${upgrade.id}-${justBought.stamp}` : upgrade.id}
               style={{ "--i": index } as React.CSSProperties}
             >
+              {bought ? <Burst count={20} reach={170} /> : null}
               <header>
                 <h2>{upgrade.name}</h2>
                 <span
@@ -78,6 +78,9 @@ export const CultivationScreen = ({
                 >
                   {upgrade.costs.map((_, step) => (
                     <LeafIcon
+                      className={clsx(
+                        bought && step === rank - 1 && styles.rankLeafNew,
+                      )}
                       filled={step < rank}
                       // biome-ignore lint/suspicious/noArrayIndexKey: ranks are positional
                       key={step}
@@ -99,6 +102,7 @@ export const CultivationScreen = ({
                   disabled={!affordable}
                   onClick={() => {
                     playSound("purchase");
+                    playSound("coin");
                     setJustBought({ id: upgrade.id, stamp: Date.now() });
                     onPurchase(upgrade.id);
                   }}

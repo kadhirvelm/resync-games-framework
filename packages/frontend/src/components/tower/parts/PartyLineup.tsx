@@ -42,7 +42,8 @@ function positionLabel(index: number, size: number): string {
  * The party in battle order, drawn exactly as it will stand: back on the
  * left, front on the right facing the enemies. Drag a member, or use the
  * arrows, to reorder.
- * Members slide to their new places when the order changes.
+ * Members slide to their new places when the order changes, breathe
+ * gently while they wait, and the slot under a dragged member lights up.
  * @param content - Tower content
  * @param onMove - Moves a member from one position to another
  * @param reducedMotion - Snap instead of sliding
@@ -56,6 +57,7 @@ export const PartyLineup = ({
   run,
 }: PartyLineupProps) => {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
   const row = useRef<HTMLOListElement>(null);
   useFlip(
     row,
@@ -89,7 +91,7 @@ export const PartyLineup = ({
         className={styles.lineupRow}
         ref={row}
       >
-        {displayed.map(({ index, member }) => {
+        {displayed.map(({ index, member }, order) => {
           const profile = memberProfile(member, content);
           const card =
             member.kind === "coreborn"
@@ -103,19 +105,37 @@ export const PartyLineup = ({
                 onMove && styles.memberMovable,
                 member.kind === "cultivator" && styles.memberCultivator,
                 dragIndex === index && styles.memberDragging,
+                dragIndex !== null &&
+                  dragIndex !== index &&
+                  dropIndex === index &&
+                  styles.memberDropTarget,
               )}
               data-flip-key={member.id}
               draggable={onMove !== undefined}
               key={member.id}
-              onDragEnd={() => setDragIndex(null)}
+              onDragEnd={() => {
+                setDragIndex(null);
+                setDropIndex(null);
+              }}
+              onDragEnter={() => {
+                if (dragIndex !== null && dropIndex !== index) {
+                  playSound("tick");
+                }
+                setDropIndex(index);
+              }}
               onDragOver={(event) => event.preventDefault()}
-              onDragStart={() => setDragIndex(index)}
+              onDragStart={() => {
+                playSound("pop");
+                setDragIndex(index);
+              }}
               onDrop={() => {
                 if (dragIndex !== null) {
                   move(dragIndex, index);
                 }
                 setDragIndex(null);
+                setDropIndex(null);
               }}
+              style={{ "--i": order } as React.CSSProperties}
             >
               <span className={styles.memberPosition}>
                 {positionLabel(index, size)}

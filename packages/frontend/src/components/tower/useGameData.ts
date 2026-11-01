@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect } from "react";
 import { configureSound } from "./audio/sound";
+import { useMusic } from "./audio/useMusic";
 import {
   createProfile,
   type PlayerProfile,
@@ -62,6 +63,7 @@ export function useGameData(
   useEffect(() => {
     configureSound({ muted: settings.muted, volume: settings.volume });
   }, [settings.muted, settings.volume]);
+  useMusic(session?.run, settings.music);
 
   useEffect(() => {
     if (!session || isClimbOver(session.run)) {

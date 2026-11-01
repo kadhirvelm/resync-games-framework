@@ -349,9 +349,9 @@ export class DungeonService {
 function toStoredSlot(slot: PlannedDungeonSlot): StoredDungeonSlot {
   if (slot.kind === "sprite-sheet") {
     return {
-      characterSlotId: slot.characterSlotId,
       id: slot.id,
       kind: slot.kind,
+      ownerSlotId: slot.ownerSlotId,
       prompt: slot.prompt,
       status: "planned",
       title: slot.title,

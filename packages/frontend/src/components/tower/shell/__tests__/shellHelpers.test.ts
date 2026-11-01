@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { countUpValue } from "../countUp";
+import { countUpValue, tweenValue } from "../countUp";
 import { ascensionNumeral, formatTimeAgo } from "../formatTime";
 
 const MINUTE = 60_000;
@@ -36,5 +36,23 @@ describe("countUpValue", () => {
     expect(middle).toBeLessThan(80);
     expect(countUpValue(80, 1000, 1000)).toBe(80);
     expect(countUpValue(80, 5, 0)).toBe(80);
+  });
+});
+
+describe("tweenValue", () => {
+  test("starts at the old value and lands on the new one", () => {
+    expect(tweenValue(40, 10, 0, 500)).toBe(40);
+    expect(tweenValue(40, 10, 500, 500)).toBe(10);
+    expect(tweenValue(40, 10, 900, 500)).toBe(10);
+  });
+
+  test("moves most of the way early, easing out", () => {
+    const halfway = tweenValue(0, 100, 250, 500);
+    expect(halfway).toBeGreaterThan(50);
+    expect(halfway).toBeLessThan(100);
+  });
+
+  test("no duration jumps straight to the end", () => {
+    expect(tweenValue(3, 7, 0, 0)).toBe(7);
   });
 });
