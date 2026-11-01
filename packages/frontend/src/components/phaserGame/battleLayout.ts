@@ -1,3 +1,5 @@
+import type { HandFanOptions } from "./handFan";
+
 /** A rectangle described by its center. */
 export type LayoutRect = {
   height: number;
@@ -6,13 +8,8 @@ export type LayoutRect = {
   y: number;
 };
 
-/** Where one party member or enemy stands. `x`/`y` is the portrait center. */
+/** Where one party member or enemy stands. `x`/`y` is the figure's center. */
 export type UnitSlot = LayoutRect & {
-  index: number;
-};
-
-/** Where one hand card rests. */
-export type CardSlot = LayoutRect & {
   index: number;
 };
 
@@ -22,41 +19,51 @@ export type CardPanels = {
   rules?: LayoutRect;
 };
 
-/** Every position the battle draws for one frame size. */
+/** Every position the battle draws for one view size. */
 export type BattleLayout = {
   aether: { radius: number; x: number; y: number };
   banner: { x: number; y: number };
-  cards: CardSlot[];
   discardPile: { x: number; y: number };
   drawPile: { x: number; y: number };
   endTurn: LayoutRect;
   enemies: UnitSlot[];
   /** Line the units stand on */
   groundY: number;
+  /** Fan geometry for the hand */
+  hand: HandFanOptions;
+  /** Where a card waits while the player aims it */
+  aimPose: { x: number; y: number };
   /** Front of the party is index 0, drawn nearest the enemies. */
   party: UnitSlot[];
+  /** Releasing a card above this line plays it */
+  playLineY: number;
 };
 
 /** How many of each thing the battle has to place. */
 export interface BattleLayoutCounts {
   enemies: number;
-  hand: number;
   party: number;
 }
 
-/** Portrait boxes use the 3:4 shape of generated character art. */
+/** Figure boxes use the 3:4 shape of generated character art. */
 const PORTRAIT_ASPECT = 3 / 4;
-const CARD_ASPECT = 1.45;
-/** Tallest a portrait gets, so a small party does not fill the screen. */
-const MAX_PORTRAIT_HEIGHT = 250;
+/** Card height over width. */
+const CARD_ASPECT = 1.4;
+/** Tallest a figure gets, so a small party does not fill the screen. */
+const MAX_FIGURE_HEIGHT = 300;
+/** Share of a resting card's height that hangs below the view. */
+const CARD_TUCK_SHARE = 0.16;
+/** Room kept above each figure for its intent and labels. */
+const ABOVE_FIGURE_ROOM = 84;
 
 /**
  * Places the party on the left with its front nearest the middle, enemies on
- * the right in their on-screen order, and the hand along the bottom.
+ * the right in their on-screen order, and the hand fanned along the bottom
+ * between the draw pile and the discard pile.
  * @param width - View width in pixels
  * @param height - View height in pixels
- * @param counts - Party, enemy, and hand sizes
- * @returns Slots for every drawn element
+ * @param counts - Party and enemy sizes
+ * @returns Positions for every drawn element
  */
 export function layoutBattle(
   width: number,
@@ -65,69 +72,68 @@ export function layoutBattle(
 ): BattleLayout {
   const safeWidth = Math.max(width, 320);
   const safeHeight = Math.max(height, 320);
-  const cardWidth = Math.min(132, Math.max(76, safeWidth * 0.1));
-  const cardHeight = Math.min(cardWidth * CARD_ASPECT, safeHeight * 0.3);
-  const fittedCardWidth = cardHeight / CARD_ASPECT;
-  const bottomMargin = Math.min(24, safeHeight * 0.03);
-  const cardY = safeHeight - bottomMargin - cardHeight / 2;
-  const groundY = Math.min(
-    safeHeight * 0.66,
-    cardY - cardHeight / 2 - safeHeight * 0.05,
+  const cardHeight = Math.min(
+    250,
+    Math.max(130, safeHeight * 0.27),
+    safeWidth * 0.14 * CARD_ASPECT,
   );
-  const fieldTop = safeHeight * 0.16;
+  const cardWidth = cardHeight / CARD_ASPECT;
+  const restY = safeHeight - cardHeight * (0.5 - CARD_TUCK_SHARE);
+  const handTop = restY - cardHeight / 2;
+  const groundY = Math.min(safeHeight * 0.7, handTop - safeHeight * 0.03);
+  const fieldTop = safeHeight * 0.12;
+  const sideReserve = Math.min(190, safeWidth * 0.15);
+  const corner = Math.min(78, safeWidth * 0.07);
 
   return {
     aether: {
-      radius: Math.min(44, safeHeight * 0.06),
-      x: Math.min(96, safeWidth * 0.08),
-      y: cardY - cardHeight * 0.28,
+      radius: Math.min(42, safeHeight * 0.05),
+      x: sideReserve * 0.55,
+      y: safeHeight - corner * 0.85 - Math.min(108, safeHeight * 0.12),
     },
-    banner: { x: safeWidth / 2, y: Math.min(40, safeHeight * 0.06) },
-    cards: layoutHand(
-      safeWidth,
-      counts.hand,
-      fittedCardWidth,
-      cardHeight,
-      cardY,
-    ),
-    discardPile: {
-      x: safeWidth - Math.min(96, safeWidth * 0.08),
-      y: cardY + cardHeight * 0.32,
-    },
-    drawPile: {
-      x: Math.min(96, safeWidth * 0.08),
-      y: cardY + cardHeight * 0.32,
-    },
+    aimPose: { x: safeWidth / 2, y: handTop - cardHeight * 0.18 },
+    banner: { x: safeWidth / 2, y: Math.min(36, safeHeight * 0.05) },
+    discardPile: { x: safeWidth - corner, y: safeHeight - corner * 0.85 },
+    drawPile: { x: corner, y: safeHeight - corner * 0.85 },
     endTurn: {
-      height: 46,
+      height: 50,
       width: Math.min(150, safeWidth * 0.13),
-      x: safeWidth - Math.min(96, safeWidth * 0.08),
-      y: cardY - cardHeight * 0.18,
+      x: safeWidth - sideReserve * 0.62,
+      y: handTop - safeHeight * 0.005,
     },
     enemies: layoutRow({
       count: counts.enemies,
       fieldTop,
       fromRight: false,
       groundY,
-      left: safeWidth * 0.54,
-      right: safeWidth * 0.96,
+      left: safeWidth * 0.55,
+      right: safeWidth * 0.97,
     }),
     groundY,
+    hand: {
+      cardHeight,
+      cardWidth,
+      centerX: safeWidth / 2,
+      maxSpan: Math.max(cardWidth, safeWidth - sideReserve * 2),
+      restY,
+      viewBottom: safeHeight,
+    },
     party: layoutRow({
       count: counts.party,
       fieldTop,
       fromRight: true,
       groundY,
-      left: safeWidth * 0.04,
-      right: safeWidth * 0.46,
+      left: safeWidth * 0.03,
+      right: safeWidth * 0.45,
     }),
+    playLineY: handTop - cardHeight * 0.25,
   };
 }
 
 /**
  * Spreads units across one side of the field, feet on the ground line.
  * @param row.count - Units on this side
- * @param row.fieldTop - Highest a portrait may reach, leaving room for intents
+ * @param row.fieldTop - Highest a figure may reach, leaving room for intents
  * @param row.fromRight - Whether index 0 sits at the right edge
  * @param row.groundY - Line the units stand on
  * @param row.left - Left edge of the side
@@ -147,10 +153,13 @@ function layoutRow(row: {
   }
   const span = row.right - row.left;
   const slotWidth = span / Math.max(row.count, 2);
-  const maxHeight = Math.max(60, row.groundY - row.fieldTop - 70);
+  const maxHeight = Math.max(
+    60,
+    row.groundY - row.fieldTop - ABOVE_FIGURE_ROOM,
+  );
   const height = Math.min(
     maxHeight,
-    MAX_PORTRAIT_HEIGHT,
+    MAX_FIGURE_HEIGHT,
     (slotWidth * 0.92) / PORTRAIT_ASPECT,
   );
   const width = height * PORTRAIT_ASPECT;
@@ -168,43 +177,6 @@ function layoutRow(row: {
       y: row.groundY - height / 2,
     };
   });
-}
-
-/**
- * Lays the hand out centered. Large hands overlap instead of overflowing.
- * @param width - View width
- * @param count - Cards in hand
- * @param cardWidth - Card width
- * @param cardHeight - Card height
- * @param cardY - Card center line
- * @returns One slot per card, left to right
- */
-function layoutHand(
-  width: number,
-  count: number,
-  cardWidth: number,
-  cardHeight: number,
-  cardY: number,
-): CardSlot[] {
-  if (count <= 0) {
-    return [];
-  }
-  const available = width * 0.66;
-  const preferredGap = Math.max(10, cardWidth * 0.12);
-  const fullSpan = count * cardWidth + (count - 1) * preferredGap;
-  const step =
-    fullSpan <= available || count === 1
-      ? cardWidth + preferredGap
-      : (available - cardWidth) / (count - 1);
-  const span = cardWidth + step * (count - 1);
-  const firstX = (width - span) / 2 + cardWidth / 2;
-  return Array.from({ length: count }, (_, index) => ({
-    height: cardHeight,
-    index,
-    width: cardWidth,
-    x: firstX + index * step,
-    y: cardY,
-  }));
 }
 
 const CARD_PANEL_PADDING = 7;
@@ -269,13 +241,13 @@ export function layoutHealthBar(
 ): HealthBarLayout {
   const max = Math.max(maxHitPoints, 1);
   const current = Math.min(Math.max(hitPoints, 0), max);
-  const width = Math.max(84, Math.min(150, slot.width * 1.05));
+  const width = Math.max(84, Math.min(150, slot.width * 0.95));
   return {
     fillRatio: current / max,
-    height: 16,
+    height: 14,
     label: `${current} / ${max}`,
     width,
     x: slot.x,
-    y: slot.y + slot.height / 2 + 30,
+    y: slot.y + slot.height / 2 + 20,
   };
 }

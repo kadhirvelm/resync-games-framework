@@ -34,6 +34,8 @@
   opacity: 0.9;
   position: absolute;
   top: 10%;
+  transition: translate 900ms $ease-out;
+  translate: calc(var(--px, 0) * -10px) calc(var(--py, 0) * -6px);
   width: 110px;
 }
 
@@ -41,13 +43,19 @@
 .mountainsNear {
   bottom: 0;
   height: 55vh;
-  left: 0;
+  left: -50px;
   position: absolute;
-  width: 100%;
+  transition: translate 700ms $ease-out;
+  width: calc(100% + 100px);
 }
 
 .mountainsFar {
   opacity: 0.85;
+  translate: calc(var(--px, 0) * -14px) calc(var(--py, 0) * -6px);
+}
+
+.mountainsNear {
+  translate: calc(var(--px, 0) * -38px) calc(var(--py, 0) * -10px);
 }
 
 .towerWrap {
@@ -55,6 +63,8 @@
   height: min(78vh, 760px);
   position: absolute;
   right: 9vw;
+  transition: translate 800ms $ease-out;
+  translate: calc(var(--px, 0) * -24px) calc(var(--py, 0) * -8px);
   width: min(38vh, 380px);
 }
 
@@ -216,28 +226,54 @@
 
 /* Curtain */
 
+/* Paper spreads from the middle like ink, holds, then lifts away. */
 .curtain {
   align-items: center;
   background:
-    radial-gradient(ellipse at center, $paper-light, $paper 60%, $paper-deep);
+    radial-gradient(ellipse at center, $paper-light, $paper 55%, $paper-deep 85%, rgba($jade-dark, 0.35));
+  clip-path: circle(0% at 50% 50%);
   display: flex;
   inset: 0;
   justify-content: center;
-  opacity: 0;
   pointer-events: none;
   position: fixed;
-  transition: opacity var(--curtain-ms, 380ms) ease;
   z-index: 1000;
 }
 
 .curtainShut {
-  opacity: 1;
+  clip-path: circle(75% at 50% 50%);
   pointer-events: all;
+  transition: clip-path var(--curtain-ms, 420ms) cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+.curtainLifting {
+  clip-path: circle(75% at 50% 50%);
+  opacity: 0;
+  transform: scale(1.06);
+  transition:
+    opacity var(--curtain-ms, 420ms) ease,
+    transform var(--curtain-ms, 420ms) ease;
+}
+
+.curtainInk {
+  animation: ink-breathe 1.6s ease-in-out infinite;
+  background: radial-gradient(circle, rgba($jade, 0.22), rgba($sage, 0.12) 45%, transparent 70%);
+  border-radius: 50%;
+  height: 60vmin;
+  position: absolute;
+  width: 60vmin;
+}
+
+@keyframes ink-breathe {
+  50% {
+    transform: scale(1.12);
+  }
 }
 
 .curtainLeaf {
   animation: curtain-spin 1.4s $ease-out infinite;
   opacity: 0.8;
+  position: relative;
 }
 
 @keyframes curtain-spin {
@@ -313,7 +349,12 @@
   @include rise(18px, 900ms);
 
   h1 {
-    background: linear-gradient(180deg, #fff9e8 20%, $gold-light 70%, $gold);
+    animation:
+      title-shimmer 7s ease-in-out 1.2s infinite,
+      title-float 8s ease-in-out infinite;
+    background:
+      linear-gradient(105deg, transparent 40%, rgba(#fff, 0.95) 50%, transparent 60%) 150% 0 / 250% 100% no-repeat,
+      linear-gradient(180deg, #fff9e8 20%, $gold-light 70%, $gold);
     background-clip: text;
     color: transparent;
     font-family: $display;
@@ -332,6 +373,27 @@
       letter-spacing: 0.08em;
       padding-left: 0.3em;
     }
+  }
+}
+
+@keyframes title-shimmer {
+  0% {
+    background-position:
+      150% 0,
+      0 0;
+  }
+
+  35%,
+  100% {
+    background-position:
+      -50% 0,
+      0 0;
+  }
+}
+
+@keyframes title-float {
+  50% {
+    transform: translateY(-6px);
   }
 }
 
@@ -394,6 +456,10 @@
     width: 10px;
   }
 
+  &:active {
+    scale: 0.98;
+  }
+
   &:hover,
   &:focus-visible {
     background: linear-gradient(90deg, rgba($jade-glow, 0.12), transparent 80%);
@@ -411,6 +477,7 @@
 
 .menuItemPrimary .menuItemLabel {
   color: $gold-light;
+  text-shadow: 0 0 18px rgba($gold-light, 0.45);
 }
 
 .menuItemLabel {
@@ -468,9 +535,30 @@
   font-weight: 600;
   gap: 6px;
   padding: 5px 14px;
+  transition:
+    box-shadow 300ms ease,
+    scale 300ms $ease-spring;
 
   svg {
     color: $jade-glow;
+  }
+}
+
+/* The purse glows while its number rolls to a new value. */
+.essenceRolling {
+  box-shadow:
+    0 0 0 3px rgba($gold-light, 0.35),
+    0 0 26px rgba($gold-light, 0.75);
+  scale: 1.08;
+
+  svg {
+    animation: gem-spin 600ms $ease-out infinite;
+  }
+}
+
+@keyframes gem-spin {
+  to {
+    transform: rotateY(360deg);
   }
 }
 
@@ -604,8 +692,34 @@
   grid-template-columns: 96px 1fr;
   overflow: hidden;
   padding: 0;
+  position: relative;
   text-align: left;
   width: 100%;
+
+  &:hover:not(:disabled) {
+    box-shadow:
+      0 16px 32px rgba($jade-dark, 0.2),
+      0 0 0 2px rgba($jade-glow, 0.35);
+    transform: perspective(800px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) translateY(-4px);
+    transition:
+      transform 140ms $ease-out,
+      box-shadow 220ms $ease-out;
+  }
+
+  &::after {
+    background: radial-gradient(circle at var(--glare-x, 50%) var(--glare-y, 0%), rgba(#fff, 0.5), transparent 55%);
+    content: "";
+    inset: 0;
+    mix-blend-mode: soft-light;
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    transition: opacity 200ms ease;
+  }
+
+  &:hover::after {
+    opacity: 1;
+  }
 }
 
 .towerCardSelected {
@@ -620,6 +734,11 @@
     var(--art, radial-gradient(circle at 40% 30%, rgba($sage, 0.8), rgba($jade-dark, 0.9))) center / cover no-repeat;
   min-height: 96px;
   position: relative;
+  transition: filter 300ms ease;
+
+  .towerCard:hover & {
+    filter: saturate(1.3) brightness(1.08);
+  }
 }
 
 .savedPill {
@@ -695,12 +814,21 @@
   padding: 22px 24px;
 
   h2 {
+    animation: detail-title 700ms $ease-out 120ms both;
     font-family: $display;
     font-size: clamp(32px, 4vw, 44px);
     font-weight: 600;
     line-height: 1;
     margin: 0;
     text-shadow: 0 2px 16px rgba($night, 0.6);
+  }
+}
+
+@keyframes detail-title {
+  from {
+    filter: blur(5px);
+    opacity: 0;
+    transform: translateY(12px);
   }
 }
 
@@ -738,6 +866,24 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.rosterMember {
+  animation: roster-pop 460ms $ease-spring both;
+  animation-delay: calc(200ms + var(--i, 0) * 55ms);
+  display: inline-flex;
+  transition: translate 200ms $ease-spring;
+
+  &:hover {
+    translate: 0 -4px;
+  }
+}
+
+@keyframes roster-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4) translateY(10px);
+  }
 }
 
 .ascensionPicker {
@@ -779,6 +925,7 @@
 }
 
 .ascensionPipActive {
+  animation: pip-pop 460ms $ease-spring;
   background: radial-gradient(circle at 40% 35%, $gold-light, $gold);
   border-color: #8a6a22;
   box-shadow: 0 0 0 4px rgba($gold, 0.22);
@@ -786,7 +933,18 @@
   transform: scale(1.08);
 }
 
+@keyframes pip-pop {
+  40% {
+    box-shadow:
+      0 0 0 8px rgba($gold, 0.25),
+      0 0 20px rgba($gold-light, 0.8);
+    transform: scale(1.3);
+  }
+}
+
 .ascensionText {
+  @include rise(6px, 360ms);
+
   font-size: 15px;
   margin: 10px 0 0;
 
@@ -873,6 +1031,7 @@
   flex-direction: column;
   gap: 8px;
   padding: 18px 20px;
+  position: relative;
   transition:
     border-color 200ms ease,
     box-shadow 200ms ease;
@@ -894,6 +1053,33 @@
 .upgradeAffordable {
   border-color: rgba($jade, 0.8);
   box-shadow: 0 0 0 3px rgba($jade, 0.12);
+
+  .upgradeBuy:not(:disabled) {
+    animation: buy-ready 2.2s ease-in-out infinite;
+  }
+}
+
+@keyframes buy-ready {
+  50% {
+    box-shadow:
+      0 3px 0 rgba($night, 0.25),
+      0 0 18px 2px rgba($jade-glow, 0.55);
+  }
+}
+
+.rankLeafNew {
+  animation: rank-leaf-pop 700ms $ease-spring 120ms both;
+}
+
+@keyframes rank-leaf-pop {
+  0% {
+    transform: scale(0) rotate(-120deg);
+  }
+
+  60% {
+    filter: drop-shadow(0 0 8px $gold-light);
+    transform: scale(1.8) rotate(10deg);
+  }
 }
 
 .upgradeMastered {
@@ -966,16 +1152,17 @@
   margin-top: auto;
   padding: 10px 16px;
   transition:
-    transform 160ms $ease-out,
+    transform 200ms $ease-spring,
     filter 160ms ease;
 
   &:hover:not(:disabled) {
-    filter: brightness(1.1);
-    transform: translateY(-2px);
+    filter: brightness(1.12);
+    transform: translateY(-3px) scale(1.02);
   }
 
   &:active:not(:disabled) {
-    transform: translateY(1px);
+    transform: translateY(1px) scale(0.95);
+    transition-duration: 80ms;
   }
 
   &:disabled {
@@ -1427,8 +1614,25 @@
   gap: 18px;
   inset: 0;
   justify-content: center;
+  overflow: hidden;
   position: fixed;
   z-index: 950;
+}
+
+/* Slow rays of gold and jade turning behind the merged Coreborn. */
+.celebrationRays {
+  animation:
+    fade-in 600ms ease both,
+    ring-spin 24s linear infinite;
+  background: repeating-conic-gradient(from 0deg at 50% 50%, rgba($gold-light, 0.22) 0deg 6deg, transparent 6deg 15deg, rgba($jade-glow, 0.12) 15deg 19deg, transparent 19deg 30deg);
+  height: 220vmax;
+  left: 50%;
+  margin: -110vmax 0 0 -110vmax;
+  mask: radial-gradient(circle, #000 8%, transparent 45%);
+  pointer-events: none;
+  position: absolute;
+  top: 42%;
+  width: 220vmax;
 }
 
 .celebrationRing {
@@ -1436,6 +1640,11 @@
   border-radius: 50%;
   padding: 26px;
   position: relative;
+  z-index: 1;
+
+  > :first-child {
+    animation: portrait-glow 2.2s ease-in-out 900ms infinite;
+  }
 
   &::before {
     animation: ring-spin 6s linear infinite;
@@ -1459,6 +1668,14 @@
   }
 }
 
+@keyframes portrait-glow {
+  50% {
+    box-shadow:
+      0 0 0 4px rgba($gold-light, 0.5),
+      0 0 40px rgba($gold-light, 0.8);
+  }
+}
+
 @keyframes ring-spin {
   to {
     transform: rotate(360deg);
@@ -1471,6 +1688,8 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  position: relative;
+  z-index: 1;
 
   strong {
     font-family: $display;
@@ -1487,7 +1706,18 @@
 }
 
 .celebrationCard {
-  animation: ring-rise 700ms $ease-out 450ms both;
+  animation: ring-rise 700ms $ease-spring 1.2s both;
+  position: relative;
+  z-index: 1;
+}
+
+.celebrationHint {
+  animation: fade-in 600ms ease 2s both;
+  color: rgba($paper, 0.55);
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  position: relative;
+  z-index: 1;
 }
 
 /* Climb HUD */
@@ -1518,11 +1748,15 @@
   display: flex;
   height: 40px;
   justify-content: center;
-  transition: transform 200ms $ease-out;
+  transition: transform 260ms $ease-spring;
   width: 40px;
 
   &:hover {
-    transform: scale(1.06);
+    transform: scale(1.1) rotate(90deg);
+  }
+
+  &:active {
+    transform: scale(0.92) rotate(90deg);
   }
 }
 
@@ -1587,7 +1821,27 @@
   .mist,
   .towerCore,
   .towerWindow,
-  .curtainLeaf {
+  .curtainLeaf,
+  .curtainInk,
+  .celebrationRays,
+  .menuTitle h1 {
     animation: none;
+  }
+
+  .moon,
+  .mountainsFar,
+  .mountainsNear,
+  .towerWrap {
+    translate: none;
+  }
+
+  .curtain {
+    clip-path: none;
+    opacity: 0;
+    transition: opacity var(--curtain-ms, 420ms) ease;
+  }
+
+  .curtainShut {
+    opacity: 1;
   }
 }

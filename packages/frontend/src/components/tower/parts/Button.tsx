@@ -1,5 +1,6 @@
 import clsx from "clsx";
 import type { ButtonHTMLAttributes } from "react";
+import { playSound } from "../audio/sound";
 import styles from "../tower.module.scss";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -7,7 +8,8 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 /**
- * A leaf-cornered button in the game's watercolor style.
+ * A leaf-cornered button in the game's watercolor style. It chimes softly
+ * under the pointer, catches a glint of light, and squashes when pressed.
  * @param variant - Primary jade fill, or a quiet stone outline
  * @param className - Extra class
  * @param props - Native button props
@@ -15,6 +17,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
  */
 export const Button = ({
   className,
+  onMouseEnter,
   type = "button",
   variant = "primary",
   ...props
@@ -25,6 +28,12 @@ export const Button = ({
       variant === "quiet" && styles.buttonQuiet,
       className,
     )}
+    onMouseEnter={(event) => {
+      if (!props.disabled) {
+        playSound("hover");
+      }
+      onMouseEnter?.(event);
+    }}
     type={type}
     {...props}
   />

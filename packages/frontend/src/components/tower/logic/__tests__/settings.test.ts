@@ -11,16 +11,19 @@ describe("parseSettings", () => {
     expect(
       parseSettings({
         battleSpeed: "ludicrous",
+        music: "loud",
         muted: true,
         reducedMotion: "yes",
         volume: 4,
       }),
     ).toEqual({
       battleSpeed: "normal",
+      music: true,
       muted: true,
       reducedMotion: false,
       volume: 1,
     });
     expect(parseSettings({ battleSpeed: "swift" }).battleSpeed).toBe("swift");
+    expect(parseSettings({ music: false }).music).toBe(false);
   });
 });

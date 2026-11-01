@@ -1,5 +1,5 @@
 import type Phaser from "phaser";
-import type { CombatEvent, PartyUnit } from "../tower/logic/combat";
+import type { CombatEvent } from "../tower/logic/combat";
 import type { UnitSprite, UnitSpriteMove } from "../tower/logic/towerTypes";
 import type { UnitSlot } from "./battleLayout";
 import { paced } from "./battleMotion";
@@ -59,20 +59,20 @@ export function spriteAnimationKey(
 }
 
 /**
- * Lists every animation strip the party needs. A figure is only usable
+ * Lists every animation strip the fight needs. A figure is only usable
  * with an idle strip, so figures without one are skipped. Each strip loads
  * once even when several units share it.
- * @param party - Party units in battle
+ * @param units - Party members and enemies in battle
  * @param backendOrigin - Backend origin used to resolve `/static/...` paths
  * @returns Loader requests, idle first for each figure
  */
 export function listBattleSpriteRequests(
-  party: readonly Pick<PartyUnit, "sprite">[],
+  units: readonly { sprite?: UnitSprite }[],
   backendOrigin = process.env.NEXT_PUBLIC_API_CLIENT_URL ?? "",
 ): BattleSpriteRequest[] {
   const requests: BattleSpriteRequest[] = [];
   const seen = new Set<string>();
-  for (const { sprite } of party) {
+  for (const { sprite } of units) {
     if (!sprite?.animations.idle || seen.has(sprite.id)) {
       continue;
     }
@@ -162,35 +162,55 @@ export function spriteTimeScale(pace: number): number {
   return 1000 / Math.max(1, paced(1000, pace));
 }
 
+/** Which side of the field a unit fights on. */
+export type BattleSide = "party" | "enemy";
+
+/** A unit the director may animate. */
+export interface SpriteUnit {
+  id: string;
+  side: BattleSide;
+  sprite?: UnitSprite;
+}
+
 /**
- * Loads, draws, and plays the party's animated figures in the battle scene.
- * The scene rebuilds every unit on each redraw, so the director remembers
- * where each idle loop was and resumes it, keeping the figures breathing
- * smoothly instead of snapping back to their first frame.
+ * @param figure - Painted facing of the figure
+ * @param side - Side the unit fights on
+ * @returns Whether to mirror the figure so it faces the other side
+ */
+export function spriteNeedsFlip(
+  figure: Pick<UnitSprite, "facing">,
+  side: BattleSide,
+): boolean {
+  const wanted = side === "party" ? "right" : "left";
+  return figure.facing !== wanted;
+}
+
+/**
+ * Loads and plays every unit's animated figure in the battle scene: party
+ * members and enemies alike. Unit views ask it for a figure and own the
+ * sprite once made; the director remembers which sprite is whose so combat
+ * events can make them move.
  */
 export class BattleSpriteDirector {
   private readonly requests: BattleSpriteRequest[];
-  private readonly idleFrames = new Map<string, number>();
   private readonly sprites = new Map<string, Phaser.GameObjects.Sprite>();
-  private readonly figures: Map<string, UnitSprite>;
+  private readonly units: Map<string, SpriteUnit>;
   private readonly timeScale: number;
 
   /**
    * @param Phaser - Phaser module namespace
    * @param scene - Battle scene that owns the loader and animations
-   * @param party - Party units, whose sprites are loaded
+   * @param units - Every unit in the fight, whose sprites are loaded
    * @param pace - Battle speed multiplier on durations
    */
   public constructor(
     private readonly Phaser: PhaserRuntime,
     private readonly scene: Phaser.Scene,
-    party: readonly PartyUnit[],
+    units: readonly SpriteUnit[],
     pace: number,
   ) {
-    this.requests = listBattleSpriteRequests(party);
-    this.figures = new Map(
-      party.flatMap((unit) => (unit.sprite ? [[unit.id, unit.sprite]] : [])),
-    );
+    this.requests = listBattleSpriteRequests(units);
+    this.units = new Map(units.map((unit) => [unit.id, unit]));
     this.timeScale = spriteTimeScale(pace);
   }
 
@@ -234,94 +254,102 @@ export class BattleSpriteDirector {
   }
 
   /**
-   * Remembers each figure's idle frame, then forgets the figures. Call
-   * before the scene destroys its unit views.
+   * Makes a unit's figure, feet at the origin, facing the other side and
+   * scaled to its slot. A fallen unit is held on its flinch.
+   * @param unitId - Unit id
+   * @param slot - Unit's figure box
+   * @param alive - Whether the unit still stands
+   * @returns The sprite, not yet in any container, or undefined when the
+   * unit has no usable figure and should draw its portrait
    */
-  public clear(): void {
-    for (const [unitId, sprite] of this.sprites) {
-      const figure = this.figures.get(unitId);
-      const idleKey = figure && spriteAnimationKey(figure.id, "idle");
-      if (sprite.anims.currentAnim?.key === idleKey) {
-        this.idleFrames.set(unitId, sprite.anims.currentFrame?.index ?? 1);
-      }
+  public createFigure(
+    unitId: string,
+    slot: Pick<UnitSlot, "height" | "width">,
+    alive: boolean,
+  ): Phaser.GameObjects.Sprite | undefined {
+    const unit = this.units.get(unitId);
+    const figure = unit?.sprite;
+    const idleTexture = figure && spriteTextureKey(figure.id, "idle");
+    if (!unit || !figure || !idleTexture) {
+      return undefined;
     }
-    this.sprites.clear();
+    if (!this.scene.textures.exists(idleTexture)) {
+      return undefined;
+    }
+    const sprite = this.scene.add.sprite(0, 0, idleTexture, 0);
+    sprite.setOrigin(0.5, 1);
+    sprite.setScale(spriteDisplayScale(figure, slot));
+    sprite.setFlipX(spriteNeedsFlip(figure, unit.side));
+    sprite.anims.timeScale = this.timeScale;
+    this.sprites.set(unitId, sprite);
+    if (alive) {
+      this.playIdle(unitId, sprite, figure);
+    } else {
+      this.holdFallen(sprite, figure);
+    }
+    return sprite;
   }
 
   /**
-   * Draws a unit's figure standing on its slot's floor, with a ground ring
-   * in its owner color. A fallen unit is held on its flinch.
-   * @param view - Unit container, centered on the slot
-   * @param unit - Party unit
-   * @param slot - Unit's portrait box
-   * @param accent - Owner color
-   * @param alive - Whether the unit still stands
-   * @returns Whether a figure was drawn. When false, draw the portrait.
+   * Forgets a unit's sprite before its view is destroyed.
+   * @param unitId - Unit id
    */
-  public draw(
-    view: Phaser.GameObjects.Container,
-    unit: PartyUnit,
-    slot: UnitSlot,
-    accent: number,
-    alive: boolean,
-  ): boolean {
-    const figure = this.figures.get(unit.id);
-    const idleTexture = figure && spriteTextureKey(figure.id, "idle");
-    if (!figure || !idleTexture || !this.scene.textures.exists(idleTexture)) {
-      return false;
-    }
-    const floor = slot.height / 2;
-    const ring = this.scene.add.graphics();
-    ring.fillStyle(accent, 0.22);
-    ring.fillEllipse(0, floor - 2, slot.width * 0.82, 20);
-    ring.lineStyle(2, accent, 0.75);
-    ring.strokeEllipse(0, floor - 2, slot.width * 0.82, 20);
-    view.add(ring);
-
-    const sprite = this.scene.add.sprite(0, floor, idleTexture, 0);
-    sprite.setOrigin(0.5, 1);
-    sprite.setScale(spriteDisplayScale(figure, slot));
-    sprite.setFlipX(figure.facing === "left");
-    sprite.anims.timeScale = this.timeScale;
-    view.add(sprite);
-    this.sprites.set(unit.id, sprite);
-
-    if (!alive) {
-      this.holdFallen(sprite, figure);
-      return true;
-    }
-    this.playIdle(unit.id, sprite, figure);
-    return true;
+  public release(unitId: string): void {
+    this.sprites.delete(unitId);
   }
 
   /**
    * Plays the moves a combat event calls for, then returns each figure to
    * its idle loop. A move already playing is not restarted, so an attack
-   * that hits several enemies swings once.
+   * that hits several units swings once.
    * @param event - One combat event
    */
   public play(event: CombatEvent): void {
     for (const cue of spriteCuesForEvent(event)) {
-      const sprite = this.sprites.get(cue.unitId);
-      const figure = this.figures.get(cue.unitId);
-      if (!sprite || !figure) {
-        continue;
-      }
-      const key = spriteAnimationKey(figure.id, cue.move);
-      const alreadyPlaying =
-        sprite.anims.isPlaying && sprite.anims.currentAnim?.key === key;
-      if (alreadyPlaying || !this.scene.anims.exists(key)) {
-        continue;
-      }
-      sprite.play(key);
-      sprite.chain(spriteAnimationKey(figure.id, "idle"));
-      this.idleFrames.delete(cue.unitId);
+      this.playMove(cue.unitId, cue.move);
     }
   }
 
   /**
+   * Plays one move on a unit's figure, then returns it to idle.
+   * @param unitId - Unit id
+   * @param move - Animation row
+   * @returns Whether the unit has a figure that can play it
+   */
+  public playMove(unitId: string, move: UnitSpriteMove): boolean {
+    const sprite = this.sprites.get(unitId);
+    const figure = this.units.get(unitId)?.sprite;
+    if (!sprite || !figure) {
+      return false;
+    }
+    const key = spriteAnimationKey(figure.id, move);
+    const alreadyPlaying =
+      sprite.anims.isPlaying && sprite.anims.currentAnim?.key === key;
+    if (alreadyPlaying || !this.scene.anims.exists(key)) {
+      return alreadyPlaying;
+    }
+    sprite.play(key);
+    sprite.chain(spriteAnimationKey(figure.id, "idle"));
+    return true;
+  }
+
+  /**
+   * Holds a unit's figure on its flinch, as it falls.
+   * @param unitId - Unit id
+   */
+  public fall(unitId: string): void {
+    const sprite = this.sprites.get(unitId);
+    const figure = this.units.get(unitId)?.sprite;
+    if (!sprite || !figure) {
+      return;
+    }
+    sprite.stop();
+    this.holdFallen(sprite, figure);
+  }
+
+  /**
    * Washes a figure in one color for a moment, following its outline.
-   * @param unitId - Party unit id
+   * @param unitId - Unit id
    * @param color - Flash color
    * @param durationMs - How long the flash lasts
    * @returns Whether the unit has a figure to flash. When false, flash its portrait.
@@ -335,14 +363,17 @@ export class BattleSpriteDirector {
     this.scene.time.delayedCall(durationMs, () => {
       if (sprite.active) {
         sprite.clearTint();
+        sprite.setTintMode(this.Phaser.TintModes.MULTIPLY);
       }
     });
     return true;
   }
 
   /**
-   * @param unitId - Party unit id
-   * @param sprite - Its freshly drawn sprite
+   * Starts the idle loop at a frame picked from the unit id, so the field
+   * does not breathe in lockstep.
+   * @param unitId - Unit id
+   * @param sprite - Its sprite
    * @param figure - Its battle figure
    */
   private playIdle(
@@ -355,12 +386,7 @@ export class BattleSpriteDirector {
       return;
     }
     const frameCount = figure.animations.idle?.frameCount ?? 1;
-    // Frame indexes are 1-based; a new unit starts at a frame from its id so
-    // the party does not breathe in lockstep.
-    const resumeAt =
-      this.idleFrames.get(unitId) ??
-      (Math.abs(hashSeed(unitId)) % frameCount) + 1;
-    sprite.play({ key, startFrame: resumeAt - 1 });
+    sprite.play({ key, startFrame: Math.abs(hashSeed(unitId)) % frameCount });
   }
 
   /**

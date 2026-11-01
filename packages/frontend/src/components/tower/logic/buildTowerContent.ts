@@ -158,7 +158,7 @@ function buildDungeonTower(
     .map((slot, index) => dungeonCoreborn(slot, index, dungeon.slots, catalog));
   const enemies = dungeon.slots
     .filter((slot) => slot.kind === "enemy")
-    .map((slot, index) => dungeonEnemy(slot, index, catalog));
+    .map((slot, index) => dungeonEnemy(slot, index, dungeon.slots, catalog));
   const scenes = dungeon.slots
     .filter((slot) => slot.kind === "battle-background")
     .map((slot) => dungeonScene(slot, catalog));
@@ -193,14 +193,7 @@ function dungeonCoreborn(
   const cardSlots = dungeonSlots.filter(
     (entry): entry is DungeonCardSlot => entry.kind === "playable-card",
   );
-  const spriteSlot = dungeonSlots.find(
-    (entry) =>
-      entry.kind === "sprite-sheet" && entry.characterSlotId === slot.id,
-  );
-  const spriteSheet = catalog.spriteSheets.find(
-    (entry) =>
-      spriteSlot?.assetId !== undefined && entry.id === spriteSlot.assetId,
-  );
+  const sprite = dungeonSprite(slot, dungeonSlots, catalog);
   const set = catalog.characters.find((entry) => entry.setId === slot.assetId);
   const roleText = [
     slot.prompt,
@@ -226,24 +219,52 @@ function dungeonCoreborn(
     name: slot.title,
     role,
     set,
-    sprite: spriteSheet ? toUnitSprite(spriteSheet) : undefined,
+    sprite,
   });
+}
+
+/**
+ * @param owner - Character or enemy slot
+ * @param dungeonSlots - Every slot in the package
+ * @param catalog - Stored assets
+ * @returns The battle figure from the owner's filled sprite slot, if any
+ */
+function dungeonSprite(
+  owner: DungeonSlot,
+  dungeonSlots: DungeonSlot[],
+  catalog: TowerCatalog,
+): UnitSprite | undefined {
+  const spriteSlot = dungeonSlots.find(
+    (entry) => entry.kind === "sprite-sheet" && entry.ownerSlotId === owner.id,
+  );
+  if (spriteSlot?.assetId === undefined) {
+    return undefined;
+  }
+  const spriteSheet = catalog.spriteSheets.find(
+    (entry) => entry.id === spriteSlot.assetId,
+  );
+  return spriteSheet ? toUnitSprite(spriteSheet) : undefined;
 }
 
 /**
  * @param slot - Enemy slot
  * @param index - Position among the package's enemies
+ * @param dungeonSlots - Every slot in the package
  * @param catalog - Stored assets
- * @returns The linked enemy, or a built-in fighter wearing the slot's name
+ * @returns The linked enemy, or a built-in fighter wearing the slot's name,
+ * animated by the slot's sprite when one is filled
  */
 function dungeonEnemy(
   slot: DungeonSlot,
   index: number,
+  dungeonSlots: DungeonSlot[],
   catalog: TowerCatalog,
 ): EnemyTemplate {
+  const sprite = dungeonSprite(slot, dungeonSlots, catalog);
+  const withSprite = sprite ? { sprite } : {};
   const asset = catalog.enemies.find((entry) => entry.id === slot.assetId);
   if (asset) {
-    return toEnemyTemplate(asset);
+    return { ...toEnemyTemplate(asset), ...withSprite };
   }
   const stand = BUILT_IN_ENEMIES[
     index % BUILT_IN_ENEMIES.length
@@ -253,6 +274,7 @@ function dungeonEnemy(
     description: shorten(slot.prompt),
     id: slot.id,
     name: slot.title,
+    ...withSprite,
   };
 }
 

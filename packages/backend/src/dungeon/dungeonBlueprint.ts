@@ -34,8 +34,8 @@ const slotSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     ...slotFields,
-    characterSlotId: z.string().min(1),
     kind: z.literal(DUNGEON_SLOT_KINDS[4]),
+    ownerSlotId: z.string().min(1),
   }),
 ]);
 
@@ -103,7 +103,7 @@ export async function readStoredDungeonBlueprint(
     if (!parsed.success || parsed.data.id !== id) {
       return undefined;
     }
-    return withCharacterSprites(parsed.data);
+    return withUnitSprites(parsed.data);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ENOENT" || error instanceof SyntaxError) {
@@ -114,63 +114,107 @@ export async function readStoredDungeonBlueprint(
 }
 
 /**
- * Prompt for a sprite slot added to a package planned before sprites existed.
+ * Prompt for a sprite slot added to a character that has none.
  * The slot generator puts the character's own prompt above it.
  */
 export const DEFAULT_SPRITE_PROMPT =
-  "Animate this character as a full-body battle sprite: idle breathing, their signature attack, a guard, and a flinch when hit. Keep the silhouette, outfit, weapon, and palette from the character prompt.";
+  "Animate this character as a full-body battle sprite facing right, toward the enemies: idle breathing, their signature attack, a guard, and a flinch when hit. Keep the silhouette, outfit, weapon, and palette from the character prompt.";
 
 /**
- * @param characterSlotId - Character slot id
- * @returns The id given to that character's added sprite slot. It is
- * derived, so reading the same file twice yields the same id.
+ * Prompt for a sprite slot added to an enemy that has none.
+ * The slot generator puts the enemy's own prompt above it.
  */
-export function defaultSpriteSlotId(characterSlotId: string): string {
-  return `${characterSlotId}-sprite`;
+export const DEFAULT_ENEMY_SPRITE_PROMPT =
+  "Animate this enemy as a full-body battle sprite facing left, toward the player's party: idle menace, its signature attack, a guard, and a flinch when hit. Keep the silhouette, anatomy, weapons, and palette from the enemy prompt.";
+
+/** Slot kinds that fight in battle and so get one sprite slot each. */
+type SpriteOwnerKind = "card-character" | "enemy";
+
+/** A stored character or enemy slot. */
+type SpriteOwnerSlot = Extract<StoredDungeonSlot, { kind: SpriteOwnerKind }>;
+
+/**
+ * @param ownerSlotId - Character or enemy slot id
+ * @returns The id given to that unit's added sprite slot. It is derived, so
+ * reading the same file twice yields the same id.
+ */
+export function defaultSpriteSlotId(ownerSlotId: string): string {
+  return `${ownerSlotId}-sprite`;
 }
 
 /**
- * Gives every character a sprite slot. Packages planned before sprites
- * existed get one after that character's cards; packages that already
- * have one are returned unchanged. The added slot is written to the file
- * with the next slot update.
- * @param blueprint - Package read from disk
- * @returns The package with one sprite slot per character
+ * @param kind - Kind of the slot the sprite animates
+ * @returns Default sprite prompt for that kind of unit
  */
-export function withCharacterSprites(
+export function defaultSpritePrompt(kind: SpriteOwnerKind): string {
+  if (kind === "enemy") {
+    return DEFAULT_ENEMY_SPRITE_PROMPT;
+  }
+  return DEFAULT_SPRITE_PROMPT;
+}
+
+/**
+ * Gives every character and every enemy a sprite slot. A missing sprite is
+ * placed right after its owner, or after a character's last card. Packages
+ * where every unit already has one are returned unchanged. An added slot is
+ * written to the file with the next slot update.
+ * @param blueprint - Package read from disk
+ * @returns The package with one sprite slot per character and enemy
+ */
+export function withUnitSprites(
   blueprint: StoredDungeonBlueprint,
 ): StoredDungeonBlueprint {
   const animated = new Set(
     blueprint.slots.flatMap((slot) =>
-      slot.kind === "sprite-sheet" ? [slot.characterSlotId] : [],
+      slot.kind === "sprite-sheet" ? [slot.ownerSlotId] : [],
     ),
   );
   const missing = blueprint.slots.filter(
-    (slot) => slot.kind === "card-character" && !animated.has(slot.id),
+    (slot): slot is SpriteOwnerSlot =>
+      isSpriteOwner(slot) && !animated.has(slot.id),
   );
   if (missing.length === 0) {
     return blueprint;
   }
   const slots = [...blueprint.slots];
-  for (const character of missing) {
-    const lastOwned = slots.reduce(
-      (last, slot, index) =>
-        slot.id === character.id ||
-        (slot.kind === "playable-card" && slot.characterSlotId === character.id)
-          ? index
-          : last,
-      -1,
-    );
-    slots.splice(lastOwned + 1, 0, {
-      characterSlotId: character.id,
-      id: defaultSpriteSlotId(character.id),
+  for (const owner of missing) {
+    slots.splice(lastOwnedIndex(slots, owner.id) + 1, 0, {
+      id: defaultSpriteSlotId(owner.id),
       kind: "sprite-sheet",
-      prompt: DEFAULT_SPRITE_PROMPT,
+      ownerSlotId: owner.id,
+      prompt: defaultSpritePrompt(owner.kind),
       status: "planned",
-      title: `${character.title} sprite`,
+      title: `${owner.title} sprite`,
     });
   }
   return { ...blueprint, slots };
+}
+
+/**
+ * @param slot - Any stored slot
+ * @returns Whether the slot is a character or enemy that fights as a sprite
+ */
+function isSpriteOwner(slot: StoredDungeonSlot): slot is SpriteOwnerSlot {
+  return slot.kind === "card-character" || slot.kind === "enemy";
+}
+
+/**
+ * @param slots - Package slots in order
+ * @param ownerSlotId - Character or enemy slot id
+ * @returns Index of the owner or of the last card it owns, whichever is later
+ */
+function lastOwnedIndex(
+  slots: readonly StoredDungeonSlot[],
+  ownerSlotId: string,
+): number {
+  return slots.reduce(
+    (last, slot, index) =>
+      slot.id === ownerSlotId ||
+      (slot.kind === "playable-card" && slot.characterSlotId === ownerSlotId)
+        ? index
+        : last,
+    -1,
+  );
 }
 
 /**

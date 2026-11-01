@@ -128,22 +128,34 @@ const DUNGEON: DungeonBlueprint = {
     }),
     slot({
       assetId: "sprite-1",
-      characterSlotId: "char-1",
       id: "char-1-sprite",
       kind: "sprite-sheet",
+      ownerSlotId: "char-1",
     }),
     slot({
-      characterSlotId: "char-2",
       id: "char-2-sprite",
       kind: "sprite-sheet",
+      ownerSlotId: "char-2",
       status: "planned",
     }),
     slot({ assetId: "enemy-1", id: "enemy-a", kind: "enemy" }),
+    slot({
+      assetId: "sprite-1",
+      id: "enemy-a-sprite",
+      kind: "sprite-sheet",
+      ownerSlotId: "enemy-a",
+    }),
     slot({
       id: "enemy-b",
       kind: "enemy",
       status: "planned",
       title: "Hollow Warden",
+    }),
+    slot({
+      id: "enemy-b-sprite",
+      kind: "sprite-sheet",
+      ownerSlotId: "enemy-b",
+      status: "planned",
     }),
   ],
   summary: "Relight the beacon before the procession.",
@@ -176,9 +188,9 @@ describe("listTowerChoices", () => {
       "built-in",
     ]);
     expect(choices[0]).toMatchObject({
-      readySlots: 5,
+      readySlots: 6,
       title: "Lantern Ford waystation",
-      totalSlots: 9,
+      totalSlots: 11,
     });
   });
 
@@ -222,6 +234,13 @@ describe("buildTowerContent from a dungeon", () => {
     });
     const rook = content.coreborn.find((entry) => entry.id === "char-2");
     expect(rook?.sprite).toBeUndefined();
+  });
+
+  test("an enemy with a linked sprite sheet fights as that sprite", () => {
+    const [generated, standIn] = content.enemies;
+    expect(generated?.sprite).toEqual(toUnitSprite(SPRITE));
+    expect(standIn?.name).toBe("Hollow Warden");
+    expect(standIn?.sprite).toBeUndefined();
   });
 
   test("an ungenerated character still plays with stand-in cards", () => {

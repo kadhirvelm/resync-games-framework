@@ -10,9 +10,12 @@ import {
 import type { RunState, TowerContent } from "../logic/towerTypes";
 import { ownerCssColor, partyAccentIndex } from "../ownerColors";
 import { Button } from "../parts/Button";
+import { ChoiceSlot } from "../parts/ChoiceSlot";
 import { CorebornOffer } from "../parts/CorebornOffer";
 import { GameCard } from "../parts/GameCard";
 import { PartyLineup } from "../parts/PartyLineup";
+import { useChoiceFlourish } from "../parts/useChoiceFlourish";
+import { useStaggeredSounds } from "../parts/useStaggeredSounds";
 import styles from "../tower.module.scss";
 import { offeredTemplates, ownedTemplateCounts } from "./offerHelpers";
 
@@ -20,14 +23,19 @@ interface RewardScreenProps {
   content: TowerContent;
   onClaim: (choice: RewardChoice) => void;
   onReroll: () => void;
+  /** Claim at once, without the celebration */
+  reducedMotion: boolean;
   run: RunState;
 }
 
 /**
- * The cleared room's reward: one pick from its offer, or skip.
+ * The cleared room's reward: one pick from its offer, or skip. The offer
+ * is dealt in with a flip of each card, and a pick bursts before the climb
+ * moves on.
  * @param content - Tower content
  * @param onClaim - Applies the pick and climbs to the next floor
  * @param onReroll - Spends one of Fate's Thread's rerolls on a new offer
+ * @param reducedMotion - Claim without the celebration
  * @param run - Run showing a reward
  * @returns The reward screen
  */
@@ -35,15 +43,33 @@ export const RewardScreen = ({
   content,
   onClaim,
   onReroll,
+  reducedMotion,
   run,
 }: RewardScreenProps) => {
+  const { choose, chosen } = useChoiceFlourish(reducedMotion, {
+    hold: true,
+    sound: "reward",
+  });
   const offer = run.pendingReward;
+  // A new key replays the entrance when a reroll swaps the offer.
+  const offerKey = JSON.stringify(offer);
+  useStaggeredSounds(
+    "flip",
+    reducedMotion ? 0 : offerSize(offer),
+    { pitchStep: 0.06, startMs: 140, stepMs: 110 },
+    offerKey,
+  );
   if (!offer) {
     return null;
   }
   const canReroll = run.modifiers.rerollsLeft > 0 && offer.kind !== "health";
-  // A new key replays the entrance when a reroll swaps the offer.
-  const offerKey = JSON.stringify(offer);
+
+  /**
+   * @param key - Option being picked
+   * @param choice - What the pick claims
+   */
+  const pick = (key: string, choice: RewardChoice) =>
+    choose(key, () => onClaim(choice));
   return (
     <main className={styles.screen}>
       <header className={styles.storyHeader}>
@@ -58,8 +84,9 @@ export const RewardScreen = ({
       <section className={styles.panel} key={offerKey}>
         {offer.kind === "coreborn" ? (
           <CorebornOffer
+            chosenId={chosen}
             onRecruit={(templateId) =>
-              onClaim({ kind: "coreborn", templateId })
+              pick(templateId, { kind: "coreborn", templateId })
             }
             ownedCounts={ownedTemplateCounts(run)}
             templates={offeredTemplates(content, offer.templateIds)}
@@ -69,13 +96,16 @@ export const RewardScreen = ({
         {offer.kind === "techniques" ? (
           <div className={styles.cardChoices}>
             {offer.cards.map((card) => (
-              <GameCard
-                accent={ownerCssColor(0)}
-                card={card}
-                key={card.id}
-                onClick={() => onClaim({ cardId: card.id, kind: "techniques" })}
-                owner="Your cultivator"
-              />
+              <ChoiceSlot chosenKey={chosen} key={card.id} slotKey={card.id}>
+                <GameCard
+                  accent={ownerCssColor(0)}
+                  card={card}
+                  onClick={() =>
+                    pick(card.id, { cardId: card.id, kind: "techniques" })
+                  }
+                  owner="Your cultivator"
+                />
+              </ChoiceSlot>
             ))}
           </div>
         ) : null}
@@ -91,21 +121,28 @@ export const RewardScreen = ({
               const index = run.party.indexOf(member);
               const name = memberProfile(member, content).name;
               return (
-                <GameCard
-                  accent={ownerCssColor(
-                    partyAccentIndex(
-                      run.party.map((entry) => ({
-                        isCultivator: entry.kind === "cultivator",
-                      })),
-                      index,
-                    ),
-                  )}
-                  card={card}
-                  footer={`${name} now brings ×${member.cardCopies + 1}`}
+                <ChoiceSlot
+                  chosenKey={chosen}
                   key={memberId}
-                  onClick={() => onClaim({ kind: "monster-cards", memberId })}
-                  owner={name}
-                />
+                  slotKey={memberId}
+                >
+                  <GameCard
+                    accent={ownerCssColor(
+                      partyAccentIndex(
+                        run.party.map((entry) => ({
+                          isCultivator: entry.kind === "cultivator",
+                        })),
+                        index,
+                      ),
+                    )}
+                    card={card}
+                    footer={`${name} now brings ×${member.cardCopies + 1}`}
+                    onClick={() =>
+                      pick(memberId, { kind: "monster-cards", memberId })
+                    }
+                    owner={name}
+                  />
+                </ChoiceSlot>
               );
             })}
           </div>
@@ -113,37 +150,47 @@ export const RewardScreen = ({
 
         {offer.kind === "health" ? (
           <div className={styles.healthChoices}>
-            <button
-              className={styles.healthChoice}
-              onClick={() => onClaim({ kind: "health", option: "mend" })}
-              type="button"
-            >
-              <Heart size={28} />
-              <strong>Mend</strong>
-              <span>
-                Every party member recovers {Math.round(MEND_SHARE * 100)}% of
-                their maximum health.
-              </span>
-            </button>
-            <button
-              className={styles.healthChoice}
-              onClick={() => onClaim({ kind: "health", option: "fortify" })}
-              type="button"
-            >
-              <ShieldPlus size={28} />
-              <strong>Fortify</strong>
-              <span>
-                Every party member gains {FORTIFY_AMOUNT} maximum health, and
-                heals that much.
-              </span>
-            </button>
+            <ChoiceSlot chosenKey={chosen} slotKey="mend">
+              <button
+                className={styles.healthChoice}
+                onClick={() => pick("mend", { kind: "health", option: "mend" })}
+                onMouseEnter={() => playSound("hover")}
+                type="button"
+              >
+                <Heart size={28} />
+                <strong>Mend</strong>
+                <span>
+                  Every party member recovers {Math.round(MEND_SHARE * 100)}% of
+                  their maximum health.
+                </span>
+              </button>
+            </ChoiceSlot>
+            <ChoiceSlot chosenKey={chosen} slotKey="fortify">
+              <button
+                className={styles.healthChoice}
+                onClick={() =>
+                  pick("fortify", { kind: "health", option: "fortify" })
+                }
+                onMouseEnter={() => playSound("hover")}
+                type="button"
+              >
+                <ShieldPlus size={28} />
+                <strong>Fortify</strong>
+                <span>
+                  Every party member gains {FORTIFY_AMOUNT} maximum health, and
+                  heals that much.
+                </span>
+              </button>
+            </ChoiceSlot>
           </div>
         ) : null}
         <div className={styles.skipRow}>
           {canReroll ? (
             <Button
+              className={styles.rerollButton}
+              disabled={chosen !== undefined}
               onClick={() => {
-                playSound("reward");
+                playSound("whoosh");
                 onReroll();
               }}
               variant="quiet"
@@ -153,6 +200,7 @@ export const RewardScreen = ({
             </Button>
           ) : null}
           <Button
+            disabled={chosen !== undefined}
             onClick={() => {
               playSound("back");
               onClaim({ kind: "skip" });
@@ -171,6 +219,26 @@ export const RewardScreen = ({
     </main>
   );
 };
+
+/**
+ * @param offer - Pending reward, if any
+ * @returns How many options it deals out
+ */
+function offerSize(offer: RunState["pendingReward"]): number {
+  if (!offer) {
+    return 0;
+  }
+  if (offer.kind === "coreborn") {
+    return offer.templateIds.length;
+  }
+  if (offer.kind === "techniques") {
+    return offer.cards.length;
+  }
+  if (offer.kind === "monster-cards") {
+    return offer.memberIds.length;
+  }
+  return 2;
+}
 
 /**
  * @param kind - Reward kind

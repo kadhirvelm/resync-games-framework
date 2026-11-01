@@ -24,35 +24,35 @@ export function cardsForCharacter(
 
 /**
  * @param slots - Every slot in the package
- * @param characterSlotId - Character the sprite animates
- * @returns That character's battle sprite slot, when the package has one
+ * @param ownerSlotId - Character or enemy the sprite animates
+ * @returns That unit's battle sprite slot, when the package has one
  */
-export function spriteForCharacter(
+export function spriteForOwner(
   slots: readonly DungeonSlot[],
-  characterSlotId: string,
+  ownerSlotId: string,
 ): DungeonSpriteSlot | undefined {
   return slots.find(
     (slot): slot is DungeonSpriteSlot =>
-      slot.kind === "sprite-sheet" && slot.characterSlotId === characterSlotId,
+      slot.kind === "sprite-sheet" && slot.ownerSlotId === ownerSlotId,
   );
 }
 
 /**
  * Lists the slots one Generate click should start. Generating a character
- * also starts its battle sprite when that sprite has no asset and is not
- * already running, so a new character arrives able to fight animated.
+ * or an enemy also starts its battle sprite when that sprite has no asset
+ * and is not already running, so a new unit arrives able to fight animated.
  * @param slot - Slot the user asked to generate
  * @param slots - Every slot in the package
- * @returns The slot, followed by its character's sprite when it should run too
+ * @returns The slot, followed by its sprite when that should run too
  */
 export function slotsStartedWith(
   slot: DungeonSlot,
   slots: readonly DungeonSlot[],
 ): DungeonSlot[] {
-  if (slot.kind !== "card-character") {
+  if (slot.kind !== "card-character" && slot.kind !== "enemy") {
     return [slot];
   }
-  const sprite = spriteForCharacter(slots, slot.id);
+  const sprite = spriteForOwner(slots, slot.id);
   const idle = sprite?.status === "planned" || sprite?.status === "failed";
   if (sprite === undefined || !idle) {
     return [slot];

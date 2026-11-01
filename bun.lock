@@ -79,6 +79,8 @@
       "name": "@towers-of-coreborn/frontend",
       "version": "0.1.0",
       "dependencies": {
+        "@babylonjs/core": "^9.33.1",
+        "@babylonjs/loaders": "^9.33.1",
         "@radix-ui/themes": "^3.3.0",
         "@towers-of-coreborn/api": "workspace:^",
         "@vercel/analytics": "^2.0.1",
@@ -174,6 +176,10 @@
     "@babel/helper-validator-identifier": ["@babel/helper-validator-identifier@7.29.7", "", {}, "sha512-qehxGkRj55h/ff8EMaJ+cYhyaKlHIxqYDn682wQD7RNp9UujOQsHog2uS0r2vzr4pW+sXf90NeeayjcNaX3fFg=="],
 
     "@babel/runtime": ["@babel/runtime@7.29.10", "", {}, "sha512-NpugTzbKgGrNe45Ui32cN8vCFFMxVtP/9rtfwv0nP5FRDAjvYBxJcLVpYA9mr1jxP6cnIT7x9LUzuDTbWYYNRA=="],
+
+    "@babylonjs/core": ["@babylonjs/core@9.33.1", "", {}, "sha512-NoIfREw4QeoXzRPpXnbUpmxxPIjuRi9iS4xFDbPgXHiLwCeHSI13DJHF8YB2gKHp6rA6T5R7BAevPvWHklvXWQ=="],
+
+    "@babylonjs/loaders": ["@babylonjs/loaders@9.33.1", "", { "peerDependencies": { "@babylonjs/core": "^9.0.0", "babylonjs-gltf2interface": "^9.0.0" } }, "sha512-FE3scCE1CaBg8e6a62CJCQA+X/sD13ILihy60PyOjapy0HSbGY3VZ1NQybnB+jiOUNM7+UVygBQKQEpCwHsrqw=="],
 
     "@biomejs/biome": ["@biomejs/biome@2.5.15", "", { "optionalDependencies": { "@biomejs/cli-darwin-arm64": "2.5.15", "@biomejs/cli-darwin-x64": "2.5.15", "@biomejs/cli-linux-arm64": "2.5.15", "@biomejs/cli-linux-arm64-musl": "2.5.15", "@biomejs/cli-linux-x64": "2.5.15", "@biomejs/cli-linux-x64-musl": "2.5.15", "@biomejs/cli-win32-arm64": "2.5.15", "@biomejs/cli-win32-x64": "2.5.15" }, "bin": { "biome": "bin/biome" } }, "sha512-WZTW4slm/pdkh92K6t/3aEN++44JD1PQ7squ7RCMLI1flHGl43DVOIGXvCjHiZgBMO1V4uYxoFNtqrIA4qGuIQ=="],
 
@@ -962,6 +968,8 @@
     "aws-ssl-profiles": ["aws-ssl-profiles@1.1.2", "", {}, "sha512-NZKeq9AfyQvEeNlN0zSYAaWrmBffJh3IELMZfRpJVWgrpEbtEpnjvzqBPf+mxoI287JohRDoa+/nsfqqiZmF6g=="],
 
     "b4a": ["b4a@1.9.0", "", { "peerDependencies": { "react-native-b4a": "*" }, "optionalPeers": ["react-native-b4a"] }, "sha512-dpfcF9fDNR6++cthXR67iyhgqWy9CBouAvIWhIntzBG6cvK/cnIPiZQjBwi/ZqjjBEDGfoNDtmB0kTjroOJ3pQ=="],
+
+    "babylonjs-gltf2interface": ["babylonjs-gltf2interface@9.33.1", "", {}, "sha512-WO+yIioJNvm34o9qQs8Xd3OyGOyRQA6Z7kqLGsmlUx6PU/bbjsuPCO6QjBFWSuhL1oInUJF0xZpXSLXZ80Zr2Q=="],
 
     "bail": ["bail@2.0.2", "", {}, "sha512-0xO6mYd7JB2YesxDKplafRpsiOzPt9V02ddPCLbY1xYGPOX24NTyN50qnUxgCPcSoYMhKpAuBTjQoRZCAkUDRw=="],
 

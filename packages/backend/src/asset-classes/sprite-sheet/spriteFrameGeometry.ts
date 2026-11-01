@@ -6,6 +6,12 @@
  * actually is, measure each frame, then lock scale and foot baseline.
  */
 
+import {
+  MIN_VISIBLE_ALPHA,
+  neighborIndexes,
+  softenEdges,
+} from "./spriteEdgeMatte";
+
 /** Raw RGBA pixels, four bytes per pixel, row by row. */
 export interface RgbaImage {
   data: Uint8Array;
@@ -60,9 +66,6 @@ export const BACKGROUND_TOLERANCE = 48;
  */
 const ENCLOSED_BACKGROUND_TOLERANCE = 12;
 
-/** Looser distance for pale edge pixels left between the outline and the background. */
-const FRINGE_TOLERANCE = 96;
-
 /** Rows or columns with this many opaque pixels or fewer count as empty. */
 const PROFILE_NOISE_PIXELS = 2;
 
@@ -84,7 +87,9 @@ const SPLIT_SIZE_LIMITS = { max: 1.6, min: 0.5 } as const;
  * areas are removed only when they are flat background color and at least
  * `minEnclosedArea` pixels big, such as the gap between an arm and the body.
  * Painted white cloth and highlights are shaded, so they stay. A final pass
- * clears pale fringe pixels that touch the removed background.
+ * turns the anti-aliased rim along the removed background into partial alpha
+ * with the background unmixed from its color (see `softenEdges`), so the
+ * character blends into whatever scene it is drawn over.
  * @param image - Sheet pixels; alpha is written in place
  * @param minEnclosedArea - Smallest enclosed flat region removed as background
  * @returns The detected background color
@@ -108,7 +113,7 @@ export function removeBackground(
     }
   });
 
-  clearFringe(image, background);
+  softenEdges(image, background);
   return background;
 }
 
@@ -517,40 +522,6 @@ function collectComponent(
 }
 
 /**
- * Clears opaque pixels that touch the removed background and are close to its
- * color: the pale halo an anti-aliased outline leaves behind.
- * @param image - Sheet pixels; alpha is written in place
- * @param background - Detected background color
- */
-function clearFringe(
-  image: RgbaImage,
-  background: [number, number, number],
-): void {
-  const { height, width } = image;
-  const fringe: number[] = [];
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const index = y * width + x;
-      if (image.data[index * 4 + 3] === 0) {
-        continue;
-      }
-      if (colorDistance(image.data, index, background) > FRINGE_TOLERANCE) {
-        continue;
-      }
-      const touchesBackground = neighborIndexes(x, y, width, height).some(
-        (neighbor) => image.data[neighbor * 4 + 3] === 0,
-      );
-      if (touchesBackground) {
-        fringe.push(index);
-      }
-    }
-  }
-  for (const index of fringe) {
-    image.data[index * 4 + 3] = 0;
-  }
-}
-
-/**
  * The background is the per-channel median of the outermost pixels, which the
  * prompt keeps clear of the character.
  * @param image - Sheet pixels
@@ -598,42 +569,14 @@ function colorDistance(
 }
 
 /**
- * @param x - Column
- * @param y - Row
- * @param width - Image width
- * @param height - Image height
- * @returns Indexes of the up, down, left, and right neighbors inside the image
- */
-function neighborIndexes(
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-): number[] {
-  const neighbors: number[] = [];
-  if (x > 0) {
-    neighbors.push(y * width + x - 1);
-  }
-  if (x < width - 1) {
-    neighbors.push(y * width + x + 1);
-  }
-  if (y > 0) {
-    neighbors.push((y - 1) * width + x);
-  }
-  if (y < height - 1) {
-    neighbors.push((y + 1) * width + x);
-  }
-  return neighbors;
-}
-
-/**
  * @param image - Sheet pixels
  * @param x - Column
  * @param y - Row
- * @returns Whether the pixel survived background removal
+ * @returns Whether the pixel is visible enough to count as part of the
+ *   character; faint partial alpha does not widen bounds or profiles
  */
 function isOpaque(image: RgbaImage, x: number, y: number): boolean {
-  return (image.data[(y * image.width + x) * 4 + 3] ?? 0) > 0;
+  return (image.data[(y * image.width + x) * 4 + 3] ?? 0) >= MIN_VISIBLE_ALPHA;
 }
 
 /**

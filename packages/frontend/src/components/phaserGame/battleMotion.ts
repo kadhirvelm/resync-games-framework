@@ -31,7 +31,10 @@ export function isHeavyImpact(event: CombatEvent): boolean {
  * @param event - One combat event
  * @returns The effect for that event, if it has one
  */
-function soundForEvent(event: CombatEvent): SoundName | undefined {
+export function soundForEvent(event: CombatEvent): SoundName | undefined {
+  if (event.kind === "death") {
+    return "death";
+  }
   if (isHeavyImpact(event)) {
     return "heavy-hit";
   }
@@ -44,6 +47,12 @@ function soundForEvent(event: CombatEvent): SoundName | undefined {
   if (event.kind === "card-played") {
     return "card";
   }
+  if (event.kind === "aether") {
+    return "aether";
+  }
+  if (event.kind === "combo") {
+    return event.triggered ? "combo" : undefined;
+  }
   if (event.kind === "turn-start" && event.turn > 1) {
     return "turn";
   }
@@ -52,7 +61,7 @@ function soundForEvent(event: CombatEvent): SoundName | undefined {
 
 /**
  * Picks the effects for one step. Each effect plays once per step, and a
- * heavy hit drowns out ordinary hits in the same step.
+ * heavy hit or a death drowns out ordinary hits in the same step.
  * @param events - The step's events, in order
  * @returns Effects to play, in first-seen order
  */
@@ -64,7 +73,7 @@ export function stepSounds(events: CombatEvent[]): SoundName[] {
       sounds.push(sound);
     }
   }
-  if (sounds.includes("heavy-hit")) {
+  if (sounds.includes("heavy-hit") || sounds.includes("death")) {
     return sounds.filter((sound) => sound !== "hit");
   }
   return sounds;

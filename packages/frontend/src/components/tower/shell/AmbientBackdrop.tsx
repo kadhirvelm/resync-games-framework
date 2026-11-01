@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { scatter } from "../parts/particles";
 import styles from "./shell.module.scss";
 
 /** Tiers of the silhouette tower, bottom first, as half-widths. */
@@ -6,18 +7,6 @@ const TOWER_TIERS = [92, 82, 72, 62, 52, 42, 32];
 
 /** Height of each tower tier in SVG units. */
 const TIER_HEIGHT = 74;
-
-/**
- * Deterministic scatter so the scene looks hand-placed and never jumps
- * between renders.
- * @param index - Item index
- * @param salt - Varies the sequence per property
- * @returns A value in [0, 1)
- */
-function scatter(index: number, salt: number): number {
-  const value = Math.sin(index * 12.9898 + salt * 78.233) * 43758.5453;
-  return value - Math.floor(value);
-}
 
 /**
  * @param count - How many items
@@ -39,7 +28,7 @@ function driftStyles(count: number): React.CSSProperties[] {
 }
 
 const LEAVES = driftStyles(16);
-const MOTES = driftStyles(22);
+const MOTES = driftStyles(34);
 
 /**
  * The silhouette tower: stacked pagoda tiers with lit windows and the
@@ -142,6 +131,7 @@ interface AmbientBackdropProps {
 /**
  * Living backdrop: drifting leaves over a paper wash, or the full dusk scene
  * with mountains, mist, fireflies, and the tower glowing on the horizon.
+ * Dusk layers drift with the `--px` and `--py` offsets an ancestor sets.
  * Purely decorative and hidden from assistive technology.
  * @param variant - Which scene to paint
  * @param reducedMotion - Leave out moving particles

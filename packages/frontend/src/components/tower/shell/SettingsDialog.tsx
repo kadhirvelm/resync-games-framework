@@ -73,6 +73,22 @@ export const SettingsDialog = ({
           />
         </label>
 
+        <label className={styles.settingRow}>
+          <span>
+            <strong>Music</strong>
+            <small>A gentle score that follows the climb</small>
+          </span>
+          <input
+            checked={settings.music}
+            className={styles.toggle}
+            onChange={(event) => {
+              playSound("select");
+              onUpdate({ music: event.target.checked });
+            }}
+            type="checkbox"
+          />
+        </label>
+
         <div className={styles.settingRow}>
           <span>
             <strong>Battle speed</strong>

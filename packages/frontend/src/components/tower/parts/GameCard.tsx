@@ -1,9 +1,11 @@
 import clsx from "clsx";
 import type { ReactNode } from "react";
+import { playSound } from "../audio/sound";
 import { describeEffect } from "../logic/cardRules";
 import type { CardDefinition } from "../logic/towerTypes";
 import styles from "../tower.module.scss";
 import { LeafIcon } from "./LeafIcon";
+import { useTilt } from "./useTilt";
 
 /** Art-panel wash for each card kind when the card has no illustration. */
 const KIND_CLASSES: Record<string, string | undefined> = {
@@ -33,6 +35,7 @@ interface GameCardProps {
 
 /**
  * One card as it looks outside battle: cost leaf, art, rules, lore, owner.
+ * A clickable card leans toward the pointer and catches the light.
  * @param props - Card, owner, and presentation options
  * @returns The card, as a button when `onClick` is set
  */
@@ -46,6 +49,7 @@ export const GameCard = ({
   showFlavor = true,
   size = "normal",
 }: GameCardProps) => {
+  const tilt = useTilt(10);
   const kind = card.rules.effects[0]?.kind ?? "attack";
   const body = (
     <>
@@ -93,7 +97,14 @@ export const GameCard = ({
   return (
     <div className={styles.cardWrap}>
       {onClick ? (
-        <button className={className} onClick={onClick} type="button">
+        <button
+          className={className}
+          onClick={onClick}
+          onMouseEnter={() => playSound("hover", { pitch: 1.3 })}
+          type="button"
+          {...tilt}
+        >
+          <span aria-hidden="true" className={styles.cardGlare} />
           {body}
         </button>
       ) : (

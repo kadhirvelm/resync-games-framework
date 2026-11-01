@@ -4,12 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   applyDungeonSlotUpdate,
+  DEFAULT_ENEMY_SPRITE_PROMPT,
   DEFAULT_SPRITE_PROMPT,
   defaultSpriteSlotId,
   readStoredDungeonBlueprint,
   readStoredDungeonBlueprints,
   type StoredDungeonBlueprint,
-  withCharacterSprites,
+  withUnitSprites,
   writeStoredDungeonBlueprint,
 } from "../dungeonBlueprint";
 import { DUNGEON_FILE_NAME } from "../dungeonStorage";
@@ -71,7 +72,7 @@ describe("dungeon package files", () => {
     });
   });
 
-  test("adds a sprite slot after each character's cards in an older package", async () => {
+  test("adds a sprite slot after each character's cards and each enemy", async () => {
     root = await mkdtemp(join(tmpdir(), "dungeon-package-"));
     const characterId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
     const stored = samplePackage();
@@ -104,19 +105,51 @@ describe("dungeon package files", () => {
       "playable-card",
       "sprite-sheet",
       "enemy",
+      "sprite-sheet",
     ]);
     expect(read?.slots[2]).toEqual({
-      characterSlotId: characterId,
       id: defaultSpriteSlotId(characterId),
       kind: "sprite-sheet",
+      ownerSlotId: characterId,
       prompt: DEFAULT_SPRITE_PROMPT,
       status: "planned",
       title: "Bell keeper sprite",
     });
+    expect(read?.slots[4]).toEqual({
+      id: defaultSpriteSlotId(SLOT_ID),
+      kind: "sprite-sheet",
+      ownerSlotId: SLOT_ID,
+      prompt: DEFAULT_ENEMY_SPRITE_PROMPT,
+      status: "planned",
+      title: "Bell beast sprite",
+    });
     expect(readAgain).toEqual(read);
   });
 
-  test("leaves a package whose characters already have sprites unchanged", () => {
+  test("places an added enemy sprite right after its enemy", () => {
+    const stored = samplePackage();
+    stored.slots = [
+      ...stored.slots,
+      {
+        id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        kind: "battle-background",
+        prompt: "A flooded bell chamber",
+        status: "planned",
+        title: "Bell chamber",
+      },
+    ];
+
+    const filled = withUnitSprites(stored);
+
+    expect(filled.slots.map((slot) => slot.kind)).toEqual([
+      "enemy",
+      "sprite-sheet",
+      "battle-background",
+    ]);
+    expect(filled.slots[1]?.prompt).toContain("facing left");
+  });
+
+  test("leaves a package whose characters and enemies already have sprites unchanged", () => {
     const stored = samplePackage();
     stored.slots = [
       {
@@ -127,16 +160,31 @@ describe("dungeon package files", () => {
         title: "Bell keeper",
       },
       {
-        characterSlotId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
         kind: "sprite-sheet",
+        ownerSlotId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         prompt: "Swings a bell hammer",
         status: "planned",
         title: "Bell keeper sprite",
       },
+      {
+        id: SLOT_ID,
+        kind: "enemy",
+        prompt: "A moss-covered bell beast",
+        status: "planned",
+        title: "Bell beast",
+      },
+      {
+        id: "99999999-9999-4999-8999-999999999999",
+        kind: "sprite-sheet",
+        ownerSlotId: SLOT_ID,
+        prompt: "Rears up and slams its shell",
+        status: "planned",
+        title: "Bell beast sprite",
+      },
     ];
 
-    expect(withCharacterSprites(stored)).toBe(stored);
+    expect(withUnitSprites(stored)).toBe(stored);
   });
 });
 

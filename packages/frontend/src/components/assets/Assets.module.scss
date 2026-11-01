@@ -686,6 +686,13 @@ $blueprint-border: rgb(80 160 255 / 22%);
   width: 100%;
 }
 
+.dungeonEnemy {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
 .dungeonGroupLabel {
   color: $blueprint-muted;
   font-family: monospace;

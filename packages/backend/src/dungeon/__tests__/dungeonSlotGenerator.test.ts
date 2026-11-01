@@ -1,10 +1,15 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { StoredDungeonSlot } from "../dungeonBlueprint";
-import { DungeonSlotGenerator } from "../dungeonSlotGenerator";
+import {
+  CHARACTER_SPRITE_FACING,
+  DungeonSlotGenerator,
+  ENEMY_SPRITE_FACING,
+} from "../dungeonSlotGenerator";
 
 const GENERATION_ID = "4f1c0b2e-6a7d-4c8e-9f10-123456789abc";
 const CHARACTER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const CARD_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const ENEMY_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 
 describe("DungeonSlotGenerator", () => {
   test("prepares a card with its character context and progression", async () => {
@@ -36,9 +41,30 @@ describe("DungeonSlotGenerator", () => {
     ]);
 
     expect(prepared.prompt).toBe(
-      "Character:\nA drowned bell keeper\n\nSprite request:\nSwings a bell hammer",
+      `Character:\nA drowned bell keeper\n\nSprite request:\n${CHARACTER_SPRITE_FACING}\nSwings a bell hammer`,
     );
+    expect(prepared.prompt).toContain("Facing: right");
     expect(prepared.progression).toBeUndefined();
+  });
+
+  test("prepares an enemy sprite with its enemy context, facing left", async () => {
+    const generator = createGenerator({});
+    const sprite = enemySpriteSlot();
+
+    const prepared = await generator.prepare(sprite, [enemySlot(), sprite]);
+
+    expect(prepared.prompt).toBe(
+      `Enemy:\nA moss-covered bell beast\n\nSprite request:\n${ENEMY_SPRITE_FACING}\nRears up and slams its bell shell`,
+    );
+    expect(prepared.prompt).toContain("Facing: left");
+  });
+
+  test("sends a sprite prompt alone when its owner is missing", async () => {
+    const generator = createGenerator({});
+
+    const prepared = await generator.prepare(spriteSlot(), [spriteSlot()]);
+
+    expect(prepared.prompt).toBe("Swings a bell hammer");
   });
 
   test("dispatches each slot kind to its asset agent", async () => {
@@ -185,7 +211,7 @@ function characterSlot(): StoredDungeonSlot {
 /** @returns An enemy slot */
 function enemySlot(): StoredDungeonSlot {
   return {
-    id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    id: ENEMY_ID,
     kind: "enemy",
     prompt: "A moss-covered bell beast",
     status: "planned",
@@ -209,11 +235,23 @@ function cardSlot(): StoredDungeonSlot {
 /** @returns The bell keeper's sprite slot */
 function spriteSlot(): StoredDungeonSlot {
   return {
-    characterSlotId: CHARACTER_ID,
     id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
     kind: "sprite-sheet",
+    ownerSlotId: CHARACTER_ID,
     prompt: "Swings a bell hammer",
     status: "planned",
     title: "Bell keeper sprite",
+  };
+}
+
+/** @returns The bell beast's sprite slot */
+function enemySpriteSlot(): StoredDungeonSlot {
+  return {
+    id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    kind: "sprite-sheet",
+    ownerSlotId: ENEMY_ID,
+    prompt: "Rears up and slams its bell shell",
+    status: "planned",
+    title: "Bell beast sprite",
   };
 }

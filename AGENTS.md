@@ -58,12 +58,15 @@ that package directory.
   and `card-generator` writes one
   lore-backed playable card. `dungeon-coordinator` accepts one broad setup
   prompt and writes a dungeon package: two room prompts, three character
-  prompts, four card prompts and one sprite prompt for each character, and
-  two enemy prompts. It does not paint those assets. Packages saved before
-  sprite slots existed gain one per character when read. The package is a JSON file under the public
-  dungeon assets. In the Blueprint Workshop, each prompt can start that
-  asset's agent, and an existing asset can be attached to a slot. Generating
-  a character also starts its sprite slot. A later
+  prompts with four card prompts and one sprite prompt each, and two enemy
+  prompts with one sprite prompt each. A sprite slot's `ownerSlotId` names
+  the character or enemy it animates; party sprites face right and enemy
+  sprites face left. It does not paint those assets. A package read with a
+  character or enemy that has no sprite slot gains one. The package is a
+  JSON file under the public dungeon assets. In the Blueprint Workshop, each
+  prompt can start that asset's agent, and an existing asset can be attached
+  to a slot. Generating a character or an enemy also starts its sprite slot.
+  A later
   card keeps the previous level's aether cost and effect kinds. Running slot
   generations are stored in Redis so a refresh keeps them on the dungeon tab
   and on the asset's own tab. `DungeonBlueprintStore` owns package files,
@@ -103,11 +106,16 @@ scales enemies to `FLOOR_PLANS`, and assigns room rewards; `combat` runs
 turn-based battles and returns steps for animation; `run` owns recruiting,
 party order, merging, rewards, and death. React screens handle everything
 between battles. `components/phaserGame/` draws only the battle, from a
-`BattleSceneInput`, and reports back through `onFinish`. A Coreborn whose
-dungeon sprite slot is filled fights as that animated sprite instead of its
-portrait; `battleSprites.ts` maps combat events to its idle, attack, defend,
-and hurt strips. Keep game rules out
-of the Phaser scene and the screens.
+`BattleSceneInput`, and reports back through `onFinish`. The scene keeps
+long-lived views in `phaserGame/views/` (units, cards, HUD, stage) and
+updates them in place. Rules resolve at once; each `CombatStep` is replayed
+in order on a `stepTimeline` schedule, so the player can keep playing while
+earlier blows animate. Cards are dragged or clicked out of a fanned hand
+(`handFan`); aimed cards show a curved arrow and play on release over a
+legal target (`cardAim`). A Coreborn or enemy whose dungeon sprite slot is
+filled fights as that animated sprite instead of its portrait;
+`battleSprites.ts` maps combat events to its idle, attack, defend, and hurt
+strips. Keep game rules out of the Phaser scene and the screens.
 
 `TowerGame` owns the shell: the title menu, tower select, cultivation, and
 chronicle live in `tower/shell/`, and a paper curtain (`useCurtain`) covers

@@ -206,6 +206,7 @@ function spawnEnemy(
     maxHitPoints: scaled.maxHitPoints,
     moves: scaled.moves,
     name: isBoss ? `${template.name}, Tower Heart` : template.name,
+    ...(template.sprite ? { sprite: template.sprite } : {}),
     templateId: template.id,
   };
 }

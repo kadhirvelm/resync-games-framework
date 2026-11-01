@@ -20,6 +20,7 @@ import type { SavedClimb, SaveSlots } from "../logic/saveGame";
 import type { TowerContent } from "../logic/towerTypes";
 import { Button } from "../parts/Button";
 import { UnitPortrait } from "../parts/UnitPortrait";
+import { useTilt } from "../parts/useTilt";
 import { ascensionNumeral, formatTimeAgo } from "./formatTime";
 import { ScreenHeader } from "./ScreenHeader";
 import styles from "./shell.module.scss";
@@ -85,6 +86,7 @@ export const TowerSelectScreen = ({
   saves,
   warnings,
 }: TowerSelectScreenProps) => {
+  const tilt = useTilt(6);
   const savedFirst =
     entries.find((entry) => saves[entry.content.id]) ?? entries[0];
   const [selectedId, setSelectedId] = useState(savedFirst?.content.id);
@@ -153,6 +155,7 @@ export const TowerSelectScreen = ({
                   onClick={() => select(entry)}
                   onMouseEnter={() => playSound("hover")}
                   type="button"
+                  {...tilt}
                 >
                   <span
                     className={styles.towerCardArt}
@@ -229,15 +232,22 @@ export const TowerSelectScreen = ({
             <div className={styles.detailRow}>
               <h3>Coreborn who may answer</h3>
               <div className={styles.rosterRow}>
-                {selected.content.coreborn.slice(0, 8).map((template) => (
-                  <UnitPortrait
-                    accent="#4e8f6a"
-                    key={template.id}
-                    name={template.name}
-                    size="small"
-                    url={template.tiers[0]?.portraitUrl}
-                  />
-                ))}
+                {selected.content.coreborn
+                  .slice(0, 8)
+                  .map((template, index) => (
+                    <span
+                      className={styles.rosterMember}
+                      key={template.id}
+                      style={{ "--i": index } as React.CSSProperties}
+                    >
+                      <UnitPortrait
+                        accent="#4e8f6a"
+                        name={template.name}
+                        size="small"
+                        url={template.tiers[0]?.portraitUrl}
+                      />
+                    </span>
+                  ))}
               </div>
             </div>
 
@@ -257,7 +267,7 @@ export const TowerSelectScreen = ({
                       disabled={locked}
                       key={name}
                       onClick={() => {
-                        playSound("select");
+                        playSound("select", { pitch: 1 + value * 0.09 });
                         setAscension(value);
                       }}
                       title={name}
@@ -268,7 +278,7 @@ export const TowerSelectScreen = ({
                   );
                 })}
               </div>
-              <p className={styles.ascensionText}>
+              <p className={styles.ascensionText} key={level}>
                 <strong>{ASCENSION_NAMES[level]}</strong> ·{" "}
                 {ascensionEffect(level)}
               </p>
