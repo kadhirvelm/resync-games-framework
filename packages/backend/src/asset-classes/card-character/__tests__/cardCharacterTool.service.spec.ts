@@ -30,11 +30,14 @@ describe("CardCharacterToolService", () => {
     tempDirectory = await mkdtemp(join(tmpdir(), "card-character-save-"));
     const portraits = await portraitSet(tempDirectory, 96, 128);
     const service = new CardCharacterToolService();
+    const requestedId = randomUUID();
 
     const { setId } = await service.saveGeneratedPortraits({
       portraits,
+      setId: requestedId,
       sourcePrompt: "a soot-covered inventor who builds clockwork wings",
     });
+    expect(setId).toBe(requestedId);
     savedSetIds.push(setId);
 
     const manifest = JSON.parse(
@@ -66,9 +69,11 @@ describe("CardCharacterToolService", () => {
     tempDirectory = await mkdtemp(join(tmpdir(), "card-character-canvas-"));
     const portraits = await portraitSet(tempDirectory, 1024, 1536);
     const service = new CardCharacterToolService();
+    const requestedId = randomUUID();
 
     const { setId } = await service.saveGeneratedPortraits({
       portraits,
+      setId: requestedId,
       sourcePrompt: "a knight",
     });
     savedSetIds.push(setId);
@@ -99,6 +104,7 @@ describe("CardCharacterToolService", () => {
     const error = await service
       .saveGeneratedPortraits({
         portraits,
+        setId: randomUUID(),
         sourcePrompt: "a knight",
       })
       .then(

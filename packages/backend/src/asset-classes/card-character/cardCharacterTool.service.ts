@@ -1,10 +1,10 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Injectable, InternalServerErrorException } from "@nestjs/common";
 import sharp from "sharp";
 import { deleteImageFiles } from "src/mastra/tools/generateImageTool.service";
 import { encodeGeneratedImageAsWebp } from "../shared/encodeGeneratedImageAsWebp";
+import { writeAssetDirectoryAtomically } from "../shared/writeAssetDirectoryAtomically";
 import {
   CARD_CHARACTER_CANVAS_BACKGROUND,
   CARD_CHARACTER_CANVAS_PX,
@@ -39,29 +39,25 @@ export class CardCharacterToolService {
    */
   public async saveGeneratedPortraits(params: {
     portraits: CardCharacterImageSet;
+    setId: string;
     sourcePrompt: string;
   }): Promise<{ setId: string }> {
-    const setId = randomUUID();
+    const setId = params.setId;
     const setDirectory = CARD_CHARACTER_STORAGE.filePath(setId);
     const tempPaths = params.portraits.images.map((image) => image.filePath);
-    await mkdir(setDirectory, { recursive: true });
 
     try {
-      const levels = await this.persistPortraits(
-        params.portraits,
-        setDirectory,
-      );
-      await this.writeManifest({
-        levels,
-        setDirectory,
-        setId,
-        sourcePrompt: params.sourcePrompt,
-        theme: params.portraits.theme,
+      await writeAssetDirectoryAtomically(setDirectory, async (pending) => {
+        const levels = await this.persistPortraits(params.portraits, pending);
+        await this.writeManifest({
+          levels,
+          setDirectory: pending,
+          setId,
+          sourcePrompt: params.sourcePrompt,
+          theme: params.portraits.theme,
+        });
       });
       return { setId };
-    } catch (error) {
-      await rm(setDirectory, { force: true, recursive: true });
-      throw error;
     } finally {
       await deleteImageFiles(tempPaths);
     }

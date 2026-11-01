@@ -92,7 +92,7 @@ export const PartyLineup = ({
         ref={row}
       >
         {displayed.map(({ index, member }, order) => {
-          const profile = memberProfile(member, content);
+          const profile = memberProfile(member, content, run);
           const card =
             member.kind === "coreborn"
               ? memberCard(member, content)

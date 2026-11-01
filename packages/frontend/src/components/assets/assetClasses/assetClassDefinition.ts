@@ -3,6 +3,15 @@ import type { ComponentType } from "react";
 import type { AvailableServiceCaller } from "@/services/helpers/types";
 import type { PendingJob } from "../PendingJobCard";
 
+/**
+ * Icon shown for an asset class in the sidebar nav and its content header.
+ * Matches the shape of a `lucide-react` icon component.
+ */
+export type AssetClassIcon = ComponentType<{
+  className?: string;
+  size?: number;
+}>;
+
 /** Text for the generate dialog's prompt form. */
 export interface AssetClassFormCopy {
   hint?: string;
@@ -44,9 +53,19 @@ export interface AssetGalleryProps {
  * generate dialog, how to call its `generate` endpoint, and its gallery.
  */
 export interface AssetClassDefinition {
+  /**
+   * Sidebar group this class is listed under (e.g. "Characters",
+   * "Environments"). Classes sharing a category are grouped together, in
+   * first-seen order, by the workshop's navigation.
+   */
+  category: string;
+  /** The gallery owns structured generation controls instead of the generic dialog. */
+  customGeneration?: boolean;
   dialogDescription: string;
   dialogTitle: string;
   form: AssetClassFormCopy;
+  /** Shown beside this class's name in the sidebar and content header. */
+  Icon: AssetClassIcon;
   /**
    * Asks the backend to stop one in-flight generation.
    * @param callers - Generated service callers

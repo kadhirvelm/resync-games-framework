@@ -131,9 +131,15 @@ describe("ConsultProductNowAgent", () => {
       expect(prompt).toBe("How is the Reach set up?");
       return { text: "  The Reach is climbed under the Warden Compact.  " };
     }) as unknown as typeof agent.subagent.generate;
-    const registry = new TowersOfCorebornAgentToolRegistry(agent, {
-      createTool: () => ({ id: AgentTool.GenerateImage }),
-    } as never);
+    const registry = new TowersOfCorebornAgentToolRegistry(
+      agent,
+      {
+        createTool: () => ({ id: AgentTool.GenerateImage }),
+      } as never,
+      { createTool: () => ({ id: AgentTool.GenerateThreeDModel }) } as never,
+      { createTool: () => ({ id: AgentTool.RecordProductNowLore }) } as never,
+      { createTool: () => ({ id: AgentTool.GenerateAudio }) } as never,
+    );
 
     const tool = registry.buildTools([AgentTool.ConsultProductNow])[
       AgentTool.ConsultProductNow

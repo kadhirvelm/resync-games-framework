@@ -5,7 +5,8 @@ import { useEffect, useRef, useState } from "react";
 /** Browser storage keys. Bump a key's suffix when its shape breaks. */
 export const STORAGE_KEYS = {
   profile: "towers-of-coreborn.profile.v1",
-  saves: "towers-of-coreborn.saves.v1",
+  /** Ids of the climbs saved on the server, mirrored for the game selector */
+  savedClimbIds: "towers-of-coreborn.saved-climbs.v1",
   settings: "towers-of-coreborn.settings.v1",
 } as const;
 
@@ -29,7 +30,7 @@ function readStored(key: string): unknown {
  * @param key - Storage key
  * @param value - Value to store
  */
-function writeStored(key: string, value: unknown): void {
+export function writeStored(key: string, value: unknown): void {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {

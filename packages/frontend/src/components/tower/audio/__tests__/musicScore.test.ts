@@ -3,6 +3,7 @@ import {
   MELODY_LADDER,
   MOOD_SCORES,
   musicMoodFor,
+  musicTrackUrl,
   nextMelodyStep,
   tonesForBeat,
 } from "../musicScore";
@@ -22,6 +23,16 @@ describe("musicMoodFor", () => {
     expect(
       musicMoodFor({ inClimb: true, isBossRoom: false, phase: "defeat" }),
     ).toBe("silent");
+  });
+});
+
+describe("musicTrackUrl", () => {
+  test("uses a generated bed in a climb and keeps the menu synthesized", () => {
+    const music = { battle: "https://cdn.test/battle.mp3" };
+    expect(musicTrackUrl("battle", music)).toBe("https://cdn.test/battle.mp3");
+    expect(musicTrackUrl("camp", music)).toBeUndefined();
+    expect(musicTrackUrl("menu", music)).toBeUndefined();
+    expect(musicTrackUrl("battle", undefined)).toBeUndefined();
   });
 });
 

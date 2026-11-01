@@ -169,3 +169,20 @@ export function musicMoodFor(view: {
   }
   return "camp";
 }
+
+/**
+ * Picks a generated bed for a mood. The menu and a silent screen stay on
+ * the synthesized score.
+ * @param mood - Mood being played
+ * @param music - Generated beds, when the climb has any
+ * @returns The bed URL, or undefined when this mood stays synthesized
+ */
+export function musicTrackUrl(
+  mood: MusicMood,
+  music: Partial<Record<"camp" | "battle" | "boss", string>> | undefined,
+): string | undefined {
+  if (mood === "menu" || mood === "silent" || music === undefined) {
+    return undefined;
+  }
+  return music[mood];
+}

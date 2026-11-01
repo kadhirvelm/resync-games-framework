@@ -101,6 +101,7 @@ export class EnemyAgent implements QueryableAgent<EnemyInput, EnemyResult> {
         const enemy = readPaintedEnemy(result, state);
         const saved = await this.toolService.saveGeneratedEnemy({
           draft: enemy.draft,
+          id: input.generationId,
           image: enemy.image,
           sourcePrompt: input.prompt,
         });

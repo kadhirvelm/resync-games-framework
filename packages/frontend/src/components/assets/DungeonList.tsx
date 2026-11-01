@@ -6,6 +6,7 @@ import styles from "./Assets.module.scss";
 import { CopyableError } from "./CopyableError";
 import { DungeonSlotCard } from "./DungeonSlotCard";
 import {
+  audioForOwner,
   cardsForCharacter,
   slotsStartedWith,
   spriteForOwner,
@@ -176,23 +177,28 @@ function DungeonPackage({
       </div>
       <span className={styles.dungeonGroupLabel}>Rooms</span>
       <div className={styles.backgroundGrid}>
-        {rooms.map((slot) => (
-          <DungeonSlotCard
-            dungeonId={dungeon.id}
-            key={slot.id}
-            onAssociate={onAssociateSlot}
-            onGenerate={generateSlot}
-            onStop={onStopSlot}
-            slot={slot}
-            slotJob={jobForSlot(slotJobs, slot.id)}
-            slots={dungeon.slots}
-          />
-        ))}
+        {rooms.flatMap((room) => {
+          const ambience = audioForOwner(dungeon.slots, room.id, "room");
+          const shown = ambience === undefined ? [room] : [room, ambience];
+          return shown.map((slot) => (
+            <DungeonSlotCard
+              dungeonId={dungeon.id}
+              key={slot.id}
+              onAssociate={onAssociateSlot}
+              onGenerate={generateSlot}
+              onStop={onStopSlot}
+              slot={slot}
+              slotJob={jobForSlot(slotJobs, slot.id)}
+              slots={dungeon.slots}
+            />
+          ));
+        })}
       </div>
       <span className={styles.dungeonGroupLabel}>Enemies</span>
       <div className={styles.enemyGrid}>
         {enemies.map((enemy) => {
           const sprite = spriteForOwner(dungeon.slots, enemy.id);
+          const attack = audioForOwner(dungeon.slots, enemy.id, "attack");
           return (
             <div className={styles.dungeonEnemy} key={enemy.id}>
               <DungeonSlotCard
@@ -212,6 +218,17 @@ function DungeonPackage({
                   onStop={onStopSlot}
                   slot={sprite}
                   slotJob={jobForSlot(slotJobs, sprite.id)}
+                  slots={dungeon.slots}
+                />
+              )}
+              {attack !== undefined && (
+                <DungeonSlotCard
+                  dungeonId={dungeon.id}
+                  onAssociate={onAssociateSlot}
+                  onGenerate={generateSlot}
+                  onStop={onStopSlot}
+                  slot={attack}
+                  slotJob={jobForSlot(slotJobs, attack.id)}
                   slots={dungeon.slots}
                 />
               )}
@@ -260,7 +277,66 @@ function DungeonPackage({
           </article>
         );
       })}
+      <ScoreSlots
+        dungeonId={dungeon.id}
+        onAssociateSlot={onAssociateSlot}
+        onGenerate={generateSlot}
+        onStopSlot={onStopSlot}
+        slotJobs={slotJobs}
+        slots={dungeon.slots}
+      />
     </section>
+  );
+}
+
+/**
+ * Music and stingers that belong to the package rather than one room or enemy.
+ * @param props.dungeonId - Package id
+ * @param props.slots - Every slot in the package
+ * @param props.slotJobs - Runs that should show as generating
+ * @param props.onGenerate - Starts one prompt's agent
+ * @param props.onStopSlot - Stops that agent
+ * @param props.onAssociateSlot - Writes an existing clip into a slot
+ */
+function ScoreSlots({
+  dungeonId,
+  onAssociateSlot,
+  onGenerate,
+  onStopSlot,
+  slotJobs,
+  slots,
+}: {
+  dungeonId: string;
+  onAssociateSlot?: DungeonListProps["onAssociateSlot"];
+  onGenerate?: (dungeonId: string, slot: DungeonSlot) => void;
+  onStopSlot?: DungeonListProps["onStopSlot"];
+  slotJobs: PendingJob[];
+  slots: readonly DungeonSlot[];
+}) {
+  const score = slots.filter(
+    (slot) => slot.kind === "audio" && slot.ownerSlotId === undefined,
+  );
+  if (score.length === 0) {
+    return null;
+  }
+  return (
+    <>
+      <span className={styles.dungeonGroupLabel}>Sound</span>
+      <div className={styles.backgroundGrid}>
+        {score.map((slot) => (
+          <DungeonSlotCard
+            dungeonId={dungeonId}
+            key={slot.id}
+            onAssociate={onAssociateSlot}
+            onGenerate={onGenerate}
+            onStop={onStopSlot}
+            slot={slot}
+            slotJob={jobForSlot(slotJobs, slot.id)}
+            slots={slots}
+          />
+        ))}
+      </div>
+    </>
   );
 }
 

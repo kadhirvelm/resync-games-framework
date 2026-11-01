@@ -59,44 +59,57 @@ export function useTowerCatalog(): TowerCatalogState {
     }
 
     void (async () => {
-      const [dungeons, characters, cards, enemies, backgrounds, spriteSheets] =
-        await Promise.all([
-          readList(
-            "Dungeons",
-            () => clientServiceCallers.dungeon.list(),
-            (response) => response.dungeons,
-          ),
-          readList(
-            "Characters",
-            () => clientServiceCallers.cardCharacter.list(),
-            (response) => response.sets,
-          ),
-          readList(
-            "Cards",
-            () => clientServiceCallers.playableCard.list(),
-            (response) => response.cards,
-          ),
-          readList(
-            "Enemies",
-            () => clientServiceCallers.enemy.list(),
-            (response) => response.enemies,
-          ),
-          readList(
-            "Rooms",
-            () => clientServiceCallers.battleBackground.list(),
-            (response) => response.backgrounds,
-          ),
-          readList(
-            "Sprites",
-            () => clientServiceCallers.spriteSheet.list(),
-            (response) => response.spriteSheets,
-          ),
-        ]);
+      const [
+        dungeons,
+        characters,
+        cards,
+        enemies,
+        backgrounds,
+        spriteSheets,
+        audio,
+      ] = await Promise.all([
+        readList(
+          "Dungeons",
+          () => clientServiceCallers.dungeon.list(),
+          (response) => response.dungeons,
+        ),
+        readList(
+          "Characters",
+          () => clientServiceCallers.cardCharacter.list(),
+          (response) => response.sets,
+        ),
+        readList(
+          "Cards",
+          () => clientServiceCallers.playableCard.list(),
+          (response) => response.cards,
+        ),
+        readList(
+          "Enemies",
+          () => clientServiceCallers.enemy.list(),
+          (response) => response.enemies,
+        ),
+        readList(
+          "Rooms",
+          () => clientServiceCallers.battleBackground.list(),
+          (response) => response.backgrounds,
+        ),
+        readList(
+          "Sprites",
+          () => clientServiceCallers.spriteSheet.list(),
+          (response) => response.spriteSheets,
+        ),
+        readList(
+          "Audio",
+          () => clientServiceCallers.audio.list(),
+          (response) => response.clips,
+        ),
+      ]);
       if (cancelled) {
         return;
       }
       setState({
         catalog: {
+          audio,
           backgrounds,
           cards,
           characters,

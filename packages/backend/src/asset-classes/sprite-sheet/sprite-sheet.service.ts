@@ -1,7 +1,20 @@
-import { Injectable, InternalServerErrorException } from "@nestjs/common";
+import {
+  Injectable,
+  InternalServerErrorException,
+  OnModuleInit,
+  Optional,
+} from "@nestjs/common";
 import type { SpriteSheetServiceApi } from "@towers-of-coreborn/api";
 import { ConfigurationService } from "src/configuration/configuration.service";
+import {
+  ASSET_GENERATION_JOB_TIMEOUT_MS,
+  GenerationQueueService,
+} from "src/generation-queue/generationQueue.service";
 import { SpriteSheetAgent } from "src/mastra/agents/sprite-sheet/spriteSheetAgent";
+import {
+  readActiveProductNowSession,
+  runWithProductNowSession,
+} from "src/product-now-mcp/productNowSessionContext";
 import { requireGenerationId } from "../shared/requireGenerationId";
 import { requireGenerationPrompt } from "../shared/requireGenerationPrompt";
 import { readSpriteSheet, readSpriteSheets } from "./readSpriteSheets";
@@ -9,11 +22,25 @@ import { SPRITE_SHEET_STORAGE } from "./spriteSheetStorage";
 
 /** Generates and lists animated character sprite sheets. */
 @Injectable()
-export class SpriteSheetService {
+export class SpriteSheetService implements OnModuleInit {
   public constructor(
     private readonly agent: SpriteSheetAgent,
     private readonly configurationService: ConfigurationService,
+    @Optional()
+    private readonly generationQueue?: GenerationQueueService,
   ) {}
+
+  /** Registers this asset class on worker-enabled processes. */
+  public onModuleInit(): void {
+    this.generationQueue?.register(
+      "sprite-sheet",
+      (input: QueuedSpriteSheet) => this.executeGeneration(input),
+      {
+        onTimeout: (input) => this.agent.abort(input.generationId),
+        timeoutMs: ASSET_GENERATION_JOB_TIMEOUT_MS,
+      },
+    );
+  }
 
   /**
    * Stops an in-flight sprite-sheet generation.
@@ -24,7 +51,11 @@ export class SpriteSheetService {
     payload: SpriteSheetServiceApi["cancel"]["payload"],
   ): Promise<SpriteSheetServiceApi["cancel"]["response"]> {
     const generationId = requireGenerationId(payload.generationId);
-    return { stopped: await this.agent.abort(generationId) };
+    const [queued, active] = await Promise.all([
+      this.generationQueue?.cancel(generationId) ?? false,
+      this.agent.abort(generationId),
+    ]);
+    return { stopped: queued || active };
   }
 
   /**
@@ -39,18 +70,51 @@ export class SpriteSheetService {
       "Describe the character to animate.",
     );
     const generationId = requireGenerationId(payload.generationId);
-    const { id } = await this.agent.query({ generationId, prompt });
-    const asset = await readSpriteSheet(
-      SPRITE_SHEET_STORAGE.rootPath(),
-      id,
-      this.getPublicBaseUrl(),
-    );
-    if (asset === undefined) {
-      throw new InternalServerErrorException(
-        `Sprite sheet ${id} was generated but could not be read back.`,
+    const input = {
+      generationId,
+      productNowSessionId: readActiveProductNowSession(),
+      prompt,
+    };
+    if (this.generationQueue) {
+      return this.generationQueue.enqueueAndWait(
+        "sprite-sheet",
+        generationId,
+        input,
       );
     }
-    return asset;
+    return this.executeGeneration(input);
+  }
+
+  /** Executes one idempotent sprite generation inside a queue worker. */
+  private executeGeneration(
+    input: QueuedSpriteSheet,
+  ): Promise<SpriteSheetServiceApi["generate"]["response"]> {
+    const execute = async () => {
+      const existing = await readSpriteSheet(
+        SPRITE_SHEET_STORAGE.rootPath(),
+        input.generationId,
+        this.getPublicBaseUrl(),
+      );
+      if (existing) return existing;
+      const { id } = await this.agent.query({
+        generationId: input.generationId,
+        prompt: input.prompt,
+      });
+      const asset = await readSpriteSheet(
+        SPRITE_SHEET_STORAGE.rootPath(),
+        id,
+        this.getPublicBaseUrl(),
+      );
+      if (asset === undefined) {
+        throw new InternalServerErrorException(
+          `Sprite sheet ${id} was generated but could not be read back.`,
+        );
+      }
+      return asset;
+    };
+    return input.productNowSessionId
+      ? runWithProductNowSession(input.productNowSessionId, execute)
+      : execute();
   }
 
   /**
@@ -71,4 +135,11 @@ export class SpriteSheetService {
       this.configurationService.get("BACKEND_API_URL"),
     );
   }
+}
+
+/** Serializable input carried across the asset-generation queue. */
+interface QueuedSpriteSheet {
+  generationId: string;
+  productNowSessionId?: string;
+  prompt: string;
 }

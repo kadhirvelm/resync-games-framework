@@ -28,6 +28,26 @@ export function readActiveProductNowSession(): string | undefined {
 }
 
 /**
+ * Reads the ProductNow session for an agent tool call. The Mastra request
+ * context wins; otherwise the session bound to the current HTTP request.
+ * @param requestContext - Mastra request context for the tool call, if any
+ * @returns Browser session id, or `undefined` when none is available
+ */
+export function readProductNowSessionForTool(
+  requestContext: { getRaw(key: string): unknown } | undefined,
+): string | undefined {
+  const fromRequest = requestContext?.getRaw(PRODUCT_NOW_SESSION_REQUEST_KEY);
+  if (typeof fromRequest === "string" && fromRequest !== "") {
+    return fromRequest;
+  }
+  const active = readActiveProductNowSession();
+  if (active !== undefined && active !== "") {
+    return active;
+  }
+  return undefined;
+}
+
+/**
  * Runs `fn` with a ProductNow session available to agent tools.
  * @param sessionId - Browser session that holds the ProductNow OAuth tokens
  * @param fn - Work that may call ProductNow tools

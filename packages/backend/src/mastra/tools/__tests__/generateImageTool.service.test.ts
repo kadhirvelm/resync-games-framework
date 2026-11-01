@@ -166,6 +166,9 @@ describe("TowersOfCorebornAgentToolRegistry", () => {
       new GenerateImageToolService({
         requestTextCompletion,
       } as unknown as ModelService),
+      { createTool: () => ({ id: AgentTool.GenerateThreeDModel }) } as never,
+      { createTool: () => ({ id: AgentTool.RecordProductNowLore }) } as never,
+      { createTool: () => ({ id: AgentTool.GenerateAudio }) } as never,
     );
 
     enum SampleAgentTool {
@@ -205,6 +208,9 @@ describe("TowersOfCorebornAgentToolRegistry", () => {
       new GenerateImageToolService({
         requestTextCompletion: mock(async () => ""),
       } as unknown as ModelService),
+      { createTool: () => ({ id: AgentTool.GenerateThreeDModel }) } as never,
+      { createTool: () => ({ id: AgentTool.RecordProductNowLore }) } as never,
+      { createTool: () => ({ id: AgentTool.GenerateAudio }) } as never,
     );
 
     enum SampleAgentTool {

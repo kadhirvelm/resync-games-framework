@@ -17,10 +17,7 @@ import { ConfigurationService } from "src/configuration/configuration.service";
 import { TowersOfCorebornAgent } from "src/mastra/shared/towersOfCorebornAgent";
 import { resolveModelConfig } from "src/mastra/shared/towersOfCorebornAgentModels";
 import { ProductNowMcpService } from "src/product-now-mcp/product-now-mcp.service";
-import {
-  PRODUCT_NOW_SESSION_REQUEST_KEY,
-  readActiveProductNowSession,
-} from "src/product-now-mcp/productNowSessionContext";
+import { readProductNowSessionForTool } from "src/product-now-mcp/productNowSessionContext";
 import { z } from "zod";
 import { throwIfAborted } from "../generationCancelled";
 
@@ -157,7 +154,7 @@ export class ConsultProductNowAgent {
   public async toolsForRequest(requestContext: {
     getRaw(key: string): unknown;
   }): Promise<ToolsInput> {
-    const sessionId = readSessionId(requestContext);
+    const sessionId = readProductNowSessionForTool(requestContext);
     if (sessionId === undefined) {
       throw new UnauthorizedException(
         "Connect ProductNow before using its tools",
@@ -236,24 +233,6 @@ function renderConsultProductNowInstructions(): string {
     "Answer in your final message. Use names, floors, and events the tools returned.",
     "If nothing matches, say that the documents do not cover it. Do not invent floors, names, or history.",
   ].join("\n");
-}
-
-/**
- * @param requestContext - Mastra request context for this delegation
- * @returns The browser's ProductNow session id
- */
-function readSessionId(requestContext: {
-  getRaw(key: string): unknown;
-}): string | undefined {
-  const fromRequest = requestContext.getRaw(PRODUCT_NOW_SESSION_REQUEST_KEY);
-  if (typeof fromRequest === "string" && fromRequest !== "") {
-    return fromRequest;
-  }
-  const active = readActiveProductNowSession();
-  if (active !== undefined && active !== "") {
-    return active;
-  }
-  return undefined;
 }
 
 /**

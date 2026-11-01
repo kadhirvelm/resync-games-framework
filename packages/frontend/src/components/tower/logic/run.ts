@@ -1,5 +1,6 @@
 import { tierHitPoints } from "./characterRoles";
 import type { CombatCard, CombatSetup, PartyUnit } from "./combat";
+import { cultivatorPortraitUrl } from "./cultivatorRealm";
 import { generateTower } from "./generateTower";
 import { SeededRandom } from "./random";
 import {
@@ -366,16 +367,19 @@ export interface MemberProfile {
 /**
  * @param member - Party member
  * @param content - Tower content
+ * @param run - Current climb, which picks the cultivator's realm portrait
  * @returns Name, tier title, portrait, and battle sprite to draw
  */
 export function memberProfile(
   member: PartyMember,
   content: TowerContent,
+  run?: RunState,
 ): MemberProfile {
   if (member.kind === "cultivator") {
     return {
       name: content.cultivator.name,
-      portraitUrl: content.cultivator.portraitUrl,
+      portraitUrl: cultivatorPortraitUrl(content.cultivator, run),
+      sprite: content.cultivator.sprite,
       title: content.cultivator.title,
     };
   }
@@ -398,7 +402,7 @@ export function memberProfile(
 export function combatSetup(run: RunState, content: TowerContent): CombatSetup {
   const room = currentRoom(run);
   const party: PartyUnit[] = run.party.map((member) => {
-    const profile = memberProfile(member, content);
+    const profile = memberProfile(member, content, run);
     return {
       block: 0,
       hitPoints: member.hitPoints,

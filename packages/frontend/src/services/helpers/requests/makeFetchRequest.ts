@@ -64,6 +64,18 @@ export function makeFetchRequest<ReturnValue>(
         };
       }
 
+      const contentType = response.headers.get("content-type") ?? "";
+      if (!contentType.includes("json")) {
+        return {
+          code: response.status,
+          message: response.ok
+            ? "The server returned a response that was not JSON"
+            : `Request failed (${response.status})`,
+          path: resolvedSlug,
+          type: "error",
+        };
+      }
+
       return response.json();
     } catch (error) {
       return {

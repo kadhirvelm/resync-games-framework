@@ -1,5 +1,4 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Injectable, InternalServerErrorException } from "@nestjs/common";
 import sharp from "sharp";
@@ -8,6 +7,7 @@ import {
   type GeneratedImage,
 } from "src/mastra/tools/generateImageTool.service";
 import { encodeGeneratedImageAsWebp } from "../shared/encodeGeneratedImageAsWebp";
+import { writeAssetDirectoryAtomically } from "../shared/writeAssetDirectoryAtomically";
 import {
   BATTLE_BACKGROUND_FILE_NAME,
   BATTLE_BACKGROUND_MANIFEST_FILE_NAME,
@@ -29,33 +29,32 @@ export class BattleBackgroundToolService {
    * @throws InternalServerErrorException when the painting is too small
    */
   public async saveGeneratedBackground(params: {
+    id: string;
     image: GeneratedImage;
     sourcePrompt: string;
   }): Promise<{ id: string }> {
-    const id = randomUUID();
+    const id = params.id;
     const directory = BATTLE_BACKGROUND_STORAGE.filePath(id);
-    await mkdir(directory, { recursive: true });
 
     try {
-      await this.persistImage(params.image.filePath, directory);
-      await writeFile(
-        join(directory, BATTLE_BACKGROUND_MANIFEST_FILE_NAME),
-        JSON.stringify(
-          {
-            createdAt: new Date().toISOString(),
-            description: params.image.notes,
-            id,
-            prompt: params.sourcePrompt,
-            title: params.image.name,
-          },
-          null,
-          2,
-        ),
-      );
+      await writeAssetDirectoryAtomically(directory, async (pending) => {
+        await this.persistImage(params.image.filePath, pending);
+        await writeFile(
+          join(pending, BATTLE_BACKGROUND_MANIFEST_FILE_NAME),
+          JSON.stringify(
+            {
+              createdAt: new Date().toISOString(),
+              description: params.image.notes,
+              id,
+              prompt: params.sourcePrompt,
+              title: params.image.name,
+            },
+            null,
+            2,
+          ),
+        );
+      });
       return { id };
-    } catch (error) {
-      await rm(directory, { force: true, recursive: true });
-      throw error;
     } finally {
       await deleteImageFiles([params.image.filePath]);
     }

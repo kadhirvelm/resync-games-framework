@@ -1,9 +1,10 @@
 "use client";
 
-import clsx from "clsx";
+import { Compass, PanelLeft } from "lucide-react";
 import { useState } from "react";
 import { ProductNowConnection } from "@/components/productNow/ProductNowConnection";
-import { Button, Dialog, Flex } from "@/lib/radix";
+import { Dialog, Flex } from "@/lib/radix";
+import { type AssetClassJobCounts, AssetClassNav } from "./AssetClassNav";
 import styles from "./Assets.module.scss";
 import type { AssetClassDefinition } from "./assetClasses/assetClassDefinition";
 import { ASSET_CLASSES } from "./assetClasses/assetClassRegistry";
@@ -11,12 +12,16 @@ import { GenerateAssetForm } from "./GenerateAssetForm";
 import { useAssetGenerationJobs } from "./useAssetGenerationJobs";
 
 /**
- * Blueprint workshop. Each registered asset class gets a tab, its own
- * generate dialog, and its own gallery.
+ * Blueprint workshop. A sidebar groups every registered asset class by
+ * category and can be filtered by name, so the workshop stays navigable as
+ * more generators are added. The active class gets a content header, its own
+ * generate dialog (unless it manages its own generation controls), and its
+ * gallery.
  */
 export function Assets() {
   const [activeClassId, setActiveClassId] = useState(ASSET_CLASSES[0]?.id);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isNavDialogOpen, setIsNavDialogOpen] = useState(false);
   const {
     associateDungeonSlot,
     dismissJob,
@@ -39,11 +44,13 @@ export function Assets() {
 
   const activeJobs = getJobsForClass(activeClass.id);
   const runningCount = activeJobs.filter((job) => job.error === null).length;
-  const { Gallery } = activeClass;
+  const { Gallery, Icon } = activeClass;
+  const jobCounts = buildJobCounts(getJobsForClass);
 
   const handleSelectClass = (assetClassId: string) => {
     setActiveClassId(assetClassId);
     setIsDialogOpen(false);
+    setIsNavDialogOpen(false);
   };
 
   const handleGenerate = (prompt: string) => {
@@ -52,84 +59,133 @@ export function Assets() {
   };
 
   return (
-    <Flex className={styles.pageWrapper}>
-      <Flex className={styles.topBar}>
-        <Flex className={styles.titleGroup}>
-          <span className={styles.pageTitle}>Blueprint Workshop</span>
-          <span className={styles.pageSubtitle}>{activeClass.subtitle}</span>
+    <Flex className={styles.pageWrapper} direction="column">
+      <Flex className={styles.brandRow}>
+        <Flex align="center" className={styles.brandLockup} gap="3">
+          <span aria-hidden="true" className={styles.brandMark}>
+            <Compass size={18} />
+          </span>
+          <Flex className={styles.titleGroup} direction="column">
+            <span className={styles.pageTitle}>Blueprint Workshop</span>
+            <span className={styles.pageSubtitle}>
+              Pick a generator, describe what you want, and keep the result.
+            </span>
+          </Flex>
         </Flex>
-
-        <Flex className={styles.workshopActions}>
-          <ProductNowConnection placement="inline" />
-          <AssetClassTabs
-            activeClassId={activeClass.id}
-            onSelect={handleSelectClass}
-          />
-          <Dialog
-            content={
-              <GenerateAssetForm
-                copy={activeClass.form}
-                onSubmit={handleGenerate}
-              />
-            }
-            description={activeClass.dialogDescription}
-            isOpen={isDialogOpen}
-            onToggleOpen={setIsDialogOpen}
-            title={activeClass.dialogTitle}
-            trigger={
-              <Button size="2">
-                {getGenerateButtonLabel(activeClass, runningCount)}
-              </Button>
-            }
-            width="480px"
-          />
-        </Flex>
+        <button
+          className={styles.mobileNavTrigger}
+          onClick={() => setIsNavDialogOpen(true)}
+          type="button"
+        >
+          <PanelLeft size={15} />
+          {activeClass.tabLabel}
+        </button>
       </Flex>
 
-      <Gallery
-        key={activeClass.id}
-        onAssociateDungeonSlot={associateDungeonSlot}
-        onDismissJob={dismissJob}
-        onGenerateDungeonSlot={startDungeonSlot}
-        onStopDungeonSlot={stopDungeonSlot}
-        onStopJob={(jobId) => stopJob(activeClass, jobId)}
-        pendingJobs={activeJobs}
-        refreshKey={getRefreshKey(activeClass.id)}
-        results={getResultsForClass(activeClass.id)}
-        slotJobs={getDungeonSlotJobs()}
+      <div className={styles.workshopLayout}>
+        <aside className={styles.sidebar}>
+          <AssetClassNav
+            activeClassId={activeClass.id}
+            jobCounts={jobCounts}
+            onSelect={handleSelectClass}
+          />
+          <div className={styles.sidebarFooter}>
+            <ProductNowConnection placement="inline" />
+          </div>
+        </aside>
+
+        <section className={styles.mainColumn}>
+          <header className={styles.contentHeader}>
+            <div
+              className={styles.contentIdentity}
+              data-category={activeClass.category}
+            >
+              <span aria-hidden="true" className={styles.contentIcon}>
+                <Icon size={20} />
+              </span>
+              <div className={styles.contentHeading}>
+                <span className={styles.contentEyebrow}>
+                  {activeClass.category}
+                </span>
+                <h1 className={styles.contentTitle}>{activeClass.tabLabel}</h1>
+                <p className={styles.contentDescription}>
+                  {activeClass.dialogDescription}
+                </p>
+              </div>
+            </div>
+
+            {activeClass.customGeneration ? null : (
+              <Dialog
+                content={
+                  <GenerateAssetForm
+                    copy={activeClass.form}
+                    onSubmit={handleGenerate}
+                  />
+                }
+                description={activeClass.dialogDescription}
+                isOpen={isDialogOpen}
+                onToggleOpen={setIsDialogOpen}
+                title={activeClass.dialogTitle}
+                trigger={
+                  <button className={styles.generateButton} type="button">
+                    {getGenerateButtonLabel(activeClass, runningCount)}
+                  </button>
+                }
+                width="480px"
+              />
+            )}
+          </header>
+
+          <Gallery
+            key={activeClass.id}
+            onAssociateDungeonSlot={associateDungeonSlot}
+            onDismissJob={dismissJob}
+            onGenerateDungeonSlot={startDungeonSlot}
+            onStopDungeonSlot={stopDungeonSlot}
+            onStopJob={(jobId) => stopJob(activeClass, jobId)}
+            pendingJobs={activeJobs}
+            refreshKey={getRefreshKey(activeClass.id)}
+            results={getResultsForClass(activeClass.id)}
+            slotJobs={getDungeonSlotJobs()}
+          />
+        </section>
+      </div>
+
+      <Dialog
+        content={
+          <AssetClassNav
+            activeClassId={activeClass.id}
+            jobCounts={jobCounts}
+            onSelect={handleSelectClass}
+          />
+        }
+        isOpen={isNavDialogOpen}
+        onToggleOpen={setIsNavDialogOpen}
+        title="Choose a generator"
+        width="340px"
       />
     </Flex>
   );
 }
 
-interface AssetClassTabsProps {
-  activeClassId: string;
-  onSelect: (assetClassId: string) => void;
-}
-
 /**
- * One tab per registered asset class.
- * @param activeClassId - Highlighted tab
- * @param onSelect - Called with the clicked class id
+ * Computes running/failed job counts for every registered class, so the
+ * sidebar can show a status badge without each item re-filtering the job list.
+ * @param getJobsForClass - Looks up pending jobs for one class id
+ * @returns Counts keyed by class id
  */
-function AssetClassTabs({ activeClassId, onSelect }: AssetClassTabsProps) {
-  return (
-    <div className={styles.pathSwitcher}>
-      {ASSET_CLASSES.map((assetClass) => (
-        <button
-          className={clsx(
-            styles.pathOption,
-            assetClass.id === activeClassId && styles.pathOptionActive,
-          )}
-          key={assetClass.id}
-          onClick={() => onSelect(assetClass.id)}
-          type="button"
-        >
-          {assetClass.tabLabel}
-        </button>
-      ))}
-    </div>
-  );
+function buildJobCounts(
+  getJobsForClass: (assetClassId: string) => { error: string | null }[],
+): Record<string, AssetClassJobCounts> {
+  const counts: Record<string, AssetClassJobCounts> = {};
+  for (const assetClass of ASSET_CLASSES) {
+    const jobs = getJobsForClass(assetClass.id);
+    counts[assetClass.id] = {
+      failed: jobs.filter((job) => job.error !== null).length,
+      running: jobs.filter((job) => job.error === null).length,
+    };
+  }
+  return counts;
 }
 
 /**

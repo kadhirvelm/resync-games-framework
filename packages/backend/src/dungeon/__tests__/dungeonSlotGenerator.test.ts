@@ -75,12 +75,18 @@ describe("DungeonSlotGenerator", () => {
     }));
     const enemyQuery = mock(async () => ({ id: "enemy-id", summary: "" }));
     const spriteQuery = mock(async () => ({ id: "sprite-id", summary: "" }));
+    let audioInput: unknown;
+    const audioQuery = mock(async (input: unknown) => {
+      audioInput = input;
+      return { id: "audio-id", summary: "" };
+    });
     const cardQuery = mock(async () => ({
       aetherCost: 2,
       cardId: "card-id",
       effects: [{ amount: 5, kind: "defend" as const, text: "Block." }],
     }));
     const generator = createGenerator({
+      audioQuery,
       backgroundQuery,
       cardQuery,
       characterQuery,
@@ -93,6 +99,7 @@ describe("DungeonSlotGenerator", () => {
       generator.generate(runInput(characterSlot())),
       generator.generate(runInput(enemySlot())),
       generator.generate(runInput(spriteSlot())),
+      generator.generate(runInput(audioSlot())),
       generator.generate({
         ...runInput(cardSlot()),
         progression: {
@@ -110,6 +117,7 @@ describe("DungeonSlotGenerator", () => {
       "character-id",
       "enemy-id",
       "sprite-id",
+      "audio-id",
       "card-id",
     ]);
     expect(backgroundQuery).toHaveBeenCalledTimes(1);
@@ -117,6 +125,14 @@ describe("DungeonSlotGenerator", () => {
     expect(enemyQuery).toHaveBeenCalledTimes(1);
     expect(cardQuery).toHaveBeenCalledTimes(1);
     expect(spriteQuery).toHaveBeenCalledTimes(1);
+    expect(audioQuery).toHaveBeenCalledTimes(1);
+    expect(audioInput).toEqual({
+      cue: "attack",
+      generationId: GENERATION_ID,
+      loop: false,
+      prompt: "An iron bell struck once",
+      role: "effect",
+    });
   });
 });
 
@@ -139,6 +155,7 @@ function createGenerator(options: {
   enemyQuery?: (input: unknown) => Promise<{ id: string; summary: string }>;
   progressionFor?: (slot: unknown, slots: unknown[]) => Promise<unknown>;
   spriteQuery?: (input: unknown) => Promise<{ id: string; summary: string }>;
+  audioQuery?: (input: unknown) => Promise<{ id: string; summary: string }>;
 }): DungeonSlotGenerator {
   const agent = (query: (input: unknown) => Promise<unknown>) => ({
     abort: async () => true,
@@ -166,6 +183,9 @@ function createGenerator(options: {
     agent(
       options.spriteQuery ?? (async () => ({ id: "sprite-id", summary: "" })),
     ) as never,
+    agent(
+      options.audioQuery ?? (async () => ({ id: "audio-id", summary: "" })),
+    ) as never,
     {
       progressionFor:
         options.progressionFor ?? (async () => Promise.resolve(undefined)),
@@ -183,6 +203,21 @@ function runInput(slot: StoredDungeonSlot) {
     prompt: slot.prompt,
     sessionId: "session-1",
     slot,
+  };
+}
+
+/** @returns An attack clip slot */
+function audioSlot(): StoredDungeonSlot {
+  return {
+    cue: "attack",
+    id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    kind: "audio",
+    loop: false,
+    ownerSlotId: ENEMY_ID,
+    prompt: "An iron bell struck once",
+    role: "effect",
+    status: "planned",
+    title: "Bell strike",
   };
 }
 

@@ -49,12 +49,17 @@ export class ProductNowMcpService {
   /**
    * Starts OAuth discovery and returns ProductNow's browser authorization URL.
    * @param sessionId - Opaque browser session identifier
+   * @param returnTo - Validated frontend path to return to after OAuth
    * @returns URL where the browser should be redirected
    */
-  public async beginAuthorization(sessionId: string): Promise<URL> {
+  public async beginAuthorization(
+    sessionId: string,
+    returnTo?: string,
+  ): Promise<URL> {
     await this.sessionStore.update(sessionId, (session) => ({
       discoveryState: session.discoveryState,
       oauthState: randomUUID(),
+      returnTo,
     }));
 
     const connection = this.createConnection(sessionId);
@@ -119,12 +124,13 @@ export class ProductNowMcpService {
    * @param sessionId - Opaque browser session identifier
    * @param authorizationCode - OAuth authorization code
    * @param oauthState - State returned by ProductNow
+   * @returns The frontend path saved when OAuth started, if any
    */
   public async finishAuthorization(
     sessionId: string,
     authorizationCode: string,
     oauthState: string,
-  ): Promise<void> {
+  ): Promise<{ returnTo?: string }> {
     const session = await this.sessionStore.get(sessionId);
     if (!session.oauthState || session.oauthState !== oauthState) {
       throw new UnauthorizedException("Invalid ProductNow OAuth state");
@@ -138,7 +144,9 @@ export class ProductNowMcpService {
       await this.sessionStore.update(sessionId, (updatedSession) => ({
         ...updatedSession,
         oauthState: undefined,
+        returnTo: undefined,
       }));
+      return { returnTo: session.returnTo };
     } catch (error) {
       throw new BadGatewayException(
         `Unable to finish ProductNow OAuth: ${this.getErrorMessage(error)}`,

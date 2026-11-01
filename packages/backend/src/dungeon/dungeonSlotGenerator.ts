@@ -1,6 +1,7 @@
 import { Injectable, InternalServerErrorException } from "@nestjs/common";
 import type { CardProgression } from "src/asset-classes/playable-card/cardProgression";
 import { strongerCardError } from "src/asset-classes/playable-card/cardProgression";
+import { AudioAgent } from "src/mastra/agents/audio/audioAgent";
 import { BattleBackgroundAgent } from "src/mastra/agents/battle-background/battleBackgroundAgent";
 import { CardCharacterAgent } from "src/mastra/agents/card-character/cardCharacterAgent";
 import { CardGeneratorAgent } from "src/mastra/agents/card-generator/cardGeneratorAgent";
@@ -24,7 +25,7 @@ export interface GenerateDungeonSlotInput extends PreparedDungeonSlot {
 }
 
 /**
- * Adapts dungeon slots to the five asset agents.
+ * Adapts dungeon slots to the asset agents.
  *
  * This is the single extension point for adding a new slot kind: prepare its
  * prompt here, dispatch it in {@link DungeonSlotGenerator.generate}, and add
@@ -38,6 +39,7 @@ export class DungeonSlotGenerator {
     private readonly cards: CardGeneratorAgent,
     private readonly enemies: EnemyAgent,
     private readonly sprites: SpriteSheetAgent,
+    private readonly audio: AudioAgent,
     private readonly assets: DungeonAssetLookup,
   ) {}
 
@@ -54,6 +56,7 @@ export class DungeonSlotGenerator {
       this.cards.abort(generationId),
       this.enemies.abort(generationId),
       this.sprites.abort(generationId),
+      this.audio.abort(generationId),
     ]);
     return stopped.some(Boolean);
   }
@@ -74,6 +77,12 @@ export class DungeonSlotGenerator {
     if (slot.kind === "sprite-sheet") {
       return {
         prompt: withSpriteOwnerContext(slot, slots),
+        slot,
+      };
+    }
+    if (slot.kind === "audio") {
+      return {
+        prompt: withAudioOwnerContext(slot, slots),
         slot,
       };
     }
@@ -130,6 +139,16 @@ export class DungeonSlotGenerator {
       const result = await this.sprites.query({
         generationId: input.generationId,
         prompt: input.prompt,
+      });
+      return result.id;
+    }
+    if (input.slot.kind === "audio") {
+      const result = await this.audio.query({
+        cue: input.slot.cue,
+        generationId: input.generationId,
+        loop: input.slot.loop,
+        prompt: input.prompt,
+        role: input.slot.role,
       });
       return result.id;
     }
@@ -193,6 +212,28 @@ function withSpriteOwnerContext(
   }
   if (owner?.kind === "enemy") {
     return `Enemy:\n${owner.prompt}\n\nSprite request:\n${ENEMY_SPRITE_FACING}\n${slot.prompt}`;
+  }
+  return slot.prompt;
+}
+
+/**
+ * Puts the clip's owner prompt above the sound request so the audio agent
+ * hears the room or enemy it is scoring.
+ * @param slot - Audio slot, optionally owned by a room or enemy
+ * @param slots - Every slot in the package
+ * @returns The owner's prompt above the sound request, or the sound request
+ * alone when the clip belongs to the package
+ */
+function withAudioOwnerContext(
+  slot: Extract<StoredDungeonSlot, { kind: "audio" }>,
+  slots: readonly StoredDungeonSlot[],
+): string {
+  const owner = slots.find((entry) => entry.id === slot.ownerSlotId);
+  if (owner?.kind === "battle-background") {
+    return `Room:\n${owner.prompt}\n\nSound request:\n${slot.prompt}`;
+  }
+  if (owner?.kind === "enemy") {
+    return `Enemy:\n${owner.prompt}\n\nSound request:\n${slot.prompt}`;
   }
   return slot.prompt;
 }

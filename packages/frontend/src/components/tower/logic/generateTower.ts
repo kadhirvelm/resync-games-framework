@@ -199,6 +199,9 @@ function spawnEnemy(
     hitPoints: plan.hitPoints * (isBoss ? 1 : toughness),
   });
   return {
+    ...(template.attackSoundUrl
+      ? { attackSoundUrl: template.attackSoundUrl }
+      : {}),
     description: template.description,
     id,
     imageUrl: template.imageUrl,

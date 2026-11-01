@@ -7,6 +7,7 @@ import type { AssetClassStorage } from "src/asset-classes/shared/assetClassStora
 import { ConfigurationService } from "src/configuration/configuration.service";
 import { RedisService } from "src/infra/redis/redis.service";
 import { DungeonAssetLookup } from "./dungeonAssetLookup";
+import { withDungeonAudio } from "./dungeonAudioPlan";
 import {
   applyDungeonSlotUpdate,
   type DungeonSlotUpdate,
@@ -15,6 +16,7 @@ import {
   type StoredDungeonBlueprint,
   type StoredDungeonSlot,
   toDungeonBlueprint,
+  withUnitSprites,
   writeStoredDungeonBlueprint,
 } from "./dungeonBlueprint";
 import { DUNGEON_FILE_NAME, DUNGEON_STORAGE_TOKEN } from "./dungeonStorage";
@@ -56,8 +58,9 @@ export class DungeonBlueprintStore {
   public async create(
     blueprint: StoredDungeonBlueprint,
   ): Promise<DungeonBlueprint> {
-    await writeStoredDungeonBlueprint(this.storage.rootPath(), blueprint);
-    return this.hydrate(blueprint);
+    const complete = withDungeonAudio(withUnitSprites(blueprint));
+    await writeStoredDungeonBlueprint(this.storage.rootPath(), complete);
+    return this.hydrate(complete);
   }
 
   /**

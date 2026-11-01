@@ -146,12 +146,18 @@ interface PlannedDungeonSlotBase {
 /** Slot kinds that belong to another slot: cards to a character, sprites to a character or enemy. */
 type OwnedSlotKind = "playable-card" | "sprite-sheet";
 
+/** Slot kinds added when a package is read, rather than planned by the coordinator. */
+type BackfilledSlotKind = "audio";
+
 /** A planned room, character, or enemy prompt. */
 export type PlannedDungeonAssetSlot = {
-  [Kind in Exclude<DungeonSlotKind, OwnedSlotKind>]: PlannedDungeonSlotBase & {
+  [Kind in Exclude<
+    DungeonSlotKind,
+    OwnedSlotKind | BackfilledSlotKind
+  >]: PlannedDungeonSlotBase & {
     kind: Kind;
   };
-}[Exclude<DungeonSlotKind, OwnedSlotKind>];
+}[Exclude<DungeonSlotKind, OwnedSlotKind | BackfilledSlotKind>];
 
 /** A planned card prompt with required ownership and progression level. */
 export interface PlannedDungeonCardSlot extends PlannedDungeonSlotBase {

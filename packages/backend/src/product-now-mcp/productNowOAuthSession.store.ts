@@ -14,6 +14,8 @@ export interface ProductNowOAuthSession {
   codeVerifier?: string;
   discoveryState?: OAuthDiscoveryState;
   oauthState?: string;
+  /** Frontend path to return to after OAuth finishes */
+  returnTo?: string;
   tokens?: OAuthTokens;
 }
 

@@ -28,31 +28,20 @@ describe("experience navigation", () => {
     expect(state).toBe("three-d-sandbox");
   });
 
-  test("offers resume only for a valid stored 2D climb", () => {
-    const storedClimb = JSON.stringify({
-      jadeSpire: {
-        battleNumber: 2,
-        content: { coreborn: [], id: "jadeSpire" },
-        run: {
-          floorIndex: 1,
-          modifiers: {},
-          party: [],
-          phase: "camp",
-          rooms: [{}],
-        },
-        savedAt: 42,
-        version: 1,
-      },
-    });
+  test("offers resume only when the game has mirrored a saved climb", () => {
     const storage = {
       getItem: (key: string) =>
-        key === "towers-of-coreborn.saves.v1" ? storedClimb : null,
+        key === "towers-of-coreborn.saved-climbs.v1"
+          ? JSON.stringify(["4f1c0b2e-6a7d-4c8e-9f10-123456789abc"])
+          : null,
     };
+    const empty = { getItem: () => "[]" };
 
     expect(hasStoredTowerClimb(storage)).toBe(true);
     expect([...getResumeExperienceIds(storage)]).toEqual([
       "towers-of-coreborn",
     ]);
+    expect(hasStoredTowerClimb(empty)).toBe(false);
   });
 
   test("ignores malformed or inaccessible save data", () => {

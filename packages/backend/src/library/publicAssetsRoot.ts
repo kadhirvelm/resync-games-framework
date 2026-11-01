@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 /** URL prefix `runtimes/main.ts` serves the public assets directory under. */
 export const PUBLIC_ASSETS_URL_PREFIX = "/static";
@@ -11,6 +11,12 @@ export const PUBLIC_ASSETS_URL_PREFIX = "/static";
  * @returns Absolute path to the public assets directory
  */
 export function getPublicAssetsRootPath(): string {
+  const configuredRoot = process.env.PUBLIC_ASSETS_ROOT?.trim();
+  if (configuredRoot) {
+    return isAbsolute(configuredRoot)
+      ? configuredRoot
+      : resolve(process.cwd(), configuredRoot);
+  }
   const backendPackageRoot = join(__dirname, "..", "..");
   if (process.env.NODE_ENV === "production") {
     return join(backendPackageRoot, "dist", "public");

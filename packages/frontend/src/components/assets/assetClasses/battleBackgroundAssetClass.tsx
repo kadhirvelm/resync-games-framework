@@ -1,5 +1,6 @@
 "use client";
 
+import { Mountain } from "lucide-react";
 import { BattleBackgroundList } from "../BattleBackgroundList";
 import type { AssetClassDefinition } from "./assetClassDefinition";
 import { createAssetClassGallery } from "./createAssetClassGallery";
@@ -28,6 +29,7 @@ const BattleBackgroundGallery = createAssetClassGallery({
 export const BATTLE_BACKGROUND_ASSET_CLASS: AssetClassDefinition = {
   cancel: (callers, generationId) =>
     callers.battleBackground.cancel({ generationId }),
+  category: "Environments",
   dialogDescription:
     "Describe a tower room. We'll paint a wide watercolor backdrop composed for the party, enemies, and card hand.",
   dialogTitle: "Generate Battle Background",
@@ -42,6 +44,7 @@ export const BATTLE_BACKGROUND_ASSET_CLASS: AssetClassDefinition = {
   generate: (callers, prompt, generationId) =>
     callers.battleBackground.generate({ generationId, prompt }),
   generateButtonLabel: "+ Generate background",
+  Icon: Mountain,
   id: "battle-backgrounds",
   subtitle: "per-room battle environment generation",
   tabLabel: "Battle backgrounds",

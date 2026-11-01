@@ -97,6 +97,7 @@ export class BattleBackgroundAgent
         throwIfAborted(signal);
         const background = readBattleBackgroundImage(toolOutput);
         const saved = await this.toolService.saveGeneratedBackground({
+          id: input.generationId,
           image: background.image,
           sourcePrompt: input.prompt,
         });

@@ -14,13 +14,22 @@ import styles from "./shell.module.scss";
 interface MainMenuProps {
   /** Whether some upgrade can be bought right now */
   canCultivate: boolean;
+  /** Number of cultivators on the roster */
+  cultivatorCount: number;
   /** Most recently played saved climb */
   latestSave?: SavedClimb;
+  /** Name of the cultivator on the latest saved climb */
+  latestSaveClimber?: string;
   onChronicle: () => void;
   onContinue: (saved: SavedClimb) => void;
   onCultivation: () => void;
+  onCultivators: () => void;
   onNewClimb: () => void;
+  /** Reads the cultivators and saved climbs again */
+  onRetryPlayer: () => void;
   onSettings: () => void;
+  /** Why cultivators and saved climbs could not be read */
+  playerError?: string;
   profile: PlayerProfile;
   reducedMotion: boolean;
   /** Number of saved climbs across every tower */
@@ -72,12 +81,17 @@ function trackParallax(event: React.PointerEvent<HTMLElement>): void {
  */
 export const MainMenu = ({
   canCultivate,
+  cultivatorCount,
   latestSave,
+  latestSaveClimber,
   onChronicle,
   onContinue,
   onCultivation,
+  onCultivators,
   onNewClimb,
+  onRetryPlayer,
   onSettings,
+  playerError,
   profile,
   reducedMotion,
   saveCount,
@@ -98,7 +112,7 @@ export const MainMenu = ({
   };
 
   const continueLine = latestSave
-    ? `${latestSave.content.title} · Floor ${latestSave.run.floorIndex + 1} of ${latestSave.run.rooms.length}${latestSave.run.ascension > 0 ? ` · Ascension ${ascensionNumeral(latestSave.run.ascension)}` : ""}`
+    ? `${latestSaveClimber ? `${latestSaveClimber} · ` : ""}${latestSave.content.title} · Floor ${latestSave.run.floorIndex + 1} of ${latestSave.run.rooms.length}${latestSave.run.ascension > 0 ? ` · Ascension ${ascensionNumeral(latestSave.run.ascension)}` : ""}`
     : undefined;
 
   return (
@@ -173,9 +187,24 @@ export const MainMenu = ({
           <button
             className={styles.menuItem}
             data-menu-item={true}
-            onClick={choose(onCultivation)}
+            onClick={choose(onCultivators)}
             onMouseEnter={() => playSound("hover")}
             style={{ "--i": 2 } as React.CSSProperties}
+            type="button"
+          >
+            <span className={styles.menuItemLabel}>Cultivators</span>
+            <span className={styles.menuItemDetail}>
+              {cultivatorCount === 0
+                ? "Create who you climb as"
+                : `${cultivatorCount} on your roster · names, portraits, sprites`}
+            </span>
+          </button>
+          <button
+            className={styles.menuItem}
+            data-menu-item={true}
+            onClick={choose(onCultivation)}
+            onMouseEnter={() => playSound("hover")}
+            style={{ "--i": 3 } as React.CSSProperties}
             type="button"
           >
             <span className={styles.menuItemLabel}>
@@ -197,7 +226,7 @@ export const MainMenu = ({
             data-menu-item={true}
             onClick={choose(onChronicle)}
             onMouseEnter={() => playSound("hover")}
-            style={{ "--i": 3 } as React.CSSProperties}
+            style={{ "--i": 4 } as React.CSSProperties}
             type="button"
           >
             <span className={styles.menuItemLabel}>Chronicle</span>
@@ -210,12 +239,20 @@ export const MainMenu = ({
             data-menu-item={true}
             onClick={choose(onSettings)}
             onMouseEnter={() => playSound("hover")}
-            style={{ "--i": 4 } as React.CSSProperties}
+            style={{ "--i": 5 } as React.CSSProperties}
             type="button"
           >
             <span className={styles.menuItemLabel}>Settings</span>
           </button>
         </nav>
+        {playerError ? (
+          <p className={styles.menuWarning} role="alert">
+            Your cultivators and saved climbs could not be read.{" "}
+            <button onClick={onRetryPlayer} type="button">
+              Try again
+            </button>
+          </p>
+        ) : null}
       </main>
 
       <footer className={styles.menuFooter}>

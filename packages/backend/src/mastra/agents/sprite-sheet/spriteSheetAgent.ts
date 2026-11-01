@@ -108,6 +108,7 @@ export class SpriteSheetAgent
         const painted = readPaintedSpriteSheet(result, state);
         const saved = await this.toolService.saveGeneratedSpriteSheet({
           draft: painted.draft,
+          id: input.generationId,
           images: painted.images,
           sourcePrompt: input.prompt,
         });

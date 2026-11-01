@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { ProductNowConnection } from "@/components/productNow/ProductNowConnection";
 import styles from "./gameExperiences.module.scss";
 import type {
   GameExperienceDefinition,
@@ -37,6 +38,9 @@ export const GameSelector = ({
         Each experience has its own runtime and rules. Return here whenever you
         want to step into another world.
       </p>
+      <div className={styles.selectorConnection}>
+        <ProductNowConnection placement="inline" />
+      </div>
     </header>
 
     <div className={styles.experienceGrid}>

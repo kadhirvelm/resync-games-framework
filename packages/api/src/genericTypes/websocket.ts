@@ -3,6 +3,10 @@ export interface WebsocketEvent {
    * The payload for the event.
    */
   payload: unknown;
+  /**
+   * Optional acknowledgement returned to the client that emitted the event.
+   */
+  response?: unknown;
 }
 
 export interface WebsocketResponse {

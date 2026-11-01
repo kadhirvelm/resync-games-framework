@@ -39,6 +39,17 @@ describe("getPublicAssetsRootPath", () => {
       true,
     );
   });
+
+  test("uses the shared volume override for distributed workers", () => {
+    const original = process.env.PUBLIC_ASSETS_ROOT;
+    process.env.PUBLIC_ASSETS_ROOT = "/tmp/towers-shared-assets";
+    try {
+      expect(getPublicAssetsRootPath()).toBe("/tmp/towers-shared-assets");
+    } finally {
+      if (original === undefined) delete process.env.PUBLIC_ASSETS_ROOT;
+      else process.env.PUBLIC_ASSETS_ROOT = original;
+    }
+  });
 });
 
 describe("buildPublicAssetUrlPath", () => {

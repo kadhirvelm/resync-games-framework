@@ -25,7 +25,11 @@ import type { RunState, TowerContent } from "./logic/towerTypes";
 export interface TowerSession {
   /** Increases with every battle so each fight mounts a fresh canvas */
   battleNumber: number;
+  /** Saved-climb id, fixed for the whole climb */
+  climbId: string;
+  /** Content with the climbing cultivator's identity already applied */
   content: TowerContent;
+  cultivatorId: string;
   run: RunState;
   /** Set once a finished climb has been banked into the profile */
   summary?: ClimbSummary;
@@ -48,7 +52,12 @@ export interface TowerRunActions {
   resume: (saved: SavedClimb) => void;
   /** Records what the finished climb earned */
   settle: (summary: ClimbSummary) => void;
-  start: (content: TowerContent, options: RunOptions) => void;
+  /** Begins a new climb with its own save */
+  start: (
+    content: TowerContent,
+    options: RunOptions,
+    cultivatorId: string,
+  ) => void;
 }
 
 /**
@@ -107,15 +116,19 @@ export function useTowerRun(): {
       resume: (saved) =>
         setSession({
           battleNumber: saved.battleNumber,
+          climbId: saved.id,
           content: saved.content,
+          cultivatorId: saved.cultivatorId,
           run: saved.run,
         }),
       settle: (summary) =>
         setSession((current) => (current ? { ...current, summary } : current)),
-      start: (content, options) =>
+      start: (content, options, cultivatorId) =>
         setSession({
           battleNumber: 0,
+          climbId: crypto.randomUUID(),
           content,
+          cultivatorId,
           run: startRun(content, createSeed(), options),
         }),
     }),

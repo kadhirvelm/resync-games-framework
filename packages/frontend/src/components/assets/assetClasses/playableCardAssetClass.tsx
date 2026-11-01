@@ -1,5 +1,6 @@
 "use client";
 
+import { Layers } from "lucide-react";
 import { PlayableCardList } from "../PlayableCardList";
 import type { AssetClassDefinition } from "./assetClassDefinition";
 import { createAssetClassGallery } from "./createAssetClassGallery";
@@ -28,6 +29,7 @@ const PlayableCardGallery = createAssetClassGallery({
 export const PLAYABLE_CARD_ASSET_CLASS: AssetClassDefinition = {
   cancel: (callers, generationId) =>
     callers.playableCard.cancel({ generationId }),
+  category: "Cards",
   dialogDescription:
     "Describe a card. We'll search the Lore document, then write its flavor, rules, and illustration.",
   dialogTitle: "Generate Playable Card",
@@ -41,6 +43,7 @@ export const PLAYABLE_CARD_ASSET_CLASS: AssetClassDefinition = {
   generate: (callers, prompt, generationId) =>
     callers.playableCard.generate({ generationId, prompt }),
   generateButtonLabel: "+ Generate card",
+  Icon: Layers,
   id: "playable-cards",
   subtitle: "playable card generation",
   tabLabel: "Playable cards",

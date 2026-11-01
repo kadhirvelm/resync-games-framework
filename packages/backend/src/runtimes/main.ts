@@ -23,9 +23,17 @@ if (process.env.NODE_ENV === "development") {
 }
 
 async function bootstrap() {
+  const backendPort = Number(process.env.BACKEND_PORT ?? "8080");
+  if (
+    !Number.isInteger(backendPort) ||
+    backendPort < 1 ||
+    backendPort > 65535
+  ) {
+    throw new Error("BACKEND_PORT must be an integer from 1 to 65535.");
+  }
   const finalPublicUrl = process.env.PUBLIC_URL ?? "0.0.0.0";
   // biome-ignore lint/suspicious/noConsole: Need to indicate to the user that the server is starting
-  console.log(`Starting server on ${finalPublicUrl}:8080`);
+  console.log(`Starting server on ${finalPublicUrl}:${backendPort}`);
 
   // HTTPS options for local development — production terminates TLS at the load balancer.
   const httpsOptions =
@@ -108,6 +116,16 @@ async function bootstrap() {
   app.useLogger(app.get(Logger));
 
   // Increase body size limits above the Express default of 100kb to support
+  app.use(
+    [
+      "/three-d-props/ingest",
+      "/three-d-environments/ingest",
+      "/three-d-characters/ingest",
+    ],
+    json({ limit: "28mb" }),
+  );
+
+  // Increase body size limits above the Express default of 100kb to support
   // large document payloads (blueprints, HTML content, base64 attachments).
   // The verify callback stores the raw request bytes on req.rawBody before
   // JSON parsing, so Slack HMAC signature verification can compare against
@@ -140,7 +158,7 @@ async function bootstrap() {
   // Starts the HTTP server and triggers lifecycle hooks (onModuleInit,
   // onApplicationBootstrap), which initializes WebSocket gateways and BullMQ
   // queue producers.
-  await app.listen(8080, finalPublicUrl);
+  await app.listen(backendPort, finalPublicUrl);
 }
 
 bootstrap();

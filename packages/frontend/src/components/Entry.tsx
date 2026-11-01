@@ -12,7 +12,7 @@ import {
   experienceNavigationReducer,
   type GameExperienceId,
 } from "./game-experiences/gameExperienceTypes";
-import { getResumeExperienceIds } from "./game-experiences/resumeAvailability";
+import { readBrowserResumeExperienceIds } from "./game-experiences/resumeAvailability";
 
 /**
  * App shell for choosing and mounting one isolated game experience.
@@ -21,19 +21,26 @@ import { getResumeExperienceIds } from "./game-experiences/resumeAvailability";
 export const Entry = () => {
   const [selectedExperienceId, navigate] = useReducer(
     experienceNavigationReducer,
-    null,
+    new URLSearchParams(window.location.search).get("experience") ===
+      "three-d-sandbox"
+      ? "three-d-sandbox"
+      : null,
   );
   const [resumeExperienceIds, setResumeExperienceIds] = useState<
     ReadonlySet<GameExperienceId>
-  >(() => getResumeExperienceIds(window.localStorage));
+  >(readBrowserResumeExperienceIds);
 
   /**
    * Returns to the selector and refreshes save availability after unmounting
    * the current experience.
    */
   const returnToSelector = () => {
+    const url = new URL(window.location.href);
+    for (const key of ["experience", "prototype", "asset", "kind"])
+      url.searchParams.delete(key);
+    window.history.replaceState(null, "", url);
     navigate({ type: "close" });
-    setResumeExperienceIds(getResumeExperienceIds(window.localStorage));
+    setResumeExperienceIds(readBrowserResumeExperienceIds());
   };
 
   if (selectedExperienceId === null) {

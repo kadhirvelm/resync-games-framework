@@ -1,25 +1,37 @@
+import type { ClimbRecord, SaveClimbPayload } from "@towers-of-coreborn/api";
 import type { RunState, TowerContent } from "./towerTypes";
 
 /**
- * Saved climbs: one in-progress climb per tower. Each save carries a snapshot
- * of the tower's content, so a climb resumes exactly as it was even after the
- * workshop generates new assets.
+ * Saved climbs: any number of climbs in progress, each climbed by one
+ * cultivator. Each save carries a snapshot of the tower's content, so a
+ * climb resumes exactly as it was even after the workshop generates new
+ * assets. The server stores the snapshot as-is.
  */
 
-/** Version written into saved climbs. Bump when the shape changes. */
+/** Version written into saved climbs. Bump when the snapshot shape changes. */
 export const SAVE_VERSION = 1;
 
 /** One climb in progress. */
 export interface SavedClimb {
   battleNumber: number;
   content: TowerContent;
+  /** Cultivator climbing it */
+  cultivatorId: string;
+  /** Fixed for the whole climb */
+  id: string;
   run: RunState;
   /** Timestamp in milliseconds */
   savedAt: number;
   version: typeof SAVE_VERSION;
 }
 
-/** Saved climbs keyed by tower content id. */
+/** The part of a saved climb the server keeps as an opaque snapshot. */
+type ClimbSnapshot = Pick<
+  SavedClimb,
+  "battleNumber" | "content" | "run" | "version"
+>;
+
+/** Saved climbs keyed by climb id. */
 export type SaveSlots = Record<string, SavedClimb>;
 
 /**
@@ -31,29 +43,45 @@ export function isClimbOver(run: RunState): boolean {
 }
 
 /**
- * Stores a climb in its tower's slot, or clears the slot once it has ended.
+ * Stores a climb in its slot, or clears the slot once it has ended.
  * @param slots - Current saves
  * @param climb - Climb to store
  * @returns The updated saves
  */
 export function storeClimb(slots: SaveSlots, climb: SavedClimb): SaveSlots {
   if (isClimbOver(climb.run)) {
-    return removeClimb(slots, climb.content.id);
+    return removeClimb(slots, climb.id);
   }
-  return { ...slots, [climb.content.id]: climb };
+  return { ...slots, [climb.id]: climb };
 }
 
 /**
  * @param slots - Current saves
- * @param towerId - Tower whose save to drop
- * @returns The saves without that tower, or the same object when it had none
+ * @param climbId - Climb to drop
+ * @returns The saves without that climb, or the same object when it was not saved
  */
-export function removeClimb(slots: SaveSlots, towerId: string): SaveSlots {
-  if (!(towerId in slots)) {
+export function removeClimb(slots: SaveSlots, climbId: string): SaveSlots {
+  if (!(climbId in slots)) {
     return slots;
   }
-  const { [towerId]: _removed, ...rest } = slots;
+  const { [climbId]: _removed, ...rest } = slots;
   return rest;
+}
+
+/**
+ * @param slots - Current saves
+ * @param keep - Whether a climb stays
+ * @returns The saves that pass, or the same object when every climb stays
+ */
+export function filterClimbs(
+  slots: SaveSlots,
+  keep: (climb: SavedClimb) => boolean,
+): SaveSlots {
+  const kept = Object.values(slots).filter(keep);
+  if (kept.length === Object.keys(slots).length) {
+    return slots;
+  }
+  return Object.fromEntries(kept.map((climb) => [climb.id, climb]));
 }
 
 /**
@@ -67,30 +95,73 @@ export function sortedClimbs(slots: SaveSlots): SavedClimb[] {
 }
 
 /**
- * Reads stored saves, dropping any entry that is not a usable climb.
- * @param raw - Parsed JSON from storage
- * @returns Valid saves keyed by tower id
+ * @param slots - Current saves
+ * @param towerId - Tower content id
+ * @returns That tower's saves, most recently played first
  */
-export function parseSaveSlots(raw: unknown): SaveSlots {
-  if (!isRecord(raw)) {
-    return {};
-  }
+export function climbsForTower(
+  slots: SaveSlots,
+  towerId: string,
+): SavedClimb[] {
+  return sortedClimbs(slots).filter((climb) => climb.content.id === towerId);
+}
+
+/**
+ * @param climb - Climb in progress
+ * @returns The request that saves it on the server
+ */
+export function toSaveClimbPayload(climb: SavedClimb): SaveClimbPayload {
+  const snapshot: ClimbSnapshot = {
+    battleNumber: climb.battleNumber,
+    content: climb.content,
+    run: climb.run,
+    version: climb.version,
+  };
+  return {
+    ascension: climb.run.ascension,
+    cultivatorId: climb.cultivatorId,
+    floorCount: climb.run.rooms.length,
+    floorIndex: Math.min(climb.run.floorIndex, climb.run.rooms.length - 1),
+    id: climb.id,
+    snapshot,
+    towerId: climb.content.id,
+    towerTitle: climb.content.title,
+  };
+}
+
+/**
+ * Reads the server's saved climbs, dropping any whose snapshot is not a
+ * usable climb of this version.
+ * @param records - Climbs from the server
+ * @returns Valid saves keyed by climb id
+ */
+export function readClimbRecords(records: readonly ClimbRecord[]): SaveSlots {
   const slots: SaveSlots = {};
-  for (const [towerId, entry] of Object.entries(raw)) {
-    if (isSavedClimb(entry) && entry.content.id === towerId) {
-      slots[towerId] = entry;
+  for (const record of records) {
+    const { snapshot } = record;
+    if (!isClimbSnapshot(snapshot) || snapshot.content.id !== record.towerId) {
+      continue;
     }
+    slots[record.id] = {
+      battleNumber: snapshot.battleNumber,
+      content: snapshot.content,
+      cultivatorId: record.cultivatorId,
+      id: record.id,
+      run: snapshot.run,
+      savedAt: Date.parse(record.updatedAt) || 0,
+      version: SAVE_VERSION,
+    };
   }
   return slots;
 }
 
 /**
- * Light shape check: enough to resume without crashing. Older saves are
- * dropped rather than migrated.
- * @param value - One stored entry
- * @returns Whether it looks like a saved climb of this version
+ * Light shape check: enough to resume without crashing. Older snapshots
+ * are dropped rather than migrated.
+ * @param value - One stored snapshot
+ * @returns Whether it looks like a climb snapshot of this version
  */
-function isSavedClimb(value: unknown): value is SavedClimb {
+function isClimbSnapshot(value: unknown): value is ClimbSnapshot {
   if (!isRecord(value) || value.version !== SAVE_VERSION) {
     return false;
   }
@@ -99,7 +170,9 @@ function isSavedClimb(value: unknown): value is SavedClimb {
     return false;
   }
   return (
+    typeof value.battleNumber === "number" &&
     typeof content.id === "string" &&
+    isRecord(content.cultivator) &&
     Array.isArray(content.coreborn) &&
     Array.isArray(run.party) &&
     Array.isArray(run.rooms) &&

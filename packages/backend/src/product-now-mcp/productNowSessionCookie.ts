@@ -34,7 +34,19 @@ export function productNowSessionCookieOptions(
  * @returns The session id when the cookie is present
  */
 export function readProductNowSessionId(request: Request): string | undefined {
-  const cookies = request.headers.cookie?.split(";") ?? [];
+  return readProductNowSessionIdFromCookieHeader(request.headers.cookie);
+}
+
+/**
+ * Reads the ProductNow session id from a raw `Cookie` header, such as a
+ * Socket.IO handshake's `client.handshake.headers.cookie`.
+ * @param cookieHeader - Raw `Cookie` header value
+ * @returns The session id when the cookie is present
+ */
+export function readProductNowSessionIdFromCookieHeader(
+  cookieHeader: string | undefined,
+): string | undefined {
+  const cookies = cookieHeader?.split(";") ?? [];
   const prefix = `${PRODUCT_NOW_SESSION_COOKIE_NAME}=`;
   const match = cookies
     .map((cookie) => cookie.trim())

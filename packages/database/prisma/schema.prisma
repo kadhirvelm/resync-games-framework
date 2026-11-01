@@ -28,3 +28,64 @@ model ProductNowOAuthSession {
   connected Boolean  @default(false)
   payload   String
 }
+
+/// One browser's player. The id is the `toc_player` cookie; there are no
+/// accounts, so a browser that clears its cookies starts a new player.
+model Player {
+  id          String       @id
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  cultivators Cultivator[]
+  climbs      Climb[]
+}
+
+/// A named cultivator the player climbs as. Portrait and sprite are generated
+/// assets stored on disk; this row keeps their ids and painting state.
+model Cultivator {
+  id                String    @id @default(uuid())
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  playerId          String
+  player            Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  name              String
+  title             String
+  /// The player's description the art is painted from
+  appearance        String
+  /// Card-character set holding four realm portraits
+  portraitSetId     String?
+  /// `none`, `painting`, `ready`, or `failed`
+  portraitStatus    String    @default("none")
+  portraitError     String?
+  portraitRunId     String?
+  /// Sprite sheet the cultivator fights as
+  spriteSheetId     String?
+  spriteStatus      String    @default("none")
+  spriteError       String?
+  spriteRunId       String?
+  /// When the current painting run began, to spot runs a restart dropped
+  paintingStartedAt DateTime?
+  climbs            Climb[]
+
+  @@index([playerId, createdAt])
+}
+
+/// One climb in progress. The snapshot is the client's saved climb (tower
+/// content and run state) and is opaque to the backend; the other columns
+/// describe it for menus.
+model Climb {
+  id           String     @id
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  playerId     String
+  player       Player     @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  cultivatorId String
+  cultivator   Cultivator @relation(fields: [cultivatorId], references: [id], onDelete: Cascade)
+  towerId      String
+  towerTitle   String
+  floorIndex   Int
+  floorCount   Int
+  ascension    Int
+  snapshot     Json
+
+  @@index([playerId, updatedAt])
+}

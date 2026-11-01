@@ -1,4 +1,8 @@
-import type { PlayableCardKind } from "@towers-of-coreborn/api";
+import {
+  type PlayableCardKind,
+  PRODUCT_NOW_GAMES_FOLDER_ID,
+  PRODUCT_NOW_TOWER_LORE_DOCUMENT_ID,
+} from "@towers-of-coreborn/api";
 import type { ImageGenerationConfig } from "src/model/types/modelRequestTypes";
 
 export {
@@ -12,12 +16,12 @@ export {
  * ProductNow document "Lore" in the Card game thing folder.
  * Generation searches this document and ignores other search hits.
  */
-export const LORE_DOCUMENT_ID = "ff1b04a0-b440-4746-9a1a-cd25fba0c32b";
+export const LORE_DOCUMENT_ID = PRODUCT_NOW_TOWER_LORE_DOCUMENT_ID;
 
 /**
  * ProductNow folder that holds the Lore document and the Towers of Coreborn design doc.
  */
-export const CARD_GAME_FOLDER_ID = "e12d636b-aaa5-4b8e-b8a9-9a5b3d840dba";
+export const CARD_GAME_FOLDER_ID = PRODUCT_NOW_GAMES_FOLDER_ID;
 
 /** Portrait ratio the generate-image tool must use for card art. */
 export const PLAYABLE_CARD_IMAGE_CONFIG: ImageGenerationConfig = {

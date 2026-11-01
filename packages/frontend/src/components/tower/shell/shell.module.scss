@@ -1845,3 +1845,567 @@
     opacity: 1;
   }
 }
+
+/* Cultivators */
+
+.menuWarning {
+  background: rgba($ember, 0.18);
+  border-left: 3px solid $ember;
+  border-radius: 4px;
+  color: $paper-light;
+  font-size: 14px;
+  margin: 18px 0 0;
+  max-width: 420px;
+  padding: 8px 12px;
+
+  button {
+    @include focus-ring;
+
+    background: none;
+    border: 0;
+    color: $gold-light;
+    cursor: pointer;
+    font: inherit;
+    padding: 0;
+    text-decoration: underline;
+  }
+}
+
+.cultivatorCard {
+  @include lift-on-hover;
+  @include focus-ring;
+
+  align-items: center;
+  background: rgba($paper-light, 0.9);
+  border: 1.5px solid rgba($stone, 0.5);
+  border-radius: $leaf-radius;
+  color: $ink;
+  cursor: pointer;
+  display: grid;
+  font-family: $serif;
+  gap: 4px;
+  grid-template-columns: auto 1fr;
+  padding: 10px 12px;
+  text-align: left;
+  width: 100%;
+
+  .towerCardBody {
+    padding: 0 0 0 8px;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+}
+
+.cultivatorCardNew {
+  border-style: dashed;
+  color: $jade-dark;
+  display: flex;
+  font-size: 17px;
+  gap: 10px;
+  justify-content: center;
+  min-height: 64px;
+}
+
+.portraitPainting {
+  animation: painting-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes painting-pulse {
+  50% {
+    box-shadow: 0 0 0 5px rgba($gold, 0.35);
+  }
+}
+
+.cultivatorDetail {
+  @include rise(10px);
+
+  background: rgba($paper-light, 0.92);
+  border: 1.5px solid rgba($stone, 0.5);
+  border-radius: $leaf-radius;
+  box-shadow: 0 10px 34px rgba($jade-dark, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-bottom: 22px;
+}
+
+.cultivatorHero {
+  align-items: center;
+  background:
+    radial-gradient(ellipse at 22% 60%, rgba($jade-glow, 0.28), transparent 60%),
+    linear-gradient(180deg, rgba($sage, 0.25), transparent);
+  border-bottom: 1px solid rgba($stone, 0.25);
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(150px, 220px) 1fr;
+  padding: 24px;
+}
+
+.cultivatorStage {
+  align-items: flex-end;
+  display: flex;
+  justify-content: center;
+  min-height: 190px;
+  position: relative;
+
+  /* A soft ink shadow the figure stands on. */
+  &::after {
+    background: radial-gradient(ellipse, rgba($night, 0.22), transparent 70%);
+    bottom: -4px;
+    content: "";
+    height: 18px;
+    left: 15%;
+    position: absolute;
+    width: 70%;
+  }
+}
+
+.paintingWash {
+  animation: painting-wash 2.4s ease-in-out infinite;
+  background: radial-gradient(circle, rgba($gold-light, 0.55), transparent 65%);
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+@keyframes painting-wash {
+  50% {
+    opacity: 0.35;
+    transform: scale(1.08);
+  }
+}
+
+.cultivatorHeroText {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  h2 {
+    font-family: $display;
+    font-size: clamp(30px, 4vw, 42px);
+    font-weight: 600;
+    line-height: 1;
+    margin: 0;
+  }
+
+  .detailEyebrow {
+    color: $jade-dark;
+    margin: 0;
+  }
+
+  > button {
+    align-self: flex-start;
+    margin-top: 6px;
+  }
+}
+
+.cultivatorAppearance {
+  color: $ink-soft;
+  font-size: 15px;
+  font-style: italic;
+  line-height: 1.5;
+  margin: 0;
+  white-space: pre-line;
+}
+
+.spritePreview {
+  animation: sprite-play var(--duration) steps(var(--frames)) infinite;
+  background-image: var(--strip);
+  background-repeat: no-repeat;
+  background-size: calc(var(--w) * var(--frames)) var(--h);
+  display: block;
+  height: var(--h);
+  image-rendering: pixelated;
+  position: relative;
+  width: var(--w);
+  z-index: 1;
+}
+
+.spriteStill {
+  animation: none;
+}
+
+@keyframes sprite-play {
+  from {
+    background-position: 0 0;
+  }
+
+  to {
+    background-position: calc(var(--w) * var(--frames) * -1) 0;
+  }
+}
+
+.moveRow,
+.ideaRow {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ideaRow > span {
+  color: $ink-soft;
+  font-size: 13px;
+  margin-right: 2px;
+}
+
+.ideaChip {
+  @include focus-ring;
+
+  background: $paper;
+  border: 1px solid rgba($stone, 0.6);
+  border-radius: 10px 3px;
+  color: $ink;
+  cursor: pointer;
+  font-family: $serif;
+  font-size: 13px;
+  padding: 4px 10px;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 200ms $ease-spring;
+
+  &:hover:not(:disabled) {
+    border-color: $jade;
+    transform: translateY(-1px);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+}
+
+.ideaChipActive {
+  background: rgba($jade, 0.16);
+  border-color: $jade;
+  color: $jade-dark;
+}
+
+.realmRow {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+
+  li {
+    @include rise(8px, 420ms);
+
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    text-align: center;
+  }
+
+  span {
+    color: $ink-soft;
+    font-size: 13px;
+    line-height: 1.25;
+  }
+
+  strong {
+    color: $gold;
+    font-family: $display;
+  }
+}
+
+.paintParts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+
+  li {
+    align-items: baseline;
+    background: rgba($jade, 0.08);
+    border-radius: 10px 3px;
+    display: inline-flex;
+    font-size: 14px;
+    gap: 8px;
+    padding: 6px 12px;
+  }
+
+  em {
+    color: $jade-dark;
+    font-size: 13px;
+  }
+
+  li[data-status="painting"] {
+    background: rgba($gold, 0.16);
+
+    em {
+      color: #8a6a22;
+    }
+  }
+
+  li[data-status="failed"] {
+    background: rgba($ember, 0.1);
+
+    em {
+      color: $ember;
+    }
+  }
+}
+
+.paintHelp {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.releaseLink {
+  @include focus-ring;
+
+  background: none;
+  border: 0;
+  color: $ember;
+  cursor: pointer;
+  font-family: $serif;
+  font-size: 14px;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.cultivatorForm {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.formField {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+
+  > span {
+    color: $jade-dark;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  input,
+  textarea {
+    background: $paper-light;
+    border: 1.5px solid rgba($stone, 0.6);
+    border-radius: 4px 14px;
+    color: $ink;
+    font-family: $serif;
+    font-size: 16px;
+    padding: 9px 12px;
+    transition:
+      border-color 160ms ease,
+      box-shadow 160ms ease;
+
+    &:focus {
+      border-color: $jade;
+      box-shadow: 0 0 0 3px rgba($jade, 0.18);
+      outline: none;
+    }
+  }
+
+  textarea {
+    line-height: 1.45;
+    resize: vertical;
+  }
+
+  small {
+    color: $ink-soft;
+    font-size: 12px;
+  }
+}
+
+.formError {
+  color: $ember;
+  font-size: 14px;
+  margin: 0;
+}
+
+.formActions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* Tower select: who climbs, and the tower's saved climbs */
+
+.climberRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.climberChip {
+  @include focus-ring;
+
+  align-items: center;
+  background: $paper;
+  border: 1.5px solid rgba($stone, 0.5);
+  border-radius: $leaf-radius;
+  color: $ink;
+  cursor: pointer;
+  display: inline-flex;
+  font-family: $serif;
+  gap: 10px;
+  padding: 6px 14px 6px 6px;
+  text-align: left;
+  transition:
+    border-color 160ms ease,
+    transform 200ms $ease-spring,
+    box-shadow 200ms ease;
+
+  &:hover {
+    border-color: $jade;
+    transform: translateY(-2px);
+  }
+
+  > span {
+    display: flex;
+    flex-direction: column;
+  }
+
+  strong {
+    font-family: $display;
+    font-size: 17px;
+  }
+
+  small {
+    color: $ink-soft;
+    font-size: 12px;
+  }
+}
+
+.climberChipActive {
+  border-color: $jade;
+  box-shadow:
+    0 0 0 3px rgba($jade, 0.2),
+    0 8px 18px rgba($jade-dark, 0.14);
+}
+
+.climberChipNew {
+  border-style: dashed;
+  color: $jade-dark;
+  gap: 4px;
+  padding: 10px 16px;
+}
+
+.savedClimbList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+
+  li {
+    align-items: center;
+    background: rgba($gold, 0.07);
+    border: 1px solid rgba($gold, 0.3);
+    border-radius: 4px 14px;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: auto 1fr auto;
+    padding: 8px 10px;
+  }
+}
+
+.savedClimbText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+
+  strong {
+    font-family: $display;
+    font-size: 17px;
+  }
+
+  small {
+    color: $ink-soft;
+    font-size: 13px;
+  }
+}
+
+.savedClimbActions,
+.savedClimbConfirm {
+  align-items: center;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.savedClimbConfirm {
+  color: $ember;
+  font-size: 13px;
+}
+
+.iconButton {
+  @include focus-ring;
+
+  align-items: center;
+  background: transparent;
+  border: 1px solid rgba($stone, 0.5);
+  border-radius: 50%;
+  color: $ink-soft;
+  cursor: pointer;
+  display: inline-flex;
+  height: 32px;
+  justify-content: center;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease;
+  width: 32px;
+
+  &:hover {
+    border-color: $ember;
+    color: $ember;
+  }
+}
+
+@media (width <= 860px) {
+  .cultivatorHero {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+
+    .cultivatorHeroText > button {
+      align-self: center;
+    }
+  }
+
+  .moveRow {
+    justify-content: center;
+  }
+
+  .realmRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .savedClimbList li {
+    grid-template-columns: auto 1fr;
+
+    > :last-child {
+      grid-column: 1 / -1;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spritePreview,
+  .paintingWash,
+  .portraitPainting {
+    animation: none;
+  }
+}

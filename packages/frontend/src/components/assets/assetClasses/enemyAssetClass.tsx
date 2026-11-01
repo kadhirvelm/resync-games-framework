@@ -1,5 +1,6 @@
 "use client";
 
+import { Skull } from "lucide-react";
 import { EnemyList } from "../EnemyList";
 import type { AssetClassDefinition } from "./assetClassDefinition";
 import { createAssetClassGallery } from "./createAssetClassGallery";
@@ -27,6 +28,7 @@ const EnemyGallery = createAssetClassGallery({
 
 export const ENEMY_ASSET_CLASS: AssetClassDefinition = {
   cancel: (callers, generationId) => callers.enemy.cancel({ generationId }),
+  category: "Characters",
   dialogDescription:
     "Describe an enemy. We'll check the Lore document, then paint one full-body portrait facing the player and give it a repeating attack cycle.",
   dialogTitle: "Generate Enemy",
@@ -41,6 +43,7 @@ export const ENEMY_ASSET_CLASS: AssetClassDefinition = {
   generate: (callers, prompt, generationId) =>
     callers.enemy.generate({ generationId, prompt }),
   generateButtonLabel: "+ Generate enemy",
+  Icon: Skull,
   id: "enemies",
   subtitle: "enemy portrait generation",
   tabLabel: "Enemies",

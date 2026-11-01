@@ -1,5 +1,4 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Injectable, InternalServerErrorException } from "@nestjs/common";
 import sharp from "sharp";
@@ -8,6 +7,7 @@ import {
   type GeneratedImage,
 } from "src/mastra/tools/generateImageTool.service";
 import { encodeGeneratedImageAsWebp } from "../shared/encodeGeneratedImageAsWebp";
+import { writeAssetDirectoryAtomically } from "../shared/writeAssetDirectoryAtomically";
 import {
   ENEMY_FILE_NAME,
   ENEMY_MANIFEST_FILE_NAME,
@@ -30,35 +30,34 @@ export class EnemyToolService {
    */
   public async saveGeneratedEnemy(params: {
     draft: EnemyDraft;
+    id: string;
     image: GeneratedImage;
     sourcePrompt: string;
   }): Promise<{ id: string }> {
-    const id = randomUUID();
+    const id = params.id;
     const directory = ENEMY_STORAGE.filePath(id);
-    await mkdir(directory, { recursive: true });
 
     try {
-      await persistPortrait(params.image.filePath, directory);
-      await writeFile(
-        join(directory, ENEMY_MANIFEST_FILE_NAME),
-        JSON.stringify(
-          {
-            createdAt: new Date().toISOString(),
-            description: params.draft.description,
-            id,
-            maxHitPoints: params.draft.maxHitPoints,
-            pattern: params.draft.pattern,
-            prompt: params.sourcePrompt,
-            title: params.draft.name,
-          },
-          null,
-          2,
-        ),
-      );
+      await writeAssetDirectoryAtomically(directory, async (pending) => {
+        await persistPortrait(params.image.filePath, pending);
+        await writeFile(
+          join(pending, ENEMY_MANIFEST_FILE_NAME),
+          JSON.stringify(
+            {
+              createdAt: new Date().toISOString(),
+              description: params.draft.description,
+              id,
+              maxHitPoints: params.draft.maxHitPoints,
+              pattern: params.draft.pattern,
+              prompt: params.sourcePrompt,
+              title: params.draft.name,
+            },
+            null,
+            2,
+          ),
+        );
+      });
       return { id };
-    } catch (error) {
-      await rm(directory, { force: true, recursive: true });
-      throw error;
     } finally {
       await deleteImageFiles([params.image.filePath]);
     }

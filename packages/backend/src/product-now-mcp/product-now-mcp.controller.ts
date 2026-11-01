@@ -13,6 +13,10 @@ import {
 } from "../genericTypes/controller";
 import { ProductNowMcpService } from "./product-now-mcp.service";
 import {
+  buildFrontendRedirect,
+  sanitizeReturnPath,
+} from "./productNowReturnPath";
+import {
   readActiveProductNowSession,
   requireActiveProductNowSession,
 } from "./productNowSessionContext";
@@ -57,11 +61,13 @@ export class ProductNowMcpController
    * Starts ProductNow OAuth and redirects the browser to ProductNow.
    * @param request - Incoming browser request
    * @param response - Express response used for cookie and redirect
+   * @param returnTo - Frontend path to come back to; unsafe values are ignored
    */
   @Get("oauth/connect")
   public async connect(
     @Req() request: Request,
     @Res() response: Response,
+    @Query("returnTo") returnTo?: string,
   ): Promise<void> {
     const sessionId = readProductNowSessionId(request) ?? randomUUID();
     response.cookie(
@@ -72,8 +78,10 @@ export class ProductNowMcpController
       ),
     );
 
-    const authorizationUrl =
-      await this.productNowMcpService.beginAuthorization(sessionId);
+    const authorizationUrl = await this.productNowMcpService.beginAuthorization(
+      sessionId,
+      sanitizeReturnPath(returnTo),
+    );
     response.redirect(authorizationUrl.toString());
   }
 
@@ -141,28 +149,38 @@ export class ProductNowMcpController
     @Query("state") state?: string,
     @Query("error") error?: string,
   ): Promise<void> {
-    const frontendUrl = this.configurationService
-      .get("FRONTEND_URL")
-      .replace(/\/$/, "");
+    const frontendUrl = this.configurationService.get("FRONTEND_URL");
 
     if (error) {
       response.redirect(
-        `${frontendUrl}/?productNow=error&reason=${encodeURIComponent(error)}`,
+        buildFrontendRedirect(frontendUrl, undefined, {
+          productNow: "error",
+          reason: error,
+        }),
       );
       return;
     }
 
     if (!code || !state) {
-      response.redirect(`${frontendUrl}/?productNow=error&reason=missing_code`);
+      response.redirect(
+        buildFrontendRedirect(frontendUrl, undefined, {
+          productNow: "error",
+          reason: "missing_code",
+        }),
+      );
       return;
     }
 
-    await this.productNowMcpService.finishAuthorization(
+    const { returnTo } = await this.productNowMcpService.finishAuthorization(
       this.requireSessionId(request),
       code,
       state,
     );
-    response.redirect(`${frontendUrl}/?productNow=connected`);
+    response.redirect(
+      buildFrontendRedirect(frontendUrl, sanitizeReturnPath(returnTo), {
+        productNow: "connected",
+      }),
+    );
   }
 
   /**

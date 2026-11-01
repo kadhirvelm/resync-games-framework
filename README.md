@@ -45,6 +45,30 @@ one runtime never mounts Phaser and Babylon in the same scene.
 
 ## Local development
 
+For the 3D authoring and playable-prototype workflow, see
+[Building 3D games in the Blueprint Workshop](docs/3d-workshop.md). Start with
+**Try a complete demo** under the workshop's **3D models** entry. That demo
+makes no model calls.
+
+### Credentials
+
+`./scripts/bootstrap.sh` writes these into `.env`. The backend will not start
+until the required ones are present. The bootstrap placeholders are enough to
+boot; a generation that calls a provider fails until that value is a real
+credential.
+
+| Variable | Required | Used for |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | Yes | Claude text and agent fallbacks |
+| `OPENAI_API_KEY` | Yes | OpenAI text and image generation |
+| `GEMINI_CREDENTIALS` | Yes | Google service-account JSON for Vertex AI. Gemini agents and image generation read it. |
+| `ELEVENLABS_API_KEY` | No | Sound effects, room ambience, and instrumental music. Leave it empty to skip audio generation. |
+| `MESHY_API_KEY` | No | Textured 3D props and environments. Low-poly generation uses the credentials above. |
+
+`MCP_OAUTH_ENCRYPTION_KEY` encrypts ProductNow tokens. It is not a vendor key.
+Local development has a default; production must set its own 32 random bytes,
+base64-encoded.
+
 Prerequisites:
 
 - [Bun](https://bun.sh/)

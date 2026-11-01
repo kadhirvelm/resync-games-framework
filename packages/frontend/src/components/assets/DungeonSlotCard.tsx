@@ -16,6 +16,7 @@ import { CopyableError } from "./CopyableError";
 import type { PendingJob } from "./PendingJobCard";
 
 const KIND_LABELS: Record<DungeonSlotKind, string> = {
+  audio: "Sound",
   "battle-background": "Room",
   "card-character": "Character",
   enemy: "Enemy",
@@ -24,8 +25,9 @@ const KIND_LABELS: Record<DungeonSlotKind, string> = {
 };
 
 interface AttachableAsset {
+  audioUrl?: string;
   id: string;
-  imageUrl: string;
+  imageUrl?: string;
   subtitle: string;
   title: string;
 }
@@ -108,13 +110,27 @@ export function DungeonSlotCard({
         {level !== undefined ? ` · level ${level}` : ""}
       </span>
       <span className={styles.promptSlotTitle}>{slot.title}</span>
-      {slot.preview !== undefined && (
+      {slot.preview?.imageUrl !== undefined && (
         <>
           {/* biome-ignore lint/performance/noImgElement: generated backend asset */}
           <img
             alt={slot.preview.title}
             className={styles.promptSlotImage}
             src={slot.preview.imageUrl}
+          />
+          <span className={styles.promptSlotSubtitle}>
+            {slot.preview.subtitle}
+          </span>
+        </>
+      )}
+      {slot.preview?.audioUrl !== undefined && (
+        <>
+          {/* biome-ignore lint/a11y/useMediaCaption: generated game audio has no speech track */}
+          <audio
+            className={styles.promptSlotAudio}
+            controls={true}
+            preload="none"
+            src={slot.preview.audioUrl}
           />
           <span className={styles.promptSlotSubtitle}>
             {slot.preview.subtitle}
@@ -146,7 +162,7 @@ export function DungeonSlotCard({
       <div className={styles.promptSlotActions}>
         {canGenerate && (
           <button
-            className={styles.promptSlotAction}
+            className={clsx(styles.promptSlotAction, styles.promptSlotPrimary)}
             onClick={generate}
             type="button"
           >
@@ -175,7 +191,6 @@ export function DungeonSlotCard({
       </div>
       <AttachAssetDialog
         isOpen={isPickerOpen}
-        kind={slot.kind}
         onClose={() => setIsPickerOpen(false)}
         onSelect={async (assetId) => {
           if (onAssociate === undefined) {
@@ -189,6 +204,7 @@ export function DungeonSlotCard({
           setAssociateError(null);
           setIsPickerOpen(false);
         }}
+        slot={slot}
       />
     </article>
   );
@@ -196,24 +212,25 @@ export function DungeonSlotCard({
 
 interface AttachAssetDialogProps {
   isOpen: boolean;
-  kind: DungeonSlotKind;
   onClose: () => void;
   onSelect: (assetId: string) => Promise<void>;
+  slot: DungeonSlot;
 }
 
 /**
  * Lists stored assets of one kind so one can be written into a dungeon slot.
  * @param isOpen - Whether the picker is visible
- * @param kind - Asset class to list
+ * @param slot - Slot the chosen asset will fill
  * @param onClose - Closes the picker
  * @param onSelect - Called with the chosen asset id
  */
 function AttachAssetDialog({
   isOpen,
-  kind,
   onClose,
   onSelect,
+  slot,
 }: AttachAssetDialogProps) {
+  const kind = slot.kind;
   const { clientServiceCallers } = useClientServiceCallers();
   const [assets, setAssets] = useState<AttachableAsset[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -226,7 +243,7 @@ function AttachAssetDialog({
     let cancelled = false;
     setAssets(null);
     setError(null);
-    void loadAttachableAssets(kind, clientServiceCallers).then((loaded) => {
+    void loadAttachableAssets(slot, clientServiceCallers).then((loaded) => {
       if (cancelled) {
         return;
       }
@@ -240,7 +257,7 @@ function AttachAssetDialog({
     return () => {
       cancelled = true;
     };
-  }, [clientServiceCallers, isOpen, kind]);
+  }, [clientServiceCallers, isOpen, slot]);
 
   return (
     <Dialog
@@ -255,25 +272,56 @@ function AttachAssetDialog({
               No saved {KIND_LABELS[kind].toLowerCase()}s yet.
             </span>
           )}
-          {assets?.map((asset) => (
-            <button
-              className={styles.attachOption}
-              disabled={isAttaching}
-              key={asset.id}
-              onClick={() => {
-                setIsAttaching(true);
-                void onSelect(asset.id).finally(() => setIsAttaching(false));
-              }}
-              type="button"
-            >
-              {/* biome-ignore lint/performance/noImgElement: generated backend asset */}
-              <img alt="" className={styles.attachThumb} src={asset.imageUrl} />
-              <Flex direction="column" gap="1">
-                <span className={styles.attachTitle}>{asset.title}</span>
-                <span className={styles.attachSubtitle}>{asset.subtitle}</span>
-              </Flex>
-            </button>
-          ))}
+          {assets?.map((asset) =>
+            asset.audioUrl === undefined ? (
+              <button
+                className={styles.attachOption}
+                disabled={isAttaching}
+                key={asset.id}
+                onClick={() => {
+                  setIsAttaching(true);
+                  void onSelect(asset.id).finally(() => setIsAttaching(false));
+                }}
+                type="button"
+              >
+                {/* biome-ignore lint/performance/noImgElement: generated backend asset */}
+                <img
+                  alt=""
+                  className={styles.attachThumb}
+                  src={asset.imageUrl}
+                />
+                <Flex direction="column" gap="1">
+                  <span className={styles.attachTitle}>{asset.title}</span>
+                  <span className={styles.attachSubtitle}>
+                    {asset.subtitle}
+                  </span>
+                </Flex>
+              </button>
+            ) : (
+              <div className={styles.attachOption} key={asset.id}>
+                {/* biome-ignore lint/a11y/useMediaCaption: generated game audio has no speech track */}
+                <audio
+                  className={styles.promptSlotAudio}
+                  controls={true}
+                  preload="none"
+                  src={asset.audioUrl}
+                />
+                <button
+                  className={styles.promptSlotAction}
+                  disabled={isAttaching}
+                  onClick={() => {
+                    setIsAttaching(true);
+                    void onSelect(asset.id).finally(() =>
+                      setIsAttaching(false),
+                    );
+                  }}
+                  type="button"
+                >
+                  Use {asset.title}
+                </button>
+              </div>
+            ),
+          )}
         </div>
       }
       description={`Choose a saved ${KIND_LABELS[kind].toLowerCase()} to put in this slot.`}
@@ -312,14 +360,15 @@ function isPreviousLevelReady(
 }
 
 /**
- * @param kind - Asset class to list
+ * @param slot - Slot the chosen asset will fill. Audio slots only list clips with the same role and cue.
  * @param callers - Workshop service callers
  * @returns Assets that can be attached, or an error message
  */
 async function loadAttachableAssets(
-  kind: DungeonSlotKind,
+  slot: DungeonSlot,
   callers: AvailableServiceCaller,
 ): Promise<AttachableAsset[] | string> {
+  const kind = slot.kind;
   if (kind === "battle-background") {
     const result = await callers.battleBackground.list();
     if (isServiceError(result)) {
@@ -378,6 +427,21 @@ async function loadAttachableAssets(
         .join(" · "),
       title: sheet.title,
     }));
+  }
+
+  if (kind === "audio" && slot.kind === "audio") {
+    const result = await callers.audio.list();
+    if (isServiceError(result)) {
+      return result.message;
+    }
+    return result.clips
+      .filter((clip) => clip.role === slot.role && clip.cue === slot.cue)
+      .map((clip) => ({
+        audioUrl: clip.audioUrl,
+        id: clip.id,
+        subtitle: `${clip.role} · ${clip.cue}`,
+        title: clip.title,
+      }));
   }
 
   const result = await callers.playableCard.list();
