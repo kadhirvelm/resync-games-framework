@@ -6,6 +6,7 @@ import type {
   DungeonSlot,
   EnemyAsset,
   PlayableCardAsset,
+  SpriteSheetAsset,
 } from "@towers-of-coreborn/api";
 import {
   BUILT_IN_COREBORN,
@@ -28,6 +29,7 @@ import type {
   RoomScene,
   TierNumber,
   TowerContent,
+  UnitSprite,
 } from "./towerTypes";
 
 /** Every stored asset the tower can be built from. */
@@ -37,6 +39,7 @@ export interface TowerCatalog {
   characters: CardCharacterSetAsset[];
   dungeons: DungeonBlueprint[];
   enemies: EnemyAsset[];
+  spriteSheets: SpriteSheetAsset[];
 }
 
 /** An empty catalog, used before loading and when the backend is down. */
@@ -46,6 +49,7 @@ export const EMPTY_TOWER_CATALOG: TowerCatalog = {
   characters: [],
   dungeons: [],
   enemies: [],
+  spriteSheets: [],
 };
 
 /** One tower the player can choose to climb. */
@@ -149,12 +153,9 @@ function buildDungeonTower(
   dungeon: DungeonBlueprint,
   catalog: TowerCatalog,
 ): TowerContent {
-  const cardSlots = dungeon.slots.filter(
-    (slot): slot is DungeonCardSlot => slot.kind === "playable-card",
-  );
   const coreborn = dungeon.slots
     .filter((slot) => slot.kind === "card-character")
-    .map((slot, index) => dungeonCoreborn(slot, index, cardSlots, catalog));
+    .map((slot, index) => dungeonCoreborn(slot, index, dungeon.slots, catalog));
   const enemies = dungeon.slots
     .filter((slot) => slot.kind === "enemy")
     .map((slot, index) => dungeonEnemy(slot, index, catalog));
@@ -178,16 +179,28 @@ function buildDungeonTower(
 /**
  * @param slot - Character slot
  * @param index - Position among the package's characters
- * @param cardSlots - Every card slot in the package
+ * @param dungeonSlots - Every slot in the package
  * @param catalog - Stored assets
- * @returns A Coreborn using the slot's portraits and card progression
+ * @returns A Coreborn using the slot's portraits, card progression, and
+ * battle sprite
  */
 function dungeonCoreborn(
   slot: DungeonSlot,
   index: number,
-  cardSlots: DungeonCardSlot[],
+  dungeonSlots: DungeonSlot[],
   catalog: TowerCatalog,
 ): CorebornTemplate {
+  const cardSlots = dungeonSlots.filter(
+    (entry): entry is DungeonCardSlot => entry.kind === "playable-card",
+  );
+  const spriteSlot = dungeonSlots.find(
+    (entry) =>
+      entry.kind === "sprite-sheet" && entry.characterSlotId === slot.id,
+  );
+  const spriteSheet = catalog.spriteSheets.find(
+    (entry) =>
+      spriteSlot?.assetId !== undefined && entry.id === spriteSlot.assetId,
+  );
   const set = catalog.characters.find((entry) => entry.setId === slot.assetId);
   const roleText = [
     slot.prompt,
@@ -213,6 +226,7 @@ function dungeonCoreborn(
     name: slot.title,
     role,
     set,
+    sprite: spriteSheet ? toUnitSprite(spriteSheet) : undefined,
   });
 }
 
@@ -311,6 +325,7 @@ function buildGalleryTower(catalog: TowerCatalog): TowerContent {
  * @param parts.name - Display name
  * @param parts.role - Fighting role
  * @param parts.set - Portrait set, when one is linked
+ * @param parts.sprite - Animated battle figure, when one is linked
  * @returns A Coreborn template
  */
 function corebornFromParts(parts: {
@@ -320,6 +335,7 @@ function corebornFromParts(parts: {
   name: string;
   role: CorebornTemplate["role"];
   set?: CardCharacterSetAsset;
+  sprite?: UnitSprite;
 }): CorebornTemplate {
   return {
     baseHitPoints: ROLE_BASE_HIT_POINTS[parts.role],
@@ -327,6 +343,7 @@ function corebornFromParts(parts: {
     id: parts.id,
     name: parts.name,
     role: parts.role,
+    ...(parts.sprite ? { sprite: parts.sprite } : {}),
     tiers: parts.cards.map((card, index) => {
       const level = parts.set?.levels.find(
         (entry) => entry.level === index + 1,
@@ -355,6 +372,30 @@ export function toCardDefinition(asset: PlayableCardAsset): CardDefinition {
       effects: asset.effects,
       name: asset.name,
     },
+  };
+}
+
+/**
+ * @param asset - Stored sprite sheet
+ * @returns The battle figure: one strip per animation, keyed by move
+ */
+export function toUnitSprite(asset: SpriteSheetAsset): UnitSprite {
+  return {
+    animations: Object.fromEntries(
+      asset.animations.map((animation) => [
+        animation.kind,
+        {
+          fps: animation.fps,
+          frameCount: animation.frameCount,
+          loop: animation.loop,
+          stripUrl: animation.stripUrl,
+        },
+      ]),
+    ),
+    facing: asset.facing,
+    frameHeight: asset.frameHeight,
+    frameWidth: asset.frameWidth,
+    id: asset.id,
   };
 }
 

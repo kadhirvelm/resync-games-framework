@@ -20,6 +20,7 @@ const KIND_LABELS: Record<DungeonSlotKind, string> = {
   "card-character": "Character",
   enemy: "Enemy",
   "playable-card": "Card",
+  "sprite-sheet": "Sprite",
 };
 
 interface AttachableAsset {
@@ -361,6 +362,21 @@ async function loadAttachableAssets(
       imageUrl: enemy.imageUrl,
       subtitle: `${enemy.maxHitPoints} HP`,
       title: enemy.title,
+    }));
+  }
+
+  if (kind === "sprite-sheet") {
+    const result = await callers.spriteSheet.list();
+    if (isServiceError(result)) {
+      return result.message;
+    }
+    return result.spriteSheets.map((sheet) => ({
+      id: sheet.id,
+      imageUrl: sheet.anchorUrl,
+      subtitle: sheet.animations
+        .map((animation) => animation.label)
+        .join(" · "),
+      title: sheet.title,
     }));
   }
 

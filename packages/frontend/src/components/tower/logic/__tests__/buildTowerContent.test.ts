@@ -5,6 +5,7 @@ import type {
   DungeonSlot,
   EnemyAsset,
   PlayableCardAsset,
+  SpriteSheetAsset,
 } from "@towers-of-coreborn/api";
 import {
   buildTowerContent,
@@ -14,6 +15,7 @@ import {
   listTowerChoices,
   shorten,
   type TowerCatalog,
+  toUnitSprite,
 } from "../buildTowerContent";
 import { BUILT_IN_ENEMIES, BUILT_IN_TOWER } from "../builtInContent";
 
@@ -74,6 +76,28 @@ const ENEMY: EnemyAsset = {
   title: "Resonant Tollhound",
 };
 
+const SPRITE: SpriteSheetAsset = {
+  anchorUrl: "https://cdn.test/sprite/anchor.png",
+  animations: (["idle", "attack", "defend", "hurt"] as const).map((kind) => ({
+    description: `${kind} frames`,
+    fps: kind === "attack" ? 12 : 8,
+    frameCount: 6,
+    kind,
+    label: kind,
+    loop: kind === "idle",
+    stripUrl: `https://cdn.test/sprite/${kind}.png`,
+  })),
+  createdAt: "2026-10-18T00:00:00.000Z",
+  description: "Mira in pixel art",
+  facing: "right",
+  frameHeight: 180,
+  frameWidth: 140,
+  id: "sprite-1",
+  prompt: "",
+  sheetUrl: "https://cdn.test/sprite/sheet.webp",
+  title: "Mira Vell",
+};
+
 const DUNGEON: DungeonBlueprint = {
   createdAt: "2026-10-18T00:00:00.000Z",
   id: "dungeon-1",
@@ -102,6 +126,18 @@ const DUNGEON: DungeonBlueprint = {
       kind: "playable-card",
       level: 1,
     }),
+    slot({
+      assetId: "sprite-1",
+      characterSlotId: "char-1",
+      id: "char-1-sprite",
+      kind: "sprite-sheet",
+    }),
+    slot({
+      characterSlotId: "char-2",
+      id: "char-2-sprite",
+      kind: "sprite-sheet",
+      status: "planned",
+    }),
     slot({ assetId: "enemy-1", id: "enemy-a", kind: "enemy" }),
     slot({
       id: "enemy-b",
@@ -128,6 +164,7 @@ const CATALOG: TowerCatalog = {
   characters: [CHARACTER],
   dungeons: [DUNGEON],
   enemies: [ENEMY],
+  spriteSheets: [SPRITE],
 };
 
 describe("listTowerChoices", () => {
@@ -139,9 +176,9 @@ describe("listTowerChoices", () => {
       "built-in",
     ]);
     expect(choices[0]).toMatchObject({
-      readySlots: 4,
+      readySlots: 5,
       title: "Lantern Ford waystation",
-      totalSlots: 7,
+      totalSlots: 9,
     });
   });
 
@@ -172,6 +209,19 @@ describe("buildTowerContent from a dungeon", () => {
       imageUrl: CARD.imageUrl,
     });
     expect(mira?.tiers[3]?.card.rules.name).toBe("Lantern Ward +3");
+  });
+
+  test("a character with a linked sprite sheet fights as that sprite", () => {
+    const mira = content.coreborn.find((entry) => entry.id === "char-1");
+    expect(mira?.sprite).toEqual(toUnitSprite(SPRITE));
+    expect(mira?.sprite?.animations.attack).toEqual({
+      fps: 12,
+      frameCount: 6,
+      loop: false,
+      stripUrl: "https://cdn.test/sprite/attack.png",
+    });
+    const rook = content.coreborn.find((entry) => entry.id === "char-2");
+    expect(rook?.sprite).toBeUndefined();
   });
 
   test("an ungenerated character still plays with stand-in cards", () => {

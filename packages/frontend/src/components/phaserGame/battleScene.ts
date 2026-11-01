@@ -1,4 +1,5 @@
 import type Phaser from "phaser";
+import { playSound } from "../tower/audio/sound";
 import { cardTargeting, describeEffect } from "../tower/logic/cardRules";
 import {
   automaticTarget,
@@ -39,6 +40,13 @@ import {
   layoutHealthBar,
   type UnitSlot,
 } from "./battleLayout";
+import {
+  isHeavyImpact,
+  paced,
+  roomTitleCard,
+  stepSounds,
+} from "./battleMotion";
+import { BattleSpriteDirector } from "./battleSprites";
 import { approach, CARD_HOVER_SETTLE_MS, cardHoverMotion } from "./cardHover";
 import { containedScale } from "./containedScale";
 import { hashSeed, leafOutline, type PaintPoint, washBlots } from "./leafShape";
@@ -65,8 +73,21 @@ const SELECTED_LIFT_SHARE = 0.35;
 const HINT_TEXT = "#7a5810";
 const STEP_DELAY_MS = 720;
 const FINISH_DELAY_MS = 1700;
+const FADE_MS = 450;
+const DEFEAT_VEIL = 0x1b2620;
+const AMBIENT_MOTE_COUNT = 14;
+const BURST_LEAF_COUNT = 26;
 
 type PhaserRuntime = typeof import("phaser");
+
+type AmbientMote = {
+  drift: number;
+  spin: number;
+  sway: number;
+  view: Phaser.GameObjects.Graphics;
+  vx: number;
+  vy: number;
+};
 
 type HandCard = {
   cardId: string;
@@ -91,6 +112,14 @@ function textResolution(): number {
     return 1;
   }
   return Math.min(2, window.devicePixelRatio || 1);
+}
+
+/**
+ * @param color - Phaser color number
+ * @returns Red, green, and blue channels from 0 to 255, for camera fades
+ */
+function rgb(color: number): [number, number, number] {
+  return [(color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff];
 }
 
 /**
@@ -124,6 +153,12 @@ export function createBattleSceneClass(
   );
 
   /**
+   * @param ms - Duration at normal battle speed
+   * @returns The duration at the player's battle speed
+   */
+  const wait = (ms: number): number => paced(ms, input.pace);
+
+  /**
    * @param points - Outline in canvas pixels
    * @returns The same points as Phaser vectors, for polygon fills
    */
@@ -131,6 +166,8 @@ export function createBattleSceneClass(
     points.map((point) => new Phaser.Math.Vector2(point.x, point.y));
 
   return class BattleScene extends Phaser.Scene {
+    private ambient: AmbientMote[] = [];
+    private ambientLayer!: Phaser.GameObjects.Container;
     private busy = false;
     private combat!: CombatState;
     private field!: Phaser.GameObjects.Graphics;
@@ -142,6 +179,7 @@ export function createBattleSceneClass(
     private notice?: Phaser.GameObjects.Text;
     private selectedCardId?: string;
     private tooltip?: Phaser.GameObjects.Container;
+    private sprites!: BattleSpriteDirector;
     private unitViews = new Map<string, Phaser.GameObjects.Container>();
     private units!: Phaser.GameObjects.Container;
 
@@ -150,7 +188,7 @@ export function createBattleSceneClass(
     }
 
     /**
-     * Queues the backdrop, portraits, and card art for this fight.
+     * Queues the backdrop, portraits, party sprites, and card art for this fight.
      */
     public preload(): void {
       this.load.setCORS("anonymous");
@@ -158,6 +196,13 @@ export function createBattleSceneClass(
       for (const asset of listBattleAssetRequests(input)) {
         this.load.image(asset.key, asset.url);
       }
+      this.sprites = new BattleSpriteDirector(
+        Phaser,
+        this,
+        input.setup.party,
+        input.pace,
+      );
+      this.sprites.preload();
     }
 
     /**
@@ -166,8 +211,10 @@ export function createBattleSceneClass(
     public create(): void {
       const opening = createCombat(input.setup);
       this.combat = opening.state;
+      this.sprites.create();
       this.field = this.add.graphics();
       this.units = this.add.container(0, 0);
+      this.ambientLayer = this.add.container(0, 0);
       this.hud = this.add.container(0, 0);
       this.floaters = this.add.container(0, 0).setDepth(300);
       this.scale.on("resize", this.draw, this);
@@ -178,15 +225,20 @@ export function createBattleSceneClass(
         this.scale.off("resize", this.draw, this);
       });
       this.draw();
-      this.showBanner(input.room.isBoss ? "The Tower Heart awakens" : "Turn 1");
+      this.createAmbient();
+      const [red, green, blue] = rgb(PAPER);
+      this.cameras.main.fadeIn(wait(FADE_MS), red, green, blue);
+      this.showTitleCard();
     }
 
     /**
-     * Eases each hand card toward its rest, hovered, or selected pose.
-     * @param _time - Scene time in milliseconds
+     * Eases each hand card toward its rest, hovered, or selected pose, and
+     * drifts the ambient leaves.
+     * @param time - Scene time in milliseconds
      * @param delta - Frame time in milliseconds
      */
-    public update(_time: number, delta: number): void {
+    public update(time: number, delta: number): void {
+      this.driftAmbient(time, delta);
       for (const card of this.hand) {
         const y = approach(
           card.container.y,
@@ -234,6 +286,7 @@ export function createBattleSceneClass(
         this.tweens.killTweensOf(view);
       }
       this.unitViews.clear();
+      this.sprites.clear();
       this.field.clear();
       this.units.removeAll(true);
       this.hud.removeAll(true);
@@ -258,7 +311,108 @@ export function createBattleSceneClass(
         this.hand.push(this.createHandCard(slot));
       }
       this.drawHud();
+      this.startIdleBob();
     };
+
+    /**
+     * Lets every living unit breathe with a slow bob. The views are rebuilt
+     * on each redraw, so this runs after every draw.
+     */
+    private startIdleBob(): void {
+      if (input.reducedMotion) {
+        return;
+      }
+      const living = new Set(
+        [...this.combat.party, ...this.combat.enemies]
+          .filter(isAlive)
+          .map((unit) => unit.id),
+      );
+      let offset = 0;
+      for (const [unitId, view] of this.unitViews) {
+        if (!living.has(unitId)) {
+          continue;
+        }
+        this.tweens.add({
+          delay: offset * 170,
+          duration: 1700 + (hashSeed(unitId) % 500),
+          ease: "Sine.easeInOut",
+          repeat: -1,
+          targets: view,
+          y: view.y - 4,
+          yoyo: true,
+        });
+        offset += 1;
+      }
+    }
+
+    /**
+     * Scatters slow leaves and motes over the room. They live in their own
+     * layer so redraws keep them, and wrap at the edges so resizes need
+     * no repositioning.
+     */
+    private createAmbient(): void {
+      if (input.reducedMotion) {
+        return;
+      }
+      const { width, height } = this.scale;
+      for (let index = 0; index < AMBIENT_MOTE_COUNT; index += 1) {
+        const view = this.add.graphics();
+        const isLeaf = index % 3 !== 0;
+        if (isLeaf) {
+          this.paintLeaf(
+            0,
+            0,
+            10 + (index % 4) * 3,
+            0,
+            index % 2 === 0 ? JADE : SAGE,
+            0.4,
+            view,
+          );
+        } else {
+          view.fillStyle(PAPER_LIGHT, 0.55);
+          view.fillCircle(0, 0, 2 + (index % 3));
+        }
+        view.setPosition(
+          Phaser.Math.Between(0, Math.max(1, width)),
+          Phaser.Math.Between(0, Math.max(1, height * 0.75)),
+        );
+        view.setRotation(Phaser.Math.FloatBetween(0, Math.PI * 2));
+        this.ambientLayer.add(view);
+        this.ambient.push({
+          drift: Phaser.Math.FloatBetween(0, Math.PI * 2),
+          spin: Phaser.Math.FloatBetween(-0.0006, 0.0006),
+          sway: Phaser.Math.FloatBetween(0.015, 0.035),
+          view,
+          vx: Phaser.Math.FloatBetween(0.008, 0.022),
+          vy: Phaser.Math.FloatBetween(0.006, 0.016),
+        });
+      }
+    }
+
+    /**
+     * Moves each ambient mote down and across, swaying, and wraps it back
+     * to the top left when it leaves the room.
+     * @param time - Scene time in milliseconds
+     * @param delta - Frame time in milliseconds
+     */
+    private driftAmbient(time: number, delta: number): void {
+      const { width, height } = this.scale;
+      const floor = this.layout ? this.layout.groundY + 40 : height;
+      for (const mote of this.ambient) {
+        const { view } = mote;
+        const sway = Math.sin(time * 0.001 + mote.drift) * mote.sway;
+        view.x += (mote.vx + sway) * delta;
+        view.y += mote.vy * delta;
+        view.rotation += mote.spin * delta;
+        if (view.x > width + 20) {
+          view.x = -20;
+        }
+        if (view.y > floor) {
+          view.y = -20;
+          view.x = Phaser.Math.Between(-20, Math.max(1, width));
+        }
+      }
+    }
 
     /**
      * Fills the room: generated backdrop when loaded, otherwise a painted wash.
@@ -443,8 +597,8 @@ export function createBattleSceneClass(
     }
 
     /**
-     * Draws one party member: portrait, order, tier, health, block, and the
-     * damage it will take if the turn ends now.
+     * Draws one party member: animated sprite or portrait, order, tier,
+     * health, block, and the damage it will take if the turn ends now.
      * @param unit - Party member
      * @param slot - Where it stands
      * @param incoming - Telegraphed damage before block
@@ -459,7 +613,9 @@ export function createBattleSceneClass(
       const glyph = unit.isCultivator
         ? CULTIVATOR_GLYPH
         : unit.name.charAt(0).toUpperCase();
-      this.drawPortrait(view, slot, unit.id, glyph, accent);
+      if (!this.sprites.draw(view, unit, slot, accent, isAlive(unit))) {
+        this.drawPortrait(view, slot, unit.id, glyph, accent);
+      }
       this.drawUnitFooter(view, slot, unit, accent);
 
       const order = slot.index === 0 ? "Front" : `#${slot.index + 1}`;
@@ -1179,6 +1335,7 @@ export function createBattleSceneClass(
         cardTargeting(card.definition.rules) !== "none" &&
         automaticTarget(this.combat, card) === undefined;
       if (needsChoice) {
+        playSound("select");
         this.selectedCardId = cardId;
         this.draw();
         return;
@@ -1225,7 +1382,7 @@ export function createBattleSceneClass(
       this.draw();
       this.showBanner("Enemy turn");
       steps.forEach((step, index) => {
-        this.time.delayedCall(STEP_DELAY_MS * (index + 1), () => {
+        this.time.delayedCall(wait(STEP_DELAY_MS) * (index + 1), () => {
           const isLast = index === steps.length - 1;
           if (isLast) {
             this.busy = false;
@@ -1245,6 +1402,9 @@ export function createBattleSceneClass(
     private applyStep(step: CombatStep): void {
       this.combat = step.state;
       this.draw();
+      for (const sound of stepSounds(step.events)) {
+        playSound(sound);
+      }
       let stack = 0;
       for (const event of step.events) {
         this.animateEvent(event, stack);
@@ -1258,11 +1418,18 @@ export function createBattleSceneClass(
      */
     private animateEvent(event: CombatEvent, stack: number): void {
       const delay = stack * 90;
+      this.sprites.play(event);
       if (event.kind === "damage") {
         const target = this.unitViews.get(event.targetId);
         this.lunge(event.sourceId, event.targetId);
         if (target) {
           this.shake(target);
+          if (event.dealt > 0) {
+            this.flash(event.targetId, target);
+          }
+          if (isHeavyImpact(event)) {
+            this.shakeCamera();
+          }
           const text = event.dealt > 0 ? `−${event.dealt}` : "Blocked";
           this.floatAt(
             target.x,
@@ -1351,6 +1518,7 @@ export function createBattleSceneClass(
               ? `Fallen · ${event.cardsRemoved} cards lost`
               : "Defeated";
           this.floatAt(view.x, view.y + 40, lost, INK, delay + 200, 18);
+          this.shakeCamera();
         }
         return;
       }
@@ -1388,7 +1556,7 @@ export function createBattleSceneClass(
       }
       const direction = Math.sign(target.x - source.x) || 1;
       this.tweens.add({
-        duration: 130,
+        duration: wait(130),
         ease: "Quad.easeOut",
         targets: source,
         x: source.x + direction * 26,
@@ -1402,13 +1570,167 @@ export function createBattleSceneClass(
     private shake(view: Phaser.GameObjects.Container): void {
       const startX = view.x;
       this.tweens.add({
-        duration: 55,
+        duration: wait(55),
         onComplete: () => view.setX(startX),
         repeat: 3,
         targets: view,
         x: startX + 7,
         yoyo: true,
       });
+    }
+
+    /**
+     * Washes a hit unit's portrait in ember for a moment.
+     * @param unitId - Unit that took damage
+     * @param view - Its container
+     */
+    private flash(unitId: string, view: Phaser.GameObjects.Container): void {
+      const slot = this.slotFor(unitId);
+      if (input.reducedMotion || !slot) {
+        return;
+      }
+      if (this.sprites.flash(unitId, EMBER, wait(160))) {
+        return;
+      }
+      const overlay = this.add.graphics();
+      overlay.fillStyle(EMBER, 1);
+      overlay.fillRoundedRect(
+        -slot.width / 2,
+        -slot.height / 2,
+        slot.width,
+        slot.height,
+        14,
+      );
+      overlay.setAlpha(0.55);
+      view.add(overlay);
+      this.tweens.add({
+        alpha: 0,
+        duration: wait(260),
+        ease: "Quad.easeOut",
+        onComplete: () => overlay.destroy(),
+        targets: overlay,
+      });
+    }
+
+    /**
+     * A short camera shake for heavy hits and deaths.
+     */
+    private shakeCamera(): void {
+      if (input.reducedMotion) {
+        return;
+      }
+      this.cameras.main.shake(wait(200), 0.006);
+    }
+
+    /**
+     * Opens the battle with the room's name, then the first turn banner.
+     * The card lives on its own layer so redraws underneath keep it.
+     */
+    private showTitleCard(): void {
+      const copy = roomTitleCard(input.room);
+      const { width, height } = this.scale;
+      const centerY = height * 0.36;
+      const card = this.add.container(width / 2, centerY).setDepth(350);
+      const accent = input.room.isBoss ? GOLD : JADE;
+      const band = this.add.graphics();
+      band.fillStyle(PAPER_LIGHT, 0.86);
+      band.fillRect(-width / 2, -70, width, 140);
+      band.lineStyle(2, accent, 0.8);
+      band.lineBetween(-width * 0.3, -70, width * 0.3, -70);
+      band.lineBetween(-width * 0.3, 70, width * 0.3, 70);
+      card.add(band);
+      card.add(
+        this.makeText(0, -38, copy.eyebrow.toUpperCase(), {
+          color: cssColor(input.room.isBoss ? GOLD : JADE_DARK),
+          fontSize: 16,
+        }),
+      );
+      const title = this.makeText(0, 4, copy.title, {
+        color: INK,
+        fontSize: 44,
+        stroke: true,
+        wrapWidth: width * 0.8,
+      });
+      if (input.room.isBoss) {
+        title.setShadow(0, 0, cssColor(GOLD), 16, true, true);
+      }
+      card.add(title);
+      if (copy.subtitle) {
+        card.add(
+          this.makeText(0, 46, copy.subtitle, {
+            color: DAMAGE_TEXT,
+            fontSize: 18,
+            stroke: true,
+          }),
+        );
+      }
+      card.setAlpha(0);
+      if (!input.reducedMotion) {
+        card.setY(centerY + 24);
+      }
+      this.tweens.add({
+        alpha: 1,
+        delay: wait(150),
+        duration: wait(450),
+        ease: "Quad.easeOut",
+        targets: card,
+        y: centerY,
+      });
+      this.tweens.add({
+        alpha: 0,
+        delay: wait(1900),
+        duration: wait(400),
+        ease: "Quad.easeIn",
+        onComplete: () => {
+          card.destroy();
+          if (!this.finished) {
+            playSound("turn");
+            this.showBanner("Turn 1");
+          }
+        },
+        targets: card,
+        y: centerY - 16,
+      });
+      if (input.room.isBoss) {
+        playSound("heavy-hit");
+      }
+    }
+
+    /**
+     * Throws leaves outward from a point and lets them fall and fade.
+     * @param x - Burst center x
+     * @param y - Burst center y
+     */
+    private burstLeaves(x: number, y: number): void {
+      if (input.reducedMotion) {
+        return;
+      }
+      for (let index = 0; index < BURST_LEAF_COUNT; index += 1) {
+        const leaf = this.add.graphics().setDepth(402);
+        const colors = [JADE, SAGE, GOLD];
+        this.paintLeaf(
+          0,
+          0,
+          14 + (index % 4) * 4,
+          0,
+          colors[index % colors.length] as number,
+          0.9,
+          leaf,
+        );
+        leaf.setPosition(x, y);
+        const angle = (index / BURST_LEAF_COUNT) * Math.PI * 2;
+        const distance = Phaser.Math.Between(140, 320);
+        this.tweens.add({
+          alpha: { from: 1, to: 0 },
+          duration: wait(1400),
+          ease: "Cubic.easeOut",
+          onComplete: () => leaf.destroy(),
+          rotation: Phaser.Math.FloatBetween(-4, 4),
+          targets: leaf,
+          x: x + Math.cos(angle) * distance,
+          y: y + Math.sin(angle) * distance * 0.7 + 60,
+        });
+      }
     }
 
     /**
@@ -1440,8 +1762,8 @@ export function createBattleSceneClass(
       this.floaters.add(label);
       this.tweens.add({
         alpha: { from: 1, to: 0 },
-        delay,
-        duration,
+        delay: wait(delay),
+        duration: wait(duration),
         ease: "Quad.easeIn",
         onComplete: () => label.destroy(),
         targets: label,
@@ -1468,8 +1790,8 @@ export function createBattleSceneClass(
       this.floaters.add(label);
       this.tweens.add({
         alpha: { from: 0, to: 1 },
-        duration: 260,
-        hold: 500,
+        duration: wait(260),
+        hold: wait(500),
         onComplete: () => label.destroy(),
         targets: label,
         yoyo: true,
@@ -1480,6 +1802,7 @@ export function createBattleSceneClass(
      * @param text - Short warning, such as missing Aether
      */
     private showNotice(text: string): void {
+      playSound("denied");
       this.notice?.destroy();
       const notice = this.makeText(
         this.scale.width / 2,
@@ -1495,8 +1818,8 @@ export function createBattleSceneClass(
       this.notice = notice;
       this.tweens.add({
         alpha: 0,
-        delay: 900,
-        duration: 400,
+        delay: wait(900),
+        duration: wait(400),
         onComplete: () => notice.destroy(),
         targets: notice,
       });
@@ -1586,22 +1909,57 @@ export function createBattleSceneClass(
         return;
       }
       this.finished = true;
+      this.hideTooltip();
       const victory = this.combat.phase === "victory";
+      playSound(victory ? "victory" : "defeat");
+      const { width, height } = this.scale;
       const veil = this.add.graphics().setDepth(400);
-      veil.fillStyle(PAPER, 0.7);
-      veil.fillRect(0, 0, this.scale.width, this.scale.height);
+      veil.fillStyle(victory ? PAPER : DEFEAT_VEIL, victory ? 0.7 : 0.78);
+      veil.fillRect(0, 0, width, height);
+      veil.setAlpha(0);
+      this.tweens.add({ alpha: 1, duration: wait(500), targets: veil });
+      const titleY = height * 0.4;
       const title = this.makeText(
-        this.scale.width / 2,
-        this.scale.height * 0.4,
+        width / 2,
+        titleY,
         victory ? "Victory" : "The cultivator falls",
         {
           color: victory ? cssColor(JADE_DARK) : DAMAGE_TEXT,
-          fontSize: 54,
+          fontSize: 58,
           stroke: true,
         },
       ).setDepth(401);
-      title.setAlpha(0);
-      this.tweens.add({ alpha: 1, duration: 400, targets: title });
+      if (victory) {
+        title.setShadow(0, 0, cssColor(GOLD), 22, true, true);
+      }
+      title.setAlpha(0).setScale(input.reducedMotion ? 1 : 0.7);
+      this.tweens.add({
+        alpha: 1,
+        duration: wait(520),
+        ease: "Back.easeOut",
+        scale: 1,
+        targets: title,
+      });
+      const subtitle = this.makeText(
+        width / 2,
+        titleY + 54,
+        this.finishSubtitle(victory),
+        {
+          color: victory ? INK_SOFT : cssColor(PAPER_LIGHT),
+          fontSize: 20,
+          stroke: victory,
+        },
+      ).setDepth(401);
+      subtitle.setAlpha(0);
+      this.tweens.add({
+        alpha: 1,
+        delay: wait(260),
+        duration: wait(420),
+        targets: subtitle,
+      });
+      if (victory) {
+        this.burstLeaves(width / 2, titleY);
+      }
       const report = {
         outcome: victory ? ("victory" as const) : ("defeat" as const),
         party: this.combat.party.map((unit) => ({
@@ -1610,7 +1968,26 @@ export function createBattleSceneClass(
         })),
         randomState: this.combat.randomState,
       };
-      this.time.delayedCall(FINISH_DELAY_MS, () => input.onFinish(report));
+      this.time.delayedCall(wait(FINISH_DELAY_MS), () => {
+        const fade = wait(FADE_MS);
+        const [red, green, blue] = rgb(victory ? PAPER : DEFEAT_VEIL);
+        this.cameras.main.fadeOut(fade, red, green, blue);
+        this.time.delayedCall(fade + 30, () => input.onFinish(report));
+      });
+    }
+
+    /**
+     * @param victory - Whether the party won
+     * @returns The line under the outcome title
+     */
+    private finishSubtitle(victory: boolean): string {
+      if (!victory) {
+        return "The tower keeps its secrets";
+      }
+      if (input.room.isBoss) {
+        return "The Tower Heart is quiet";
+      }
+      return `Floor ${input.room.floor} cleared`;
     }
 
     /**

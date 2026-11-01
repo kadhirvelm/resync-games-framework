@@ -13,26 +13,34 @@ export const REWARD_LABELS: Record<RoomRewardKind, string> = {
 
 /**
  * @param reward - Room reward kind, or none for the boss
+ * @param size - Icon size in pixels
  * @returns Icon for that reward
  */
-function RewardIcon({ reward }: { reward?: RoomRewardKind }) {
+export function RewardIcon({
+  reward,
+  size = 15,
+}: {
+  reward?: RoomRewardKind;
+  size?: number;
+}) {
   if (reward === "coreborn") {
-    return <UserPlus size={15} />;
+    return <UserPlus size={size} />;
   }
   if (reward === "health") {
-    return <Heart size={15} />;
+    return <Heart size={size} />;
   }
   if (reward === "monster-cards") {
-    return <Layers size={15} />;
+    return <Layers size={size} />;
   }
   if (reward === "techniques") {
-    return <Sparkles size={15} />;
+    return <Sparkles size={size} />;
   }
-  return <Crown size={15} />;
+  return <Crown size={size} />;
 }
 
 /**
- * The climb as a row of floors: cleared, current, and what each one rewards.
+ * The climb as a path of floor nodes joined by a vine that fills as the
+ * party climbs. Each node shows its reward; the current one glows.
  * Rooms are linear, so this is a progress track, not a map.
  * @param rooms - Every floor, entrance first
  * @param floorIndex - Index of the current floor
@@ -45,10 +53,18 @@ export const TowerProgress = ({
   floorIndex: number;
   rooms: TowerRoom[];
 }) => (
-  <ol aria-label="Tower floors" className={styles.progress}>
+  <ol
+    aria-label="Tower floors"
+    className={styles.progress}
+    style={
+      {
+        "--progress": `${(floorIndex / Math.max(1, rooms.length - 1)) * 100}%`,
+      } as React.CSSProperties
+    }
+  >
     {rooms.map((room, index) => {
       const label = room.isBoss
-        ? "Boss"
+        ? "Tower Heart"
         : REWARD_LABELS[room.reward ?? "techniques"];
       return (
         <li
@@ -62,12 +78,11 @@ export const TowerProgress = ({
           key={room.floor}
           title={`Floor ${room.floor}: ${label}`}
         >
-          <span className={styles.progressNumber}>
-            {room.isBoss ? "★" : room.floor}
+          <span className={styles.progressNode}>
+            <RewardIcon reward={room.reward} size={14} />
           </span>
-          <span className={styles.progressReward}>
-            <RewardIcon reward={room.reward} />
-            {label}
+          <span className={styles.progressNumber}>
+            {room.isBoss ? "Summit" : room.floor}
           </span>
         </li>
       );

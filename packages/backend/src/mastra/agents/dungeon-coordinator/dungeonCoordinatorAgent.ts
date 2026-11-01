@@ -58,6 +58,17 @@ const titledPromptSchema = z.object({
   title: z.string().trim().min(1).max(80).describe("Short display name."),
 });
 
+const characterPromptSchema = titledPromptSchema.extend({
+  spritePrompt: z
+    .string()
+    .trim()
+    .min(1)
+    .max(2000)
+    .describe(
+      "How this character looks and moves as an animated battle sprite: full-body silhouette, outfit, weapon or focus, the motion of their signature attack and any single effect it makes, and how they guard.",
+    ),
+});
+
 const cardPromptSchema = titledPromptSchema.extend({
   characterSlotId: z
     .string()
@@ -93,7 +104,10 @@ Keep every prompt in one shared location, faction, threat, color palette, and
 story hook. Background prompts describe one battle room each. Character prompts
 make each role distinct and describe a person who can be painted at four
 strengths. Card prompts name that character and one technique that belongs to
-them. For each character, plan levels 1, 2, 3, and 4 in that order. Level 1
+them. Each character call also takes a sprite prompt for the animated
+figure that fights in battle: describe the full-body look, the attack motion,
+and the guard so it matches that character's role and technique. For each
+character, plan levels 1, 2, 3, and 4 in that order. Level 1
 chooses the technique. Levels 2 through 4 keep its aether cost and effect
 kinds, and raise the amounts. Enemy prompts describe distinct threats that
 belong in these rooms, how each one fights, and that they should vary in
@@ -115,15 +129,18 @@ interface PlannedDungeonSlotBase {
   title: string;
 }
 
+/** Slot kinds that belong to one character. */
+type CharacterOwnedSlotKind = "playable-card" | "sprite-sheet";
+
 /** A planned room, character, or enemy prompt. */
 export type PlannedDungeonAssetSlot = {
   [Kind in Exclude<
     DungeonSlotKind,
-    "playable-card"
+    CharacterOwnedSlotKind
   >]: PlannedDungeonSlotBase & {
     kind: Kind;
   };
-}[Exclude<DungeonSlotKind, "playable-card">];
+}[Exclude<DungeonSlotKind, CharacterOwnedSlotKind>];
 
 /** A planned card prompt with required ownership and progression level. */
 export interface PlannedDungeonCardSlot extends PlannedDungeonSlotBase {
@@ -132,10 +149,17 @@ export interface PlannedDungeonCardSlot extends PlannedDungeonSlotBase {
   level: CardCharacterLevelNumber;
 }
 
+/** A planned battle sprite prompt for one character. */
+export interface PlannedDungeonSpriteSlot extends PlannedDungeonSlotBase {
+  characterSlotId: string;
+  kind: "sprite-sheet";
+}
+
 /** One prompt the planner recorded for a later agent. */
 export type PlannedDungeonSlot =
   | PlannedDungeonAssetSlot
-  | PlannedDungeonCardSlot;
+  | PlannedDungeonCardSlot
+  | PlannedDungeonSpriteSlot;
 
 /** Prompts for a dungeon package, with no assets created yet. */
 export interface DungeonCoordinatorResult {
@@ -146,6 +170,7 @@ export interface DungeonCoordinatorResult {
 interface PlannedCharacter {
   cards: PlannedDungeonSlot[];
   slot: PlannedDungeonSlot;
+  sprite: PlannedDungeonSpriteSlot;
 }
 
 interface DungeonPlanState {
@@ -248,19 +273,26 @@ export class DungeonCoordinatorAgent
       }),
       [PLAN_DUNGEON_CHARACTER_TOOL_ID]: createTool({
         description:
-          "Record the prompt for one four-level character. Returns the characterSlotId required when planning that character's cards. Does not paint the character.",
-        execute: async (input: z.infer<typeof titledPromptSchema>) => {
+          "Record the prompt for one four-level character and its animated battle sprite. Returns the characterSlotId required when planning that character's cards. Does not paint the character or the sprite.",
+        execute: async (input: z.infer<typeof characterPromptSchema>) => {
           requireCapacity(
             state.characters.size,
             DUNGEON_CHARACTER_COUNT,
             "character",
           );
           const slot = createSlot("card-character", input);
-          state.characters.set(slot.id, { cards: [], slot });
+          const sprite: PlannedDungeonSpriteSlot = {
+            characterSlotId: slot.id,
+            id: randomUUID(),
+            kind: "sprite-sheet",
+            prompt: input.spritePrompt,
+            title: `${input.title} sprite`,
+          };
+          state.characters.set(slot.id, { cards: [], slot, sprite });
           return { characterSlotId: slot.id };
         },
         id: PLAN_DUNGEON_CHARACTER_TOOL_ID,
-        inputSchema: titledPromptSchema,
+        inputSchema: characterPromptSchema,
         outputSchema: characterOutputSchema,
       }),
       [PLAN_DUNGEON_CARD_TOOL_ID]: createTool({
@@ -325,7 +357,9 @@ export class DungeonCoordinatorAgent
  * @param input - Title and prompt from the planner
  * @returns A slot with a new id
  */
-function createSlot<Kind extends Exclude<DungeonSlotKind, "playable-card">>(
+function createSlot<
+  Kind extends Exclude<DungeonSlotKind, CharacterOwnedSlotKind>,
+>(
   kind: Kind,
   input: { prompt: string; title: string },
 ): Extract<PlannedDungeonAssetSlot, { kind: Kind }> {
@@ -401,7 +435,8 @@ function isCompletePlan(state: DungeonPlanState): boolean {
 /**
  * @param state - Prompts recorded by the planning tools
  * @param summary - Coordinator closing text, when it had a step left to write one
- * @returns Rooms, then each character with that character's cards, then enemies
+ * @returns Rooms, then each character with that character's cards and
+ * sprite, then enemies
  */
 function planResult(
   state: DungeonPlanState,
@@ -410,7 +445,7 @@ function planResult(
   const text = summary.trim();
   const slots: PlannedDungeonSlot[] = [...state.backgrounds];
   for (const character of state.characters.values()) {
-    slots.push(character.slot, ...character.cards);
+    slots.push(character.slot, ...character.cards, character.sprite);
   }
   slots.push(...state.enemies);
   return {

@@ -5,6 +5,7 @@ import { BattleBackgroundAgent } from "src/mastra/agents/battle-background/battl
 import { CardCharacterAgent } from "src/mastra/agents/card-character/cardCharacterAgent";
 import { CardGeneratorAgent } from "src/mastra/agents/card-generator/cardGeneratorAgent";
 import { EnemyAgent } from "src/mastra/agents/enemy/enemyAgent";
+import { SpriteSheetAgent } from "src/mastra/agents/sprite-sheet/spriteSheetAgent";
 import { runWithProductNowSession } from "src/product-now-mcp/productNowSessionContext";
 import { DungeonAssetLookup } from "./dungeonAssetLookup";
 import type { StoredDungeonSlot } from "./dungeonBlueprint";
@@ -23,7 +24,7 @@ export interface GenerateDungeonSlotInput extends PreparedDungeonSlot {
 }
 
 /**
- * Adapts dungeon slots to the four asset agents.
+ * Adapts dungeon slots to the five asset agents.
  *
  * This is the single extension point for adding a new slot kind: prepare its
  * prompt here, dispatch it in {@link DungeonSlotGenerator.generate}, and add
@@ -36,6 +37,7 @@ export class DungeonSlotGenerator {
     private readonly characters: CardCharacterAgent,
     private readonly cards: CardGeneratorAgent,
     private readonly enemies: EnemyAgent,
+    private readonly sprites: SpriteSheetAgent,
     private readonly assets: DungeonAssetLookup,
   ) {}
 
@@ -51,12 +53,14 @@ export class DungeonSlotGenerator {
       this.characters.abort(generationId),
       this.cards.abort(generationId),
       this.enemies.abort(generationId),
+      this.sprites.abort(generationId),
     ]);
     return stopped.some(Boolean);
   }
 
   /**
-   * Adds character context and resolves the previous card's progression lock.
+   * Adds character context to cards and sprites, and resolves the previous
+   * card's progression lock.
    * @param slot - Slot about to run
    * @param slots - Every slot in the same dungeon package
    * @returns The prompt and progression data ready for dispatch
@@ -66,15 +70,20 @@ export class DungeonSlotGenerator {
     slots: readonly StoredDungeonSlot[],
   ): Promise<PreparedDungeonSlot> {
     const progression = await this.assets.progressionFor(slot, slots);
+    if (slot.kind === "sprite-sheet") {
+      return {
+        prompt: withCharacterContext(slot, slots, "Sprite request"),
+        slot,
+      };
+    }
     if (slot.kind !== "playable-card") {
       return { prompt: slot.prompt, slot };
     }
-    const character = slots.find((entry) => entry.id === slot.characterSlotId);
-    const prompt =
-      character === undefined
-        ? slot.prompt
-        : `Character:\n${character.prompt}\n\nCard request:\n${slot.prompt}`;
-    return { progression, prompt, slot };
+    return {
+      progression,
+      prompt: withCharacterContext(slot, slots, "Card request"),
+      slot,
+    };
   }
 
   /**
@@ -116,6 +125,13 @@ export class DungeonSlotGenerator {
       });
       return result.id;
     }
+    if (input.slot.kind === "sprite-sheet") {
+      const result = await this.sprites.query({
+        generationId: input.generationId,
+        prompt: input.prompt,
+      });
+      return result.id;
+    }
 
     const card = await this.cards.query({
       generationId: input.generationId,
@@ -131,4 +147,23 @@ export class DungeonSlotGenerator {
     }
     return card.cardId;
   }
+}
+
+/**
+ * @param slot - Card or sprite slot owned by a character
+ * @param slots - Every slot in the package
+ * @param label - Heading for the slot's own request
+ * @returns The character's prompt above the slot's prompt, or the slot's
+ * prompt alone when the character slot is missing
+ */
+function withCharacterContext(
+  slot: Extract<StoredDungeonSlot, { characterSlotId: string }>,
+  slots: readonly StoredDungeonSlot[],
+  label: string,
+): string {
+  const character = slots.find((entry) => entry.id === slot.characterSlotId);
+  if (character === undefined) {
+    return slot.prompt;
+  }
+  return `Character:\n${character.prompt}\n\n${label}:\n${slot.prompt}`;
 }

@@ -1,0 +1,68 @@
+/* Shared palette, type, and motion for the tower game. Watercolor jade on paper by day, ink and lantern gold at dusk. */
+
+$paper: #f3efe4;
+$paper-light: #fffdf6;
+$paper-deep: #e7e0cd;
+$jade: #4e8f6a;
+$jade-dark: #2f5e45;
+$jade-glow: #7fd1a4;
+$sage: #9db89a;
+$stone: #8a8f8c;
+$stone-dark: #5d625f;
+$ember: #b5543f;
+$steel: #557a90;
+$dew: #3f9e95;
+$gold: #c49a3a;
+$gold-light: #f0d78c;
+$ink: #24332b;
+$ink-soft: #4b5a52;
+$night: #0f1a15;
+$night-mid: #1a2c23;
+$night-high: #2c4a3b;
+$leaf-radius: 6px 22px;
+$serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
+$display: var(--font-display, #{$serif});
+$ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+$ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+/* Entrance used by every screen and its staggered children. Set --i on a child to delay it. */
+@mixin rise($distance: 14px, $duration: 520ms) {
+  animation: rise $duration $ease-out both;
+  animation-delay: calc(var(--i, 0) * 70ms);
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY($distance);
+    }
+
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+/* A raised paper surface that lifts toward the pointer. */
+@mixin lift-on-hover {
+  transition:
+    transform 220ms $ease-out,
+    box-shadow 220ms $ease-out,
+    border-color 220ms ease;
+
+  &:hover:not(:disabled) {
+    box-shadow: 0 14px 30px rgba($jade-dark, 0.18);
+    transform: translateY(-4px);
+  }
+
+  &:active:not(:disabled) {
+    transform: translateY(-1px) scale(0.99);
+  }
+}
+
+@mixin focus-ring {
+  &:focus-visible {
+    outline: 3px solid rgba($gold, 0.85);
+    outline-offset: 3px;
+  }
+}

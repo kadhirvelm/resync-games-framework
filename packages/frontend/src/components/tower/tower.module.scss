@@ -1,20 +1,6 @@
 /* Watercolor art direction: jade and sage washes, stone accents, paper surfaces, leaf-cornered frames. */
 
-$paper: #f3efe4;
-$paper-light: #fffdf6;
-$jade: #4e8f6a;
-$jade-dark: #2f5e45;
-$sage: #9db89a;
-$stone: #8a8f8c;
-$stone-dark: #5d625f;
-$ember: #b5543f;
-$steel: #557a90;
-$dew: #3f9e95;
-$gold: #c49a3a;
-$ink: #24332b;
-$ink-soft: #4b5a52;
-$leaf-radius: 6px 22px;
-$serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
+@use "./theme" as *;
 
 .page {
   background:
@@ -26,7 +12,30 @@ $serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
   flex: 1;
   font-family: $serif;
   min-height: 100vh;
+  position: relative;
   width: 100%;
+}
+
+/* Every screen fades up as it arrives; its direct children follow in turn. */
+.screenEnter {
+  animation: screen-enter 480ms $ease-out both;
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes screen-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.reducedMotion *,
+.reducedMotion *::before,
+.reducedMotion *::after {
+  animation-delay: 0ms !important;
+  animation-duration: 1ms !important;
+  transition-duration: 1ms !important;
 }
 
 .screen {
@@ -36,17 +45,29 @@ $serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
   margin: 0 auto;
   max-width: 1180px;
   padding: 24px 20px 120px;
+
+  > * {
+    @include rise;
+  }
+
+  @for $index from 1 through 8 {
+    > :nth-child(#{$index}) {
+      --i: #{$index - 1};
+    }
+  }
 }
 
 .panel {
-  background: rgba($paper-light, 0.88);
-  border: 1.5px solid rgba($stone, 0.6);
+  backdrop-filter: blur(2px);
+  background: rgba($paper-light, 0.9);
+  border: 1.5px solid rgba($stone, 0.5);
   border-radius: $leaf-radius;
-  box-shadow: 0 6px 24px rgba($jade-dark, 0.08);
+  box-shadow: 0 8px 28px rgba($jade-dark, 0.08);
   padding: 20px 22px;
 
   h2 {
-    font-size: 22px;
+    font-family: $display;
+    font-size: 27px;
     font-weight: 600;
     margin: 0 0 10px;
   }
@@ -96,32 +117,41 @@ $serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
   width: 1px;
 }
 
-.quietLink {
-  color: $jade-dark;
-  font-size: 15px;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
 /* Buttons */
 
 .button {
-  background: $jade;
+  align-items: center;
+  background: linear-gradient(180deg, #5a9c76, $jade 55%, #437d5c);
   border: 1.5px solid $jade-dark;
   border-radius: $leaf-radius;
-  box-shadow: 0 3px 0 rgba($jade-dark, 0.35);
+  box-shadow:
+    0 3px 0 rgba($jade-dark, 0.45),
+    inset 0 1px 0 rgba(#fff, 0.25);
   color: #fff;
   cursor: pointer;
+  display: inline-flex;
   font-family: $serif;
   font-size: 16px;
+  gap: 8px;
+  justify-content: center;
   padding: 9px 20px;
   transition:
-    transform 120ms ease,
-    background 120ms ease;
+    transform 180ms $ease-out,
+    box-shadow 180ms $ease-out,
+    filter 160ms ease,
+    background 160ms ease;
 
   &:hover:not(:disabled) {
-    background: $jade-dark;
-    transform: translateY(-1px);
+    box-shadow:
+      0 6px 14px rgba($jade-dark, 0.3),
+      inset 0 1px 0 rgba(#fff, 0.3);
+    filter: brightness(1.06);
+    transform: translateY(-2px);
+  }
+
+  &:active:not(:disabled) {
+    box-shadow: 0 1px 0 rgba($jade-dark, 0.45);
+    transform: translateY(1px);
   }
 
   &:focus-visible {
@@ -136,27 +166,23 @@ $serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
 }
 
 .buttonQuiet {
-  background: transparent;
+  background: rgba($paper-light, 0.6);
   border-color: rgba($stone, 0.8);
   box-shadow: none;
   color: $ink;
 
   &:hover:not(:disabled) {
     background: rgba($sage, 0.25);
+    box-shadow: 0 4px 10px rgba($jade-dark, 0.1);
   }
 }
 
 .bigButton {
-  font-size: 20px;
-  padding: 14px 36px;
-}
-
-.stickyAction {
-  bottom: 18px;
-  display: flex;
-  justify-content: center;
-  position: sticky;
-  z-index: 5;
+  font-family: $display;
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 12px 40px;
 }
 
 /* Leaf mark */
@@ -201,86 +227,6 @@ $serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
   gap: 1px;
 }
 
-/* Title */
-
-.titleTopBar {
-  align-items: center;
-  display: flex;
-  gap: 16px;
-  justify-content: flex-end;
-}
-
-.hero {
-  align-items: center;
-  display: flex;
-  flex-direction: column;
-  padding: 24px 0 8px;
-  text-align: center;
-
-  h1 {
-    font-size: clamp(38px, 6vw, 64px);
-    font-weight: 600;
-    letter-spacing: 0.01em;
-    margin: 8px 0;
-  }
-
-  p {
-    color: $ink-soft;
-    font-size: 18px;
-    max-width: 620px;
-  }
-}
-
-.heroLeaf {
-  transform: rotate(-12deg);
-}
-
-.towerList {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.towerChoice {
-  align-items: center;
-  background: rgba($paper, 0.7);
-  border: 1px solid rgba($stone, 0.4);
-  border-radius: $leaf-radius;
-  display: flex;
-  gap: 18px;
-  justify-content: space-between;
-  padding: 14px 18px;
-
-  h3 {
-    font-size: 20px;
-    margin: 0 0 4px;
-  }
-}
-
-.towerSummary {
-  -webkit-box-orient: vertical;
-  color: $ink-soft;
-  display: -webkit-box;
-  font-size: 15px;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-  margin: 0;
-  overflow: hidden;
-}
-
-.rules {
-  color: $ink-soft;
-  display: flex;
-  flex-direction: column;
-  font-size: 15px;
-  gap: 6px;
-  margin: 0;
-  padding-left: 20px;
-}
-
 /* Story headers */
 
 .storyHeader {
@@ -290,7 +236,8 @@ $serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
   text-align: center;
 
   h1 {
-    font-size: clamp(30px, 4vw, 44px);
+    font-family: $display;
+    font-size: clamp(36px, 5vw, 54px);
     font-weight: 600;
     margin: 4px 0 8px;
   }
@@ -303,11 +250,6 @@ $serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
   line-height: 1.55;
   margin: 0;
   max-width: 720px;
-}
-
-.endIcon {
-  color: $jade;
-  margin-bottom: 6px;
 }
 
 /* Portraits */
@@ -402,12 +344,38 @@ $serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
 .cardButton {
   cursor: pointer;
   transition:
-    transform 140ms ease,
-    box-shadow 140ms ease;
+    transform 260ms $ease-spring,
+    box-shadow 220ms $ease-out,
+    border-color 160ms ease;
+
+  &::after {
+    background: linear-gradient(115deg, transparent 35%, rgba(#fff, 0.55) 50%, transparent 65%);
+    content: "";
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    transform: translateX(-60%);
+    transition:
+      transform 600ms $ease-out,
+      opacity 200ms ease;
+  }
 
   &:hover {
-    box-shadow: 0 10px 18px rgba($jade-dark, 0.2);
-    transform: translateY(-6px) rotate(-1deg);
+    border-color: $gold;
+    box-shadow:
+      0 18px 30px rgba($jade-dark, 0.25),
+      0 0 0 3px rgba($gold, 0.25);
+    transform: translateY(-10px) rotate(-1.5deg) scale(1.03);
+
+    &::after {
+      opacity: 1;
+      transform: translateX(60%);
+    }
+  }
+
+  &:active {
+    transform: translateY(-4px) scale(0.99);
   }
 
   &:focus-visible {
@@ -519,9 +487,27 @@ $serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
 .cardChoices {
   display: flex;
   flex-wrap: wrap;
-  gap: 18px;
+  gap: 22px;
   justify-content: center;
-  padding: 8px 0;
+  padding: 12px 0;
+  perspective: 900px;
+
+  > * {
+    animation: card-deal 620ms $ease-spring both;
+  }
+
+  @for $index from 1 through 4 {
+    > :nth-child(#{$index}) {
+      animation-delay: #{120 + ($index - 1) * 110}ms;
+    }
+  }
+}
+
+@keyframes card-deal {
+  from {
+    opacity: 0;
+    transform: translateY(40px) rotateY(-70deg) scale(0.85);
+  }
 }
 
 /* Coreborn offers */
@@ -530,17 +516,35 @@ $serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
   display: flex;
   flex-direction: column;
   gap: 16px;
+
+  @for $index from 1 through 6 {
+    > :nth-child(#{$index}) {
+      --i: #{$index};
+    }
+  }
 }
 
 .offer {
+  @include rise(18px);
+
   align-items: flex-start;
-  background: rgba($paper, 0.65);
-  border: 1px solid rgba($stone, 0.4);
+  background:
+    radial-gradient(ellipse at 0% 0%, rgba($sage, 0.22), transparent 45%),
+    rgba($paper, 0.65);
+  border: 1.5px solid rgba($stone, 0.4);
   border-radius: $leaf-radius;
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 16px;
+  transition:
+    border-color 200ms ease,
+    box-shadow 240ms $ease-out;
+
+  &:hover {
+    border-color: rgba($jade, 0.7);
+    box-shadow: 0 12px 28px rgba($jade-dark, 0.12);
+  }
 }
 
 .offerHeader {
@@ -622,103 +626,6 @@ $serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* Tower progress */
-
-.campTop {
-  align-items: center;
-  display: flex;
-  gap: 16px;
-  justify-content: space-between;
-}
-
-.progress {
-  display: flex;
-  flex: 1;
-  gap: 6px;
-  list-style: none;
-  margin: 0;
-  overflow-x: auto;
-  padding: 0;
-}
-
-.progressFloor {
-  align-items: center;
-  background: rgba($paper-light, 0.7);
-  border: 1.5px solid rgba($stone, 0.5);
-  border-radius: 4px 14px;
-  color: $ink-soft;
-  display: flex;
-  flex: 1 0 auto;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 92px;
-  padding: 6px 8px;
-}
-
-.progressNumber {
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.progressReward {
-  align-items: center;
-  display: inline-flex;
-  font-size: 12px;
-  gap: 4px;
-  white-space: nowrap;
-}
-
-.progressCleared {
-  background: rgba($sage, 0.3);
-  opacity: 0.7;
-}
-
-.progressCurrent {
-  background: $paper-light;
-  border-color: $jade;
-  box-shadow: 0 0 0 3px rgba($jade, 0.25);
-  color: $ink;
-}
-
-.progressBoss {
-  border-color: $gold;
-}
-
-/* Room */
-
-.roomBanner {
-  background:
-    linear-gradient(90deg, rgba($paper-light, 0.96) 30%, rgba($paper-light, 0.55) 70%, rgba($paper-light, 0.2)),
-    var(--room-image, radial-gradient(ellipse at 80% 40%, rgba($sage, 0.6), transparent 60%)) center / cover no-repeat,
-    $paper;
-  border: 1.5px solid rgba($stone, 0.6);
-  border-radius: $leaf-radius;
-  min-height: 220px;
-  overflow: hidden;
-}
-
-.roomBannerText {
-  max-width: 560px;
-  padding: 24px 26px;
-
-  h1 {
-    font-size: 34px;
-    font-weight: 600;
-    margin: 0 0 8px;
-  }
-
-  p {
-    color: $ink-soft;
-    font-size: 16px;
-    margin: 0 0 8px;
-  }
-}
-
-.rewardLine {
-  color: $jade-dark !important;
-  font-weight: 600;
 }
 
 /* Enemies */
@@ -804,16 +711,39 @@ $serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
   background: rgba($paper, 0.7);
   border: 1.5px solid rgba($stone, 0.5);
   border-radius: $leaf-radius;
-  cursor: grab;
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-width: 138px;
   padding: 10px;
+  transition:
+    box-shadow 220ms $ease-out,
+    border-color 200ms ease,
+    opacity 200ms ease;
+}
+
+.memberMovable {
+  cursor: grab;
+
+  &:hover {
+    border-color: rgba($jade, 0.7);
+    box-shadow: 0 10px 22px rgba($jade-dark, 0.14);
+  }
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.memberCultivator {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba($jade-glow, 0.25), transparent 60%),
+    rgba($paper-light, 0.85);
+  border-color: rgba($jade, 0.6);
 }
 
 .memberDragging {
-  opacity: 0.4;
+  opacity: 0.35;
 }
 
 .memberPosition {
@@ -866,9 +796,10 @@ $serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
 }
 
 .healthBar {
-  background: linear-gradient(90deg, var(--accent, #{$jade}) var(--fill, 100%), rgba($stone, 0.35) var(--fill, 100%));
+  background: linear-gradient(90deg, var(--hp-color, var(--accent, #{$jade})) var(--fill, 100%), rgba($stone, 0.35) var(--fill, 100%));
   border: 1px solid $stone-dark;
   border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(#fff, 0.3);
   color: #fff;
   font-size: 11px;
   text-align: center;
@@ -886,8 +817,11 @@ $serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
 
 .merge {
   align-items: center;
-  background: rgba($paper, 0.65);
-  border: 1px solid rgba($gold, 0.5);
+  animation: merge-ready 2.6s ease-in-out infinite;
+  background:
+    radial-gradient(ellipse at 0% 50%, rgba($gold-light, 0.35), transparent 55%),
+    rgba($paper, 0.65);
+  border: 1.5px solid rgba($gold, 0.6);
   border-radius: $leaf-radius;
   display: flex;
   flex-wrap: wrap;
@@ -914,6 +848,17 @@ $serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
   display: flex;
   flex: 1;
   gap: 10px;
+}
+
+@keyframes merge-ready {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba($gold, 0);
+  }
+
+  50% {
+    box-shadow: 0 0 0 5px rgba($gold, 0.18);
+  }
 }
 
 /* Deck */
@@ -961,11 +906,15 @@ $serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
   flex-direction: column;
   font-family: $serif;
   gap: 6px;
-  padding: 20px;
-  transition: transform 140ms ease;
+  padding: 24px 20px;
+  transition:
+    transform 260ms $ease-spring,
+    box-shadow 220ms $ease-out,
+    border-color 160ms ease;
 
   svg {
     color: $jade;
+    transition: transform 300ms $ease-spring;
   }
 
   strong {
@@ -979,8 +928,15 @@ $serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
 
   &:hover {
     border-color: $jade;
-    transform: translateY(-3px);
+    box-shadow: 0 14px 28px rgba($jade-dark, 0.16);
+    transform: translateY(-5px);
+
+    svg {
+      transform: scale(1.2);
+    }
   }
+
+  @include focus-ring;
 }
 
 /* End */
@@ -1010,16 +966,434 @@ $serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
 }
 
 .endActions {
+  align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   justify-content: center;
-  margin-top: 16px;
+  margin-top: 6px;
+}
+
+/* Room hero */
+
+.roomHero {
+  background: $night-mid;
+  border-radius: $leaf-radius;
+  box-shadow: 0 16px 40px rgba($night, 0.25);
+  color: $paper-light;
+  min-height: 280px;
+  overflow: hidden;
+  position: relative;
+}
+
+.roomHeroArt {
+  animation: room-drift 28s ease-in-out infinite alternate;
+  background:
+    var(--room-image, radial-gradient(ellipse at 75% 40%, rgba($sage, 0.9), $jade-dark 70%)) center / cover no-repeat;
+  inset: -4%;
+  position: absolute;
+}
+
+@keyframes room-drift {
+  from {
+    transform: scale(1.02) translate(-1%, 0);
+  }
+
+  to {
+    transform: scale(1.1) translate(1.5%, -1%);
+  }
+}
+
+.roomHeroText {
+  background: linear-gradient(90deg, rgba($night, 0.82) 0%, rgba($night, 0.55) 45%, transparent 80%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  inset: 0;
+  justify-content: flex-end;
+  padding: 28px 30px;
+  position: absolute;
+
+  .eyebrow {
+    color: $jade-glow;
+    letter-spacing: 0.2em;
+  }
+
+  h1 {
+    font-family: $display;
+    font-size: clamp(34px, 5vw, 52px);
+    font-weight: 600;
+    line-height: 1;
+    margin: 0;
+    max-width: 640px;
+    text-shadow: 0 2px 20px rgba($night, 0.6);
+  }
+
+  p {
+    color: rgba($paper, 0.88);
+    font-size: 16px;
+    margin: 0;
+    max-width: 560px;
+  }
+}
+
+.roomHeroBoss {
+  box-shadow:
+    0 0 0 2px rgba($gold, 0.7),
+    0 16px 50px rgba($gold, 0.25);
+
+  .eyebrow {
+    color: $gold-light;
+  }
+}
+
+.rewardChip {
+  align-items: center;
+  align-self: flex-start;
+  backdrop-filter: blur(6px);
+  background: rgba($paper-light, 0.16);
+  border: 1px solid rgba($paper-light, 0.35);
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 14px;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 5px 14px;
+}
+
+/* Floor track */
+
+.progress {
+  display: flex;
+  gap: 0;
+  justify-content: space-between;
+  list-style: none;
+  margin: 0;
+  padding: 0 6px;
+  position: relative;
+
+  &::before,
+  &::after {
+    border-radius: 2px;
+    content: "";
+    height: 3px;
+    left: 20px;
+    position: absolute;
+    top: 15px;
+  }
+
+  &::before {
+    background: rgba($stone, 0.35);
+    right: 20px;
+  }
+
+  &::after {
+    background: linear-gradient(90deg, $jade, $jade-glow);
+    transition: width 900ms $ease-out;
+    width: calc((100% - 40px) * var(--progress, 0%) / 100%);
+  }
+}
+
+.progressFloor {
+  align-items: center;
+  color: $ink-soft;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  position: relative;
+  z-index: 1;
+}
+
+.progressNode {
+  align-items: center;
+  background: $paper-light;
+  border: 2px solid rgba($stone, 0.6);
+  border-radius: 50%;
+  display: flex;
+  height: 32px;
+  justify-content: center;
+  transition:
+    transform 300ms $ease-spring,
+    background 300ms ease;
+  width: 32px;
+}
+
+.progressNumber {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.progressCleared .progressNode {
+  background: $jade;
+  border-color: $jade-dark;
+  color: #fff;
+}
+
+.progressCurrent {
+  color: $ink;
+  font-weight: 700;
+
+  .progressNode {
+    animation: node-pulse 2s ease-in-out infinite;
+    border-color: $jade;
+    color: $jade-dark;
+    transform: scale(1.18);
+  }
+}
+
+@keyframes node-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba($jade, 0.45);
+  }
+
+  50% {
+    box-shadow: 0 0 0 7px rgba($jade, 0);
+  }
+}
+
+.progressBoss .progressNode {
+  border-color: $gold;
+  color: #8a6a22;
+}
+
+/* Camp actions */
+
+.actionBar {
+  align-items: center;
+  animation: none !important;
+  backdrop-filter: blur(8px);
+  background: rgba($paper-light, 0.85);
+  border: 1.5px solid rgba($stone, 0.45);
+  border-radius: 999px;
+  bottom: 18px;
+  box-shadow: 0 14px 40px rgba($night, 0.18);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin: 0 auto;
+  padding: 8px 8px 8px 12px;
+  position: sticky;
+  width: min(560px, 100%);
+  z-index: 10;
+
+  .bigButton {
+    animation: cta-glow 2.8s ease-in-out infinite;
+    border-radius: 999px;
+    flex: 1;
+  }
+}
+
+@keyframes cta-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 3px 0 rgba($jade-dark, 0.45),
+      0 0 0 0 rgba($jade-glow, 0);
+  }
+
+  50% {
+    box-shadow:
+      0 3px 0 rgba($jade-dark, 0.45),
+      0 0 22px 4px rgba($jade-glow, 0.45);
+  }
+}
+
+.deckButton {
+  border-radius: 999px;
+}
+
+.deckModalBody {
+  .deck {
+    margin-top: 0;
+  }
+}
+
+.pickLeaves {
+  display: inline-flex;
+  gap: 4px;
+
+  svg {
+    transition: transform 400ms $ease-spring;
+  }
+}
+
+/* Rewards and the end */
+
+.clearedSeal {
+  align-items: center;
+  animation: seal-stamp 700ms $ease-spring both;
+  background: radial-gradient(circle at 40% 35%, $jade-glow, $jade 60%, $jade-dark);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 6px rgba($jade, 0.15),
+    0 10px 24px rgba($jade-dark, 0.3);
+  color: #fff;
+  display: flex;
+  font-family: $display;
+  font-size: 30px;
+  font-weight: 700;
+  height: 64px;
+  justify-content: center;
+  margin-bottom: 10px;
+  width: 64px;
+}
+
+@keyframes seal-stamp {
+  from {
+    opacity: 0;
+    transform: scale(2.2) rotate(-25deg);
+  }
+}
+
+.endScreen {
+  max-width: 860px;
+}
+
+.endEmblem {
+  align-items: center;
+  animation: seal-stamp 900ms $ease-spring both;
+  border-radius: 50%;
+  display: flex;
+  height: 96px;
+  justify-content: center;
+  margin-bottom: 10px;
+  width: 96px;
+}
+
+.endVictory .endEmblem {
+  background: radial-gradient(circle at 40% 35%, #fff4cf, $gold-light 45%, $gold);
+  box-shadow:
+    0 0 0 8px rgba($gold, 0.18),
+    0 0 60px rgba($gold-light, 0.7);
+  color: #6b4f12;
+}
+
+.endDefeat .endEmblem {
+  background: radial-gradient(circle at 40% 35%, $paper-light, $sage 70%, $stone);
+  box-shadow: 0 0 0 8px rgba($stone, 0.18);
+  color: $jade-dark;
+}
+
+.tallyPanel h2 {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+
+  svg {
+    color: $jade;
+  }
+}
+
+.tally {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+}
+
+.tallyLine,
+.tallyTotal {
+  align-items: baseline;
+  display: flex;
+  justify-content: space-between;
+
+  dt {
+    color: $ink-soft;
+  }
+
+  dd {
+    font-variant-numeric: tabular-nums;
+    margin: 0;
+  }
+}
+
+.tallyLine {
+  @include rise(6px);
+
+  animation-delay: calc(300ms + var(--i, 0) * 260ms);
+  border-bottom: 1px dashed rgba($stone, 0.35);
+  font-size: 16px;
+  padding: 4px 0;
+
+  dd {
+    color: $jade-dark;
+    font-weight: 600;
+  }
+}
+
+.tallyTotal {
+  font-family: $display;
+  font-size: 26px;
+  padding-top: 8px;
+
+  dt {
+    color: $ink;
+  }
+
+  dd {
+    color: $jade-dark;
+    font-size: 40px;
+    font-weight: 700;
+  }
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.badge {
+  align-items: center;
+  animation: seal-stamp 600ms $ease-spring 1.6s both;
+  background: rgba($jade, 0.14);
+  border: 1px solid rgba($jade, 0.4);
+  border-radius: 999px;
+  color: $jade-dark;
+  display: inline-flex;
+  font-size: 14px;
+  gap: 6px;
+  padding: 4px 12px;
+}
+
+.badgeGold {
+  background: rgba($gold, 0.18);
+  border-color: rgba($gold, 0.6);
+  color: #6b4f12;
+}
+
+/* Battle overlay */
+
+.battlePause {
+  align-items: center;
+  backdrop-filter: blur(6px);
+  background: rgba($paper-light, 0.75);
+  border: 1.5px solid rgba($stone, 0.6);
+  border-radius: 50%;
+  color: $ink;
+  cursor: pointer;
+  display: flex;
+  height: 42px;
+  justify-content: center;
+  left: 16px;
+  position: fixed;
+  top: 16px;
+  transition: transform 200ms $ease-out;
+  width: 42px;
+  z-index: 50;
+
+  &:hover {
+    transform: scale(1.08);
+  }
+
+  @include focus-ring;
 }
 
 @media (width <= 720px) {
-  .towerChoice,
-  .offerHeader,
-  .campTop {
+  .offerHeader {
     align-items: flex-start;
     flex-direction: column;
   }

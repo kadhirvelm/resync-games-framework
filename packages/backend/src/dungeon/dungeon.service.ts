@@ -347,6 +347,16 @@ export class DungeonService {
  * @returns The slot stored in the package file
  */
 function toStoredSlot(slot: PlannedDungeonSlot): StoredDungeonSlot {
+  if (slot.kind === "sprite-sheet") {
+    return {
+      characterSlotId: slot.characterSlotId,
+      id: slot.id,
+      kind: slot.kind,
+      prompt: slot.prompt,
+      status: "planned",
+      title: slot.title,
+    };
+  }
   if (slot.kind === "playable-card") {
     return {
       characterSlotId: slot.characterSlotId,
@@ -380,6 +390,9 @@ function slotLabel(kind: DungeonSlotKind): string {
   }
   if (kind === "enemy") {
     return "enemy";
+  }
+  if (kind === "sprite-sheet") {
+    return "sprite sheet";
   }
   return "playable card";
 }

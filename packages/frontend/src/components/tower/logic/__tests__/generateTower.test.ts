@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { BUILT_IN_TOWER } from "../builtInContent";
 import {
+  ascensionScale,
   FLOOR_PLANS,
   generateTower,
   planRewards,
@@ -60,5 +61,25 @@ describe("planRewards", () => {
         expect(reward).not.toBe(rewards[index]);
       });
     }
+  });
+});
+
+describe("ascension", () => {
+  test("higher ascensions scale every enemy up from the same seed", () => {
+    const plain = generateTower(BUILT_IN_TOWER, new SeededRandom(8));
+    const ascended = generateTower(BUILT_IN_TOWER, new SeededRandom(8), 3);
+    plain.forEach((room, roomIndex) => {
+      room.enemies.forEach((enemy, enemyIndex) => {
+        const harder = ascended[roomIndex]?.enemies[enemyIndex];
+        expect(harder?.templateId).toBe(enemy.templateId);
+        expect(harder?.maxHitPoints ?? 0).toBeGreaterThan(enemy.maxHitPoints);
+      });
+    });
+  });
+
+  test("the scale is clamped to the supported levels", () => {
+    expect(ascensionScale(0)).toEqual({ attack: 1, hitPoints: 1 });
+    expect(ascensionScale(-2)).toEqual({ attack: 1, hitPoints: 1 });
+    expect(ascensionScale(99)).toEqual(ascensionScale(5));
   });
 });

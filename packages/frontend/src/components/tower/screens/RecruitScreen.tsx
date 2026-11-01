@@ -1,5 +1,6 @@
 import type { RunState, TowerContent } from "../logic/towerTypes";
 import { CorebornOffer } from "../parts/CorebornOffer";
+import { LeafIcon } from "../parts/LeafIcon";
 import styles from "../tower.module.scss";
 import { offeredTemplates, ownedTemplateCounts } from "./offerHelpers";
 
@@ -25,6 +26,8 @@ export const RecruitScreen = ({
 }: RecruitScreenProps) => {
   const offer =
     run.pendingReward?.kind === "coreborn" ? run.pendingReward.templateIds : [];
+  const picked = run.stats.recruited;
+  const totalPicks = picked + run.initialRecruits;
   return (
     <main className={styles.screen}>
       <header className={styles.storyHeader}>
@@ -33,10 +36,25 @@ export const RecruitScreen = ({
         <p className={styles.story}>{content.summary}</p>
       </header>
       <section className={styles.panel}>
-        <h2>
-          Choose {run.initialRecruits}{" "}
-          {run.initialRecruits === 1 ? "Coreborn" : "more Coreborn"} to join you
-        </h2>
+        <div className={styles.panelHeaderRow}>
+          <h2>
+            Choose {run.initialRecruits}{" "}
+            {run.initialRecruits === 1 && picked > 0
+              ? "more Coreborn"
+              : "Coreborn"}{" "}
+            to join you
+          </h2>
+          <span
+            aria-label={`${picked} of ${totalPicks} chosen`}
+            className={styles.pickLeaves}
+            role="img"
+          >
+            {Array.from({ length: totalPicks }, (_, index) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: picks are positional
+              <LeafIcon filled={index < picked} key={index} size={22} />
+            ))}
+          </span>
+        </div>
         <p className={styles.muted}>
           Every Coreborn brings two copies of its tier 1 card and steps in at
           the front of the party. You may recruit the same one twice to merge it

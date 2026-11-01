@@ -8,13 +8,16 @@ import {
   CULTIVATOR_MEMBER_ID,
   type HealthRewardOption,
   MAX_TIER,
+  NO_RUN_MODIFIERS,
   type PartyMember,
   type RewardOffer,
   type RoomRewardKind,
+  type RunModifiers,
   type RunState,
   type TierNumber,
   type TowerContent,
   type TowerRoom,
+  type UnitSprite,
 } from "./towerTypes";
 
 /** Coreborn the player drafts before the first room. */
@@ -32,31 +35,67 @@ export const FORTIFY_AMOUNT = 6;
 /** Options shown for Coreborn, card, and technique rewards. */
 const OFFER_SIZE = 3;
 
+/** Coreborn shown in the opening draft before any cultivation bonus. */
+export const BASE_DRAFT_SIZE = 4;
+
+/** How a climb starts: its ascension and the player's cultivation bonuses. */
+export interface RunOptions {
+  ascension: number;
+  /** Maximum health added to the cultivator */
+  cultivatorBonusHitPoints: number;
+  /** Extra Coreborn shown in the opening draft */
+  extraDraftOptions: number;
+  /** Random techniques added to the starting deck */
+  extraTechniques: number;
+  modifiers: RunModifiers;
+}
+
+/** A plain climb: no ascension and no bonuses. */
+export const DEFAULT_RUN_OPTIONS: RunOptions = {
+  ascension: 0,
+  cultivatorBonusHitPoints: 0,
+  extraDraftOptions: 0,
+  extraTechniques: 0,
+  modifiers: NO_RUN_MODIFIERS,
+};
+
 /**
  * Starts a climb: generates the rooms and opens the initial Coreborn draft.
  * @param content - Tower to climb
  * @param seed - Seed for every random choice in this run
+ * @param options - Ascension and cultivation bonuses. Defaults to none.
  * @returns A run waiting for the player to recruit
  */
-export function startRun(content: TowerContent, seed: number): RunState {
+export function startRun(
+  content: TowerContent,
+  seed: number,
+  options: RunOptions = DEFAULT_RUN_OPTIONS,
+): RunState {
   const random = new SeededRandom(seed);
-  const rooms = generateTower(content, random);
+  const rooms = generateTower(content, random, options.ascension);
   const draft = random
     .shuffle(content.coreborn)
-    .slice(0, Math.max(OFFER_SIZE, 4))
+    .slice(0, BASE_DRAFT_SIZE + options.extraDraftOptions)
     .map((template) => template.id);
+  const bonusTechniques = random
+    .shuffle(content.techniques)
+    .slice(0, options.extraTechniques);
+  const cultivatorHitPoints =
+    content.cultivator.maxHitPoints + options.cultivatorBonusHitPoints;
   return {
-    cultivatorDeck: [...content.cultivator.starterDeck],
+    ascension: options.ascension,
+    cultivatorDeck: [...content.cultivator.starterDeck, ...bonusTechniques],
     floorIndex: 0,
     initialRecruits: Math.min(INITIAL_RECRUITS, content.coreborn.length),
+    modifiers: { ...options.modifiers },
     nextMemberNumber: 1,
     party: [
       {
         cardCopies: 0,
-        hitPoints: content.cultivator.maxHitPoints,
+        hitPoints: cultivatorHitPoints,
         id: CULTIVATOR_MEMBER_ID,
         kind: "cultivator",
-        maxHitPoints: content.cultivator.maxHitPoints,
+        maxHitPoints: cultivatorHitPoints,
         templateId: "",
         tier: 1,
       },
@@ -107,7 +146,9 @@ export function recruitCoreborn(
   if (!template || (run.phase !== "recruit" && run.phase !== "reward")) {
     return run;
   }
-  const maxHitPoints = tierHitPoints(template.baseHitPoints, 1);
+  const maxHitPoints =
+    tierHitPoints(template.baseHitPoints, 1) +
+    run.modifiers.corebornBonusHitPoints;
   const member: PartyMember = {
     cardCopies: BASE_CARD_COPIES,
     hitPoints: maxHitPoints,
@@ -231,7 +272,9 @@ export function mergeCoreborn(
     MAX_TIER,
     Math.max(keep.tier, consume.tier) + 1,
   ) as TierNumber;
-  const maxHitPoints = tierHitPoints(template.baseHitPoints, tier);
+  const maxHitPoints =
+    tierHitPoints(template.baseHitPoints, tier) +
+    run.modifiers.corebornBonusHitPoints;
   const extraCopies =
     keep.cardCopies -
     BASE_CARD_COPIES +
@@ -314,6 +357,8 @@ export function memberCard(
 export interface MemberProfile {
   name: string;
   portraitUrl?: string;
+  /** Animated battle figure, when the Coreborn has one */
+  sprite?: UnitSprite;
   /** Tier title, or the cultivator's title */
   title: string;
 }
@@ -321,7 +366,7 @@ export interface MemberProfile {
 /**
  * @param member - Party member
  * @param content - Tower content
- * @returns Name, tier title, and portrait to draw
+ * @returns Name, tier title, portrait, and battle sprite to draw
  */
 export function memberProfile(
   member: PartyMember,
@@ -339,6 +384,7 @@ export function memberProfile(
   return {
     name: template?.name ?? "Coreborn",
     portraitUrl: tier?.portraitUrl,
+    sprite: template?.sprite,
     title: tier?.title ?? `Tier ${member.tier}`,
   };
 }
@@ -361,6 +407,7 @@ export function combatSetup(run: RunState, content: TowerContent): CombatSetup {
       maxHitPoints: member.maxHitPoints,
       name: profile.name,
       portraitUrl: profile.portraitUrl,
+      sprite: profile.sprite,
       tier: member.tier,
     };
   });
@@ -429,6 +476,9 @@ export function finishBattle(
   }
   const won: RunState = {
     ...settled,
+    party: settled.party.map((member) =>
+      recoverHealth(member, run.modifiers.respiteHealing),
+    ),
     stats: { ...settled.stats, battlesWon: settled.stats.battlesWon + 1 },
   };
   const room = currentRoom(run);
@@ -441,6 +491,49 @@ export function finishBattle(
     ...won,
     pendingReward,
     phase: "reward",
+    randomState: random.state,
+  };
+}
+
+/**
+ * @param member - Party member after a battle
+ * @param amount - Health to restore
+ * @returns The member healed, never above its maximum
+ */
+function recoverHealth(member: PartyMember, amount: number): PartyMember {
+  if (amount <= 0) {
+    return member;
+  }
+  return {
+    ...member,
+    hitPoints: Math.min(member.maxHitPoints, member.hitPoints + amount),
+  };
+}
+
+/**
+ * Spends one reroll to draw a fresh offer of the same kind.
+ * @param run - Run showing a reward
+ * @param content - Tower content
+ * @returns The run with a new offer and one fewer reroll, or the same run
+ * when no reroll is left or there is nothing to reroll
+ */
+export function rerollReward(run: RunState, content: TowerContent): RunState {
+  const room = currentRoom(run);
+  const offer = run.pendingReward;
+  if (run.phase !== "reward" || run.modifiers.rerollsLeft <= 0) {
+    return run;
+  }
+  if (!room?.reward || !offer || offer.kind === "health") {
+    return run;
+  }
+  const random = new SeededRandom(run.randomState);
+  return {
+    ...run,
+    modifiers: {
+      ...run.modifiers,
+      rerollsLeft: run.modifiers.rerollsLeft - 1,
+    },
+    pendingReward: buildRewardOffer(run, content, room.reward, random),
     randomState: random.state,
   };
 }
@@ -605,4 +698,17 @@ function advanceFloor(run: RunState): RunState {
     pendingReward: undefined,
     phase: "camp",
   };
+}
+
+/**
+ * Gives up the climb. It ends like a defeat on the current floor, so the
+ * floors already cleared still count toward essence and records.
+ * @param run - Current climb
+ * @returns The run ended in defeat, or the same run when it already ended
+ */
+export function abandonRun(run: RunState): RunState {
+  if (run.phase === "victory" || run.phase === "defeat") {
+    return run;
+  }
+  return { ...run, pendingReward: undefined, phase: "defeat" };
 }

@@ -4,12 +4,18 @@ import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import clsx from "clsx";
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Cormorant_Garamond, Inter } from "next/font/google";
 import styles from "./layout.module.scss";
 
 export const metadata: Metadata = {
   title: "Towers of Coreborn",
 };
+
+const display = Cormorant_Garamond({
+  subsets: ["latin"],
+  variable: "--font-display",
+  weight: ["500", "600", "700"],
+});
 
 const font = Inter({
   subsets: ["latin"],
@@ -24,7 +30,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={clsx(styles.body, font.className)}>
+      <body className={clsx(styles.body, font.className, display.variable)}>
         <Theme className={styles.entryPoint}>
           {children}
           <Analytics />

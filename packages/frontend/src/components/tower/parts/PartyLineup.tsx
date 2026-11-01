@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { ChevronLeft, ChevronRight, Swords } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { playSound } from "../audio/sound";
 import { memberCard, memberProfile } from "../logic/run";
 import type { RunState, TowerContent } from "../logic/towerTypes";
 import {
@@ -11,11 +12,14 @@ import {
 import styles from "../tower.module.scss";
 import { TierLeaves } from "./TierLeaves";
 import { UnitPortrait } from "./UnitPortrait";
+import { useFlip } from "./useFlip";
 
 interface PartyLineupProps {
   content: TowerContent;
   /** Omit to show the lineup read-only */
   onMove?: (fromIndex: number, toIndex: number) => void;
+  /** Snap instead of sliding when the order changes */
+  reducedMotion?: boolean;
   run: RunState;
 }
 
@@ -38,13 +42,38 @@ function positionLabel(index: number, size: number): string {
  * The party in battle order, drawn exactly as it will stand: back on the
  * left, front on the right facing the enemies. Drag a member, or use the
  * arrows, to reorder.
+ * Members slide to their new places when the order changes.
  * @param content - Tower content
  * @param onMove - Moves a member from one position to another
+ * @param reducedMotion - Snap instead of sliding
  * @param run - Current run
  * @returns The lineup
  */
-export const PartyLineup = ({ content, onMove, run }: PartyLineupProps) => {
+export const PartyLineup = ({
+  content,
+  onMove,
+  reducedMotion = false,
+  run,
+}: PartyLineupProps) => {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const row = useRef<HTMLOListElement>(null);
+  useFlip(
+    row,
+    run.party.map((member) => `${member.id}:${member.tier}`).join(","),
+    reducedMotion,
+  );
+
+  /**
+   * @param fromIndex - Current position
+   * @param toIndex - New position
+   */
+  const move = (fromIndex: number, toIndex: number) => {
+    if (!onMove || fromIndex === toIndex) {
+      return;
+    }
+    playSound("select");
+    onMove(fromIndex, toIndex);
+  };
   const size = run.party.length;
   const accentParty = run.party.map((member) => ({
     isCultivator: member.kind === "cultivator",
@@ -55,7 +84,11 @@ export const PartyLineup = ({ content, onMove, run }: PartyLineupProps) => {
 
   return (
     <div className={styles.lineup}>
-      <ol aria-label="Party order, back to front" className={styles.lineupRow}>
+      <ol
+        aria-label="Party order, back to front"
+        className={styles.lineupRow}
+        ref={row}
+      >
         {displayed.map(({ index, member }) => {
           const profile = memberProfile(member, content);
           const card =
@@ -67,16 +100,19 @@ export const PartyLineup = ({ content, onMove, run }: PartyLineupProps) => {
             <li
               className={clsx(
                 styles.member,
+                onMove && styles.memberMovable,
+                member.kind === "cultivator" && styles.memberCultivator,
                 dragIndex === index && styles.memberDragging,
               )}
+              data-flip-key={member.id}
               draggable={onMove !== undefined}
               key={member.id}
               onDragEnd={() => setDragIndex(null)}
               onDragOver={(event) => event.preventDefault()}
               onDragStart={() => setDragIndex(index)}
               onDrop={() => {
-                if (dragIndex !== null && onMove) {
-                  onMove(dragIndex, index);
+                if (dragIndex !== null) {
+                  move(dragIndex, index);
                 }
                 setDragIndex(null);
               }}
@@ -106,6 +142,10 @@ export const PartyLineup = ({ content, onMove, run }: PartyLineupProps) => {
                   {
                     "--accent": accent,
                     "--fill": `${(member.hitPoints / member.maxHitPoints) * 100}%`,
+                    "--hp-color":
+                      member.hitPoints / member.maxHitPoints < 0.35
+                        ? "#b5543f"
+                        : accent,
                   } as React.CSSProperties
                 }
               >
@@ -123,7 +163,7 @@ export const PartyLineup = ({ content, onMove, run }: PartyLineupProps) => {
                   <button
                     aria-label={`Move ${profile.name} back`}
                     disabled={index === size - 1}
-                    onClick={() => onMove(index, index + 1)}
+                    onClick={() => move(index, index + 1)}
                     type="button"
                   >
                     <ChevronLeft size={16} />
@@ -131,7 +171,7 @@ export const PartyLineup = ({ content, onMove, run }: PartyLineupProps) => {
                   <button
                     aria-label={`Move ${profile.name} forward`}
                     disabled={index === 0}
-                    onClick={() => onMove(index, index - 1)}
+                    onClick={() => move(index, index - 1)}
                     type="button"
                   >
                     <ChevronRight size={16} />

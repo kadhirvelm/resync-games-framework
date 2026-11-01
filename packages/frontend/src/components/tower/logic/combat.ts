@@ -9,6 +9,7 @@ import type {
   EnemyMove,
   EnemySpawn,
   TierNumber,
+  UnitSprite,
 } from "./towerTypes";
 
 /** Cards drawn at the start of every turn. */
@@ -38,6 +39,8 @@ export interface CombatUnit {
 export interface PartyUnit extends CombatUnit {
   isCultivator: boolean;
   portraitUrl?: string;
+  /** Animated figure drawn in place of the portrait, when one exists */
+  sprite?: UnitSprite;
   tier: TierNumber;
 }
 

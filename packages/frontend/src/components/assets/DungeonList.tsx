@@ -1,14 +1,15 @@
 "use client";
 
-import type {
-  DungeonBlueprint,
-  DungeonCardSlot,
-  DungeonSlot,
-} from "@towers-of-coreborn/api";
+import type { DungeonBlueprint, DungeonSlot } from "@towers-of-coreborn/api";
 import { Flex } from "@/lib/radix";
 import styles from "./Assets.module.scss";
 import { CopyableError } from "./CopyableError";
 import { DungeonSlotCard } from "./DungeonSlotCard";
+import {
+  cardsForCharacter,
+  slotsStartedWith,
+  spriteForCharacter,
+} from "./dungeonSlotGroups";
 import { type PendingJob, PendingJobCard } from "./PendingJobCard";
 
 interface DungeonListResult {
@@ -123,7 +124,8 @@ interface DungeonPackageProps {
 
 /**
  * One saved package: its JSON link, then rooms, enemies, and each character
- * with that character's card prompts.
+ * with that character's card prompts and battle sprite. Generating a
+ * character also starts its sprite.
  * @param dungeon - Package returned by the API
  * @param slotJobs - Runs that should show as generating on their prompt
  * @param onGenerateSlot - Starts one prompt's agent
@@ -147,6 +149,14 @@ function DungeonPackage({
   const readyCount = dungeon.slots.filter(
     (slot) => slot.status === "ready",
   ).length;
+  const generateSlot =
+    onGenerateSlot === undefined
+      ? undefined
+      : (dungeonId: string, slot: DungeonSlot) => {
+          for (const started of slotsStartedWith(slot, dungeon.slots)) {
+            onGenerateSlot(dungeonId, started);
+          }
+        };
 
   return (
     <section className={styles.dungeonSetup}>
@@ -171,7 +181,7 @@ function DungeonPackage({
             dungeonId={dungeon.id}
             key={slot.id}
             onAssociate={onAssociateSlot}
-            onGenerate={onGenerateSlot}
+            onGenerate={generateSlot}
             onStop={onStopSlot}
             slot={slot}
             slotJob={jobForSlot(slotJobs, slot.id)}
@@ -186,7 +196,7 @@ function DungeonPackage({
             dungeonId={dungeon.id}
             key={slot.id}
             onAssociate={onAssociateSlot}
-            onGenerate={onGenerateSlot}
+            onGenerate={generateSlot}
             onStop={onStopSlot}
             slot={slot}
             slotJob={jobForSlot(slotJobs, slot.id)}
@@ -194,53 +204,49 @@ function DungeonPackage({
           />
         ))}
       </div>
-      {characters.map((character) => (
-        <article className={styles.dungeonCharacter} key={character.id}>
-          <DungeonSlotCard
-            dungeonId={dungeon.id}
-            onAssociate={onAssociateSlot}
-            onGenerate={onGenerateSlot}
-            onStop={onStopSlot}
-            slot={character}
-            slotJob={jobForSlot(slotJobs, character.id)}
-            slots={dungeon.slots}
-          />
-          <div className={styles.playableCardGrid}>
-            {cardsForCharacter(dungeon.slots, character.id).map((slot) => (
+      {characters.map((character) => {
+        const sprite = spriteForCharacter(dungeon.slots, character.id);
+        return (
+          <article className={styles.dungeonCharacter} key={character.id}>
+            <DungeonSlotCard
+              dungeonId={dungeon.id}
+              onAssociate={onAssociateSlot}
+              onGenerate={generateSlot}
+              onStop={onStopSlot}
+              slot={character}
+              slotJob={jobForSlot(slotJobs, character.id)}
+              slots={dungeon.slots}
+            />
+            {sprite !== undefined && (
               <DungeonSlotCard
                 dungeonId={dungeon.id}
-                key={slot.id}
                 onAssociate={onAssociateSlot}
-                onGenerate={onGenerateSlot}
+                onGenerate={generateSlot}
                 onStop={onStopSlot}
-                slot={slot}
-                slotJob={jobForSlot(slotJobs, slot.id)}
+                slot={sprite}
+                slotJob={jobForSlot(slotJobs, sprite.id)}
                 slots={dungeon.slots}
               />
-            ))}
-          </div>
-        </article>
-      ))}
+            )}
+            <div className={styles.playableCardGrid}>
+              {cardsForCharacter(dungeon.slots, character.id).map((slot) => (
+                <DungeonSlotCard
+                  dungeonId={dungeon.id}
+                  key={slot.id}
+                  onAssociate={onAssociateSlot}
+                  onGenerate={generateSlot}
+                  onStop={onStopSlot}
+                  slot={slot}
+                  slotJob={jobForSlot(slotJobs, slot.id)}
+                  slots={dungeon.slots}
+                />
+              ))}
+            </div>
+          </article>
+        );
+      })}
     </section>
   );
-}
-
-/**
- * @param slots - Every slot in the package
- * @param characterSlotId - Character the cards belong to
- * @returns That character's cards from level 1 through 4
- */
-function cardsForCharacter(
-  slots: readonly DungeonSlot[],
-  characterSlotId: string,
-): DungeonCardSlot[] {
-  return slots
-    .filter(
-      (slot): slot is DungeonCardSlot =>
-        slot.kind === "playable-card" &&
-        slot.characterSlotId === characterSlotId,
-    )
-    .sort((left, right) => (left.level ?? 0) - (right.level ?? 0));
 }
 
 /**

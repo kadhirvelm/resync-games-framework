@@ -2,6 +2,8 @@ import type {
   CardCharacterLevelNumber,
   EnemyActionKind,
   PlayableCardRules,
+  SpriteAnimationKind,
+  SpriteFacing,
 } from "@towers-of-coreborn/api";
 
 /** Coreborn tier from 1 through 4. Matches the four portrait levels. */
@@ -31,6 +33,35 @@ export interface CorebornTierDefinition {
   title: string;
 }
 
+/** One animation strip a battle sprite can play. */
+export interface UnitSpriteAnimation {
+  /** Frames per second */
+  fps: number;
+  frameCount: number;
+  /** Whether it repeats, like idle, or plays once */
+  loop: boolean;
+  /** URL of the horizontal PNG strip */
+  stripUrl: string;
+}
+
+/** Battle sprite moves. They match the sprite sheet's animation rows. */
+export type UnitSpriteMove = SpriteAnimationKind;
+
+/**
+ * An animated full-body figure that stands in for a unit's portrait in
+ * battle. Every strip shares one frame size and feet baseline.
+ */
+export interface UnitSprite {
+  /** Strips by move. A move without a strip falls back to idle. */
+  animations: Partial<Record<UnitSpriteMove, UnitSpriteAnimation>>;
+  /** Screen direction the painted figure faces */
+  facing: SpriteFacing;
+  frameHeight: number;
+  frameWidth: number;
+  /** Sprite-sheet id, shared by every unit that uses this figure */
+  id: string;
+}
+
 /** A recruitable ally. Copies in the party point back at this template. */
 export interface CorebornTemplate {
   /** Health at tier 1. Each tier above adds {@link TIER_HIT_POINT_BONUS}. */
@@ -39,6 +70,8 @@ export interface CorebornTemplate {
   id: string;
   name: string;
   role: CorebornRole;
+  /** Animated battle figure, when the character has a sprite sheet */
+  sprite?: UnitSprite;
   /** Index 0 is tier 1. Always four entries. */
   tiers: CorebornTierDefinition[];
 }
@@ -174,14 +207,37 @@ export interface RunStats {
   recruited: number;
 }
 
+/**
+ * Bonuses a climb starts with, from the player's permanent cultivation.
+ * Fixed when the climb begins.
+ */
+export interface RunModifiers {
+  /** Maximum health every newly recruited Coreborn gains */
+  corebornBonusHitPoints: number;
+  /** Rerolls left for reward offers this climb */
+  rerollsLeft: number;
+  /** Health every survivor recovers after each won battle */
+  respiteHealing: number;
+}
+
+/** A climb with no cultivation bonuses. */
+export const NO_RUN_MODIFIERS: RunModifiers = {
+  corebornBonusHitPoints: 0,
+  rerollsLeft: 0,
+  respiteHealing: 0,
+};
+
 /** One climb, from entry to death or the crown. */
 export interface RunState {
+  /** Ascension level from 0. Higher levels scale every enemy up. */
+  ascension: number;
   /** Cards the cultivator owns. One entry per copy. */
   cultivatorDeck: CardDefinition[];
   /** Index into `rooms` of the room being fought or prepared for */
   floorIndex: number;
   /** Offered at the start of the run: pick this many Coreborn. */
   initialRecruits: number;
+  modifiers: RunModifiers;
   /** Ordered front to back. The cultivator can stand anywhere. */
   party: PartyMember[];
   pendingReward?: RewardOffer;
