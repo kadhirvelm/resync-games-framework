@@ -1,0 +1,1030 @@
+/* Watercolor art direction: jade and sage washes, stone accents, paper surfaces, leaf-cornered frames. */
+
+$paper: #f3efe4;
+$paper-light: #fffdf6;
+$jade: #4e8f6a;
+$jade-dark: #2f5e45;
+$sage: #9db89a;
+$stone: #8a8f8c;
+$stone-dark: #5d625f;
+$ember: #b5543f;
+$steel: #557a90;
+$dew: #3f9e95;
+$gold: #c49a3a;
+$ink: #24332b;
+$ink-soft: #4b5a52;
+$leaf-radius: 6px 22px;
+$serif: "Iowan Old Style", "Palatino Linotype", palatino, georgia, serif;
+
+.page {
+  background:
+    radial-gradient(ellipse at 8% 0%, rgba($sage, 0.45), transparent 45%),
+    radial-gradient(ellipse at 92% 12%, rgba($jade, 0.18), transparent 40%),
+    radial-gradient(ellipse at 50% 110%, rgba($stone, 0.22), transparent 55%),
+    $paper;
+  color: $ink;
+  flex: 1;
+  font-family: $serif;
+  min-height: 100vh;
+  width: 100%;
+}
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin: 0 auto;
+  max-width: 1180px;
+  padding: 24px 20px 120px;
+}
+
+.panel {
+  background: rgba($paper-light, 0.88);
+  border: 1.5px solid rgba($stone, 0.6);
+  border-radius: $leaf-radius;
+  box-shadow: 0 6px 24px rgba($jade-dark, 0.08);
+  padding: 20px 22px;
+
+  h2 {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0 0 10px;
+  }
+}
+
+.panelHeaderRow {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+
+  h2 {
+    margin: 0;
+  }
+}
+
+.muted {
+  color: $ink-soft;
+  font-size: 15px;
+  margin: 0 0 12px;
+}
+
+.eyebrow {
+  color: $jade-dark;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  margin: 0 0 4px;
+  text-transform: uppercase;
+}
+
+.warning {
+  background: rgba($gold, 0.12);
+  border-left: 3px solid $gold;
+  border-radius: 4px;
+  color: $ink-soft;
+  font-family: monospace;
+  font-size: 12px;
+  margin: 14px 0 0;
+  padding: 8px 10px;
+}
+
+.srOnly {
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+.quietLink {
+  color: $jade-dark;
+  font-size: 15px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Buttons */
+
+.button {
+  background: $jade;
+  border: 1.5px solid $jade-dark;
+  border-radius: $leaf-radius;
+  box-shadow: 0 3px 0 rgba($jade-dark, 0.35);
+  color: #fff;
+  cursor: pointer;
+  font-family: $serif;
+  font-size: 16px;
+  padding: 9px 20px;
+  transition:
+    transform 120ms ease,
+    background 120ms ease;
+
+  &:hover:not(:disabled) {
+    background: $jade-dark;
+    transform: translateY(-1px);
+  }
+
+  &:focus-visible {
+    outline: 3px solid rgba($gold, 0.8);
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+}
+
+.buttonQuiet {
+  background: transparent;
+  border-color: rgba($stone, 0.8);
+  box-shadow: none;
+  color: $ink;
+
+  &:hover:not(:disabled) {
+    background: rgba($sage, 0.25);
+  }
+}
+
+.bigButton {
+  font-size: 20px;
+  padding: 14px 36px;
+}
+
+.stickyAction {
+  bottom: 18px;
+  display: flex;
+  justify-content: center;
+  position: sticky;
+  z-index: 5;
+}
+
+/* Leaf mark */
+
+.leafIcon {
+  flex-shrink: 0;
+  overflow: visible;
+
+  path:first-child {
+    stroke: $jade-dark;
+    stroke-width: 1.5;
+  }
+}
+
+.leafFilled path:first-child {
+  fill: $jade;
+}
+
+.leafEmpty path:first-child {
+  fill: rgba($paper-light, 0.9);
+}
+
+.leafVein {
+  fill: none;
+  stroke: rgba($jade-dark, 0.7);
+  stroke-width: 1.2;
+}
+
+.leafLabel {
+  fill: #fff;
+  font-family: $serif;
+  font-size: 15px;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: $jade-dark;
+  stroke-width: 2.5px;
+  text-anchor: middle;
+}
+
+.tierLeaves {
+  display: inline-flex;
+  gap: 1px;
+}
+
+/* Title */
+
+.titleTopBar {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: flex-end;
+}
+
+.hero {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 0 8px;
+  text-align: center;
+
+  h1 {
+    font-size: clamp(38px, 6vw, 64px);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    margin: 8px 0;
+  }
+
+  p {
+    color: $ink-soft;
+    font-size: 18px;
+    max-width: 620px;
+  }
+}
+
+.heroLeaf {
+  transform: rotate(-12deg);
+}
+
+.towerList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.towerChoice {
+  align-items: center;
+  background: rgba($paper, 0.7);
+  border: 1px solid rgba($stone, 0.4);
+  border-radius: $leaf-radius;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  padding: 14px 18px;
+
+  h3 {
+    font-size: 20px;
+    margin: 0 0 4px;
+  }
+}
+
+.towerSummary {
+  -webkit-box-orient: vertical;
+  color: $ink-soft;
+  display: -webkit-box;
+  font-size: 15px;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  margin: 0;
+  overflow: hidden;
+}
+
+.rules {
+  color: $ink-soft;
+  display: flex;
+  flex-direction: column;
+  font-size: 15px;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+/* Story headers */
+
+.storyHeader {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  text-align: center;
+
+  h1 {
+    font-size: clamp(30px, 4vw, 44px);
+    font-weight: 600;
+    margin: 4px 0 8px;
+  }
+}
+
+.story {
+  color: $ink-soft;
+  font-size: 17px;
+  font-style: italic;
+  line-height: 1.55;
+  margin: 0;
+  max-width: 720px;
+}
+
+.endIcon {
+  color: $jade;
+  margin-bottom: 6px;
+}
+
+/* Portraits */
+
+.portrait {
+  align-items: center;
+  background: $paper-light;
+  border: 2.5px solid var(--accent, #{$jade});
+  border-radius: 8px 20px;
+  box-shadow: 0 4px 10px rgba($jade-dark, 0.12);
+  display: flex;
+  flex-shrink: 0;
+  justify-content: center;
+  overflow: hidden;
+
+  img {
+    height: 100%;
+    object-fit: contain;
+    width: 100%;
+  }
+}
+
+.portraitSmall {
+  height: 64px;
+  width: 48px;
+}
+
+.portraitMedium {
+  height: 112px;
+  width: 84px;
+}
+
+.portraitLarge {
+  height: 152px;
+  width: 114px;
+}
+
+.portraitStandIn {
+  align-items: center;
+  background:
+    radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--accent, #{$jade}) 35%, transparent), transparent 60%),
+    radial-gradient(circle at 70% 70%, color-mix(in srgb, var(--accent, #{$jade}) 22%, transparent), transparent 55%);
+  color: var(--accent, #{$jade});
+  display: flex;
+  font-family: $serif;
+  font-size: 2.4em;
+  height: 100%;
+  justify-content: center;
+  width: 100%;
+}
+
+.portraitFaded {
+  filter: grayscale(0.8);
+  opacity: 0.45;
+}
+
+/* Cards */
+
+.cardWrap {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.card {
+  background: $paper-light;
+  border: 2px solid $stone-dark;
+  border-radius: 6px 18px;
+  box-shadow: 0 4px 0 rgba($jade-dark, 0.15);
+  color: $ink;
+  display: flex;
+  flex-direction: column;
+  font-family: $serif;
+  gap: 5px;
+  height: 260px;
+  overflow: hidden;
+  padding: 8px 10px 26px;
+  position: relative;
+  text-align: center;
+  width: 180px;
+}
+
+.cardSmall {
+  font-size: 12px;
+  gap: 3px;
+  height: 196px;
+  padding: 6px 7px 22px;
+  width: 136px;
+}
+
+.cardButton {
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease;
+
+  &:hover {
+    box-shadow: 0 10px 18px rgba($jade-dark, 0.2);
+    transform: translateY(-6px) rotate(-1deg);
+  }
+
+  &:focus-visible {
+    outline: 3px solid rgba($gold, 0.8);
+    outline-offset: 2px;
+  }
+}
+
+.cardHighlighted {
+  border-color: $gold;
+  box-shadow: 0 0 0 3px rgba($gold, 0.35);
+}
+
+.cardCost {
+  left: 2px;
+  position: absolute;
+  top: 2px;
+}
+
+.cardName {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.15;
+  min-height: 2.3em;
+  padding: 0 4px 0 22px;
+
+  .cardSmall & {
+    font-size: 12px;
+  }
+}
+
+.cardArt {
+  align-items: center;
+  background: rgba($sage, 0.2);
+  border-radius: 4px 14px;
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: center;
+  min-height: 56px;
+  overflow: hidden;
+
+  img {
+    height: 100%;
+    object-fit: cover;
+    width: 100%;
+  }
+}
+
+.kindAttack {
+  background: radial-gradient(circle at 40% 40%, rgba($ember, 0.3), rgba($ember, 0.06) 70%);
+}
+
+.kindDefend {
+  background: radial-gradient(circle at 40% 40%, rgba($steel, 0.3), rgba($steel, 0.06) 70%);
+}
+
+.kindAether {
+  background: radial-gradient(circle at 40% 40%, rgba($dew, 0.3), rgba($dew, 0.06) 70%);
+}
+
+.kindCombo {
+  background: radial-gradient(circle at 40% 40%, rgba($gold, 0.32), rgba($gold, 0.06) 70%);
+}
+
+.kindDraw {
+  background: radial-gradient(circle at 40% 40%, rgba($jade, 0.3), rgba($jade, 0.06) 70%);
+}
+
+.cardRules {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  gap: 2px;
+  line-height: 1.25;
+
+  .cardSmall & {
+    font-size: 11px;
+  }
+}
+
+.cardFlavor {
+  border-top: 1px solid rgba($stone, 0.35);
+  color: $ink-soft;
+  font-size: 11px;
+  font-style: italic;
+  line-height: 1.25;
+  padding-top: 4px;
+}
+
+.cardOwner {
+  background: $jade;
+  bottom: 0;
+  color: #fff;
+  font-size: 11px;
+  left: 0;
+  overflow: hidden;
+  padding: 3px 6px;
+  position: absolute;
+  right: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardFooter {
+  color: $ink-soft;
+  font-size: 13px;
+}
+
+.cardChoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  justify-content: center;
+  padding: 8px 0;
+}
+
+/* Coreborn offers */
+
+.offerList {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.offer {
+  align-items: flex-start;
+  background: rgba($paper, 0.65);
+  border: 1px solid rgba($stone, 0.4);
+  border-radius: $leaf-radius;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.offerHeader {
+  display: flex;
+  gap: 16px;
+}
+
+.offerIdentity h3 {
+  font-size: 22px;
+  margin: 0 0 4px;
+}
+
+.offerMeta {
+  align-items: center;
+  color: $ink-soft;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 14px;
+  gap: 10px;
+  margin: 0 0 6px;
+
+  span {
+    align-items: center;
+    display: inline-flex;
+    gap: 4px;
+  }
+}
+
+.roleTag,
+.ownedTag,
+.bossTag {
+  border-radius: 10px 3px;
+  font-size: 12px;
+  padding: 2px 8px;
+}
+
+.roleTag {
+  background: rgba($jade, 0.15);
+  color: $jade-dark;
+}
+
+.ownedTag {
+  background: rgba($gold, 0.18);
+  color: #7a5c1c;
+}
+
+.bossTag {
+  background: rgba($gold, 0.25);
+  color: #7a5c1c;
+}
+
+.offerLore {
+  color: $ink-soft;
+  font-size: 15px;
+  font-style: italic;
+  margin: 0;
+  max-width: 640px;
+}
+
+.tierStrip {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  width: 100%;
+}
+
+.tierStep {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tierStepLabel {
+  color: $ink-soft;
+  font-size: 12px;
+  max-width: 136px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Tower progress */
+
+.campTop {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.progress {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  overflow-x: auto;
+  padding: 0;
+}
+
+.progressFloor {
+  align-items: center;
+  background: rgba($paper-light, 0.7);
+  border: 1.5px solid rgba($stone, 0.5);
+  border-radius: 4px 14px;
+  color: $ink-soft;
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 92px;
+  padding: 6px 8px;
+}
+
+.progressNumber {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.progressReward {
+  align-items: center;
+  display: inline-flex;
+  font-size: 12px;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.progressCleared {
+  background: rgba($sage, 0.3);
+  opacity: 0.7;
+}
+
+.progressCurrent {
+  background: $paper-light;
+  border-color: $jade;
+  box-shadow: 0 0 0 3px rgba($jade, 0.25);
+  color: $ink;
+}
+
+.progressBoss {
+  border-color: $gold;
+}
+
+/* Room */
+
+.roomBanner {
+  background:
+    linear-gradient(90deg, rgba($paper-light, 0.96) 30%, rgba($paper-light, 0.55) 70%, rgba($paper-light, 0.2)),
+    var(--room-image, radial-gradient(ellipse at 80% 40%, rgba($sage, 0.6), transparent 60%)) center / cover no-repeat,
+    $paper;
+  border: 1.5px solid rgba($stone, 0.6);
+  border-radius: $leaf-radius;
+  min-height: 220px;
+  overflow: hidden;
+}
+
+.roomBannerText {
+  max-width: 560px;
+  padding: 24px 26px;
+
+  h1 {
+    font-size: 34px;
+    font-weight: 600;
+    margin: 0 0 8px;
+  }
+
+  p {
+    color: $ink-soft;
+    font-size: 16px;
+    margin: 0 0 8px;
+  }
+}
+
+.rewardLine {
+  color: $jade-dark !important;
+  font-weight: 600;
+}
+
+/* Enemies */
+
+.enemyList {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.enemy {
+  background: rgba($paper, 0.6);
+  border: 1px solid rgba($ember, 0.35);
+  border-radius: $leaf-radius;
+  display: flex;
+  gap: 14px;
+  padding: 12px;
+}
+
+.enemyBody h4 {
+  font-size: 18px;
+  margin: 0 0 4px;
+}
+
+.enemyLore {
+  color: $ink-soft;
+  font-size: 13px;
+  font-style: italic;
+  margin: 0 0 6px;
+}
+
+.cycle {
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+  gap: 3px;
+  margin: 0;
+  padding-left: 18px;
+
+  li {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  em {
+    color: $ember;
+    font-size: 12px;
+  }
+}
+
+/* Party lineup */
+
+.lineup {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+.lineupRow {
+  display: flex;
+  flex: 1;
+  gap: 12px;
+  justify-content: flex-end;
+  list-style: none;
+  margin: 0;
+  overflow-x: auto;
+  padding: 4px 2px 8px;
+}
+
+.lineupFacing {
+  align-items: center;
+  color: $ember;
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  gap: 2px;
+}
+
+.member {
+  align-items: center;
+  background: rgba($paper, 0.7);
+  border: 1.5px solid rgba($stone, 0.5);
+  border-radius: $leaf-radius;
+  cursor: grab;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 138px;
+  padding: 10px;
+}
+
+.memberDragging {
+  opacity: 0.4;
+}
+
+.memberPosition {
+  color: $jade-dark;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.memberName {
+  font-size: 15px;
+  text-align: center;
+}
+
+.memberTitle {
+  color: $ink-soft;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.memberBrings {
+  color: $ink-soft;
+  font-size: 12px;
+  text-align: center;
+}
+
+.memberMoves {
+  display: flex;
+  gap: 6px;
+
+  button {
+    align-items: center;
+    background: $paper-light;
+    border: 1px solid rgba($stone, 0.7);
+    border-radius: 4px 10px;
+    color: $ink;
+    cursor: pointer;
+    display: flex;
+    padding: 3px 8px;
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.3;
+    }
+
+    &:hover:not(:disabled) {
+      background: rgba($sage, 0.35);
+    }
+  }
+}
+
+.healthBar {
+  background: linear-gradient(90deg, var(--accent, #{$jade}) var(--fill, 100%), rgba($stone, 0.35) var(--fill, 100%));
+  border: 1px solid $stone-dark;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 11px;
+  text-align: center;
+  text-shadow: 0 0 3px $ink;
+  width: 110px;
+}
+
+/* Merge */
+
+.mergeList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.merge {
+  align-items: center;
+  background: rgba($paper, 0.65);
+  border: 1px solid rgba($gold, 0.5);
+  border-radius: $leaf-radius;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 12px;
+}
+
+.mergeText {
+  min-width: 140px;
+
+  h3 {
+    font-size: 18px;
+    margin: 0;
+  }
+
+  p {
+    color: $ink-soft;
+    margin: 2px 0 0;
+  }
+}
+
+.mergeCards {
+  align-items: center;
+  display: flex;
+  flex: 1;
+  gap: 10px;
+}
+
+/* Deck */
+
+.deck {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.deckGroup h3 {
+  font-size: 16px;
+  margin: 0 0 6px;
+}
+
+.deckCards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* Rewards */
+
+.skipRow {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
+}
+
+.healthChoices {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.healthChoice {
+  align-items: center;
+  background: rgba($paper, 0.7);
+  border: 1.5px solid rgba($stone, 0.6);
+  border-radius: $leaf-radius;
+  color: $ink;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  font-family: $serif;
+  gap: 6px;
+  padding: 20px;
+  transition: transform 140ms ease;
+
+  svg {
+    color: $jade;
+  }
+
+  strong {
+    font-size: 20px;
+  }
+
+  span {
+    color: $ink-soft;
+    font-size: 15px;
+  }
+
+  &:hover {
+    border-color: $jade;
+    transform: translateY(-3px);
+  }
+}
+
+/* End */
+
+.stats {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  margin: 0 0 14px;
+
+  div {
+    background: rgba($paper, 0.7);
+    border-radius: 4px 14px;
+    padding: 10px 14px;
+  }
+
+  dt {
+    color: $ink-soft;
+    font-size: 13px;
+  }
+
+  dd {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0;
+  }
+}
+
+.endActions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+@media (width <= 720px) {
+  .towerChoice,
+  .offerHeader,
+  .campTop {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .lineupRow {
+    justify-content: flex-start;
+  }
+}

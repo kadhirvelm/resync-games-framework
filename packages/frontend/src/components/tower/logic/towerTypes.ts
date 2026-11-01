@@ -1,0 +1,198 @@
+import type {
+  CardCharacterLevelNumber,
+  EnemyActionKind,
+  PlayableCardRules,
+} from "@towers-of-coreborn/api";
+
+/** Coreborn tier from 1 through 4. Matches the four portrait levels. */
+export type TierNumber = CardCharacterLevelNumber;
+
+/** Highest tier merging can reach. */
+export const MAX_TIER: TierNumber = 4;
+
+/** One card design. Decks hold copies of these. */
+export interface CardDefinition {
+  /** Lore line shown under the rules, when the card has one */
+  flavor?: string;
+  id: string;
+  /** Illustration URL. Missing cards draw a painted stand-in. */
+  imageUrl?: string;
+  rules: PlayableCardRules;
+}
+
+/** How a Coreborn fights. Picks its stand-in cards and base health. */
+export type CorebornRole = "guardian" | "striker" | "mender" | "mystic";
+
+/** One tier of a Coreborn: its portrait and the card it brings at that tier. */
+export interface CorebornTierDefinition {
+  card: CardDefinition;
+  portraitUrl?: string;
+  tier: TierNumber;
+  title: string;
+}
+
+/** A recruitable ally. Copies in the party point back at this template. */
+export interface CorebornTemplate {
+  /** Health at tier 1. Each tier above adds {@link TIER_HIT_POINT_BONUS}. */
+  baseHitPoints: number;
+  description: string;
+  id: string;
+  name: string;
+  role: CorebornRole;
+  /** Index 0 is tier 1. Always four entries. */
+  tiers: CorebornTierDefinition[];
+}
+
+/** Health a Coreborn gains for each tier above 1. */
+export const TIER_HIT_POINT_BONUS = 8;
+
+/** Who an enemy attack lands on. */
+export type EnemyTargetPattern = "front" | "back" | "all";
+
+/** One step in an enemy's repeating cycle, after scaling for its floor. */
+export interface EnemyMove {
+  amount: number;
+  kind: EnemyActionKind;
+  /** Attack target. Ignored for defend. */
+  target: EnemyTargetPattern;
+  text: string;
+}
+
+/** A generated or built-in enemy before it is scaled for a floor. */
+export interface EnemyTemplate {
+  description: string;
+  id: string;
+  imageUrl?: string;
+  maxHitPoints: number;
+  moves: EnemyMove[];
+  name: string;
+}
+
+/** Backdrop and story for one room. */
+export interface RoomScene {
+  description: string;
+  id: string;
+  imageUrl?: string;
+  title: string;
+}
+
+/** The player's cultivator: fixed identity and starting kit. */
+export interface CultivatorDefinition {
+  aetherPerTurn: number;
+  maxHitPoints: number;
+  name: string;
+  portraitUrl?: string;
+  /** One entry per copy in the opening deck */
+  starterDeck: CardDefinition[];
+  title: string;
+}
+
+/** Where a tower's content came from. */
+export type TowerSource = "dungeon" | "gallery" | "built-in";
+
+/** Everything one climb can draw from. Built before the run starts. */
+export interface TowerContent {
+  coreborn: CorebornTemplate[];
+  cultivator: CultivatorDefinition;
+  enemies: EnemyTemplate[];
+  id: string;
+  scenes: RoomScene[];
+  source: TowerSource;
+  /** Story intro shown before the climb */
+  summary: string;
+  /** Non-Coreborn cards offered as technique rewards */
+  techniques: CardDefinition[];
+  title: string;
+}
+
+/** Reward a room grants when its battle is won. */
+export type RoomRewardKind =
+  | "coreborn"
+  | "monster-cards"
+  | "techniques"
+  | "health";
+
+/** One enemy placed in a room, scaled for that floor. */
+export interface EnemySpawn {
+  description: string;
+  id: string;
+  imageUrl?: string;
+  isBoss: boolean;
+  maxHitPoints: number;
+  moves: EnemyMove[];
+  name: string;
+  templateId: string;
+}
+
+/** One floor of the tower. */
+export interface TowerRoom {
+  enemies: EnemySpawn[];
+  floor: number;
+  isBoss: boolean;
+  /** The boss room has no reward kind: beating it ends the climb. */
+  reward?: RoomRewardKind;
+  scene?: RoomScene;
+}
+
+/** The player's cultivator or a recruited Coreborn, between battles. */
+export interface PartyMember {
+  /** Copies of this Coreborn's current-tier card in the deck */
+  cardCopies: number;
+  hitPoints: number;
+  id: string;
+  kind: "cultivator" | "coreborn";
+  maxHitPoints: number;
+  /** Coreborn template id. Empty for the cultivator. */
+  templateId: string;
+  tier: TierNumber;
+}
+
+/** Health reward choices. */
+export type HealthRewardOption = "mend" | "fortify";
+
+/** Choices the player sees after a room is cleared. */
+export type RewardOffer =
+  | { kind: "coreborn"; templateIds: string[] }
+  | { kind: "monster-cards"; memberIds: string[] }
+  | { cards: CardDefinition[]; kind: "techniques" }
+  | { kind: "health"; options: HealthRewardOption[] };
+
+/** Where the run is in its loop. */
+export type RunPhase =
+  | "recruit"
+  | "camp"
+  | "battle"
+  | "reward"
+  | "defeat"
+  | "victory";
+
+/** Running totals shown when the run ends. */
+export interface RunStats {
+  battlesWon: number;
+  corebornLost: string[];
+  merges: number;
+  recruited: number;
+}
+
+/** One climb, from entry to death or the crown. */
+export interface RunState {
+  /** Cards the cultivator owns. One entry per copy. */
+  cultivatorDeck: CardDefinition[];
+  /** Index into `rooms` of the room being fought or prepared for */
+  floorIndex: number;
+  /** Offered at the start of the run: pick this many Coreborn. */
+  initialRecruits: number;
+  /** Ordered front to back. The cultivator can stand anywhere. */
+  party: PartyMember[];
+  pendingReward?: RewardOffer;
+  phase: RunPhase;
+  /** Next generator state for any random choice */
+  randomState: number;
+  rooms: TowerRoom[];
+  stats: RunStats;
+  /** Counter for unique party member ids */
+  nextMemberNumber: number;
+}
+
+/** The cultivator's party member id. There is one per run. */
+export const CULTIVATOR_MEMBER_ID = "cultivator";

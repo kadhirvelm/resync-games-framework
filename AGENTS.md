@@ -52,6 +52,9 @@ that package directory.
   construct Mastra agents themselves. `battle-background` paints battle rooms,
   `card-character` paints four-level portraits, `enemy` paints one
   creature facing the player and stores a repeating attack and defend cycle,
+  `sprite-sheet` paints a pixel-art identity anchor and then one 4×6 sheet
+  from it (idle, attack, defend, hurt rows on pure white), which the backend
+  keys out and splits into one normalized PNG strip per animation,
   and `card-generator` writes one
   lore-backed playable card. `dungeon-coordinator` accepts one broad setup
   prompt and writes a dungeon package: two room prompts, three character
@@ -89,6 +92,17 @@ The frontend uses the App Router. Routes live in `packages/frontend/src/app/`.
 Components call the backend through `packages/frontend/src/services/`; do not
 fetch service endpoints directly from components. Prefer Server Components and
 add `"use client"` only for hooks, event handlers, or browser APIs.
+
+The game on the home route lives in `packages/frontend/src/components/tower/`.
+`logic/` holds the pure, seeded rules: `buildTowerContent` turns a dungeon
+package (or the loose gallery, or built-in content) into a tower and fills
+missing assets with stand-ins; `generateTower` lays out the linear floors,
+scales enemies to `FLOOR_PLANS`, and assigns room rewards; `combat` runs
+turn-based battles and returns steps for animation; `run` owns recruiting,
+party order, merging, rewards, and death. React screens handle everything
+between battles. `components/phaserGame/` draws only the battle, from a
+`BattleSceneInput`, and reports back through `onFinish`. Keep game rules out
+of the Phaser scene and the screens.
 
 ### Shared contracts
 

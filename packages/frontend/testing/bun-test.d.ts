@@ -4,6 +4,9 @@ declare module "bun:test" {
   export namespace test {
     function only(name: string, fn: () => void | Promise<void>): void;
     function skip(name: string, fn: () => void | Promise<void>): void;
+    function each<T extends readonly unknown[]>(
+      cases: readonly T[],
+    ): (name: string, fn: (...args: T) => void | Promise<void>) => void;
   }
   export function beforeAll(fn: () => void | Promise<void>): void;
   export function afterAll(fn: () => void | Promise<void>): void;
@@ -23,6 +26,11 @@ declare module "bun:test" {
     toContain(expected: string): void;
     toHaveBeenCalledTimes(expected: number): void;
     toBeGreaterThanOrEqual(expected: number): void;
+    toBeGreaterThan(expected: number): void;
+    toBeLessThan(expected: number): void;
+    toBeLessThanOrEqual(expected: number): void;
+    toBeCloseTo(expected: number, digits?: number): void;
+    toMatchObject(expected: object): void;
     toBeDefined(): void;
     toContainEqual(expected: unknown | typeof expect.any): void;
     rejects: {
