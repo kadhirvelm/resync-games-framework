@@ -8,14 +8,15 @@ import type {
 
 /**
  * Asset kinds a dungeon package can ask another agent to create.
- * The counts are fixed: 2 rooms, 3 characters, 4 cards for each character,
- * and 2 enemies.
+ * The counts are fixed: 2 rooms, 3 characters, 4 cards and 1 sprite sheet
+ * for each character, and 2 enemies.
  */
 export const DUNGEON_SLOT_KINDS = [
   "battle-background",
   "card-character",
   "enemy",
   "playable-card",
+  "sprite-sheet",
 ] as const;
 
 /** One agent a dungeon slot sends its prompt to. */
@@ -27,6 +28,7 @@ export const DUNGEON_SLOT_ASSET_CLASS_ID = {
   "card-character": "card-characters",
   enemy: "enemies",
   "playable-card": "playable-cards",
+  "sprite-sheet": "sprite-sheets",
 } as const satisfies Record<DungeonSlotKind, string>;
 
 /** Workshop tab that lists dungeon packages. */
@@ -99,14 +101,25 @@ export interface DungeonCardSlot extends DungeonSlotBase {
 }
 
 /**
+ * Prompt for the animated battle sprite of one character. The character
+ * fights as this sprite: idle between turns, attack, defend, and hurt.
+ */
+export interface DungeonSpriteSlot extends DungeonSlotBase {
+  /** Character slot this sprite animates */
+  characterSlotId: string;
+  kind: "sprite-sheet";
+}
+
+/**
  * One prompt in a dungeon package.
- * The `kind` discriminator makes card-only ownership and level fields required.
+ * The `kind` discriminator makes card and sprite ownership fields required.
  */
 export type DungeonSlot =
   | DungeonBackgroundSlot
   | DungeonCharacterSlot
   | DungeonEnemySlot
-  | DungeonCardSlot;
+  | DungeonCardSlot
+  | DungeonSpriteSlot;
 
 /**
  * A dungeon package: the prompts for its rooms, characters, cards, and enemies,

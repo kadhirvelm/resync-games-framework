@@ -32,6 +32,11 @@ const slotSchema = z.discriminatedUnion("kind", [
     kind: z.literal(DUNGEON_SLOT_KINDS[3]),
     level: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
   }),
+  z.object({
+    ...slotFields,
+    characterSlotId: z.string().min(1),
+    kind: z.literal(DUNGEON_SLOT_KINDS[4]),
+  }),
 ]);
 
 const blueprintSchema = z.object({
@@ -98,7 +103,7 @@ export async function readStoredDungeonBlueprint(
     if (!parsed.success || parsed.data.id !== id) {
       return undefined;
     }
-    return parsed.data;
+    return withCharacterSprites(parsed.data);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ENOENT" || error instanceof SyntaxError) {
@@ -106,6 +111,66 @@ export async function readStoredDungeonBlueprint(
     }
     throw error;
   }
+}
+
+/**
+ * Prompt for a sprite slot added to a package planned before sprites existed.
+ * The slot generator puts the character's own prompt above it.
+ */
+export const DEFAULT_SPRITE_PROMPT =
+  "Animate this character as a full-body battle sprite: idle breathing, their signature attack, a guard, and a flinch when hit. Keep the silhouette, outfit, weapon, and palette from the character prompt.";
+
+/**
+ * @param characterSlotId - Character slot id
+ * @returns The id given to that character's added sprite slot. It is
+ * derived, so reading the same file twice yields the same id.
+ */
+export function defaultSpriteSlotId(characterSlotId: string): string {
+  return `${characterSlotId}-sprite`;
+}
+
+/**
+ * Gives every character a sprite slot. Packages planned before sprites
+ * existed get one after that character's cards; packages that already
+ * have one are returned unchanged. The added slot is written to the file
+ * with the next slot update.
+ * @param blueprint - Package read from disk
+ * @returns The package with one sprite slot per character
+ */
+export function withCharacterSprites(
+  blueprint: StoredDungeonBlueprint,
+): StoredDungeonBlueprint {
+  const animated = new Set(
+    blueprint.slots.flatMap((slot) =>
+      slot.kind === "sprite-sheet" ? [slot.characterSlotId] : [],
+    ),
+  );
+  const missing = blueprint.slots.filter(
+    (slot) => slot.kind === "card-character" && !animated.has(slot.id),
+  );
+  if (missing.length === 0) {
+    return blueprint;
+  }
+  const slots = [...blueprint.slots];
+  for (const character of missing) {
+    const lastOwned = slots.reduce(
+      (last, slot, index) =>
+        slot.id === character.id ||
+        (slot.kind === "playable-card" && slot.characterSlotId === character.id)
+          ? index
+          : last,
+      -1,
+    );
+    slots.splice(lastOwned + 1, 0, {
+      characterSlotId: character.id,
+      id: defaultSpriteSlotId(character.id),
+      kind: "sprite-sheet",
+      prompt: DEFAULT_SPRITE_PROMPT,
+      status: "planned",
+      title: `${character.title} sprite`,
+    });
+  }
+  return { ...blueprint, slots };
 }
 
 /**

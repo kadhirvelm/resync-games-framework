@@ -13,6 +13,8 @@ import { readEnemy } from "src/asset-classes/enemy/readEnemies";
 import type { CardProgression } from "src/asset-classes/playable-card/cardProgression";
 import { PLAYABLE_CARD_STORAGE } from "src/asset-classes/playable-card/playableCardStorage";
 import { readPlayableCard } from "src/asset-classes/playable-card/readPlayableCards";
+import { readSpriteSheet } from "src/asset-classes/sprite-sheet/readSpriteSheets";
+import { SPRITE_SHEET_STORAGE } from "src/asset-classes/sprite-sheet/spriteSheetStorage";
 import { ConfigurationService } from "src/configuration/configuration.service";
 import type { StoredDungeonSlot } from "./dungeonBlueprint";
 
@@ -101,6 +103,9 @@ export class DungeonAssetLookup {
     if (kind === "enemy") {
       return readEnemyAsset(assetId, backendUrl);
     }
+    if (kind === "sprite-sheet") {
+      return readSprite(assetId, backendUrl);
+    }
     return readCard(assetId, backendUrl);
   }
 }
@@ -179,6 +184,34 @@ async function readEnemyAsset(
     preview: {
       imageUrl: asset.imageUrl,
       subtitle: `${asset.maxHitPoints} HP`,
+      title: asset.title,
+    },
+  };
+}
+
+/**
+ * @param assetId - Stored sprite-sheet id
+ * @param backendUrl - Public backend origin
+ * @returns Preview of that sprite's anchor frame, or undefined when it cannot be read
+ */
+async function readSprite(
+  assetId: string,
+  backendUrl: string,
+): Promise<LinkedDungeonAsset | undefined> {
+  const asset = await readSpriteSheet(
+    SPRITE_SHEET_STORAGE.rootPath(),
+    assetId,
+    SPRITE_SHEET_STORAGE.publicUrl(backendUrl),
+  );
+  if (asset === undefined) {
+    return undefined;
+  }
+  return {
+    preview: {
+      imageUrl: asset.anchorUrl,
+      subtitle: asset.animations
+        .map((animation) => animation.label)
+        .join(" · "),
       title: asset.title,
     },
   };

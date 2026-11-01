@@ -2,9 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { BUILT_IN_TOWER } from "../builtInContent";
 import { TOWER_FLOOR_COUNT } from "../generateTower";
 import {
+  abandonRun,
   BASE_CARD_COPIES,
+  BASE_DRAFT_SIZE,
   beginBattle,
   claimReward,
+  combatSetup,
+  DEFAULT_RUN_OPTIONS,
   FORTIFY_AMOUNT,
   finishBattle,
   memberCard,
@@ -12,10 +16,11 @@ import {
   mergeOptions,
   moveMember,
   recruitCoreborn,
+  rerollReward,
   runDeck,
   startRun,
 } from "../run";
-import type { RunState } from "../towerTypes";
+import type { RunState, TowerContent, UnitSprite } from "../towerTypes";
 
 const content = BUILT_IN_TOWER;
 const FOX = "builtin-huli";
@@ -80,6 +85,39 @@ describe("recruitCoreborn", () => {
     expect(runDeck(run, content)).toHaveLength(
       content.cultivator.starterDeck.length + 2 * BASE_CARD_COPIES,
     );
+  });
+});
+
+describe("combatSetup", () => {
+  test("gives each Coreborn its battle sprite and leaves the rest drawn as portraits", () => {
+    const sprite: UnitSprite = {
+      animations: {
+        idle: {
+          fps: 8,
+          frameCount: 6,
+          loop: true,
+          stripUrl: "https://cdn.test/fox/idle.png",
+        },
+      },
+      facing: "right",
+      frameHeight: 180,
+      frameWidth: 140,
+      id: "fox-sprite",
+    };
+    const animated: TowerContent = {
+      ...content,
+      coreborn: content.coreborn.map((template) =>
+        template.id === FOX ? { ...template, sprite } : template,
+      ),
+    };
+    const run = beginBattle(campRun());
+    const party = combatSetup(run, animated).party;
+    const fox = run.party.find((member) => member.templateId === FOX);
+
+    expect(party.find((unit) => unit.id === fox?.id)?.sprite).toBe(sprite);
+    expect(
+      party.filter((unit) => unit.id !== fox?.id).map((unit) => unit.sprite),
+    ).toEqual([undefined, undefined]);
   });
 });
 
@@ -241,5 +279,111 @@ describe("claimReward", () => {
     expect(
       after.party.every((member) => member.hitPoints === member.maxHitPoints),
     ).toBe(true);
+  });
+});
+
+describe("run options", () => {
+  test("cultivation bonuses shape the opening of a climb", () => {
+    const run = startRun(content, 5, {
+      ...DEFAULT_RUN_OPTIONS,
+      ascension: 2,
+      cultivatorBonusHitPoints: 8,
+      extraDraftOptions: 1,
+      extraTechniques: 1,
+    });
+    const plain = startRun(content, 5);
+    expect(run.ascension).toBe(2);
+    expect(run.party[0]?.maxHitPoints).toBe(
+      (plain.party[0]?.maxHitPoints ?? 0) + 8,
+    );
+    expect(run.cultivatorDeck).toHaveLength(plain.cultivatorDeck.length + 1);
+    const draft =
+      run.pendingReward?.kind === "coreborn"
+        ? run.pendingReward.templateIds
+        : [];
+    expect(draft).toHaveLength(
+      Math.min(content.coreborn.length, BASE_DRAFT_SIZE + 1),
+    );
+  });
+
+  test("kindred bond adds health to recruits and survives a merge", () => {
+    /**
+     * @param bonus - Coreborn bonus health
+     * @returns A camp run with two foxes merged into one
+     */
+    const mergedFox = (bonus: number): RunState => {
+      const opening = startRun(content, 42, {
+        ...DEFAULT_RUN_OPTIONS,
+        modifiers: {
+          ...DEFAULT_RUN_OPTIONS.modifiers,
+          corebornBonusHitPoints: bonus,
+        },
+      });
+      const run = recruitCoreborn(
+        recruitCoreborn(opening, content, FOX),
+        content,
+        FOX,
+      );
+      expect(run.party[0]?.maxHitPoints).toBeGreaterThan(0);
+      const [pair] = mergeOptions(run);
+      return pair ? mergeCoreborn(run, content, pair) : run;
+    };
+    const plain = mergedFox(0);
+    const bonded = mergedFox(3);
+    expect(bonded.party[0]?.tier).toBe(2);
+    expect(bonded.party[0]?.maxHitPoints).toBe(
+      (plain.party[0]?.maxHitPoints ?? 0) + 3,
+    );
+  });
+
+  test("respite heals survivors after a won battle, up to their maximum", () => {
+    const base = campRun();
+    const run: RunState = {
+      ...base,
+      modifiers: { ...base.modifiers, respiteHealing: 4 },
+    };
+    const fox = run.party[1];
+    const after = fight(run, "victory", { [fox?.id ?? ""]: 1 });
+    const healed = after.party.find((member) => member.id === fox?.id);
+    expect(healed?.hitPoints).toBe(5);
+    const cultivator = after.party.find(
+      (member) => member.kind === "cultivator",
+    );
+    expect(cultivator?.hitPoints).toBe(cultivator?.maxHitPoints);
+  });
+});
+
+describe("rerollReward", () => {
+  test("spends a reroll on a fresh offer of the same kind", () => {
+    const base = campRun();
+    const run: RunState = {
+      ...base,
+      modifiers: { ...base.modifiers, rerollsLeft: 1 },
+      pendingReward: { cards: [], kind: "techniques" },
+      phase: "reward",
+      rooms: base.rooms.map((room, index) =>
+        index === 0 ? { ...room, reward: "techniques" } : room,
+      ),
+    };
+    const rerolled = rerollReward(run, content);
+    expect(rerolled.modifiers.rerollsLeft).toBe(0);
+    expect(rerolled.pendingReward?.kind).toBe("techniques");
+    expect(rerolled.randomState).not.toBe(run.randomState);
+    expect(rerollReward(rerolled, content)).toBe(rerolled);
+  });
+
+  test("does nothing without rerolls or outside a reward", () => {
+    const run = campRun();
+    expect(rerollReward(run, content)).toBe(run);
+  });
+});
+
+describe("abandonRun", () => {
+  test("ends the climb as a defeat where it stands", () => {
+    const run = campRun();
+    const abandoned = abandonRun(run);
+    expect(abandoned.phase).toBe("defeat");
+    expect(abandoned.floorIndex).toBe(run.floorIndex);
+    expect(abandonRun(abandoned)).toBe(abandoned);
   });
 });

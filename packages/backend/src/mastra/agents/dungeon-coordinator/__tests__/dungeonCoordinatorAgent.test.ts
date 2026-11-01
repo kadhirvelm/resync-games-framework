@@ -63,6 +63,16 @@ describe("DungeonCoordinatorAgent", () => {
     );
     expect(line.map((slot) => slot.level)).toEqual([1, 2, 3, 4]);
     expect(line[0]?.prompt).toContain("signature bell");
+    const sprites = result.slots.filter((slot) => slot.kind === "sprite-sheet");
+    expect(sprites).toHaveLength(3);
+    const firstSprite = sprites.find(
+      (slot) => slot.characterSlotId === firstCharacter?.id,
+    );
+    expect(firstSprite?.prompt).toBe("Mara swings a bell hammer");
+    expect(firstSprite?.title).toBe("Mara sprite");
+    expect(result.slots.indexOf(firstSprite as never)).toBe(
+      result.slots.indexOf(line[3] as never) + 1,
+    );
   });
 
   test("rejects a plan when the fixed prompt counts are incomplete", async () => {
@@ -73,6 +83,7 @@ describe("DungeonCoordinatorAgent", () => {
       });
       await executeTool(input.tools, PLAN_DUNGEON_CHARACTER_TOOL_ID, {
         prompt: "A bell warden",
+        spritePrompt: "The warden raises a bell shield",
         title: "Warden",
       });
       return { text: "Incomplete", toolErrors: [], toolResults: [] };
@@ -115,7 +126,7 @@ describe("DungeonCoordinatorAgent", () => {
       sessionId: "session-1",
     });
 
-    expect(result.slots).toHaveLength(19);
+    expect(result.slots).toHaveLength(22);
     expect(result.summary).toBe("The dungeon prompts are ready.");
   });
 });
@@ -167,6 +178,7 @@ async function planFullDungeon(tools: ToolsInput): Promise<void> {
   for (const title of ["Mara", "Dorn", "Isha"]) {
     const character = await executeTool(tools, PLAN_DUNGEON_CHARACTER_TOOL_ID, {
       prompt: `${title} keeps the bells`,
+      spritePrompt: `${title} swings a bell hammer`,
       title,
     });
     characterIds.push(character.characterSlotId ?? "");

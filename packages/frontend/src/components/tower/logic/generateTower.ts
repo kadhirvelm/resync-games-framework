@@ -37,6 +37,30 @@ export const BOSS_PLAN: FloorPlan = {
   hitPoints: 80,
 };
 
+/** Highest ascension level a tower can be climbed at. */
+export const MAX_ASCENSION = 5;
+
+/** Extra enemy health for each ascension level. */
+export const ASCENSION_HEALTH_STEP = 0.12;
+
+/** Extra enemy attack for each ascension level. */
+export const ASCENSION_ATTACK_STEP = 0.08;
+
+/**
+ * @param ascension - Ascension level from 0
+ * @returns Health and attack multipliers for every enemy at that level
+ */
+export function ascensionScale(ascension: number): {
+  attack: number;
+  hitPoints: number;
+} {
+  const level = clamp(Math.floor(ascension), 0, MAX_ASCENSION);
+  return {
+    attack: 1 + level * ASCENSION_ATTACK_STEP,
+    hitPoints: 1 + level * ASCENSION_HEALTH_STEP,
+  };
+}
+
 /** Total floors, including the boss. */
 export const TOWER_FLOOR_COUNT = FLOOR_PLANS.length + 1;
 
@@ -54,13 +78,25 @@ const LATER_REWARDS: RoomRewardKind[] = [
  * each won battle moves the party up one floor until the boss.
  * @param content - Tower content to draw enemies and rooms from
  * @param random - Run generator. Its state advances.
+ * @param ascension - Ascension level. Each level makes enemies tougher.
  * @returns Rooms from the entrance to the boss
  */
 export function generateTower(
   content: TowerContent,
   random: SeededRandom,
+  ascension = 0,
 ): TowerRoom[] {
   const rewards = planRewards(random);
+  const scale = ascensionScale(ascension);
+  /**
+   * @param plan - Floor budget before ascension
+   * @returns The same budget scaled for this climb's ascension
+   */
+  const ascend = (plan: FloorPlan): FloorPlan => ({
+    ...plan,
+    attack: plan.attack * scale.attack,
+    hitPoints: plan.hitPoints * scale.hitPoints,
+  });
   const meanHitPoints =
     content.enemies.reduce((sum, enemy) => sum + enemy.maxHitPoints, 0) /
     Math.max(1, content.enemies.length);
@@ -79,7 +115,13 @@ export function generateTower(
   const rooms: TowerRoom[] = FLOOR_PLANS.map((plan, index) => {
     const floor = index + 1;
     const enemies = Array.from({ length: plan.enemyCount }, (_, slot) =>
-      spawnEnemy(nextEnemy(), plan, meanHitPoints, `f${floor}-e${slot}`, false),
+      spawnEnemy(
+        nextEnemy(),
+        ascend(plan),
+        meanHitPoints,
+        `f${floor}-e${slot}`,
+        false,
+      ),
     );
     return {
       enemies,
@@ -95,7 +137,7 @@ export function generateTower(
     enemies: [
       spawnEnemy(
         boss,
-        BOSS_PLAN,
+        ascend(BOSS_PLAN),
         meanHitPoints,
         `f${TOWER_FLOOR_COUNT}-boss`,
         true,

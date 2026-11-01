@@ -18,6 +18,13 @@ export interface BattleRoomInfo {
 export interface BattleSceneInput {
   /** Called once when the battle ends, after the outcome has been shown. */
   onFinish: (report: BattleReport) => void;
+  /**
+   * Multiplier on battle delays and tween durations from the player's
+   * battle speed setting. 1 is normal; lower is faster.
+   */
+  pace: number;
+  /** Skip camera shakes, flashes, and drifting particles */
+  reducedMotion: boolean;
   room: BattleRoomInfo;
   setup: CombatSetup;
 }

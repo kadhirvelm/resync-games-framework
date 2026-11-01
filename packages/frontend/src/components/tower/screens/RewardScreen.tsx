@@ -1,4 +1,5 @@
-import { Heart, ShieldPlus } from "lucide-react";
+import { Heart, ShieldPlus, Shuffle } from "lucide-react";
+import { playSound } from "../audio/sound";
 import {
   FORTIFY_AMOUNT,
   MEND_SHARE,
@@ -18,6 +19,7 @@ import { offeredTemplates, ownedTemplateCounts } from "./offerHelpers";
 interface RewardScreenProps {
   content: TowerContent;
   onClaim: (choice: RewardChoice) => void;
+  onReroll: () => void;
   run: RunState;
 }
 
@@ -25,23 +27,35 @@ interface RewardScreenProps {
  * The cleared room's reward: one pick from its offer, or skip.
  * @param content - Tower content
  * @param onClaim - Applies the pick and climbs to the next floor
+ * @param onReroll - Spends one of Fate's Thread's rerolls on a new offer
  * @param run - Run showing a reward
  * @returns The reward screen
  */
-export const RewardScreen = ({ content, onClaim, run }: RewardScreenProps) => {
+export const RewardScreen = ({
+  content,
+  onClaim,
+  onReroll,
+  run,
+}: RewardScreenProps) => {
   const offer = run.pendingReward;
   if (!offer) {
     return null;
   }
+  const canReroll = run.modifiers.rerollsLeft > 0 && offer.kind !== "health";
+  // A new key replays the entrance when a reroll swaps the offer.
+  const offerKey = JSON.stringify(offer);
   return (
     <main className={styles.screen}>
       <header className={styles.storyHeader}>
+        <span aria-hidden="true" className={styles.clearedSeal}>
+          {run.floorIndex + 1}
+        </span>
         <p className={styles.eyebrow}>Floor {run.floorIndex + 1} cleared</p>
         <h1>{rewardTitle(offer.kind)}</h1>
         <p className={styles.story}>{rewardDescription(offer.kind)}</p>
       </header>
 
-      <section className={styles.panel}>
+      <section className={styles.panel} key={offerKey}>
         {offer.kind === "coreborn" ? (
           <CorebornOffer
             onRecruit={(templateId) =>
@@ -126,7 +140,25 @@ export const RewardScreen = ({ content, onClaim, run }: RewardScreenProps) => {
           </div>
         ) : null}
         <div className={styles.skipRow}>
-          <Button onClick={() => onClaim({ kind: "skip" })} variant="quiet">
+          {canReroll ? (
+            <Button
+              onClick={() => {
+                playSound("reward");
+                onReroll();
+              }}
+              variant="quiet"
+            >
+              <Shuffle size={16} /> Pull Fate&apos;s Thread ·{" "}
+              {run.modifiers.rerollsLeft} left
+            </Button>
+          ) : null}
+          <Button
+            onClick={() => {
+              playSound("back");
+              onClaim({ kind: "skip" });
+            }}
+            variant="quiet"
+          >
             Skip reward
           </Button>
         </div>
@@ -134,7 +166,7 @@ export const RewardScreen = ({ content, onClaim, run }: RewardScreenProps) => {
 
       <section className={styles.panel}>
         <h2>Your party</h2>
-        <PartyLineup content={content} run={run} />
+        <PartyLineup content={content} reducedMotion={true} run={run} />
       </section>
     </main>
   );

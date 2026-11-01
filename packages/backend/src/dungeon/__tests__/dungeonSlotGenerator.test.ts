@@ -27,6 +27,20 @@ describe("DungeonSlotGenerator", () => {
     expect(progressionFor).toHaveBeenCalledTimes(1);
   });
 
+  test("prepares a sprite with its character context", async () => {
+    const generator = createGenerator({});
+
+    const prepared = await generator.prepare(spriteSlot(), [
+      characterSlot(),
+      spriteSlot(),
+    ]);
+
+    expect(prepared.prompt).toBe(
+      "Character:\nA drowned bell keeper\n\nSprite request:\nSwings a bell hammer",
+    );
+    expect(prepared.progression).toBeUndefined();
+  });
+
   test("dispatches each slot kind to its asset agent", async () => {
     const backgroundQuery = mock(async () => ({ id: "room-id", summary: "" }));
     const characterQuery = mock(async () => ({
@@ -34,6 +48,7 @@ describe("DungeonSlotGenerator", () => {
       summary: "",
     }));
     const enemyQuery = mock(async () => ({ id: "enemy-id", summary: "" }));
+    const spriteQuery = mock(async () => ({ id: "sprite-id", summary: "" }));
     const cardQuery = mock(async () => ({
       aetherCost: 2,
       cardId: "card-id",
@@ -44,12 +59,14 @@ describe("DungeonSlotGenerator", () => {
       cardQuery,
       characterQuery,
       enemyQuery,
+      spriteQuery,
     });
 
     const ids = await Promise.all([
       generator.generate(runInput(backgroundSlot())),
       generator.generate(runInput(characterSlot())),
       generator.generate(runInput(enemySlot())),
+      generator.generate(runInput(spriteSlot())),
       generator.generate({
         ...runInput(cardSlot()),
         progression: {
@@ -62,11 +79,18 @@ describe("DungeonSlotGenerator", () => {
       }),
     ]);
 
-    expect(ids).toEqual(["room-id", "character-id", "enemy-id", "card-id"]);
+    expect(ids).toEqual([
+      "room-id",
+      "character-id",
+      "enemy-id",
+      "sprite-id",
+      "card-id",
+    ]);
     expect(backgroundQuery).toHaveBeenCalledTimes(1);
     expect(characterQuery).toHaveBeenCalledTimes(1);
     expect(enemyQuery).toHaveBeenCalledTimes(1);
     expect(cardQuery).toHaveBeenCalledTimes(1);
+    expect(spriteQuery).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -88,6 +112,7 @@ function createGenerator(options: {
   ) => Promise<{ setId: string; summary: string }>;
   enemyQuery?: (input: unknown) => Promise<{ id: string; summary: string }>;
   progressionFor?: (slot: unknown, slots: unknown[]) => Promise<unknown>;
+  spriteQuery?: (input: unknown) => Promise<{ id: string; summary: string }>;
 }): DungeonSlotGenerator {
   const agent = (query: (input: unknown) => Promise<unknown>) => ({
     abort: async () => true,
@@ -111,6 +136,9 @@ function createGenerator(options: {
     ) as never,
     agent(
       options.enemyQuery ?? (async () => ({ id: "enemy-id", summary: "" })),
+    ) as never,
+    agent(
+      options.spriteQuery ?? (async () => ({ id: "sprite-id", summary: "" })),
     ) as never,
     {
       progressionFor:
@@ -175,5 +203,17 @@ function cardSlot(): StoredDungeonSlot {
     prompt: "Strike the bell harder",
     status: "planned",
     title: "Bell strike II",
+  };
+}
+
+/** @returns The bell keeper's sprite slot */
+function spriteSlot(): StoredDungeonSlot {
+  return {
+    characterSlotId: CHARACTER_ID,
+    id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    kind: "sprite-sheet",
+    prompt: "Swings a bell hammer",
+    status: "planned",
+    title: "Bell keeper sprite",
   };
 }

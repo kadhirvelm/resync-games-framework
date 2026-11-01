@@ -59,7 +59,7 @@ export function useTowerCatalog(): TowerCatalogState {
     }
 
     void (async () => {
-      const [dungeons, characters, cards, enemies, backgrounds] =
+      const [dungeons, characters, cards, enemies, backgrounds, spriteSheets] =
         await Promise.all([
           readList(
             "Dungeons",
@@ -86,12 +86,24 @@ export function useTowerCatalog(): TowerCatalogState {
             () => clientServiceCallers.battleBackground.list(),
             (response) => response.backgrounds,
           ),
+          readList(
+            "Sprites",
+            () => clientServiceCallers.spriteSheet.list(),
+            (response) => response.spriteSheets,
+          ),
         ]);
       if (cancelled) {
         return;
       }
       setState({
-        catalog: { backgrounds, cards, characters, dungeons, enemies },
+        catalog: {
+          backgrounds,
+          cards,
+          characters,
+          dungeons,
+          enemies,
+          spriteSheets,
+        },
         isLoading: false,
         warnings,
       });

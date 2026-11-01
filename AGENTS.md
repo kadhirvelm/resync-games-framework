@@ -58,10 +58,12 @@ that package directory.
   and `card-generator` writes one
   lore-backed playable card. `dungeon-coordinator` accepts one broad setup
   prompt and writes a dungeon package: two room prompts, three character
-  prompts, four card prompts for each character, and two enemy prompts. It
-  does not paint those assets. The package is a JSON file under the public
+  prompts, four card prompts and one sprite prompt for each character, and
+  two enemy prompts. It does not paint those assets. Packages saved before
+  sprite slots existed gain one per character when read. The package is a JSON file under the public
   dungeon assets. In the Blueprint Workshop, each prompt can start that
-  asset's agent, and an existing asset can be attached to a slot. A later
+  asset's agent, and an existing asset can be attached to a slot. Generating
+  a character also starts its sprite slot. A later
   card keeps the previous level's aether cost and effect kinds. Running slot
   generations are stored in Redis so a refresh keeps them on the dungeon tab
   and on the asset's own tab. `DungeonBlueprintStore` owns package files,
@@ -101,8 +103,22 @@ scales enemies to `FLOOR_PLANS`, and assigns room rewards; `combat` runs
 turn-based battles and returns steps for animation; `run` owns recruiting,
 party order, merging, rewards, and death. React screens handle everything
 between battles. `components/phaserGame/` draws only the battle, from a
-`BattleSceneInput`, and reports back through `onFinish`. Keep game rules out
+`BattleSceneInput`, and reports back through `onFinish`. A Coreborn whose
+dungeon sprite slot is filled fights as that animated sprite instead of its
+portrait; `battleSprites.ts` maps combat events to its idle, attack, defend,
+and hurt strips. Keep game rules out
 of the Phaser scene and the screens.
+
+`TowerGame` owns the shell: the title menu, tower select, cultivation, and
+chronicle live in `tower/shell/`, and a paper curtain (`useCurtain`) covers
+scene changes. `useGameData` keeps three local-storage records in step with
+the climb: saved climbs (`logic/saveGame`, one slot per tower, each with a
+content snapshot), the player profile (`logic/progression`: Jade Essence,
+permanent upgrades, per-tower ascension unlocks, codex, history), and
+settings (`logic/settings`). Upgrades reach a climb only through
+`RunOptions` passed to `startRun`; `run` never reads the profile. Sounds are
+synthesized in `tower/audio/sound.ts`, and the battle reads pace and reduced
+motion from `BattleSceneInput`.
 
 ### Shared contracts
 
