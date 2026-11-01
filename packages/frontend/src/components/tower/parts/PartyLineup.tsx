@@ -1,0 +1,150 @@
+import clsx from "clsx";
+import { ChevronLeft, ChevronRight, Swords } from "lucide-react";
+import { useState } from "react";
+import { memberCard, memberProfile } from "../logic/run";
+import type { RunState, TowerContent } from "../logic/towerTypes";
+import {
+  CULTIVATOR_GLYPH,
+  ownerCssColor,
+  partyAccentIndex,
+} from "../ownerColors";
+import styles from "../tower.module.scss";
+import { TierLeaves } from "./TierLeaves";
+import { UnitPortrait } from "./UnitPortrait";
+
+interface PartyLineupProps {
+  content: TowerContent;
+  /** Omit to show the lineup read-only */
+  onMove?: (fromIndex: number, toIndex: number) => void;
+  run: RunState;
+}
+
+/**
+ * @param index - Position in the party
+ * @param size - Party size
+ * @returns "Front", "Back", or the position number
+ */
+function positionLabel(index: number, size: number): string {
+  if (index === 0) {
+    return "Front";
+  }
+  if (index === size - 1) {
+    return "Back";
+  }
+  return `#${index + 1}`;
+}
+
+/**
+ * The party in battle order, drawn exactly as it will stand: back on the
+ * left, front on the right facing the enemies. Drag a member, or use the
+ * arrows, to reorder.
+ * @param content - Tower content
+ * @param onMove - Moves a member from one position to another
+ * @param run - Current run
+ * @returns The lineup
+ */
+export const PartyLineup = ({ content, onMove, run }: PartyLineupProps) => {
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const size = run.party.length;
+  const accentParty = run.party.map((member) => ({
+    isCultivator: member.kind === "cultivator",
+  }));
+  const displayed = run.party
+    .map((member, index) => ({ index, member }))
+    .reverse();
+
+  return (
+    <div className={styles.lineup}>
+      <ol aria-label="Party order, back to front" className={styles.lineupRow}>
+        {displayed.map(({ index, member }) => {
+          const profile = memberProfile(member, content);
+          const card =
+            member.kind === "coreborn"
+              ? memberCard(member, content)
+              : undefined;
+          const accent = ownerCssColor(partyAccentIndex(accentParty, index));
+          return (
+            <li
+              className={clsx(
+                styles.member,
+                dragIndex === index && styles.memberDragging,
+              )}
+              draggable={onMove !== undefined}
+              key={member.id}
+              onDragEnd={() => setDragIndex(null)}
+              onDragOver={(event) => event.preventDefault()}
+              onDragStart={() => setDragIndex(index)}
+              onDrop={() => {
+                if (dragIndex !== null && onMove) {
+                  onMove(dragIndex, index);
+                }
+                setDragIndex(null);
+              }}
+            >
+              <span className={styles.memberPosition}>
+                {positionLabel(index, size)}
+              </span>
+              <UnitPortrait
+                accent={accent}
+                glyph={
+                  member.kind === "cultivator" ? CULTIVATOR_GLYPH : undefined
+                }
+                name={profile.name}
+                size="medium"
+                url={profile.portraitUrl}
+              />
+              <strong className={styles.memberName}>{profile.name}</strong>
+              <span className={styles.memberTitle}>
+                {member.kind === "cultivator" ? "You" : profile.title}
+              </span>
+              {member.kind === "coreborn" ? (
+                <TierLeaves tier={member.tier} />
+              ) : null}
+              <span
+                className={styles.healthBar}
+                style={
+                  {
+                    "--accent": accent,
+                    "--fill": `${(member.hitPoints / member.maxHitPoints) * 100}%`,
+                  } as React.CSSProperties
+                }
+              >
+                <span>
+                  {member.hitPoints} / {member.maxHitPoints}
+                </span>
+              </span>
+              <span className={styles.memberBrings}>
+                {card
+                  ? `${card.rules.name} ×${member.cardCopies}`
+                  : `${run.cultivatorDeck.length} techniques`}
+              </span>
+              {onMove ? (
+                <span className={styles.memberMoves}>
+                  <button
+                    aria-label={`Move ${profile.name} back`}
+                    disabled={index === size - 1}
+                    onClick={() => onMove(index, index + 1)}
+                    type="button"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <button
+                    aria-label={`Move ${profile.name} forward`}
+                    disabled={index === 0}
+                    onClick={() => onMove(index, index - 1)}
+                    type="button"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </span>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
+      <span aria-hidden="true" className={styles.lineupFacing}>
+        <Swords size={18} /> enemies
+      </span>
+    </div>
+  );
+};

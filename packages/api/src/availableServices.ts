@@ -8,6 +8,8 @@ import {
   EnemyServiceDefinition,
   PlayableCardServiceApi,
   PlayableCardServiceDefinition,
+  SpriteSheetServiceApi,
+  SpriteSheetServiceDefinition,
 } from "./services/assetClasses";
 import {
   DungeonServiceApi,
@@ -25,6 +27,7 @@ export type AvailableServices = {
   enemy: EnemyServiceApi;
   playableCard: PlayableCardServiceApi;
   productNowMcp: ProductNowMcpServiceApi;
+  spriteSheet: SpriteSheetServiceApi;
 };
 
 export type AvailableServicesDefinition = {
@@ -38,4 +41,5 @@ export const AVAILABLE_SERVICES: AvailableServicesDefinition = {
   enemy: EnemyServiceDefinition,
   playableCard: PlayableCardServiceDefinition,
   productNowMcp: ProductNowMcpServiceDefinition,
+  spriteSheet: SpriteSheetServiceDefinition,
 };

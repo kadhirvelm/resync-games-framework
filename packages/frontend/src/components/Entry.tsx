@@ -1,14 +1,8 @@
-import { PhaserGameCanvas } from "@/components/phaserGame/PhaserGameCanvas";
-import { ProductNowConnection } from "@/components/productNow/ProductNowConnection";
+import { TowerGame } from "@/components/tower/TowerGame";
 
 /**
  * App shell for the home route.
  */
 export const Entry = () => {
-  return (
-    <>
-      <PhaserGameCanvas />
-      <ProductNowConnection />
-    </>
-  );
+  return <TowerGame />;
 };

@@ -921,3 +921,178 @@ $blueprint-border: rgb(80 160 255 / 22%);
     grid-template-columns: 1fr;
   }
 }
+
+// ── Sprite sheets ─────────────────────────────────────────────────────────
+@keyframes sprite-frames {
+  from {
+    background-position-x: 0%;
+  }
+
+  to {
+    background-position-x: 100%;
+  }
+}
+
+.spriteSheetGrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  width: 100%;
+}
+
+.spriteSheetCard {
+  background: vars.$white;
+  border: 1px solid vars.$border-color;
+  border-radius: 16px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  font: inherit;
+  gap: 8px;
+  overflow: hidden;
+  padding: 0 0 14px;
+  text-align: left;
+
+  .spriteSheetHeader,
+  > .spriteSheetMeta {
+    padding: 0 14px;
+  }
+
+  &:hover {
+    border-color: vars.$blue-medium;
+    box-shadow: vars.$box-shadow-small;
+  }
+}
+
+// Checkerboard makes leftover background pixels easy to spot.
+.spriteStage {
+  align-items: flex-end;
+  background-color: vars.$neutral-light;
+  background-image:
+    linear-gradient(45deg, vars.$neutral-light2 25%, transparent 25%),
+    linear-gradient(-45deg, vars.$neutral-light2 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, vars.$neutral-light2 75%),
+    linear-gradient(-45deg, transparent 75%, vars.$neutral-light2 75%);
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-size: 16px 16px;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+  padding: 12px 0;
+  width: 100%;
+}
+
+.spritePlayer {
+  animation-iteration-count: infinite;
+  animation-name: sprite-frames;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+  image-rendering: pixelated;
+}
+
+.spriteMirrored {
+  transform: scaleX(-1);
+}
+
+.spriteSheetHeader {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.spriteSheetTitle {
+  color: vars.$gray;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.spriteSheetMeta {
+  color: vars.$gray;
+  flex-shrink: 0;
+  font-family: monospace;
+  font-size: 11px;
+}
+
+.spriteSheetDetail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 8px 0 4px;
+}
+
+.spriteMirrorToggle {
+  background: transparent;
+  border: 1px solid vars.$border-color;
+  border-radius: 8px;
+  color: vars.$gray-hover;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+
+  &:hover {
+    border-color: vars.$blue-medium;
+  }
+}
+
+.spriteAnimationGrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+
+.spriteAnimationCell {
+  border: 1px solid vars.$border-color;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+  padding-bottom: 12px;
+
+  .spriteSheetHeader,
+  .spriteAnimationDescription,
+  .spriteStripLink {
+    padding: 0 12px;
+  }
+}
+
+.spriteAnimationDescription {
+  color: vars.$gray;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.spriteStripLink {
+  display: block;
+}
+
+.spriteStrip {
+  display: block;
+  height: auto;
+  image-rendering: pixelated;
+  width: 100%;
+}
+
+.spriteSourceRow {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.spriteAnchor {
+  display: block;
+  height: 160px;
+  image-rendering: pixelated;
+  object-fit: contain;
+}
+
+.spriteSource {
+  border-radius: 8px;
+  display: block;
+  max-height: 320px;
+  max-width: 100%;
+  object-fit: contain;
+}
