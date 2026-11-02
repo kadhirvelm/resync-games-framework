@@ -6,7 +6,7 @@ import {
   InternalServerErrorException,
   Logger,
 } from "@nestjs/common";
-import { AgentTool } from "@towers-of-coreborn/api";
+import { AgentTool } from "@resync-game-framework/api";
 import sharp from "sharp";
 import {
   GenerationCancelledException,

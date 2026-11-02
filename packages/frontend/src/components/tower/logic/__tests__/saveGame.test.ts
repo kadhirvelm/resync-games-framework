@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ClimbRecord } from "@towers-of-coreborn/api";
+import type { ClimbRecord } from "@resync-game-framework/api";
 import { BUILT_IN_TOWER } from "../builtInContent";
 import { startRun } from "../run";
 import {

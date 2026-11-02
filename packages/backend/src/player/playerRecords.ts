@@ -6,8 +6,8 @@ import {
   type CultivatorArtStatus,
   type CultivatorRecord,
   type SpriteSheetAsset,
-} from "@towers-of-coreborn/api";
-import type { Climb, Cultivator } from "@towers-of-coreborn/database";
+} from "@resync-game-framework/api";
+import type { Climb, Cultivator } from "@resync-game-framework/database";
 import { ASSET_CLASS_GENERATION_TIMEOUT_MS } from "src/asset-classes/shared/createAssetClassController";
 
 /**

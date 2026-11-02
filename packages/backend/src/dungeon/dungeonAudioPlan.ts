@@ -1,4 +1,4 @@
-import type { AudioCue, AudioRole } from "@towers-of-coreborn/api";
+import type { AudioCue, AudioRole } from "@resync-game-framework/api";
 import type {
   StoredDungeonBlueprint,
   StoredDungeonSlot,

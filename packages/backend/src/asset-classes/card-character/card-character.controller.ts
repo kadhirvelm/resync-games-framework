@@ -1,4 +1,4 @@
-import { CardCharacterServiceDefinition } from "@towers-of-coreborn/api";
+import { CardCharacterServiceDefinition } from "@resync-game-framework/api";
 import { createAssetClassController } from "../shared/createAssetClassController";
 import { CardCharacterService } from "./card-character.service";
 

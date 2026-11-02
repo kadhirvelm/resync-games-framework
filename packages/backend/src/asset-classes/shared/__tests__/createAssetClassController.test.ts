@@ -2,7 +2,7 @@ import "reflect-metadata";
 import { describe, expect, test } from "bun:test";
 import { RequestMethod } from "@nestjs/common";
 import { METHOD_METADATA, PATH_METADATA } from "@nestjs/common/constants";
-import { CardCharacterServiceDefinition } from "@towers-of-coreborn/api";
+import { CardCharacterServiceDefinition } from "@resync-game-framework/api";
 import { TIMEOUT_KEY } from "src/library/timeout/timeout.decorator";
 import {
   ASSET_CLASS_GENERATION_TIMEOUT_MS,

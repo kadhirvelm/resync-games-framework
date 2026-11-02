@@ -1,6 +1,6 @@
 "use client";
 
-import type { ServiceError } from "@towers-of-coreborn/api";
+import type { ServiceError } from "@resync-game-framework/api";
 import type { ReactNode } from "react";
 import { useClientServiceCallers } from "@/services/clientServiceCallers";
 import type { AvailableServiceCaller } from "@/services/helpers/types";

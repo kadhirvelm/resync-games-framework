@@ -1,4 +1,4 @@
-import { ENEMY_ACTION_KINDS } from "@towers-of-coreborn/api";
+import { ENEMY_ACTION_KINDS } from "@resync-game-framework/api";
 import { z } from "zod";
 import {
   PLAYABLE_CARD_EFFECT_AMOUNTS,

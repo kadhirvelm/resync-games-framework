@@ -1,6 +1,6 @@
 "use client";
 
-import type { ListCardCharactersResponse } from "@towers-of-coreborn/api";
+import type { ListCardCharactersResponse } from "@resync-game-framework/api";
 import { useState } from "react";
 import { Dialog, Flex } from "@/lib/radix";
 import styles from "./Assets.module.scss";

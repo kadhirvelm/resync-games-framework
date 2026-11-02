@@ -13,9 +13,9 @@ import {
   type ServiceEndpointDefinition,
   type StreamingEvent,
   StreamingService,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import type { Request } from "express";
-import { TowersOfCorebornObservable } from "../library/TowersOfCorebornObservable";
+import { ResyncGameFrameworkObservable } from "../library/ResyncGameFrameworkObservable";
 
 type ServiceRequest = Request;
 
@@ -32,8 +32,8 @@ export type NestJSStreamingEvent<Chunk, Finish> = Omit<
  * The return type for a streaming endpoint in the controller.
  */
 export type ValidServiceControllerStreamingReturnType<Chunk, Finish> =
-  | TowersOfCorebornObservable<Chunk, Finish>
-  | Promise<TowersOfCorebornObservable<Chunk, Finish>>;
+  | ResyncGameFrameworkObservable<Chunk, Finish>
+  | Promise<ResyncGameFrameworkObservable<Chunk, Finish>>;
 
 /**
  * The response type for a streaming endpoint.

@@ -33,7 +33,7 @@ describe("ProductNowSessionInterceptor", () => {
       switchToHttp: () => ({
         getRequest: () =>
           ({
-            headers: { cookie: "toc_productnow_session=session-1" },
+            headers: { cookie: "resync_productnow_session=session-1" },
           }) as Request,
       }),
     } as ExecutionContext;

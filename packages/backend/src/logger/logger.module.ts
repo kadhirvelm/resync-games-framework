@@ -114,4 +114,4 @@ function shouldSkipNestBootstrapLog(args: Parameters<LogFn>): boolean {
     }),
   ],
 })
-export class TowersOfCorebornLoggerModule {}
+export class ResyncGameFrameworkLoggerModule {}

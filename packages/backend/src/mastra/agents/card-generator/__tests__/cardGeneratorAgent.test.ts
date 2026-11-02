@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AgentTool } from "@towers-of-coreborn/api";
+import { AgentTool } from "@resync-game-framework/api";
 import sharp from "sharp";
 import { LORE_DOCUMENT_ID } from "src/asset-classes/playable-card/playableCardSpec";
 import { PLAYABLE_CARD_STORAGE } from "src/asset-classes/playable-card/playableCardStorage";

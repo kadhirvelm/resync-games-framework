@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { RoomEventsDefinition } from "@towers-of-coreborn/api";
+import { RoomEventsDefinition } from "@resync-game-framework/api";
 import type { Server } from "socket.io";
 import { MockRedisService } from "../../infra/redis/__tests__/mockRedis.module";
 import type { RedisService } from "../../infra/redis/redis.service";

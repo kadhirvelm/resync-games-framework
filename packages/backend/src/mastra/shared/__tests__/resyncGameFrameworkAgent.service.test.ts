@@ -1,11 +1,11 @@
 import { describe, expect, mock, test } from "bun:test";
-import { AgentTool } from "@towers-of-coreborn/api";
+import { AgentTool } from "@resync-game-framework/api";
 import {
   ASSET_CLASS_COORDINATOR_MODEL,
-  TowersOfCorebornAgentService,
-} from "../towersOfCorebornAgent.service";
+  ResyncGameFrameworkAgentService,
+} from "../resyncGameFrameworkAgent.service";
 
-describe("TowersOfCorebornAgentService", () => {
+describe("ResyncGameFrameworkAgentService", () => {
   test("builds a standard asset-class chat from catalog and owned tools", async () => {
     const catalogTool = { description: "catalog" };
     const ownedTool = { description: "owned" };
@@ -17,7 +17,7 @@ describe("TowersOfCorebornAgentService", () => {
       toolErrors: [],
       toolResults: [],
     }));
-    const service = new TowersOfCorebornAgentService(
+    const service = new ResyncGameFrameworkAgentService(
       { buildTools } as never,
       {} as never,
     );

@@ -1,4 +1,4 @@
-import { AgentTool } from "@towers-of-coreborn/api";
+import { AgentTool } from "@resync-game-framework/api";
 import { LORE_DOCUMENT_ID } from "src/asset-classes/playable-card/playableCardSpec";
 import { BATTLE_BACKGROUND_IMAGE_CONFIG } from "./battleBackgroundSpec";
 import {

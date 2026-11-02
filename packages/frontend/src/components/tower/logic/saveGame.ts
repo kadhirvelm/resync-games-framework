@@ -1,4 +1,4 @@
-import type { ClimbRecord, SaveClimbPayload } from "@towers-of-coreborn/api";
+import type { ClimbRecord, SaveClimbPayload } from "@resync-game-framework/api";
 import type { RunState, TowerContent } from "./towerTypes";
 
 /**

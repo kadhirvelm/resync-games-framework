@@ -1,6 +1,6 @@
 "use client";
 
-import { isServiceError } from "@towers-of-coreborn/api";
+import { isServiceError } from "@resync-game-framework/api";
 import {
   createContext,
   type ReactNode,

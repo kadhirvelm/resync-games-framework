@@ -1,7 +1,7 @@
 import type {
   PlayableCardEffect,
   PlayableCardKind,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { cardTargeting, comboGrantsBlock } from "./cardRules";
 import { SeededRandom } from "./random";
 import type {

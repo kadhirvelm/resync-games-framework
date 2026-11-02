@@ -2,7 +2,7 @@ import {
   AUDIO_CUE_SECONDS,
   type AudioCue,
   type AudioRole,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 
 const ELEVENLABS_ORIGIN = "https://api.elevenlabs.io";
 /** mp3 at 128kbps, available without a higher ElevenLabs tier. */

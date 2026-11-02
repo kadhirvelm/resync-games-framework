@@ -8,7 +8,7 @@ import type {
   EnemyAsset,
   PlayableCardAsset,
   SpriteSheetAsset,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import {
   BUILT_IN_COREBORN,
   BUILT_IN_CULTIVATOR,

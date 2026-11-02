@@ -4,7 +4,7 @@ import type {
   PlayableCardRules,
   SpriteAnimationKind,
   SpriteFacing,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 
 /** Coreborn tier from 1 through 4. Matches the four portrait levels. */
 export type TierNumber = CardCharacterLevelNumber;

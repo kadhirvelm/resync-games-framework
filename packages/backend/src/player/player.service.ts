@@ -12,8 +12,8 @@ import {
   MAX_SAVED_CLIMBS_PER_PLAYER,
   type PlayerServiceApi,
   type PlayerState,
-} from "@towers-of-coreborn/api";
-import type { Cultivator, Prisma } from "@towers-of-coreborn/database";
+} from "@resync-game-framework/api";
+import type { Cultivator, Prisma } from "@resync-game-framework/database";
 import { CARD_CHARACTER_STORAGE } from "src/asset-classes/card-character/cardCharacterStorage";
 import { readCardCharacterSet } from "src/asset-classes/card-character/readCardCharacterSets";
 import { readSpriteSheet } from "src/asset-classes/sprite-sheet/readSpriteSheets";

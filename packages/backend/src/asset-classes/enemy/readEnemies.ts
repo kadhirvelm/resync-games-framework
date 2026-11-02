@@ -1,7 +1,7 @@
 import type { Dirent } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { EnemyAsset } from "@towers-of-coreborn/api";
+import type { EnemyAsset } from "@resync-game-framework/api";
 import { z } from "zod";
 import { enemyPatternSchema } from "./enemyPattern";
 import { ENEMY_FILE_NAME, ENEMY_MANIFEST_FILE_NAME } from "./enemySpec";

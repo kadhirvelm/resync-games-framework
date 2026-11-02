@@ -1,6 +1,6 @@
 "use client";
 
-import type { SpriteAnimationAsset } from "@towers-of-coreborn/api";
+import type { SpriteAnimationAsset } from "@resync-game-framework/api";
 import clsx from "clsx";
 import styles from "./Assets.module.scss";
 import { spriteAnimationDisplay } from "./spriteAnimation";

@@ -1,6 +1,9 @@
 "use client";
 
-import type { EnemyAsset, ListEnemiesResponse } from "@towers-of-coreborn/api";
+import type {
+  EnemyAsset,
+  ListEnemiesResponse,
+} from "@resync-game-framework/api";
 import { useState } from "react";
 import { Dialog, Flex } from "@/lib/radix";
 import styles from "./Assets.module.scss";

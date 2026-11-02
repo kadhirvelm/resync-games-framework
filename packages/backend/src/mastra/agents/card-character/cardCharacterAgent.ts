@@ -1,9 +1,9 @@
 import { Injectable } from "@nestjs/common";
-import { AgentTool } from "@towers-of-coreborn/api";
+import { AgentTool } from "@resync-game-framework/api";
 import { CardCharacterPromptRenderer } from "src/asset-classes/card-character/cardCharacterPromptRenderer";
 import { CardCharacterToolService } from "src/asset-classes/card-character/cardCharacterTool.service";
 import { readCardCharacterImageSet } from "src/asset-classes/card-character/readCardCharacterImageSet";
-import { TowersOfCorebornAgentService } from "src/mastra/shared/towersOfCorebornAgent.service";
+import { ResyncGameFrameworkAgentService } from "src/mastra/shared/resyncGameFrameworkAgent.service";
 import {
   collectImageFilePaths,
   deleteImageFiles,
@@ -68,7 +68,7 @@ export class CardCharacterAgent
   implements QueryableAgent<CardCharacterInput, CardCharacterResult>
 {
   public constructor(
-    private readonly agents: TowersOfCorebornAgentService,
+    private readonly agents: ResyncGameFrameworkAgentService,
     private readonly cardCharacterToolService: CardCharacterToolService,
     private readonly generationAbort: GenerationAbortCoordinator,
   ) {}

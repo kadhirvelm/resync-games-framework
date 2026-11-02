@@ -15,7 +15,7 @@ import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 import type {
   ThreeDSceneEvent,
   ThreeDSceneInput,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { attachBabylonRuntimeLifecycle } from "./babylonRuntimeLifecycle";
 import type { PrototypeRun } from "./logic/prototypeRun";
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { ThreeDJob } from "@towers-of-coreborn/api";
+import type { ThreeDJob } from "@resync-game-framework/api";
 import { GenerateThreeDModelToolService } from "src/mastra/tools/generateThreeDModelTool.service";
 import { ThreeDJobs } from "../threeDJobs";
 import { validateGlb } from "../validateGlb";

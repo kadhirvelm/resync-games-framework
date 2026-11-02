@@ -1,13 +1,13 @@
-# Towers of Coreborn
+# Resync Game Framework
 
-An experiment in building games from a living creative workspace.
+A framework for building games from a living creative workspace.
 
-The idea is to write the world's lore, environments, characters, tone, and
+The idea is to write a world's lore, environments, characters, tone, and
 other creative direction as living documents, then load that world into a
-playable game. This repository is the first game built around that workflow:
-a deck-building roguelike.
+playable game. Towers of Coreborn (`towers-of-coreborn`) is the cards game
+in this repository: a deck-building roguelike.
 
-Rather than treating the game's setting as a pile of static files, those
+Rather than treating a game's setting as a pile of static files, those
 documents act as the source of truth for the world. The game can then turn
 that material into encounters, cards, characters, art, and other playable
 content.
@@ -138,7 +138,7 @@ ORDER BY _timestamp DESC
 Container names include `postgres`, `pgweb`, `redis`, `redis_commander`,
 `redis_insight`, and `gatus`. A `vector` container ships the logs (configured
 in `vector/vector.yaml`); to include a new Compose service, give it the
-`dev.towersofcoreborn.logs: "true"` label. The backend and frontend run on the
+`dev.resync-game-framework.logs: "true"` label. The backend and frontend run on the
 host, so their logs stay in the `bun run dev` terminal.
 
 ### Redis Insight

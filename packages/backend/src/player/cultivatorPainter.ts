@@ -1,6 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
-import type { CultivatorArtPart } from "@towers-of-coreborn/api";
-import type { Prisma } from "@towers-of-coreborn/database";
+import type { CultivatorArtPart } from "@resync-game-framework/api";
+import type { Prisma } from "@resync-game-framework/database";
 import { PrismaService } from "src/database/prisma.service";
 import { CardCharacterAgent } from "src/mastra/agents/card-character/cardCharacterAgent";
 import { GenerationCancelledException } from "src/mastra/agents/generationCancelled";

@@ -1,7 +1,7 @@
 import type { Dirent } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { BattleBackgroundAsset } from "@towers-of-coreborn/api";
+import type { BattleBackgroundAsset } from "@resync-game-framework/api";
 import { z } from "zod";
 import {
   BATTLE_BACKGROUND_FILE_NAME,

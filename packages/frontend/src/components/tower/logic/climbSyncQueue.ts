@@ -1,4 +1,4 @@
-import type { SaveClimbPayload } from "@towers-of-coreborn/api";
+import type { SaveClimbPayload } from "@resync-game-framework/api";
 
 /** One change to a saved climb on the server. */
 export type ClimbSyncOperation =

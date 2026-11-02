@@ -1,6 +1,6 @@
 "use client";
 
-import { isServiceError, type ServiceError } from "@towers-of-coreborn/api";
+import { isServiceError, type ServiceError } from "@resync-game-framework/api";
 import { useEffect, useState } from "react";
 import { convertErrorToString } from "@/lib/convertErrorToString";
 import { useClientServiceCallers } from "@/services/clientServiceCallers";

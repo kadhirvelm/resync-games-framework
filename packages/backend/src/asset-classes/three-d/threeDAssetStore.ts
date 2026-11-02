@@ -6,7 +6,7 @@ import type {
   ThreeDAsset,
   ThreeDAssetKind,
   ThreeDDesign,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import sharp from "sharp";
 import { ConfigurationService } from "src/configuration/configuration.service";
 import { createAssetClassStorage } from "../shared/assetClassStorage";

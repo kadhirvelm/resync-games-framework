@@ -5,8 +5,8 @@ import { ModelModule } from "src/model/model.module";
 import { ProductNowLoreModule } from "src/product-now-lore/product-now-lore.module";
 import { ProductNowMcpModule } from "src/product-now-mcp/product-now-mcp.module";
 import { ConsultProductNowAgent } from "./agents/consult-productnow/consultProductNowAgent";
-import { TowersOfCorebornAgentService } from "./shared/towersOfCorebornAgent.service";
-import { TowersOfCorebornAgentToolRegistry } from "./shared/towersOfCorebornAgentToolRegistry";
+import { ResyncGameFrameworkAgentService } from "./shared/resyncGameFrameworkAgent.service";
+import { ResyncGameFrameworkAgentToolRegistry } from "./shared/resyncGameFrameworkAgentToolRegistry";
 import { GenerateAudioToolService } from "./tools/generateAudioTool.service";
 import { GenerateImageToolService } from "./tools/generateImageTool.service";
 import { RecordProductNowLoreToolService } from "./tools/recordProductNowLoreTool.service";
@@ -19,8 +19,8 @@ import { RecordProductNowLoreToolService } from "./tools/recordProductNowLoreToo
   exports: [
     ConsultProductNowAgent,
     ElevenLabsClient,
-    TowersOfCorebornAgentService,
-    TowersOfCorebornAgentToolRegistry,
+    ResyncGameFrameworkAgentService,
+    ResyncGameFrameworkAgentToolRegistry,
   ],
   imports: [
     ModelModule,
@@ -34,8 +34,8 @@ import { RecordProductNowLoreToolService } from "./tools/recordProductNowLoreToo
     GenerateAudioToolService,
     GenerateImageToolService,
     RecordProductNowLoreToolService,
-    TowersOfCorebornAgentService,
-    TowersOfCorebornAgentToolRegistry,
+    ResyncGameFrameworkAgentService,
+    ResyncGameFrameworkAgentToolRegistry,
   ],
 })
 export class MastraCoreModule {}

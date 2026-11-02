@@ -1,8 +1,8 @@
 import { InternalServerErrorException } from "@nestjs/common";
 import type {
-  TowersOfCorebornAgentChatResults,
-  TowersOfCorebornAgentSingleToolChatResult,
-} from "./towersOfCorebornAgent.service";
+  ResyncGameFrameworkAgentChatResults,
+  ResyncGameFrameworkAgentSingleToolChatResult,
+} from "./resyncGameFrameworkAgent.service";
 
 /**
  * Input for deciding whether a single-tool agent run succeeded.
@@ -16,7 +16,7 @@ export interface ResolveSingleToolChatInput<ToolOutput> {
   outputLabel: string;
   readToolOutput: (rawResult: unknown) => ToolOutput;
   result: Pick<
-    TowersOfCorebornAgentChatResults,
+    ResyncGameFrameworkAgentChatResults,
     "text" | "toolErrors" | "toolResults"
   >;
   supportingToolIds?: string[];
@@ -33,7 +33,7 @@ export interface ResolveSingleToolChatInput<ToolOutput> {
  */
 export function resolveSingleToolChat<ToolOutput>(
   input: ResolveSingleToolChatInput<ToolOutput>,
-): TowersOfCorebornAgentSingleToolChatResult<ToolOutput> {
+): ResyncGameFrameworkAgentSingleToolChatResult<ToolOutput> {
   for (const supportingToolId of input.supportingToolIds ?? []) {
     requireSuccessfulTool(input, supportingToolId);
   }

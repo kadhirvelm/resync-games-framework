@@ -3,7 +3,7 @@ import {
   PLAYABLE_CARD_CHAIN_KINDS,
   PLAYABLE_CARD_KINDS,
   type PlayableCardLoreSource,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { throwIfAborted } from "src/mastra/agents/generationCancelled";
 import { ProductNowMcpService } from "src/product-now-mcp/product-now-mcp.service";
 import { z } from "zod";

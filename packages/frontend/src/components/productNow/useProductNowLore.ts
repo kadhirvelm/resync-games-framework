@@ -9,7 +9,7 @@ import {
   type ProductNowLorePassage,
   type ProductNowLoreWriteResult,
   type ServiceError,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { useCallback, useMemo } from "react";
 import { useClientServiceCallers } from "@/services/clientServiceCallers";
 import {

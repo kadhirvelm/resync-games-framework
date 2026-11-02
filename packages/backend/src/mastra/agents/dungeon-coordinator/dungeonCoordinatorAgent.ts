@@ -9,11 +9,11 @@ import {
   AgentTool,
   type CardCharacterLevelNumber,
   type DungeonSlotKind,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { CARD_CHARACTER_LEVELS } from "src/asset-classes/card-character/cardCharacterSpec";
 import { runWithProductNowSession } from "src/product-now-mcp/productNowSessionContext";
 import { z } from "zod";
-import { TowersOfCorebornAgentService } from "../../shared/towersOfCorebornAgent.service";
+import { ResyncGameFrameworkAgentService } from "../../shared/resyncGameFrameworkAgent.service";
 import { GenerationAbortCoordinator } from "../generationAbort.coordinator";
 import { isGenerationAbort, throwIfAborted } from "../generationCancelled";
 import type { QueryableAgent } from "../queryableAgent";
@@ -213,7 +213,7 @@ export class DungeonCoordinatorAgent
   private readonly logger = new Logger(DungeonCoordinatorAgent.name);
 
   public constructor(
-    private readonly agents: TowersOfCorebornAgentService,
+    private readonly agents: ResyncGameFrameworkAgentService,
     private readonly generationAbort: GenerationAbortCoordinator,
   ) {}
 

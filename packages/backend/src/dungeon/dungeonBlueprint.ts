@@ -10,7 +10,7 @@ import {
   type DungeonSlot,
   type DungeonSlotPreview,
   type DungeonSlotStatus,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { z } from "zod";
 import { withDungeonAudio } from "./dungeonAudioPlan";
 import { DUNGEON_FILE_NAME } from "./dungeonStorage";

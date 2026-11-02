@@ -1,4 +1,4 @@
-import { EnemyServiceDefinition } from "@towers-of-coreborn/api";
+import { EnemyServiceDefinition } from "@resync-game-framework/api";
 import { createAssetClassController } from "../shared/createAssetClassController";
 import { EnemyService } from "./enemy.service";
 

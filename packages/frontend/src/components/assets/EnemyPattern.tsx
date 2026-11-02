@@ -1,4 +1,4 @@
-import type { EnemyAction } from "@towers-of-coreborn/api";
+import type { EnemyAction } from "@resync-game-framework/api";
 import styles from "./Assets.module.scss";
 
 interface EnemyPatternProps {

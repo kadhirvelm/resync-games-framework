@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "towers-of-coreborn",
+      "name": "resync-game-framework",
       "devDependencies": {
         "@biomejs/biome": "^2.5.14",
         "@types/bun": "^1.4.2",
@@ -13,14 +13,14 @@
       },
     },
     "packages/api": {
-      "name": "@towers-of-coreborn/api",
+      "name": "@resync-game-framework/api",
       "version": "0.0.1",
       "devDependencies": {
         "typescript": "6.0.3",
       },
     },
     "packages/backend": {
-      "name": "@towers-of-coreborn/backend",
+      "name": "@resync-game-framework/backend",
       "version": "0.0.1",
       "dependencies": {
         "@ai-sdk/google-vertex": "^5.0.95",
@@ -36,8 +36,8 @@
         "@nestjs/websockets": "^12.1.0",
         "@prisma/adapter-pg": "^7.10.0",
         "@socket.io/redis-adapter": "^8.3.0",
-        "@towers-of-coreborn/api": "workspace:^",
-        "@towers-of-coreborn/database": "workspace:^",
+        "@resync-game-framework/api": "workspace:^",
+        "@resync-game-framework/database": "workspace:^",
         "bullmq": "^6.5.3",
         "compression": "^1.8.2",
         "dotenv": "^18.0.4",
@@ -67,25 +67,25 @@
       },
     },
     "packages/database": {
-      "name": "@towers-of-coreborn/database",
+      "name": "@resync-game-framework/database",
       "dependencies": {
         "@prisma/adapter-pg": "^7.10.0",
         "@prisma/client": "^7.10.0",
       },
       "devDependencies": {
-        "@towers-of-coreborn/toc-cli": "workspace:*",
+        "@resync-game-framework/toc-cli": "workspace:*",
         "prisma": "^7.10.0",
         "ts-node": "^10.9.2",
       },
     },
     "packages/frontend": {
-      "name": "@towers-of-coreborn/frontend",
+      "name": "@resync-game-framework/frontend",
       "version": "0.1.0",
       "dependencies": {
         "@babylonjs/core": "^9.33.1",
         "@babylonjs/loaders": "^9.33.1",
         "@radix-ui/themes": "^3.3.0",
-        "@towers-of-coreborn/api": "workspace:^",
+        "@resync-game-framework/api": "workspace:^",
         "@vercel/analytics": "^2.0.1",
         "@vercel/speed-insights": "^2.0.0",
         "clsx": "^2.1.1",
@@ -116,7 +116,7 @@
       },
     },
     "toc-cli": {
-      "name": "@towers-of-coreborn/toc-cli",
+      "name": "@resync-game-framework/toc-cli",
       "version": "0.1.0",
       "bin": {
         "toc": "./dist/index.js",
@@ -793,15 +793,15 @@
 
     "@tokenizer/token": ["@tokenizer/token@0.3.0", "", {}, "sha512-OvjF+z51L3ov0OyAU0duzsYuvO01PH7x4t6DJx+guahgTnBHkhJdG7soQeTSFLWN3efnHyibZ4Z8l2EuWwJN3A=="],
 
-    "@towers-of-coreborn/api": ["@towers-of-coreborn/api@workspace:packages/api"],
+    "@resync-game-framework/api": ["@resync-game-framework/api@workspace:packages/api"],
 
-    "@towers-of-coreborn/backend": ["@towers-of-coreborn/backend@workspace:packages/backend"],
+    "@resync-game-framework/backend": ["@resync-game-framework/backend@workspace:packages/backend"],
 
-    "@towers-of-coreborn/database": ["@towers-of-coreborn/database@workspace:packages/database"],
+    "@resync-game-framework/database": ["@resync-game-framework/database@workspace:packages/database"],
 
-    "@towers-of-coreborn/frontend": ["@towers-of-coreborn/frontend@workspace:packages/frontend"],
+    "@resync-game-framework/frontend": ["@resync-game-framework/frontend@workspace:packages/frontend"],
 
-    "@towers-of-coreborn/toc-cli": ["@towers-of-coreborn/toc-cli@workspace:toc-cli"],
+    "@resync-game-framework/toc-cli": ["@resync-game-framework/toc-cli@workspace:toc-cli"],
 
     "@tsconfig/node10": ["@tsconfig/node10@1.0.13", "", {}, "sha512-gcLdvR9HO1ZJBypsOGqaP6TFEzb6vIta0KSTLt9NAQ6pXQO3cRgSVyCN6pzYqI9DlJgY71XKO0dpDhCf08b3pg=="],
 

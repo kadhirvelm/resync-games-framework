@@ -1,6 +1,6 @@
 "use client";
 
-import type { GameRoomPlayerInput } from "@towers-of-coreborn/api";
+import type { GameRoomPlayerInput } from "@resync-game-framework/api";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type MultiplayerCommandResult,

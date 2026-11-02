@@ -1,5 +1,5 @@
 import { ConflictException, HttpException, Injectable } from "@nestjs/common";
-import type { ThreeDJob } from "@towers-of-coreborn/api";
+import type { ThreeDJob } from "@resync-game-framework/api";
 import { RedisService } from "src/infra/redis/redis.service";
 
 const JOB_KEY_PREFIX = "three-d:job:";

@@ -1,4 +1,4 @@
-import type { PlayableCardLoreSource } from "@towers-of-coreborn/api";
+import type { PlayableCardLoreSource } from "@resync-game-framework/api";
 import { parseSearchPassages } from "src/product-now-lore/productNowLoreParsers";
 import { LORE_DOCUMENT_ID } from "./playableCardSpec";
 

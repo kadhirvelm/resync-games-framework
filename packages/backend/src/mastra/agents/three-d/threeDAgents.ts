@@ -5,10 +5,10 @@ import {
   type ThreeDAsset,
   type ThreeDAssetKind,
   type ThreeDGenerationPayload,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { ThreeDJobs } from "src/asset-classes/three-d/threeDJobs";
 import { threeDDesignSchema } from "src/asset-classes/three-d/threeDSchemas";
-import { TowersOfCorebornAgentService } from "src/mastra/shared/towersOfCorebornAgent.service";
+import { ResyncGameFrameworkAgentService } from "src/mastra/shared/resyncGameFrameworkAgent.service";
 import { GenerateThreeDModelToolService } from "src/mastra/tools/generateThreeDModelTool.service";
 import { GenerationAbortCoordinator } from "../generationAbort.coordinator";
 
@@ -16,7 +16,7 @@ import { GenerationAbortCoordinator } from "../generationAbort.coordinator";
 @Injectable()
 export class ThreeDDesignAgent {
   public constructor(
-    private readonly agents: TowersOfCorebornAgentService,
+    private readonly agents: ResyncGameFrameworkAgentService,
     private readonly generator: GenerateThreeDModelToolService,
     private readonly aborts: GenerationAbortCoordinator,
     private readonly jobs: ThreeDJobs,

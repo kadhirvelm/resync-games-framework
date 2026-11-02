@@ -1,4 +1,4 @@
-import type { CultivatorFields } from "@towers-of-coreborn/api";
+import type { CultivatorFields } from "@resync-game-framework/api";
 import { CHARACTER_SPRITE_FACING } from "src/dungeon/dungeonSlotGenerator";
 
 /**

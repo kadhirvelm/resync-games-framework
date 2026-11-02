@@ -6,17 +6,17 @@ import {
 } from "../ngrok";
 
 describe("tunnelsToStart", () => {
-  test("gives frontend and API their own towersofcoreborn-*.ngrok.app hostnames by default", () => {
+  test("gives frontend and API their own resync-game-framework-*.ngrok.app hostnames by default", () => {
     const tunnels = tunnelsToStart({ NGROK_DEV_NAME: "ada" });
 
     expect(tunnels).toEqual([
       {
-        domain: "towersofcoreborn-ada-frontend.ngrok.app",
+        domain: "resync-game-framework-ada-frontend.ngrok.app",
         name: "frontend",
         port: 3000,
       },
       {
-        domain: "towersofcoreborn-ada-api.ngrok.app",
+        domain: "resync-game-framework-ada-api.ngrok.app",
         name: "backend",
         port: 8080,
       },
@@ -50,7 +50,9 @@ describe("tunnelsToStart", () => {
       name: "backend",
       port: 8080,
     });
-    expect(tunnels[0]?.domain).toBe("towersofcoreborn-ada-frontend.ngrok.app");
+    expect(tunnels[0]?.domain).toBe(
+      "resync-game-framework-ada-frontend.ngrok.app",
+    );
   });
 
   test("rejects hostnames that would put two tunnels on one hostname", () => {
@@ -67,18 +69,20 @@ describe("renderV3EndpointConfig", () => {
   test("pins each endpoint to its hostname and local upstream", () => {
     const yaml = renderV3EndpointConfig([
       {
-        domain: "towersofcoreborn-ada-api.ngrok.app",
+        domain: "resync-game-framework-ada-api.ngrok.app",
         name: "backend",
         port: 8080,
       },
       {
-        domain: "towersofcoreborn-ada-frontend.ngrok.app",
+        domain: "resync-game-framework-ada-frontend.ngrok.app",
         name: "frontend",
         port: 3000,
       },
     ]);
 
-    expect(yaml).toContain("url: https://towersofcoreborn-ada-api.ngrok.app");
+    expect(yaml).toContain(
+      "url: https://resync-game-framework-ada-api.ngrok.app",
+    );
     expect(yaml).toContain("url: https://localhost:8080");
     expect(yaml).toContain("url: https://localhost:3000");
     expect(yaml).not.toContain("url: https://\n");

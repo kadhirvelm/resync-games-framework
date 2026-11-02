@@ -5,7 +5,7 @@ import type {
   DungeonSlotKind,
   DungeonSlotPreview,
   PlayableCardEffect,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { AUDIO_STORAGE } from "src/asset-classes/audio/audioStorage";
 import { readAudioClip } from "src/asset-classes/audio/readAudioClips";
 import { BATTLE_BACKGROUND_STORAGE } from "src/asset-classes/battle-background/battleBackgroundStorage";

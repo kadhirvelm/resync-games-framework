@@ -3,8 +3,8 @@ import type {
   ThreeDAssetKind,
   ThreeDDesign,
   ThreeDPart,
-} from "@towers-of-coreborn/api";
-import { THREE_D_CHARACTER_ANIMATIONS } from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
+import { THREE_D_CHARACTER_ANIMATIONS } from "@resync-game-framework/api";
 import { threeDDesignSchema } from "./threeDSchemas";
 
 /**

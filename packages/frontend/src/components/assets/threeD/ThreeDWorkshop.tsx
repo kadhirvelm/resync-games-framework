@@ -6,7 +6,7 @@ import {
   type ThreeDJob,
   type ThreeDPrototype,
   type ThreeDProvider,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";

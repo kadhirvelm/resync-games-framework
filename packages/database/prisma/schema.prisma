@@ -29,7 +29,7 @@ model ProductNowOAuthSession {
   payload   String
 }
 
-/// One browser's player. The id is the `toc_player` cookie; there are no
+/// One browser's player. The id is the `resync_player` cookie; there are no
 /// accounts, so a browser that clears its cookies starts a new player.
 model Player {
   id          String       @id

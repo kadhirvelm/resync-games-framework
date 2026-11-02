@@ -1,5 +1,5 @@
 import { HttpException } from "@nestjs/common";
-import { GENERATION_CANCELLED_STATUS } from "@towers-of-coreborn/api";
+import { GENERATION_CANCELLED_STATUS } from "@resync-game-framework/api";
 import { isAbortError } from "src/utils/isAbortError";
 
 /** Message returned when a workshop stop request ends a generation. */

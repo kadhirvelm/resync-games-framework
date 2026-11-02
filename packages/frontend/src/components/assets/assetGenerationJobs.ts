@@ -4,7 +4,7 @@ import {
   type DungeonInFlightJob,
   isGenerationCancelled,
   isServiceError,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 
 /** A generation request that is still running, or that failed and has not been dismissed. */
 export interface PendingJob {

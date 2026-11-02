@@ -1,4 +1,4 @@
-import { AgentTool } from "@towers-of-coreborn/api";
+import { AgentTool } from "@resync-game-framework/api";
 import { LORE_DOCUMENT_ID } from "src/asset-classes/playable-card/playableCardSpec";
 import type { CardCharacterInput } from "src/mastra/agents/card-character/cardCharacterAgent";
 import {

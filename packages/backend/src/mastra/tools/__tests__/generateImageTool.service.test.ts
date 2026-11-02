@@ -3,10 +3,10 @@ import { randomUUID } from "node:crypto";
 import { access, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AgentTool } from "@towers-of-coreborn/api";
+import { AgentTool } from "@resync-game-framework/api";
 import sharp from "sharp";
 import { ModelService } from "src/model/model.service";
-import { TowersOfCorebornAgentToolRegistry } from "../../shared/towersOfCorebornAgentToolRegistry";
+import { ResyncGameFrameworkAgentToolRegistry } from "../../shared/resyncGameFrameworkAgentToolRegistry";
 import {
   GENERATE_IMAGE_MODELS,
   GenerateImageToolService,
@@ -155,13 +155,13 @@ describe("GenerateImageToolService", () => {
   });
 });
 
-describe("TowersOfCorebornAgentToolRegistry", () => {
+describe("ResyncGameFrameworkAgentToolRegistry", () => {
   test("gives agents the generate-image tool", async () => {
     const directory = await makeTempDirectory();
     const requestTextCompletion = mock(async () =>
       createPortrait(directory, 96, 128),
     );
-    const registry = new TowersOfCorebornAgentToolRegistry(
+    const registry = new ResyncGameFrameworkAgentToolRegistry(
       { createTool: () => ({ id: AgentTool.ConsultProductNow }) } as never,
       new GenerateImageToolService({
         requestTextCompletion,
@@ -203,7 +203,7 @@ describe("TowersOfCorebornAgentToolRegistry", () => {
   });
 
   test("rejects an enum member that is not a catalog tool", () => {
-    const registry = new TowersOfCorebornAgentToolRegistry(
+    const registry = new ResyncGameFrameworkAgentToolRegistry(
       { createTool: () => ({ id: AgentTool.ConsultProductNow }) } as never,
       new GenerateImageToolService({
         requestTextCompletion: mock(async () => ""),

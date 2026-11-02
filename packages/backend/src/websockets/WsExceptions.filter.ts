@@ -7,7 +7,7 @@ import {
   WsExceptionFilter,
 } from "@nestjs/common";
 import { WsException } from "@nestjs/websockets";
-import { ServiceError } from "@towers-of-coreborn/api";
+import { ServiceError } from "@resync-game-framework/api";
 import { Socket } from "socket.io";
 import { convertErrorToString } from "../library/utils/convertErroToString";
 

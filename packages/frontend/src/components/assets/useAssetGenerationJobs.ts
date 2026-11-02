@@ -5,7 +5,7 @@ import {
   DUNGEON_SLOT_ASSET_CLASS_ID,
   type DungeonSlot,
   isServiceError,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { convertErrorToString } from "@/lib/convertErrorToString";
 import { useClientServiceCallers } from "@/services/clientServiceCallers";

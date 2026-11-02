@@ -2,7 +2,7 @@
 import type {
   ThreeDSceneEvent,
   ThreeDSceneInput,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { useEffect, useRef, useState } from "react";
 import styles from "./babylonGame.module.scss";
 import { createModelScene, type ModelSceneHandle } from "./createModelScene";

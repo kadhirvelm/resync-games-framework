@@ -1,4 +1,4 @@
-import type { SpriteFacing } from "@towers-of-coreborn/api";
+import type { SpriteFacing } from "@resync-game-framework/api";
 import {
   SPRITE_SHEET_ANIMATIONS,
   SPRITE_SHEET_BACKGROUND_HEX,

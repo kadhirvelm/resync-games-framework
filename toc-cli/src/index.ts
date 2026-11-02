@@ -12,7 +12,7 @@ import { runTests } from "./actions/runTests";
 
 const program = new Command()
   .name("toc")
-  .description("Towers of Coreborn CLI — useful tasks for the monorepo")
+  .description("Resync Game Framework CLI — useful tasks for the monorepo")
   .version("0.1.0");
 
 program

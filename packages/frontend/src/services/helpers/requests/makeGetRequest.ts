@@ -1,4 +1,4 @@
-import { ServiceError } from "@towers-of-coreborn/api";
+import { ServiceError } from "@resync-game-framework/api";
 import { isEmpty } from "lodash-es";
 import { convertErrorToString } from "@/lib/convertErrorToString";
 import { cleanPayload } from "../cleanPayload";

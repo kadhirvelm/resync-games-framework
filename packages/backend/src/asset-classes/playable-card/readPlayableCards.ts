@@ -7,7 +7,7 @@ import type {
   PlayableCardEffect,
   PlayableCardKind,
   PlayableCardLoreSource,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import {
   isPlayableCardChainKind,
   isPlayableCardKind,

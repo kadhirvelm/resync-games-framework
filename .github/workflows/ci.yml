@@ -90,7 +90,7 @@ jobs:
         run: cd toc-cli && bun run build && bun install
 
       - name: Build packages the tests import
-        run: bunx turbo run build --filter=@towers-of-coreborn/api --filter=@towers-of-coreborn/database
+        run: bunx turbo run build --filter=@resync-game-framework/api --filter=@resync-game-framework/database
 
       - name: Prepare environment file
         run: bun run toc ensure-env

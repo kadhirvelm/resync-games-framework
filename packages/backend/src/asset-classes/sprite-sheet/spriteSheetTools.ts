@@ -1,5 +1,5 @@
 import { createTool } from "@mastra/core/tools";
-import { SPRITE_FACINGS } from "@towers-of-coreborn/api";
+import { SPRITE_FACINGS } from "@resync-game-framework/api";
 import { throwIfAborted } from "src/mastra/agents/generationCancelled";
 import { z } from "zod";
 import {

@@ -6,7 +6,7 @@ import {
   type CultivatorRecord,
   isServiceError,
   type ServiceError,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { convertErrorToString } from "@/lib/convertErrorToString";
 import { useClientServiceCallers } from "@/services/clientServiceCallers";

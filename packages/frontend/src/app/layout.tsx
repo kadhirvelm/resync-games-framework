@@ -9,7 +9,7 @@ import { Cormorant_Garamond, Inter } from "next/font/google";
 import styles from "./layout.module.scss";
 
 export const metadata: Metadata = {
-  title: "Towers of Coreborn",
+  title: "Resync Game Framework",
 };
 
 const display = Cormorant_Garamond({

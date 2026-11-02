@@ -8,14 +8,14 @@ import {
   Logger,
   UnauthorizedException,
 } from "@nestjs/common";
-import { AgentTool, type ProductNowMcpTool } from "@towers-of-coreborn/api";
+import { AgentTool, type ProductNowMcpTool } from "@resync-game-framework/api";
 import {
   CARD_GAME_FOLDER_ID,
   LORE_DOCUMENT_ID,
 } from "src/asset-classes/playable-card/playableCardSpec";
 import { ConfigurationService } from "src/configuration/configuration.service";
-import { TowersOfCorebornAgent } from "src/mastra/shared/towersOfCorebornAgent";
-import { resolveModelConfig } from "src/mastra/shared/towersOfCorebornAgentModels";
+import { ResyncGameFrameworkAgent } from "src/mastra/shared/resyncGameFrameworkAgent";
+import { resolveModelConfig } from "src/mastra/shared/resyncGameFrameworkAgentModels";
 import { ProductNowMcpService } from "src/product-now-mcp/product-now-mcp.service";
 import { readProductNowSessionForTool } from "src/product-now-mcp/productNowSessionContext";
 import { z } from "zod";
@@ -78,13 +78,13 @@ export class ConsultProductNowAgent {
   private readonly logger = new Logger(ConsultProductNowAgent.name);
 
   /** Mastra agent that researches one ProductNow question. */
-  public readonly subagent: TowersOfCorebornAgent;
+  public readonly subagent: ResyncGameFrameworkAgent;
 
   public constructor(
     configurationService: ConfigurationService,
     private readonly productNowMcpService: ProductNowMcpService,
   ) {
-    this.subagent = new TowersOfCorebornAgent({
+    this.subagent = new ResyncGameFrameworkAgent({
       description:
         "Research one question about the Spire, the Reach, or other lore in ProductNow. Answer from the documents those tools return. If ProductNow is not connected, say so.",
       id: "consult-productnow-agent",

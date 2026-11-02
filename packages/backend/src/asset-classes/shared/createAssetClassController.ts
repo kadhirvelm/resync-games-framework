@@ -8,7 +8,7 @@ import {
 import type {
   AssetClassServiceApi,
   ServiceDefinition,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { getDecorator } from "src/genericTypes/controller";
 import { Timeout } from "src/library/timeout/timeout.decorator";
 import { TimeoutInterceptor } from "src/library/timeout/timeout.interceptor";
@@ -33,7 +33,7 @@ export interface AssetClassOperations<
  * Builds the `POST /{controller}/generate`, `POST /{controller}/cancel`, and
  * `POST /{controller}/list` controller for an asset class. Generation gets
  * {@link ASSET_CLASS_GENERATION_TIMEOUT_MS}.
- * @param definition - Service definition from `@towers-of-coreborn/api`
+ * @param definition - Service definition from `@resync-game-framework/api`
  * @param service - Nest provider that implements generate and list
  * @returns A controller class Nest can register
  */

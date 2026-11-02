@@ -8,7 +8,7 @@ import {
 import {
   type WebsocketEvents,
   type WebsocketEventsDefinition,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { Server, Socket } from "socket.io";
 import { getSocketEmitter, SocketEmitter } from "./socket";
 import { CustomWsExceptionFilter } from "./WsExceptions.filter";

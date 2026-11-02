@@ -9,7 +9,7 @@ import type {
   GameRoomState,
   GameRoomValue,
   JoinGameRoomPayload,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { RedisService } from "../infra/redis/redis.service";
 
 const DEFAULT_MAX_PLAYERS = 4;

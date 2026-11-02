@@ -5,7 +5,7 @@ import {
   SPRITE_ANIMATION_KINDS,
   SPRITE_FACINGS,
   type SpriteSheetAsset,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { z } from "zod";
 import {
   SPRITE_SHEET_ANCHOR_FILE_NAME,

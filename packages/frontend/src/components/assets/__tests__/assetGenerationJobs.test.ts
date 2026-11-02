@@ -3,7 +3,7 @@ import {
   DUNGEON_ASSET_CLASS_ID,
   GENERATION_CANCELLED_STATUS,
   type ServiceError,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import {
   applyGenerationResult,
   completeAssetGenerationJob,

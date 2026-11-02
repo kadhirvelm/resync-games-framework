@@ -1,4 +1,4 @@
-import { GenericType, VisitorPattern } from "@towers-of-coreborn/api";
+import { GenericType, VisitorPattern } from "@resync-game-framework/api";
 import { ModelChatRequest, ModelRequest } from "./modelRequestTypes";
 
 export interface AllProviders {

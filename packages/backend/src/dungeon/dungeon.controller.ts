@@ -2,7 +2,7 @@ import { Body, Controller, UseInterceptors } from "@nestjs/common";
 import {
   type DungeonServiceApi,
   DungeonServiceDefinition,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { ASSET_CLASS_GENERATION_TIMEOUT_MS } from "src/asset-classes/shared/createAssetClassController";
 import {
   getDecorator,

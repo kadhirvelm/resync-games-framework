@@ -2,7 +2,7 @@ import { Body, Controller, Req } from "@nestjs/common";
 import {
   type PlayerServiceApi,
   PlayerServiceDefinition,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import type { Request } from "express";
 import { ConfigurationService } from "src/configuration/configuration.service";
 import {

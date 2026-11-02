@@ -1,4 +1,4 @@
-import type { SpriteAnimationKind } from "@towers-of-coreborn/api";
+import type { SpriteAnimationKind } from "@resync-game-framework/api";
 import type { ImageGenerationConfig } from "src/model/types/modelRequestTypes";
 
 export const SPRITE_SHEET_MANIFEST_FILE_NAME = "manifest.json";

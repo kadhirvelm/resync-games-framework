@@ -2,7 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type {
   DungeonBlueprint,
   DungeonSlotPreview,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import type { AssetClassStorage } from "src/asset-classes/shared/assetClassStorage";
 import { ConfigurationService } from "src/configuration/configuration.service";
 import { RedisService } from "src/infra/redis/redis.service";

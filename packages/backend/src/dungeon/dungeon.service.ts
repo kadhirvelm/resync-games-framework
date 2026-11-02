@@ -12,7 +12,7 @@ import type {
   DungeonInFlightJob,
   DungeonServiceApi,
   DungeonSlotKind,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { requireGenerationId } from "src/asset-classes/shared/requireGenerationId";
 import { requireGenerationPrompt } from "src/asset-classes/shared/requireGenerationPrompt";
 import {

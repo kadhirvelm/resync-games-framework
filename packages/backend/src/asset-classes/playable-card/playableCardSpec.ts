@@ -2,7 +2,7 @@ import {
   type PlayableCardKind,
   PRODUCT_NOW_GAMES_FOLDER_ID,
   PRODUCT_NOW_TOWER_LORE_DOCUMENT_ID,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import type { ImageGenerationConfig } from "src/model/types/modelRequestTypes";
 
 export {
@@ -10,7 +10,7 @@ export {
   isPlayableCardKind,
   PLAYABLE_CARD_CHAIN_KINDS,
   PLAYABLE_CARD_KINDS,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 
 /**
  * ProductNow document "Lore" in the Card game thing folder.

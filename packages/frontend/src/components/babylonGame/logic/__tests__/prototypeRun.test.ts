@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ThreeDPrototype } from "@towers-of-coreborn/api";
+import type { ThreeDPrototype } from "@resync-game-framework/api";
 import {
   interactWithPrototype,
   movePrototypePlayer,

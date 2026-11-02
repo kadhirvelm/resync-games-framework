@@ -3,7 +3,7 @@ import type {
   CultivatorArtState,
   CultivatorFields,
   CultivatorRecord,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import clsx from "clsx";
 import { Brush, Mountain, Square } from "lucide-react";
 import { useState } from "react";

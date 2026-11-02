@@ -34,6 +34,17 @@ describe("player cookie", () => {
     ).toBeUndefined();
   });
 
+  test("copies a previous player cookie onto the current name", () => {
+    const { request: stub, setCookie } = request(`toc_player=${PLAYER_ID}`);
+    expect(resolvePlayerId(stub, "https://api.example.com")).toBe(PLAYER_ID);
+    expect(setCookie).toHaveBeenCalledTimes(1);
+    const [name, value] = setCookie.mock.calls[0] as unknown as [
+      string,
+      string,
+    ];
+    expect([name, value]).toEqual([PLAYER_COOKIE_NAME, PLAYER_ID]);
+  });
+
   test("keeps an existing player without setting a cookie", () => {
     const { request: stub, setCookie } = request(
       `${PLAYER_COOKIE_NAME}=${PLAYER_ID}`,

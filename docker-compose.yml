@@ -1,17 +1,17 @@
-name: towers-of-coreborn
+name: resync-game-framework
 
 x-log-labels: &log-labels
-  dev.towersofcoreborn.logs: "true"
+  dev.resync-game-framework.logs: "true"
 
 services:
   postgres:
-    container_name: toc-postgres
+    container_name: resync-postgres
     image: postgres:15.3
     ports:
       - "127.0.0.1:5432:5432"
     environment:
       - POSTGRES_USER=postgres
-      - POSTGRES_DB=towers-of-coreborn
+      - POSTGRES_DB=resync-game-framework
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_HOST_AUTH_METHOD=trust
     labels:
@@ -22,19 +22,19 @@ services:
       timeout: 5s
       retries: 10
   pgweb:
-    container_name: toc-pgweb
+    container_name: resync-pgweb
     image: sosedoff/pgweb:0.17.0
     ports:
       - "127.0.0.1:2000:8081"
     environment:
-      - PGWEB_DATABASE_URL=postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/towers-of-coreborn?sslmode=disable
+      - PGWEB_DATABASE_URL=postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/resync-game-framework?sslmode=disable
     labels:
       <<: *log-labels
     depends_on:
       postgres:
         condition: service_healthy
   redis:
-    container_name: toc-redis
+    container_name: resync-redis
     image: redis:7-alpine
     ports:
       - "127.0.0.1:6379:6379"
@@ -49,7 +49,7 @@ services:
       timeout: 3s
       retries: 10
   redis-commander:
-    container_name: toc-redis_commander
+    container_name: resync-redis_commander
     image: ghcr.io/joeferner/redis-commander:latest
     ports:
       - "127.0.0.1:8081:8081"
@@ -62,7 +62,7 @@ services:
         condition: service_healthy
 
   openobserve:
-    container_name: toc-openobserve
+    container_name: resync-openobserve
     image: openobserve/openobserve:v1.1.1
     ports:
       - "127.0.0.1:5080:5080"
@@ -75,7 +75,7 @@ services:
 
   # Reads the Compose containers labeled above and stores their logs in OpenObserve.
   vector:
-    container_name: toc-vector
+    container_name: resync-vector
     image: timberio/vector:0.59.0-debian
     user: root
     environment:
@@ -89,7 +89,7 @@ services:
       - openobserve
 
   redis-insight:
-    container_name: toc-redis_insight
+    container_name: resync-redis_insight
     image: redis/redisinsight:3.8.0
     ports:
       - "127.0.0.1:5540:5540"
@@ -107,7 +107,7 @@ services:
         condition: service_healthy
 
   gatus:
-    container_name: toc-gatus
+    container_name: resync-gatus
     image: ghcr.io/twin/gatus:v5.37.0
     user: "0:0"
     ports:

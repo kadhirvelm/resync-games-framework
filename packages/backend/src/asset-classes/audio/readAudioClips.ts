@@ -5,7 +5,7 @@ import {
   AUDIO_CUES,
   AUDIO_ROLES,
   type AudioAsset,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { z } from "zod";
 import { AUDIO_FILE_NAME, AUDIO_MANIFEST_FILE_NAME } from "./audioStorage";
 

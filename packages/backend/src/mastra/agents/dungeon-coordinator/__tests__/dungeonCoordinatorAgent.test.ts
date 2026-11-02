@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { ToolsInput } from "@mastra/core/agent";
-import { AgentTool } from "@towers-of-coreborn/api";
+import { AgentTool } from "@resync-game-framework/api";
 import { GenerationAbortCoordinator } from "../../generationAbort.coordinator";
 import {
   DungeonCoordinatorAgent,

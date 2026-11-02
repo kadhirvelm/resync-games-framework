@@ -1,4 +1,4 @@
-import { AgentTool } from "@towers-of-coreborn/api";
+import { AgentTool } from "@resync-game-framework/api";
 import { LORE_DOCUMENT_ID } from "src/asset-classes/playable-card/playableCardSpec";
 import { SPRITE_SHEET_IMAGE_CONFIG } from "./spriteSheetSpec";
 import { SUBMIT_SPRITE_SHEET_TOOL_ID } from "./spriteSheetTools";

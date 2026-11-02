@@ -1,8 +1,9 @@
-# Towers of Coreborn development guide
+# Resync Game Framework development guide
 
 ## Repository
 
-Towers of Coreborn is a Bun and TypeScript monorepo:
+Resync Game Framework is a Bun and TypeScript monorepo. Towers of Coreborn
+(`towers-of-coreborn`) is the cards game that ships in it.
 
 - `packages/frontend` — Next.js 16 and React 19 game client
 - `packages/backend` — NestJS API, WebSockets, and asset generation
@@ -44,7 +45,7 @@ that package directory.
   `packages/backend/src/mastra/`
 - Shared Mastra tools: declare them on the `AgentTool` enum in
   `packages/api/src/agents/tools.ts` and register them in
-  `packages/backend/src/mastra/shared/towersOfCorebornAgentToolRegistry.ts`.
+  `packages/backend/src/mastra/shared/resyncGameFrameworkAgentToolRegistry.ts`.
   An agent opts in with its own enum whose values are `AgentTool` members
   and passes that enum to the agent runner, which loads the tools.
 - Agents: `packages/backend/src/mastra/agents/<name>/`. Each agent is a Nest
@@ -116,7 +117,7 @@ queue. Cancellation must remove waiting jobs and call the agent's distributed
 abort path for active work.
 
 The `player` module (`packages/backend/src/player/`) stores the browser's
-cultivators and saved climbs in Postgres under an anonymous `toc_player`
+cultivators and saved climbs in Postgres under an anonymous `resync_player`
 cookie; every query is scoped by that player id. Painting a cultivator runs
 the `card-character` agent (four realm portraits) and the `sprite-sheet`
 agent (right-facing) in the background through `CultivatorPainter`, which
@@ -187,7 +188,7 @@ rig and five named clips. Keep 3D packages and saves independent of 2D dungeon
 files and climb data. See `docs/3d-workshop.md` for format budgets and setup.
 
 Anything shared between frontend and backend belongs in `packages/api/src/`
-and is imported from `@towers-of-coreborn/api`.
+and is imported from `@resync-game-framework/api`.
 
 ### Multiplayer games
 
@@ -228,7 +229,7 @@ ranked, economy, or anti-cheat-sensitive games.
 
 ProductNow MCP access lives in `packages/backend/src/product-now-mcp/`. The
 backend serves its OAuth Client ID Metadata Document at
-`/.well-known/oauth-client-metadata/towers-of-coreborn.json` and stores
+`/.well-known/oauth-client-metadata/resync-game-framework.json` and stores
 per-browser OAuth state encrypted in Postgres. Keep MCP tokens server-side.
 
 Game lore lives in `packages/backend/src/product-now-lore/` and the shared

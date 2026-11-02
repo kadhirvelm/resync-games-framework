@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import {
   DUNGEON_SLOT_KINDS,
   type DungeonInFlightJob,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { RedisService } from "src/infra/redis/redis.service";
 import { z } from "zod";
 

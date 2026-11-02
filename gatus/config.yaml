@@ -6,8 +6,8 @@ storage:
   path: /data/gatus.db
 
 ui:
-  title: Towers of Coreborn
-  header: Towers of Coreborn
+  title: Resync Game Framework
+  header: Resync Game Framework
   dashboard-heading: Local services
   dashboard-subheading: Compose dependencies and the apps started by bun run dev
   default-sort-by: group

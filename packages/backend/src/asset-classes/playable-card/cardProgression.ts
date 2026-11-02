@@ -1,4 +1,4 @@
-import type { PlayableCardEffect } from "@towers-of-coreborn/api";
+import type { PlayableCardEffect } from "@resync-game-framework/api";
 import { PLAYABLE_CARD_EFFECT_AMOUNTS } from "./playableCardSpec";
 
 /**

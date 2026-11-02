@@ -4,7 +4,7 @@
 
 import { createVertex, GoogleVertexProvider } from "@ai-sdk/google-vertex/edge";
 import { AgentConfig } from "@mastra/core/agent";
-import { TowersOfCorebornAgentConfig } from "./towersOfCorebornAgent";
+import { ResyncGameFrameworkAgentConfig } from "./resyncGameFrameworkAgent";
 
 /**
  * The model ID type accepted by the Vertex provider.
@@ -16,8 +16,8 @@ export type VertexModelId = Parameters<GoogleVertexProvider>[0];
 /**
  * Configuration for a Gemini model served through Google Vertex AI.
  *
- * When this object appears in the `model` field of {@link TowersOfCorebornAgentConfig}
- * it is resolved by `TowersOfCorebornAgentService` into a Mastra-compatible
+ * When this object appears in the `model` field of {@link ResyncGameFrameworkAgentConfig}
+ * it is resolved by `ResyncGameFrameworkAgentService` into a Mastra-compatible
  * `LanguageModel` backed by the Vertex AI SDK, using the `GEMINI_CREDENTIALS`
  * environment variable.
  *
