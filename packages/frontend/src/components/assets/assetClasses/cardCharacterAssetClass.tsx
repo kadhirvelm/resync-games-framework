@@ -1,5 +1,6 @@
 "use client";
 
+import { UserRound } from "lucide-react";
 import { CardCharacterList } from "../CardCharacterList";
 import type { AssetClassDefinition } from "./assetClassDefinition";
 import { createAssetClassGallery } from "./createAssetClassGallery";
@@ -28,6 +29,7 @@ const CardCharacterGallery = createAssetClassGallery({
 export const CARD_CHARACTER_ASSET_CLASS: AssetClassDefinition = {
   cancel: (callers, generationId) =>
     callers.cardCharacter.cancel({ generationId }),
+  category: "Characters",
   dialogDescription:
     "Describe a character. We'll paint four portraits of them facing you, each level stronger than the last.",
   dialogTitle: "Generate Card Character",
@@ -41,6 +43,7 @@ export const CARD_CHARACTER_ASSET_CLASS: AssetClassDefinition = {
   generate: (callers, prompt, generationId) =>
     callers.cardCharacter.generate({ generationId, prompt }),
   generateButtonLabel: "+ Generate character",
+  Icon: UserRound,
   id: "card-characters",
   subtitle: "card character generation",
   tabLabel: "Card characters",

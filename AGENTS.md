@@ -55,17 +55,22 @@ that package directory.
   `sprite-sheet` paints a pixel-art identity anchor and then one 4×6 sheet
   from it (idle, attack, defend, hurt rows on pure white), which the backend
   keys out and splits into one normalized PNG strip per animation,
-  and `card-generator` writes one
-  lore-backed playable card. `dungeon-coordinator` accepts one broad setup
+  and   `card-generator` writes one
+  lore-backed playable card. `audio` renders one effect, ambience loop, or
+  instrumental bed through ElevenLabs. `dungeon-coordinator` accepts one broad setup
   prompt and writes a dungeon package: two room prompts, three character
   prompts with four card prompts and one sprite prompt each, and two enemy
   prompts with one sprite prompt each. A sprite slot's `ownerSlotId` names
   the character or enemy it animates; party sprites face right and enemy
   sprites face left. It does not paint those assets. A package read with a
-  character or enemy that has no sprite slot gains one. The package is a
+  character or enemy that has no sprite slot gains one, and a package gains
+  audio slots for each room's ambience, each enemy's attack, and the climb's
+  camp, battle, and boss beds plus victory, defeat, and reward stingers.
+  The package is a
   JSON file under the public dungeon assets. In the Blueprint Workshop, each
   prompt can start that asset's agent, and an existing asset can be attached
-  to a slot. Generating a character or an enemy also starts its sprite slot.
+  to a slot. Generating a character or an enemy also starts its sprite slot,
+  and generating a room or an enemy also starts its sound.
   A later
   card keeps the previous level's aether cost and effect kinds. Running slot
   generations are stored in Redis so a refresh keeps them on the dungeon tab
@@ -79,6 +84,9 @@ that package directory.
   themselves. `consult-productnow` is a registry tool that runs a research
   subagent. That subagent loads ProductNow's read tools for the browser's
   OAuth session itself, so those MCP tools are not in the shared registry.
+  `record-productnow-lore` appends one entry to a named document in a game's
+  ProductNow folder and creates the document when it is missing. An agent
+  opts into a tool by listing it on its own tool enum.
   Battle-background, card-character, and card-generator agents opt into
   `consult-productnow` and must read the Lore document before they paint. A
   tool that needs per-request context, such as a Lore search for the browser's
@@ -86,6 +94,34 @@ that package directory.
   the registry tools. Each query takes a `generationId` and keeps an
   `AbortController` for that run. `abort` writes the stop to Redis and
   publishes it, so a cancel request can stop a run on another process.
+
+Asset generation runs through the BullMQ boundary in
+`packages/backend/src/generation-queue/`. API processes enqueue and may wait
+for the existing synchronous service response; worker processes execute the
+registered handler. Run a headless worker with `bun run worker`. Set
+`ASSET_GENERATION_WORKER_ENABLED=false` on API-only replicas, and tune local
+and fleet limits with `ASSET_GENERATION_WORKER_CONCURRENCY` and
+`ASSET_GENERATION_GLOBAL_CONCURRENCY`. Every replica in an environment must use
+the same `ASSET_GENERATION_QUEUE_NAME`, Redis, and persistent asset volume
+through `PUBLIC_ASSETS_ROOT`. Use a different queue name per environment.
+
+Queue jobs use the client `generationId` as both the BullMQ job id and generated
+asset id. A handler must be idempotent: read an already-complete asset before
+calling a provider, publish files with `writeAssetDirectoryAtomically`, and
+never replace the id with a random one. Serialize the ProductNow session id in
+jobs that need Lore and rebind it inside the worker. Register terminal cleanup
+with `GenerationQueueService.register(..., { onFailed })`; do not start
+fire-and-forget work in a controller or treat a Redis progress record as a
+queue. Cancellation must remove waiting jobs and call the agent's distributed
+abort path for active work.
+
+The `player` module (`packages/backend/src/player/`) stores the browser's
+cultivators and saved climbs in Postgres under an anonymous `toc_player`
+cookie; every query is scoped by that player id. Painting a cultivator runs
+the `card-character` agent (four realm portraits) and the `sprite-sheet`
+agent (right-facing) in the background through `CultivatorPainter`, which
+writes each result back only while the row still names that run. The game
+reads progress by polling `state`.
 
 Use Nest dependency injection. Read environment values through
 `ConfigurationService` outside startup/configuration code. Use the shared
@@ -117,21 +153,76 @@ filled fights as that animated sprite instead of its portrait;
 `battleSprites.ts` maps combat events to its idle, attack, defend, and hurt
 strips. Keep game rules out of the Phaser scene and the screens.
 
-`TowerGame` owns the shell: the title menu, tower select, cultivation, and
-chronicle live in `tower/shell/`, and a paper curtain (`useCurtain`) covers
-scene changes. `useGameData` keeps three local-storage records in step with
-the climb: saved climbs (`logic/saveGame`, one slot per tower, each with a
-content snapshot), the player profile (`logic/progression`: Jade Essence,
-permanent upgrades, per-tower ascension unlocks, codex, history), and
-settings (`logic/settings`). Upgrades reach a climb only through
-`RunOptions` passed to `startRun`; `run` never reads the profile. Sounds are
-synthesized in `tower/audio/sound.ts`, and the battle reads pace and reduced
+`TowerGame` owns the shell: the title menu, cultivators, tower select,
+cultivation, and chronicle live in `tower/shell/`, and a paper curtain
+(`useCurtain`) covers scene changes. Every climb is made by one of the
+player's cultivators: `logic/cultivators` puts a cultivator's name, four
+realm portraits, and battle sprite on the tower's built-in cultivator, and
+`logic/cultivatorRealm` raises the portrait a realm per quarter of the
+climb. `usePlayer` reads cultivators and saved climbs from the `player`
+service and queues climb saves (`logic/climbSyncQueue`); saved climbs
+(`logic/saveGame`) are keyed by climb id, so a tower can have many, and each
+carries a content snapshot. `useGameData` keeps them in step with the climb,
+along with two local-storage records: the player profile
+(`logic/progression`: Jade Essence, permanent upgrades, per-tower ascension
+unlocks, codex, history) and settings (`logic/settings`). Upgrades reach a climb only through
+`RunOptions` passed to `startRun`; `run` never reads the profile. Interface
+sounds stay synthesized in `tower/audio/sound.ts`. A climb with generated
+audio plays that package's room tone, enemy attacks, stingers, and
+camp, battle, or boss bed, and falls back to the synthesized score when a
+cue is missing. The battle reads pace and reduced
 motion from `BattleSceneInput`.
 
 ### Shared contracts
 
+The separate 3D experience lives in `components/babylonGame/`; pure gameplay and
+save rules stay in its `logic/` folder. The Blueprint Workshop's 3D studio plans
+prototype packages, generates/imports GLBs, previews models, and assigns slots.
+Shared contracts are in `api/src/services/assetClasses/threeD.ts`. Backend
+`asset-classes/three-d/` owns validation, atomic storage, package hydration and
+the refresh-safe job journal; `mastra/agents/three-d/` owns model-design and prototype
+queries. `generate-3d-model` compiles safe structured low-poly designs or calls
+the optional server-side Meshy adapter. Characters use the built-in six-joint
+rig and five named clips. Keep 3D packages and saves independent of 2D dungeon
+files and climb data. See `docs/3d-workshop.md` for format budgets and setup.
+
 Anything shared between frontend and backend belongs in `packages/api/src/`
 and is imported from `@towers-of-coreborn/api`.
+
+### Multiplayer games
+
+Use the shared game-room framework instead of creating a Socket.IO connection
+inside a game. The wire contract and authoritative `GameRoomState` live in
+`packages/api/src/websockets/game.ts`; `GameRoomGateway` and `GameRoomStore`
+own room codes, membership, capacity, host transfer, disconnect cleanup,
+Redis persistence, and revision-checked state updates. The frontend entry point
+is `useMultiplayerRoom` in `packages/frontend/src/services/multiplayer/`.
+An explicit final leave deletes the room; an unexpected final-player disconnect
+keeps it for 60 seconds so Socket.IO reconnection can rejoin it.
+
+To add simple multiplayer to a game:
+
+1. Define a small JSON-safe game state and a stable `gameId`. Keep the snapshot
+   below 64 KiB and keep animation/rendering state out of it.
+2. In a client component, call `useMultiplayerRoom({ gameId, player,
+   initialState, maxPlayers })`. Give each player a stable browser or account
+   id, not a new id on every render.
+3. Build create/join UI from `createRoom`, `joinRoom`, `leaveRoom`, `room.id`,
+   `room.players`, and `isHost`. Render gameplay from `room.gameState`.
+4. Compute a complete next snapshot in the game's pure logic, then await
+   `updateGameState(nextState)`. A revision conflict returns the newest room;
+   reapply the player's intent to that state instead of blindly retrying an
+   old snapshot.
+
+The copy-ready client example is in
+`packages/frontend/src/services/multiplayer/README.md`.
+
+For game-specific commands or server-authoritative competitive rules, add the
+event and acknowledgement to the shared API definition, handle it on a Nest
+gateway with `@getSocketDecorator`, mutate state through a Redis-locked store,
+and broadcast with `getServerEmitter(roomId)`. Keep rules outside Phaser and
+React screens. Do not trust a client-supplied full snapshot for hidden-info,
+ranked, economy, or anti-cheat-sensitive games.
 
 ### External MCP OAuth
 
@@ -139,6 +230,16 @@ ProductNow MCP access lives in `packages/backend/src/product-now-mcp/`. The
 backend serves its OAuth Client ID Metadata Document at
 `/.well-known/oauth-client-metadata/towers-of-coreborn.json` and stores
 per-browser OAuth state encrypted in Postgres. Keep MCP tokens server-side.
+
+Game lore lives in `packages/backend/src/product-now-lore/` and the shared
+`productNowLore` service. Every call names a `gameId`. Towers of Coreborn
+uses the existing Card game thing folder and Lore document; any other game
+gets a subfolder there on first use. Reads and writes stay inside that
+folder. Writes return before ProductNow finishes them, so callers poll
+`getEditStatus`. On the client, `useProductNowLore(gameId)` is the one entry
+point, and `ProductNowProvider` in the root layout holds the connection.
+Socket handlers resolve the same browser session with
+`ProductNowLoreService.requireSession` and the handshake cookie.
 
 ### Database
 
@@ -156,8 +257,12 @@ To add an asset class named `foo`:
    asset-class index, and register it in `AVAILABLE_SERVICES`.
 2. Add `packages/backend/src/asset-classes/foo/`, following `card-character`.
    Use `createAssetClassStorage`; do not hand-build public asset paths.
-3. Register its module in `asset-classes.module.ts`.
-4. Add a frontend `AssetClassDefinition` and register it in
+3. Register a stable queue handler in the service's `onModuleInit`, route
+   `generate` through `GenerationQueueService.enqueueAndWait`, and route
+   `cancel` through both the queue and the agent abort path. Persist under the
+   supplied `generationId` with atomic publication.
+4. Register its module in `asset-classes.module.ts`.
+5. Add a frontend `AssetClassDefinition` and register it in
    `assetClassRegistry.ts`.
 
 Service callers return `ServiceError` values rather than throwing. Check

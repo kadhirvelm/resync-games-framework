@@ -1,56 +1,455 @@
 @use "@/styles/variables.scss" as vars;
 
 // ── Blueprint palette ──────────────────────────────────────────────────────
-$blueprint-base: #024;
-$blueprint-line-major: rgb(80 160 255 / 18%);
-$blueprint-line-minor: rgb(80 160 255 / 7%);
-$blueprint-muted: rgb(120 170 230 / 60%);
-$blueprint-border: rgb(80 160 255 / 22%);
+$blueprint-base: #021433;
+$blueprint-line-major: rgb(120 176 255 / 16%);
+$blueprint-line-minor: rgb(120 176 255 / 6%);
+$blueprint-muted: rgb(168 198 236 / 78%);
+$blueprint-border: rgb(126 176 240 / 24%);
+$blueprint-ink: #241806;
+$workshop-gold: #f0b429;
+$workshop-gold-deep: #d99a12;
 
 // ── Blueprint grid background ──────────────────────────────────────────────
 .pageWrapper {
   background-color: $blueprint-base;
   background-image:
+    radial-gradient(ellipse 70% 42% at 12% -8%, rgb(88 150 255 / 28%), transparent 58%),
+    radial-gradient(ellipse 36% 28% at 100% 0%, rgb(240 180 41 / 14%), transparent 52%),
     linear-gradient($blueprint-line-major 1px, transparent 1px),
     linear-gradient(90deg, $blueprint-line-major 1px, transparent 1px),
     linear-gradient($blueprint-line-minor 1px, transparent 1px),
     linear-gradient(90deg, $blueprint-line-minor 1px, transparent 1px);
-  background-size: 80px 80px, 80px 80px, 20px 20px, 20px 20px;
-  flex-direction: column;
-  gap: 36px;
+  background-size: auto, auto, 80px 80px, 80px 80px, 20px 20px, 20px 20px;
+  gap: 22px;
   min-height: 100dvh;
-  padding: 32px;
+  padding: 24px 28px 40px;
   width: 100%;
 }
 
-// ── Top bar ────────────────────────────────────────────────────────────────
-.topBar {
-  align-items: flex-start;
-  flex-wrap: wrap;
+// ── Brand row ──────────────────────────────────────────────────────────────
+.brandRow {
+  align-items: center;
   gap: 16px;
   justify-content: space-between;
   width: 100%;
 }
 
+.brandLockup {
+  min-width: 0;
+}
+
+.brandMark {
+  align-items: center;
+  background: linear-gradient(160deg, #ffe7a8, $workshop-gold 55%, $workshop-gold-deep);
+  border-radius: 12px;
+  box-shadow: 0 8px 18px rgb(240 180 41 / 22%);
+  color: $blueprint-ink;
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 40px;
+  justify-content: center;
+  width: 40px;
+}
+
 .titleGroup {
-  flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+  min-width: 0;
 }
 
 .pageTitle {
   color: vars.$white;
-  font-size: 26px;
+  font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.02em;
-  text-shadow: 0 0 24px rgb(80 160 255 / 50%);
 }
 
 .pageSubtitle {
   color: $blueprint-muted;
-  font-family: monospace;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+// ── Mobile nav trigger (hidden on wide screens) ─────────────────────────────
+.mobileNavTrigger {
+  align-items: center;
+  background: rgb(4 22 52 / 82%);
+  border: 1px solid $blueprint-border;
+  border-radius: 999px;
+  color: vars.$white;
+  cursor: pointer;
+  display: none;
+  flex-shrink: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  gap: 8px;
+  padding: 8px 14px;
+
+  &:hover {
+    border-color: rgb(240 180 41 / 70%);
+  }
+}
+
+// ── Workshop layout: sidebar + main column ──────────────────────────────────
+.workshopLayout {
+  align-items: flex-start;
+  display: grid;
+  gap: 24px;
+  grid-template-columns: 252px minmax(0, 1fr);
+  width: 100%;
+}
+
+.sidebar {
+  background: rgb(3 18 46 / 78%);
+  border: 1px solid $blueprint-border;
+  border-radius: 16px;
+  box-shadow: 0 18px 40px rgb(0 8 28 / 28%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: calc(100dvh - 112px);
+  padding: 12px;
+  position: sticky;
+  top: 20px;
+  width: 100%;
+}
+
+.sidebarFooter {
+  border-top: 1px solid $blueprint-border;
+  flex-shrink: 0;
+  padding-top: 12px;
+
+  button {
+    background: rgb(255 255 255 / 8%) !important;
+    box-shadow: inset 0 0 0 1px rgb(168 198 236 / 40%) !important;
+    color: #e8f1ff !important;
+    justify-content: center;
+    width: 100%;
+  }
+}
+
+.mainColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+  width: 100%;
+}
+
+// ── Sidebar / mobile nav ─────────────────────────────────────────────────────
+.navPanel {
+  gap: 10px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.navSearchField {
+  align-items: center;
+  background: rgb(255 255 255 / 6%);
+  border: 1px solid $blueprint-border;
+  border-radius: 10px;
+  color: $blueprint-muted;
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  padding: 8px 10px;
+
+  &:focus-within {
+    border-color: rgb(240 180 41 / 70%);
+    color: vars.$white;
+  }
+}
+
+.navSearchInput {
+  background: transparent;
+  border: 0;
+  color: vars.$white;
+  flex: 1;
+  font: inherit;
+  font-size: 12px;
+  min-width: 0;
+  outline: none;
+
+  &::placeholder {
+    color: rgb(120 170 230 / 45%);
+  }
+}
+
+.navGroups {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.navEmpty {
+  color: $blueprint-muted;
+  font-size: 12px;
+  padding: 8px 2px;
+}
+
+.navGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.navGroupLabel {
+  color: rgb(186 210 240 / 62%);
   font-size: 11px;
-  letter-spacing: 0.12em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 8px 8px 4px;
   text-transform: uppercase;
+}
+
+.navItem {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  color: rgb(214 228 248 / 88%);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  gap: 10px;
+  padding: 6px;
+  text-align: left;
+  transition: background 0.15s ease, color 0.15s ease;
+  width: 100%;
+
+  &:hover {
+    background: rgb(255 255 255 / 6%);
+    color: vars.$white;
+  }
+
+  &:focus-visible {
+    outline: 2px solid $workshop-gold;
+    outline-offset: 2px;
+  }
+
+  &.navItemActive {
+    background: rgb(255 255 255 / 10%);
+    box-shadow: inset 3px 0 0 var(--nav-accent, #{$workshop-gold});
+    color: vars.$white;
+  }
+}
+
+.navItemIcon {
+  align-items: center;
+  border-radius: 8px;
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+.navItem[data-category="Dungeons"],
+.contentIdentity[data-category="Dungeons"] {
+  --nav-accent: #f0b429;
+}
+
+.navItem[data-category="3D models"],
+.contentIdentity[data-category="3D models"] {
+  --nav-accent: #7ddec8;
+}
+
+.navItem[data-category="Characters"],
+.contentIdentity[data-category="Characters"] {
+  --nav-accent: #c4b5fd;
+}
+
+.navItem[data-category="Environments"],
+.contentIdentity[data-category="Environments"] {
+  --nav-accent: #7ec8ff;
+}
+
+.navItem[data-category="Cards"],
+.contentIdentity[data-category="Cards"] {
+  --nav-accent: #f3a0c8;
+}
+
+.navItem[data-category="Sprites"],
+.contentIdentity[data-category="Sprites"] {
+  --nav-accent: #c6e87a;
+}
+
+.navItemIcon,
+.contentIcon {
+  background: color-mix(in srgb, var(--nav-accent, #7ec8ff) 20%, transparent);
+  color: var(--nav-accent, #d7e8ff);
+}
+
+.navItemLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes nav-badge-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+.navBadgeRunning,
+.navBadgeFailed {
+  align-items: center;
+  border-radius: 999px;
+  display: inline-flex;
+  flex-shrink: 0;
+  font-family: monospace;
+  font-size: 10px;
+  height: 16px;
+  justify-content: center;
+  min-width: 16px;
+  padding: 0 5px;
+}
+
+.navBadgeRunning {
+  animation: nav-badge-pulse 2s ease-in-out infinite;
+  background: $workshop-gold;
+  color: $blueprint-ink;
+}
+
+.navBadgeFailed {
+  background: rgb(255 80 80 / 35%);
+  color: vars.$white;
+}
+
+// ── Content header ───────────────────────────────────────────────────────────
+.contentHeader {
+  align-items: center;
+  background: rgb(3 18 46 / 72%);
+  border: 1px solid $blueprint-border;
+  border-radius: 16px;
+  box-shadow: 0 18px 40px rgb(0 8 28 / 22%);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  justify-content: space-between;
+  padding: 18px 18px 18px 16px;
+  width: 100%;
+}
+
+.contentIdentity {
+  align-items: flex-start;
+  display: flex;
+  flex: 1 1 360px;
+  gap: 14px;
+  min-width: 0;
+}
+
+.contentIcon {
+  align-items: center;
+  border-radius: 12px;
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 44px;
+  justify-content: center;
+  width: 44px;
+}
+
+.contentHeading {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.contentEyebrow {
+  color: var(--nav-accent, #{$blueprint-muted});
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.contentTitle {
+  color: vars.$white;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  margin: 0;
+}
+
+.contentDescription {
+  color: rgb(214 228 248 / 82%);
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 2px 0 0;
+  max-width: 62ch;
+}
+
+.generateButton {
+  background: linear-gradient(180deg, #ffe7a8 0%, $workshop-gold 58%, $workshop-gold-deep 100%);
+  border: 0;
+  border-radius: 12px;
+  box-shadow: 0 10px 22px rgb(240 180 41 / 28%);
+  color: $blueprint-ink;
+  cursor: pointer;
+  flex-shrink: 0;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 12px 18px;
+
+  &:hover {
+    filter: brightness(1.05);
+  }
+
+  &:focus-visible {
+    outline: 2px solid vars.$white;
+    outline-offset: 3px;
+  }
+}
+
+@media (width <= 880px) {
+  .pageWrapper {
+    padding: 16px;
+  }
+
+  .brandRow {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .brandLockup {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .pageSubtitle {
+    display: none;
+  }
+
+  .mobileNavTrigger {
+    display: inline-flex;
+  }
+
+  .workshopLayout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sidebar {
+    display: none;
+  }
+
+  .contentHeader {
+    padding: 14px;
+  }
+
+  .contentTitle {
+    font-size: 22px;
+  }
 }
 
 // ── Section ────────────────────────────────────────────────────────────────
@@ -61,39 +460,42 @@ $blueprint-border: rgb(80 160 255 / 22%);
 }
 
 .sectionTitle {
-  color: vars.$white;
-  font-size: 14px;
+  color: rgb(214 228 248 / 72%);
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .assetCount {
-  background: rgb(80 160 255 / 20%);
-  border: 1px solid $blueprint-border;
-  border-radius: 10px;
-  color: rgb(160 210 255 / 90%);
+  background: rgb(240 180 41 / 16%);
+  border: 1px solid rgb(240 180 41 / 40%);
+  border-radius: 999px;
+  color: #ffe7a8;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   padding: 1px 8px;
 }
 
 // ── Empty / status states ──────────────────────────────────────────────────
 .emptyState {
   align-items: center;
-  border: 1px dashed $blueprint-border;
-  border-radius: 12px;
-  color: $blueprint-muted;
+  background: rgb(255 255 255 / 4%);
+  border: 1px dashed rgb(240 180 41 / 45%);
+  border-radius: 16px;
+  color: vars.$white;
   flex-direction: column;
-  font-size: 14px;
+  font-size: 16px;
+  font-weight: 600;
   gap: 6px;
-  padding: 56px 24px;
+  padding: 48px 24px;
+  text-align: center;
 }
 
 .emptyStateHint {
-  color: rgb(100 150 210 / 50%);
-  font-family: monospace;
-  font-size: 11px;
+  color: $blueprint-muted;
+  font-size: 13px;
+  font-weight: 500;
+  max-width: 42ch;
 }
 
 .loadingText {
@@ -217,12 +619,12 @@ $blueprint-border: rgb(80 160 255 / 22%);
 
 .pendingPrompt {
   -webkit-box-orient: vertical;
-  color: rgb(140 190 255 / 55%);
+  color: rgb(214 228 248 / 82%);
   display: -webkit-box;
-  font-family: monospace;
-  font-size: 10px;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
+  font-size: 13px;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  line-height: 1.4;
   overflow: hidden;
   text-align: center;
 
@@ -301,44 +703,6 @@ $blueprint-border: rgb(80 160 255 / 22%);
   line-height: 1.4;
 }
 
-.workshopActions {
-  align-items: center;
-  flex: 1 1 320px;
-  flex-wrap: wrap;
-  gap: 12px;
-  justify-content: flex-end;
-  margin-left: auto;
-  min-width: 0;
-}
-
-.pathSwitcher {
-  background: rgb(0 18 50 / 72%);
-  border: 1px solid $blueprint-border;
-  border-radius: 10px;
-  display: flex;
-  flex-wrap: wrap;
-  max-width: 100%;
-  padding: 3px;
-}
-
-.pathOption {
-  background: transparent;
-  border: 0;
-  border-radius: 8px;
-  color: $blueprint-muted;
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  padding: 6px 12px;
-
-  &.pathOptionActive {
-    background: rgb(80 160 255 / 22%);
-    color: vars.$white;
-  }
-}
-
 .cardSetList {
   display: flex;
   flex-direction: column;
@@ -358,22 +722,24 @@ $blueprint-border: rgb(80 160 255 / 22%);
   gap: 8px;
   padding: 14px;
   text-align: left;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
   width: 100%;
 
   &:hover {
     border-color: vars.$blue-medium;
-    box-shadow: vars.$box-shadow-small;
+    box-shadow: 0 12px 28px rgb(8 24 64 / 16%);
+    transform: translateY(-2px);
   }
 }
 
 .cardSetPrompt {
-  color: vars.$gray;
+  color: vars.$font;
   font-size: 14px;
   font-weight: 600;
 }
 
 .cardSetTheme {
-  color: vars.$gray;
+  color: vars.$gray-hover;
   font-size: 12px;
   line-height: 1.4;
 }
@@ -414,13 +780,13 @@ $blueprint-border: rgb(80 160 255 / 22%);
 }
 
 .cardLevelTitle {
-  color: vars.$gray;
+  color: vars.$font;
   font-size: 12px;
   font-weight: 600;
 }
 
 .cardLevelDescription {
-  color: vars.$gray;
+  color: vars.$gray-hover;
   font-size: 12px;
   line-height: 1.4;
 }
@@ -448,10 +814,12 @@ $blueprint-border: rgb(80 160 255 / 22%);
   overflow: hidden;
   padding: 0 0 14px;
   text-align: left;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 
   &:hover {
     border-color: vars.$blue-medium;
-    box-shadow: vars.$box-shadow-small;
+    box-shadow: 0 12px 28px rgb(8 24 64 / 16%);
+    transform: translateY(-2px);
   }
 }
 
@@ -463,7 +831,7 @@ $blueprint-border: rgb(80 160 255 / 22%);
 }
 
 .backgroundTitle {
-  color: vars.$gray;
+  color: vars.$font;
   font-size: 14px;
   font-weight: 600;
   padding: 0 14px;
@@ -471,7 +839,7 @@ $blueprint-border: rgb(80 160 255 / 22%);
 
 .backgroundDescription {
   -webkit-box-orient: vertical;
-  color: vars.$gray;
+  color: vars.$gray-hover;
   display: -webkit-box;
   font-size: 12px;
   -webkit-line-clamp: 3;
@@ -506,10 +874,12 @@ $blueprint-border: rgb(80 160 255 / 22%);
   overflow: hidden;
   padding: 0;
   text-align: left;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 
   &:hover {
     border-color: vars.$blue-medium;
-    box-shadow: vars.$box-shadow-small;
+    box-shadow: 0 12px 28px rgb(8 24 64 / 16%);
+    transform: translateY(-2px);
   }
 }
 
@@ -536,7 +906,7 @@ $blueprint-border: rgb(80 160 255 / 22%);
 }
 
 .playableCardName {
-  color: vars.$gray;
+  color: vars.$font;
   font-size: 15px;
   font-weight: 700;
 }
@@ -557,14 +927,14 @@ $blueprint-border: rgb(80 160 255 / 22%);
 }
 
 .playableCardEffect {
-  color: vars.$gray;
+  color: vars.$surface-text;
   font-size: 13px;
   line-height: 1.35;
   margin: 0;
 }
 
 .playableCardDescription {
-  color: vars.$gray;
+  color: vars.$gray-hover;
   font-size: 12px;
   font-style: italic;
   line-height: 1.4;
@@ -596,15 +966,17 @@ $blueprint-border: rgb(80 160 255 / 22%);
   overflow: hidden;
   padding: 0 0 14px;
   text-align: left;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 
   &:hover {
     border-color: vars.$blue-medium;
-    box-shadow: vars.$box-shadow-small;
+    box-shadow: 0 12px 28px rgb(8 24 64 / 16%);
+    transform: translateY(-2px);
   }
 }
 
 .enemyPattern {
-  color: vars.$gray;
+  color: vars.$gray-hover;
   font-family: monospace;
   font-size: 11px;
   letter-spacing: 0.02em;
@@ -625,7 +997,7 @@ $blueprint-border: rgb(80 160 255 / 22%);
 
 .enemyDescription {
   -webkit-box-orient: vertical;
-  color: vars.$gray;
+  color: vars.$gray-hover;
   display: -webkit-box;
   font-size: 12px;
   -webkit-line-clamp: 3;
@@ -674,7 +1046,7 @@ $blueprint-border: rgb(80 160 255 / 22%);
 }
 
 .enemyTitle {
-  color: vars.$gray;
+  color: vars.$font;
   font-size: 15px;
   font-weight: 700;
 }
@@ -791,6 +1163,11 @@ $blueprint-border: rgb(80 160 255 / 22%);
   width: 100%;
 }
 
+.promptSlotAudio {
+  display: block;
+  width: 100%;
+}
+
 .promptSlotSubtitle {
   color: rgb(160 210 255 / 80%);
   font-size: 12px;
@@ -834,21 +1211,34 @@ $blueprint-border: rgb(80 160 255 / 22%);
 
 .promptSlotAction {
   background: transparent;
-  border: 1px solid rgb(80 160 255 / 45%);
-  border-radius: 6px;
-  color: rgb(160 210 255 / 90%);
+  border: 1px solid rgb(126 176 240 / 45%);
+  border-radius: 8px;
+  color: rgb(214 228 248 / 92%);
   cursor: pointer;
-  font-size: 11px;
-  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
 
   &:hover:not(:disabled) {
-    border-color: rgb(80 160 255 / 85%);
+    border-color: rgb(126 176 240 / 85%);
     color: vars.$white;
   }
 
   &:disabled {
     cursor: default;
     opacity: 0.7;
+  }
+}
+
+.promptSlotPrimary {
+  background: linear-gradient(180deg, #ffe7a8, $workshop-gold 60%, $workshop-gold-deep);
+  border-color: $workshop-gold-deep;
+  color: $blueprint-ink;
+
+  &:hover:not(:disabled) {
+    border-color: $workshop-gold-deep;
+    color: $blueprint-ink;
+    filter: brightness(1.05);
   }
 }
 
@@ -892,13 +1282,13 @@ $blueprint-border: rgb(80 160 255 / 22%);
 }
 
 .attachTitle {
-  color: vars.$gray;
+  color: vars.$font;
   font-size: 14px;
   font-weight: 600;
 }
 
 .attachSubtitle {
-  color: vars.$gray;
+  color: vars.$gray-hover;
   font-size: 12px;
 }
 
@@ -959,6 +1349,7 @@ $blueprint-border: rgb(80 160 255 / 22%);
   overflow: hidden;
   padding: 0 0 14px;
   text-align: left;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 
   .spriteSheetHeader,
   > .spriteSheetMeta {
@@ -967,7 +1358,8 @@ $blueprint-border: rgb(80 160 255 / 22%);
 
   &:hover {
     border-color: vars.$blue-medium;
-    box-shadow: vars.$box-shadow-small;
+    box-shadow: 0 12px 28px rgb(8 24 64 / 16%);
+    transform: translateY(-2px);
   }
 }
 
@@ -1009,7 +1401,7 @@ $blueprint-border: rgb(80 160 255 / 22%);
 }
 
 .spriteSheetTitle {
-  color: vars.$gray;
+  color: vars.$font;
   font-size: 15px;
   font-weight: 700;
 }
@@ -1066,7 +1458,7 @@ $blueprint-border: rgb(80 160 255 / 22%);
 }
 
 .spriteAnimationDescription {
-  color: vars.$gray;
+  color: vars.$gray-hover;
   font-size: 12px;
   line-height: 1.4;
 }

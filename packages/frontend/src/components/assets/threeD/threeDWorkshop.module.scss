@@ -1,0 +1,378 @@
+@use "@/styles/variables.scss" as vars;
+
+// ── Blueprint palette (matches Assets.module.scss) ──────────────────────────
+$blueprint-muted: rgb(120 170 230 / 60%);
+$blueprint-border: rgb(80 160 255 / 22%);
+$blueprint-panel: rgb(0 18 50 / 72%);
+$blueprint-accent: rgb(80 160 255 / 85%);
+
+.studio {
+  color: vars.$white;
+  font-family: inherit;
+  font-size: 14px;
+  width: 100%;
+
+  * {
+    box-sizing: border-box;
+  }
+
+  h1 {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+    margin: 4px 0;
+    max-width: 640px;
+  }
+
+  h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 18px;
+  }
+
+  h3 {
+    font-size: 13px;
+    margin: 12px 0;
+  }
+
+  p {
+    color: rgb(180 210 255 / 78%);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  a {
+    color: #ffe7a8;
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  button {
+    background: transparent;
+    border: 1px solid $blueprint-border;
+    border-radius: 8px;
+    color: vars.$white;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 9px 13px;
+
+    &:hover:not(:disabled) {
+      border-color: rgb(126 176 240 / 70%);
+    }
+  }
+
+  button:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+
+  button.primary {
+    background: linear-gradient(180deg, #ffe7a8, #f0b429 60%, #d99a12);
+    border-color: #d99a12;
+    color: #241806;
+    font-weight: 700;
+
+    &:hover:not(:disabled) {
+      filter: brightness(1.05);
+    }
+  }
+
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  a:focus-visible {
+    outline: 2px solid $blueprint-accent;
+    outline-offset: 3px;
+  }
+
+  label {
+    display: flex;
+    flex-direction: column;
+    font-size: 12px;
+    gap: 9px;
+    margin: 18px 0;
+  }
+
+  input,
+  textarea,
+  select {
+    background: rgb(0 10 32 / 70%);
+    border: 1px solid $blueprint-border;
+    border-radius: 6px;
+    color: vars.$white;
+    font: inherit;
+    font-size: 13px;
+    max-width: 100%;
+    padding: 11px;
+
+    &::placeholder {
+      color: rgb(186 210 240 / 62%);
+    }
+  }
+
+  textarea {
+    resize: vertical;
+    width: 100%;
+  }
+
+  hr {
+    border: 0;
+    border-top: 1px solid $blueprint-border;
+    margin: 24px 0;
+  }
+}
+
+.layout {
+  align-items: start;
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  margin: auto;
+  max-width: 1600px;
+}
+
+.panel {
+  background: $blueprint-panel;
+  border: 1px solid $blueprint-border;
+  border-radius: 12px;
+  min-width: 0;
+  padding: 24px;
+}
+
+.workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+
+.heading {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.heading h2 {
+  margin: 0;
+}
+
+.heading span {
+  color: $blueprint-muted;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.heading a {
+  background: transparent;
+  border: 1px solid rgb(240 180 41 / 55%);
+  border-radius: 8px;
+  color: #ffe7a8;
+  padding: 7px 10px;
+  text-decoration: none;
+}
+
+.actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0 0;
+}
+
+.chips {
+  display: flex;
+  gap: 8px;
+}
+
+.chips button {
+  background: transparent;
+  color: $blueprint-accent;
+  padding: 7px 12px;
+}
+
+.hint {
+  color: $blueprint-muted !important;
+  font-size: 11px !important;
+}
+
+.checkbox {
+  align-items: center;
+  flex-direction: row !important;
+}
+
+.upload {
+  border: 1px dashed $blueprint-border;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.upload input {
+  border: 0;
+  font-size: 11px;
+  padding: 0;
+}
+
+.error {
+  background: rgb(255 80 80 / 18%);
+  border: 1px solid rgb(255 80 80 / 35%);
+  border-radius: 6px;
+  color: rgb(255 190 190) !important;
+  padding: 12px;
+}
+
+.slots {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-top: 24px;
+}
+
+.slot {
+  background: rgb(0 10 32 / 60%);
+  border: 1px solid $blueprint-border;
+  border-radius: 9px;
+  padding: 16px;
+}
+
+.slot > p {
+  -webkit-box-orient: vertical;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  min-height: 60px;
+  overflow: hidden;
+}
+
+.slot select {
+  width: 100%;
+}
+
+.emptyPreview {
+  align-items: center;
+  background: radial-gradient(
+    ellipse at center,
+    rgb(80 160 255 / 16%),
+    rgb(0 10 32 / 60%)
+  );
+  border-radius: 8px;
+  color: $blueprint-muted;
+  display: flex;
+  font-size: 12px;
+  justify-content: center;
+  min-height: 150px;
+  padding: 20px;
+  text-align: center;
+}
+
+.thumbnailButton {
+  background: rgb(0 10 32 / 60%) !important;
+  border: 0 !important;
+  display: block;
+  padding: 0 !important;
+  width: 100%;
+}
+
+.thumbnailButton img {
+  border-radius: 7px;
+  display: block;
+  height: auto;
+  object-fit: contain;
+  width: 100%;
+}
+
+.job {
+  align-items: center;
+  border-top: 1px solid $blueprint-border;
+  display: flex;
+  gap: 12px;
+  padding: 14px 0;
+}
+
+.job > div {
+  flex: 1;
+}
+
+.job p {
+  margin: 5px 0;
+  overflow-wrap: anywhere;
+}
+
+.job progress {
+  accent-color: $blueprint-accent;
+  height: 5px;
+  width: 100%;
+}
+
+.library {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.asset {
+  min-width: 0;
+}
+
+.asset span {
+  color: $blueprint-accent;
+  font-size: 10px;
+}
+
+.asset p {
+  font-size: 11px;
+}
+
+.asset .actions {
+  align-items: start;
+  flex-direction: column;
+}
+
+.overlay {
+  align-items: center;
+  background: rgb(1 8 12 / 88%);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 30px;
+  position: fixed;
+  z-index: 10001;
+}
+
+.previewDialog {
+  background: #012;
+  border: 1px solid $blueprint-border;
+  border-radius: 12px;
+  color: #e6efed;
+  max-height: 90vh;
+  max-width: min(960px, calc(100vw - 40px));
+  overflow: auto;
+  padding: 26px;
+  width: 100%;
+}
+
+.previewDialog::backdrop {
+  background: rgb(1 8 12 / 88%);
+}
+
+.previewScene {
+  height: 440px;
+}
+
+.designEditor {
+  font-family: monospace !important;
+  height: 50vh;
+}
+
+@media (width <= 1000px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}

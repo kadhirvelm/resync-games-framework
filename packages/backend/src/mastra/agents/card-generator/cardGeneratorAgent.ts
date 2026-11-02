@@ -1,5 +1,4 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Injectable, InternalServerErrorException } from "@nestjs/common";
 import type {
@@ -28,6 +27,7 @@ import {
 import { readPlayableCardImage } from "src/asset-classes/playable-card/readPlayableCardImage";
 import type { PlayableCardDraft } from "src/asset-classes/playable-card/validatePlayableCardDraft";
 import { encodeGeneratedImageAsWebp } from "src/asset-classes/shared/encodeGeneratedImageAsWebp";
+import { writeAssetDirectoryAtomically } from "src/asset-classes/shared/writeAssetDirectoryAtomically";
 import {
   type TowersOfCorebornAgentChatResults,
   TowersOfCorebornAgentService,
@@ -158,6 +158,7 @@ export class CardGeneratorAgent
         throwIfAborted(signal);
         const painted = readPaintedCard(result, state);
         const cardId = await this.storeCard({
+          cardId: input.generationId,
           draft: painted.draft,
           image: painted.image,
           loreSources: state.loreSources,
@@ -182,6 +183,7 @@ export class CardGeneratorAgent
    * @returns Saved card id
    */
   private async storeCard(params: {
+    cardId: string;
     draft: PlayableCardDraft;
     image: GeneratedImage;
     loreSources: PlayableCardLoreSource[];
@@ -189,25 +191,21 @@ export class CardGeneratorAgent
     signal: AbortSignal;
   }): Promise<string> {
     throwIfAborted(params.signal);
-    const cardId = randomUUID();
+    const cardId = params.cardId;
     const directory = PLAYABLE_CARD_STORAGE.filePath(cardId);
-    await mkdir(directory, { recursive: true });
 
-    try {
-      await persistIllustration(params.image.filePath, directory);
+    await writeAssetDirectoryAtomically(directory, async (pending) => {
+      await persistIllustration(params.image.filePath, pending);
       throwIfAborted(params.signal);
       await writeManifest({
         cardId,
-        directory,
+        directory: pending,
         draft: params.draft,
         loreSources: params.loreSources,
         prompt: params.prompt,
       });
-      return cardId;
-    } catch (error) {
-      await rm(directory, { force: true, recursive: true });
-      throw error;
-    }
+    });
+    return cardId;
   }
 }
 

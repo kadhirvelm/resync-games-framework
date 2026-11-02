@@ -1,3 +1,4 @@
+import { connectLoop } from "./clips";
 import {
   MELODY_LADDER,
   MOOD_SCORES,
@@ -25,6 +26,9 @@ let unlocked = false;
 let nextBeatAt = 0;
 let beatIndex = 0;
 let melodyIndex = Math.floor(MELODY_LADDER.length / 2);
+let requestedTrack = "";
+let loadingTrack = "";
+let releaseTrack = () => {};
 
 /**
  * @returns The music bus, created on the shared graph after audio unlocks
@@ -110,6 +114,7 @@ function fadeTo(level: number, seconds: number, dipSeconds = 0): void {
 function apply(dip = false): void {
   const audible = enabled && mood !== "silent";
   if (!audible) {
+    haltTrack();
     fadeTo(0.0001, FADE_OUT_SECONDS);
     if (timer) {
       clearInterval(timer);
@@ -118,9 +123,57 @@ function apply(dip = false): void {
     return;
   }
   fadeTo(MUSIC_LEVEL, FADE_IN_SECONDS, dip ? MOOD_DIP_SECONDS : 0);
+  if (requestedTrack !== "") {
+    if (timer) {
+      clearInterval(timer);
+      timer = undefined;
+    }
+    const graph = musicBus();
+    if (graph) {
+      playTrack(requestedTrack, graph.bus);
+    }
+    return;
+  }
+  haltTrack();
   if (!timer) {
     timer = setInterval(tick, TICK_MS);
   }
+}
+
+/**
+ * Starts a generated bed on the music bus. A request for the bed already
+ * playing does nothing. A later request stops the earlier file when it arrives.
+ * @param url - Absolute mp3 URL
+ * @param destination - Music bus
+ */
+function playTrack(url: string, destination: AudioNode): void {
+  if (requestedTrack !== url || loadingTrack === url) {
+    return;
+  }
+  loadingTrack = url;
+  const playing = url;
+  void connectLoop(url, destination, 1).then((stop) => {
+    if (requestedTrack !== playing) {
+      if (loadingTrack === playing) {
+        loadingTrack = "";
+      }
+      stop?.();
+      return;
+    }
+    releaseTrack();
+    releaseTrack = () => {
+      stop?.();
+      loadingTrack = "";
+    };
+  });
+}
+
+/** Stops a generated bed so the synthesized score can take over. */
+function haltTrack(): void {
+  requestedTrack = "";
+  loadingTrack = "";
+  releaseTrack();
+  releaseTrack = () => {};
 }
 
 /**
@@ -135,21 +188,32 @@ export function unlockMusic(): void {
 }
 
 /**
- * Sets what the music plays. A new mood dips the music, then starts the new
- * score from its first beat.
+ * Sets what the music plays. A new mood or a new generated bed dips the
+ * music, then starts the new score. A mood with a track URL plays that file
+ * in a loop. A mood without one keeps the synthesized score.
  * @param next.enabled - Whether music is on in settings
  * @param next.mood - Mood to score
+ * @param next.trackUrl - Generated bed for this mood, when the climb has one
  */
-export function setMusic(next: { enabled: boolean; mood: MusicMood }): void {
+export function setMusic(next: {
+  enabled: boolean;
+  mood: MusicMood;
+  trackUrl?: string;
+}): void {
+  const nextTrack = next.trackUrl ?? "";
   const moodChanged = next.mood !== mood;
+  const trackChanged = nextTrack !== requestedTrack;
   enabled = next.enabled;
-  if (moodChanged) {
-    mood = next.mood;
-    beatIndex = 0;
+  if (moodChanged || trackChanged) {
+    if (moodChanged) {
+      mood = next.mood;
+      beatIndex = 0;
+    }
+    requestedTrack = nextTrack;
     const graph = musicBus();
     if (graph) {
       nextBeatAt = graph.context.currentTime + MOOD_DIP_SECONDS;
     }
   }
-  apply(moodChanged);
+  apply(moodChanged || trackChanged);
 }

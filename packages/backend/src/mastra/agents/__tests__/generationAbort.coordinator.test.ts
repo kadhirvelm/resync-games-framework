@@ -34,17 +34,29 @@ describe("GenerationAbortCoordinator", () => {
     await run.end();
   });
 
-  test("ending an older run leaves the newer controller in place", async () => {
+  test("a duplicate local run is rejected instead of aborting the owner", async () => {
     const redis = new MockRedisService();
     const runs = coordinator(redis);
     const first = await runs.begin(GENERATION_ID);
-    const second = await runs.begin(GENERATION_ID);
+
+    await expect(runs.begin(GENERATION_ID)).rejects.toThrow("already running");
+    expect(first.signal.aborted).toBe(false);
+    await runs.stop(GENERATION_ID);
+    expect(first.signal.aborted).toBe(true);
+    await first.end();
+  });
+
+  test("a cancelled marker survives run cleanup for queue retries", async () => {
+    const redis = new MockRedisService();
+    const runs = coordinator(redis);
+    await runs.onModuleInit();
+    const first = await runs.begin(GENERATION_ID);
+    await runs.stop(GENERATION_ID);
     await first.end();
 
-    expect(second.signal.aborted).toBe(false);
-    await runs.stop(GENERATION_ID);
-    expect(second.signal.aborted).toBe(true);
-    await second.end();
+    const retry = await runs.begin(GENERATION_ID);
+    expect(retry.signal.aborted).toBe(true);
+    await retry.end();
   });
 
   test("run owns the cancellation lifecycle", async () => {

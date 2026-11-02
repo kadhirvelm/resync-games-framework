@@ -46,6 +46,8 @@ export interface PartyUnit extends CombatUnit {
 
 /** An enemy in battle, with its place in its repeating cycle. */
 export interface EnemyUnit extends CombatUnit {
+  /** One-shot played when this enemy lands a blow */
+  attackSoundUrl?: string;
   description: string;
   imageUrl?: string;
   isBoss: boolean;
@@ -140,6 +142,7 @@ export function createCombat(setup: CombatSetup): CombatStep {
     discardPile: [],
     drawPile: random.shuffle(setup.cards),
     enemies: setup.enemies.map((enemy) => ({
+      ...(enemy.attackSoundUrl ? { attackSoundUrl: enemy.attackSoundUrl } : {}),
       block: 0,
       description: enemy.description,
       hitPoints: enemy.maxHitPoints,

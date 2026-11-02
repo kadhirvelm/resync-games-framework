@@ -57,9 +57,9 @@ export const gameExperienceCatalog = [
       label: "A luminous low-poly shrine in a dark vault",
       monogram: "3D",
     },
-    capabilities: { generatedAssets: false, localSaves: false },
+    capabilities: { generatedAssets: true, localSaves: true },
     description:
-      "Explore the first Babylon.js scene and inspect the foundation for future GLB worlds.",
+      "Build a 3D world in the Blueprint Workshop, explore its arena, and awaken its aether beacons.",
     entry: ThreeDSandboxGame,
     id: "three-d-sandbox",
     launchLabel: "Launch sandbox",

@@ -1,4 +1,6 @@
 import type {
+  AudioCue,
+  DungeonAudioSlot,
   DungeonCardSlot,
   DungeonSlot,
   DungeonSpriteSlot,
@@ -38,24 +40,66 @@ export function spriteForOwner(
 }
 
 /**
+ * @param slots - Every slot in the package
+ * @param ownerSlotId - Room or enemy the clip belongs to
+ * @param cue - room for a background, attack for an enemy
+ * @returns That owner's audio slot, when the package has one
+ */
+export function audioForOwner(
+  slots: readonly DungeonSlot[],
+  ownerSlotId: string,
+  cue: AudioCue,
+): DungeonAudioSlot | undefined {
+  return slots.find(
+    (slot): slot is DungeonAudioSlot =>
+      slot.kind === "audio" &&
+      slot.ownerSlotId === ownerSlotId &&
+      slot.cue === cue,
+  );
+}
+
+/**
  * Lists the slots one Generate click should start. Generating a character
- * or an enemy also starts its battle sprite when that sprite has no asset
- * and is not already running, so a new unit arrives able to fight animated.
+ * or an enemy also starts its battle sprite, and a room or enemy starts its
+ * sound, when that companion has no asset and is not already running.
  * @param slot - Slot the user asked to generate
  * @param slots - Every slot in the package
- * @returns The slot, followed by its sprite when that should run too
+ * @returns The slot, followed by its sprite and sound when those should run too
  */
 export function slotsStartedWith(
   slot: DungeonSlot,
   slots: readonly DungeonSlot[],
 ): DungeonSlot[] {
-  if (slot.kind !== "card-character" && slot.kind !== "enemy") {
-    return [slot];
+  const started = [slot];
+  if (slot.kind === "card-character" || slot.kind === "enemy") {
+    const sprite = spriteForOwner(slots, slot.id);
+    const idle = sprite?.status === "planned" || sprite?.status === "failed";
+    if (sprite !== undefined && idle) {
+      started.push(sprite);
+    }
   }
-  const sprite = spriteForOwner(slots, slot.id);
-  const idle = sprite?.status === "planned" || sprite?.status === "failed";
-  if (sprite === undefined || !idle) {
-    return [slot];
+  const cue = audioCueFor(slot);
+  if (cue === undefined) {
+    return started;
   }
-  return [slot, sprite];
+  const audio = audioForOwner(slots, slot.id, cue);
+  const audioIdle = audio?.status === "planned" || audio?.status === "failed";
+  if (audio !== undefined && audioIdle) {
+    started.push(audio);
+  }
+  return started;
+}
+
+/**
+ * @param slot - Slot the user asked to generate
+ * @returns The sound cue that should start with it, when it owns one
+ */
+function audioCueFor(slot: DungeonSlot): AudioCue | undefined {
+  if (slot.kind === "battle-background") {
+    return "room";
+  }
+  if (slot.kind === "enemy") {
+    return "attack";
+  }
+  return undefined;
 }

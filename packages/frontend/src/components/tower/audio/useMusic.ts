@@ -2,9 +2,9 @@
 
 import { useEffect } from "react";
 import { currentRoom } from "../logic/run";
-import type { RunState } from "../logic/towerTypes";
+import type { RunState, TowerSoundtrack } from "../logic/towerTypes";
 import { setMusic, unlockMusic } from "./music";
-import { musicMoodFor } from "./musicScore";
+import { musicMoodFor, musicTrackUrl } from "./musicScore";
 
 /**
  * Keeps the background music in step with the screen: calm on the menus,
@@ -12,17 +12,23 @@ import { musicMoodFor } from "./musicScore";
  * for the first click or key press, since browsers block audio until then.
  * @param run - Current climb's run, if a climb is open
  * @param enabled - Whether music is on in settings
+ * @param soundtrack - Generated beds for this climb, when it has any
  */
-export function useMusic(run: RunState | undefined, enabled: boolean): void {
+export function useMusic(
+  run: RunState | undefined,
+  enabled: boolean,
+  soundtrack?: TowerSoundtrack,
+): void {
   const mood = musicMoodFor({
     inClimb: Boolean(run),
     isBossRoom: run ? (currentRoom(run)?.isBoss ?? false) : false,
     phase: run?.phase,
   });
+  const trackUrl = musicTrackUrl(mood, soundtrack?.music);
 
   useEffect(() => {
-    setMusic({ enabled, mood });
-  }, [enabled, mood]);
+    setMusic({ enabled, mood, trackUrl });
+  }, [enabled, mood, trackUrl]);
 
   useEffect(() => {
     const unlock = () => unlockMusic();

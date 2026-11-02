@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { playClip } from "../audio/clips";
 import { playSound, type SoundName } from "../audio/sound";
 
 /** Milliseconds a chosen option celebrates before the choice is applied. */
@@ -11,6 +12,7 @@ export const FLOURISH_MS = 620;
  * once (so it can burst and the others can fall away), a sound plays, and
  * the real action runs a beat later. Further picks are ignored meanwhile.
  * @param reducedMotion - Apply picks at once, without the pause
+ * @param options.clipUrl - Generated clip played instead of `sound`, when the climb has one
  * @param options.sound - Effect played on the pick. Defaults to sparkle
  * @param options.hold - Keep the pick marked after the action runs, for a
  * screen that is about to be covered and replaced
@@ -18,12 +20,12 @@ export const FLOURISH_MS = 620;
  */
 export function useChoiceFlourish(
   reducedMotion: boolean,
-  options: { hold?: boolean; sound?: SoundName } = {},
+  options: { clipUrl?: string; hold?: boolean; sound?: SoundName } = {},
 ): {
   choose: (key: string, action: () => void) => void;
   chosen: string | undefined;
 } {
-  const { hold = false, sound = "sparkle" } = options;
+  const { clipUrl, hold = false, sound = "sparkle" } = options;
   const [chosen, setChosen] = useState<string>();
   const timer = useRef<number | undefined>(undefined);
 
@@ -34,7 +36,11 @@ export function useChoiceFlourish(
       if (chosen !== undefined) {
         return;
       }
-      playSound(sound);
+      if (clipUrl) {
+        void playClip(clipUrl);
+      } else {
+        playSound(sound);
+      }
       if (reducedMotion) {
         action();
         return;
@@ -47,7 +53,7 @@ export function useChoiceFlourish(
         action();
       }, FLOURISH_MS);
     },
-    [chosen, hold, reducedMotion, sound],
+    [chosen, clipUrl, hold, reducedMotion, sound],
   );
 
   return { choose, chosen };

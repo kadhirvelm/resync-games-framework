@@ -1,7 +1,20 @@
-import { Injectable, InternalServerErrorException } from "@nestjs/common";
+import {
+  Injectable,
+  InternalServerErrorException,
+  OnModuleInit,
+  Optional,
+} from "@nestjs/common";
 import { CardCharacterServiceApi } from "@towers-of-coreborn/api";
 import { ConfigurationService } from "src/configuration/configuration.service";
+import {
+  ASSET_GENERATION_JOB_TIMEOUT_MS,
+  GenerationQueueService,
+} from "src/generation-queue/generationQueue.service";
 import { CardCharacterAgent } from "src/mastra/agents/card-character/cardCharacterAgent";
+import {
+  readActiveProductNowSession,
+  runWithProductNowSession,
+} from "src/product-now-mcp/productNowSessionContext";
 import { requireGenerationId } from "../shared/requireGenerationId";
 import { requireGenerationPrompt } from "../shared/requireGenerationPrompt";
 import { CARD_CHARACTER_STORAGE } from "./cardCharacterStorage";
@@ -15,11 +28,25 @@ import {
  * the ones already stored.
  */
 @Injectable()
-export class CardCharacterService {
+export class CardCharacterService implements OnModuleInit {
   public constructor(
     private readonly cardCharacterAgent: CardCharacterAgent,
     private readonly configurationService: ConfigurationService,
+    @Optional()
+    private readonly generationQueue?: GenerationQueueService,
   ) {}
+
+  /** Registers this asset class on worker-enabled processes. */
+  public onModuleInit(): void {
+    this.generationQueue?.register(
+      "card-character",
+      (input: QueuedCardCharacter) => this.executeGeneration(input),
+      {
+        onTimeout: (input) => this.cardCharacterAgent.abort(input.generationId),
+        timeoutMs: ASSET_GENERATION_JOB_TIMEOUT_MS,
+      },
+    );
+  }
 
   /**
    * Stops an in-flight character generation.
@@ -30,7 +57,11 @@ export class CardCharacterService {
     payload: CardCharacterServiceApi["cancel"]["payload"],
   ): Promise<CardCharacterServiceApi["cancel"]["response"]> {
     const generationId = requireGenerationId(payload.generationId);
-    return { stopped: await this.cardCharacterAgent.abort(generationId) };
+    const [queued, active] = await Promise.all([
+      this.generationQueue?.cancel(generationId) ?? false,
+      this.cardCharacterAgent.abort(generationId),
+    ]);
+    return { stopped: queued || active };
   }
 
   /**
@@ -48,21 +79,51 @@ export class CardCharacterService {
       "Describe the character to generate.",
     );
     const generationId = requireGenerationId(payload.generationId);
-    const { setId } = await this.cardCharacterAgent.query({
+    const input = {
       generationId,
+      productNowSessionId: readActiveProductNowSession(),
       prompt,
-    });
-    const set = await readCardCharacterSet(
-      CARD_CHARACTER_STORAGE.rootPath(),
-      setId,
-      this.getPublicBaseUrl(),
-    );
-    if (set === undefined) {
-      throw new InternalServerErrorException(
-        `Card character set ${setId} was generated but could not be read back.`,
+    };
+    if (this.generationQueue) {
+      return this.generationQueue.enqueueAndWait(
+        "card-character",
+        generationId,
+        input,
       );
     }
-    return set;
+    return this.executeGeneration(input);
+  }
+
+  /** Executes one idempotent portrait-set generation inside a queue worker. */
+  private executeGeneration(
+    input: QueuedCardCharacter,
+  ): Promise<CardCharacterServiceApi["generate"]["response"]> {
+    const execute = async () => {
+      const existing = await readCardCharacterSet(
+        CARD_CHARACTER_STORAGE.rootPath(),
+        input.generationId,
+        this.getPublicBaseUrl(),
+      );
+      if (existing) return existing;
+      const { setId } = await this.cardCharacterAgent.query({
+        generationId: input.generationId,
+        prompt: input.prompt,
+      });
+      const set = await readCardCharacterSet(
+        CARD_CHARACTER_STORAGE.rootPath(),
+        setId,
+        this.getPublicBaseUrl(),
+      );
+      if (set === undefined) {
+        throw new InternalServerErrorException(
+          `Card character set ${setId} was generated but could not be read back.`,
+        );
+      }
+      return set;
+    };
+    return input.productNowSessionId
+      ? runWithProductNowSession(input.productNowSessionId, execute)
+      : execute();
   }
 
   /**
@@ -85,4 +146,11 @@ export class CardCharacterService {
       this.configurationService.get("BACKEND_API_URL"),
     );
   }
+}
+
+/** Serializable input carried across the asset-generation queue. */
+interface QueuedCardCharacter {
+  generationId: string;
+  productNowSessionId?: string;
+  prompt: string;
 }

@@ -93,6 +93,8 @@ export interface EnemyMove {
 
 /** A generated or built-in enemy before it is scaled for a floor. */
 export interface EnemyTemplate {
+  /** One-shot played when this enemy lands a blow */
+  attackSoundUrl?: string;
   description: string;
   id: string;
   imageUrl?: string;
@@ -105,18 +107,25 @@ export interface EnemyTemplate {
 
 /** Backdrop and story for one room. */
 export interface RoomScene {
+  /** Looping room tone, when the dungeon generated one */
+  ambienceUrl?: string;
   description: string;
   id: string;
   imageUrl?: string;
   title: string;
 }
 
-/** The player's cultivator: fixed identity and starting kit. */
+/** The player's cultivator: identity, art, and starting kit. */
 export interface CultivatorDefinition {
   aetherPerTurn: number;
   maxHitPoints: number;
   name: string;
+  /** First-realm portrait, used outside a climb */
   portraitUrl?: string;
+  /** One portrait per cultivation realm, first realm first */
+  realmPortraitUrls?: string[];
+  /** Animated battle figure, when the cultivator has one */
+  sprite?: UnitSprite;
   /** One entry per copy in the opening deck */
   starterDeck: CardDefinition[];
   title: string;
@@ -124,6 +133,12 @@ export interface CultivatorDefinition {
 
 /** Where a tower's content came from. */
 export type TowerSource = "dungeon" | "gallery" | "built-in";
+
+/** Generated music and stingers for one climb. Missing cues stay synthesized. */
+export interface TowerSoundtrack {
+  music: Partial<Record<"camp" | "battle" | "boss", string>>;
+  stingers: Partial<Record<"victory" | "defeat" | "reward", string>>;
+}
 
 /** Everything one climb can draw from. Built before the run starts. */
 export interface TowerContent {
@@ -133,6 +148,8 @@ export interface TowerContent {
   id: string;
   scenes: RoomScene[];
   source: TowerSource;
+  /** Generated score, when the package has clips */
+  soundtrack?: TowerSoundtrack;
   /** Story intro shown before the climb */
   summary: string;
   /** Non-Coreborn cards offered as technique rewards */
@@ -149,6 +166,8 @@ export type RoomRewardKind =
 
 /** One enemy placed in a room, scaled for that floor. */
 export interface EnemySpawn {
+  /** One-shot played when this enemy lands a blow */
+  attackSoundUrl?: string;
   description: string;
   id: string;
   imageUrl?: string;

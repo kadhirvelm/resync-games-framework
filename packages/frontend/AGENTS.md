@@ -1,3 +1,32 @@
+## ProductNow lore
+
+`ProductNowProvider` in the root layout holds the browser's ProductNow
+connection. From any client component, call `useProductNowLore(gameId)` to
+search, read, create, edit, or append lore for that game. Writes finish in
+the background; call `waitForEdit` before reading the result. Render
+`ProductNowConnection` where a game wants a connect button. Do not call the
+ProductNow endpoints from a component directly.
+
+## Multiplayer game clients
+
+Games use `useMultiplayerRoom` from `src/services/multiplayer`; do not call
+`socket.io-client` directly from components. The hook connects, reconnects,
+rejoins, exposes create/join/leave room management, and keeps the latest typed
+room snapshot. Define only the JSON-safe game-owned state locally; player list,
+host, room code, capacity, timestamps, and revision belong to the framework.
+
+Use one stable `gameId` per game experience and a stable player id persisted in
+the browser or supplied by authentication. Render from `room.gameState`, derive
+lobby UI from `room.players` and `isHost`, and await `updateGameState` before
+submitting another transition. Keep optimistic visual effects local until the
+authoritative snapshot confirms them. On `REVISION_CONFLICT`, reapply the user
+intent to the returned latest room rather than retrying the stale snapshot.
+
+The shared implementation is intended for small public-state games. Hidden
+information, anti-cheat decisions, economy writes, and competitive validation
+must be implemented as game-specific backend commands rather than client-owned
+snapshot replacement.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 ## This is NOT the Next.js you know

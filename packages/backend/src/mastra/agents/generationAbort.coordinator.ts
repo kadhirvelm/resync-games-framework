@@ -1,4 +1,9 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import {
+  ConflictException,
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+} from "@nestjs/common";
 import { RedisService } from "src/infra/redis/redis.service";
 import {
   GenerationCancelledException,
@@ -10,7 +15,7 @@ import {
 const CANCEL_CHANNEL = "asset-generation:cancel";
 
 /** How long a stop stays recorded, past the longest generation timeout. */
-const CANCEL_TTL_SECONDS = 20 * 60;
+const CANCEL_TTL_SECONDS = 35 * 60;
 
 /** One local run whose model calls listen to `signal`. */
 export interface GenerationRun {
@@ -60,7 +65,9 @@ export class GenerationAbortCoordinator
   public async begin(generationId: string): Promise<GenerationRun> {
     const previous = this.runs.get(generationId);
     if (previous !== undefined && !previous.signal.aborted) {
-      previous.abort();
+      throw new ConflictException(
+        "A generation with this id is already running on this worker.",
+      );
     }
 
     const controller = new AbortController();
@@ -74,10 +81,11 @@ export class GenerationAbortCoordinator
 
     return {
       end: async () => {
-        if (this.runs.get(generationId) === controller) {
-          this.runs.delete(generationId);
+        if (this.runs.get(generationId) !== controller) return;
+        this.runs.delete(generationId);
+        if (!controller.signal.aborted) {
+          await this.redisService.del(cancelledKey(generationId));
         }
-        await this.redisService.del(cancelledKey(generationId));
       },
       signal: controller.signal,
     };

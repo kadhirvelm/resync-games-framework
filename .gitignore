@@ -25,3 +25,4 @@ coverage/
 packages/backend/src/public/*
 
 dist/*
+docs/*

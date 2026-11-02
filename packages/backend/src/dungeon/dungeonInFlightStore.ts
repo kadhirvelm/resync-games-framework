@@ -37,6 +37,17 @@ export class DungeonInFlightStore {
   }
 
   /**
+   * @param generationId - Client id of the run
+   * @returns Stored run, or undefined when no slot owns it
+   */
+  public async get(
+    generationId: string,
+  ): Promise<DungeonInFlightJob | undefined> {
+    const value = await this.redis.hget(IN_FLIGHT_KEY, generationId);
+    return value ? readJob(value) : undefined;
+  }
+
+  /**
    * @returns Runs currently recorded, skipping values that are not jobs
    */
   public async list(): Promise<DungeonInFlightJob[]> {

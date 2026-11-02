@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { BadRequestException, Injectable, Logger } from "@nestjs/common";
+import {
+  BadRequestException,
+  HttpException,
+  Injectable,
+  Logger,
+  OnModuleInit,
+  Optional,
+} from "@nestjs/common";
 import type {
   DungeonBlueprint,
   DungeonInFlightJob,
@@ -8,6 +15,10 @@ import type {
 } from "@towers-of-coreborn/api";
 import { requireGenerationId } from "src/asset-classes/shared/requireGenerationId";
 import { requireGenerationPrompt } from "src/asset-classes/shared/requireGenerationPrompt";
+import {
+  ASSET_GENERATION_JOB_TIMEOUT_MS,
+  GenerationQueueService,
+} from "src/generation-queue/generationQueue.service";
 import type { PlannedDungeonSlot } from "src/mastra/agents/dungeon-coordinator/dungeonCoordinatorAgent";
 import { DungeonCoordinatorAgent } from "src/mastra/agents/dungeon-coordinator/dungeonCoordinatorAgent";
 import { GenerationCancelledException } from "src/mastra/agents/generationCancelled";
@@ -35,7 +46,7 @@ import {
  * already exist. Packages are JSON files. Running slots are also in Redis.
  */
 @Injectable()
-export class DungeonService {
+export class DungeonService implements OnModuleInit {
   private readonly logger = new Logger(DungeonService.name);
 
   public constructor(
@@ -44,7 +55,22 @@ export class DungeonService {
     private readonly inflight: DungeonInFlightStore,
     private readonly assets: DungeonAssetLookup,
     private readonly blueprints: DungeonBlueprintStore,
+    @Optional()
+    private readonly generationQueue?: GenerationQueueService,
   ) {}
+
+  /** Registers dungeon slot dispatch as durable asset-generation work. */
+  public onModuleInit(): void {
+    this.generationQueue?.register(
+      "dungeon-slot",
+      (input: QueuedDungeonSlot) => this.executeSlot(input),
+      {
+        onFailed: (input, error) => this.recordSlotFailure(input, error),
+        onTimeout: (input) => this.slotGenerator.abort(input.generationId),
+        timeoutMs: ASSET_GENERATION_JOB_TIMEOUT_MS,
+      },
+    );
+  }
 
   /**
    * Links an existing asset to a slot and writes that id into the package.
@@ -68,6 +94,15 @@ export class DungeonService {
         `No ${slotLabel(slot.kind)} was found for ${assetId}.`,
       );
     }
+    if (
+      slot.kind === "audio" &&
+      linked.audio !== undefined &&
+      (linked.audio.role !== slot.role || linked.audio.cue !== slot.cue)
+    ) {
+      throw new BadRequestException(
+        `This slot needs a ${slot.role} clip for ${slot.cue}. That clip is a ${linked.audio.role} clip for ${linked.audio.cue}.`,
+      );
+    }
     await this.blueprints.updateSlot(dungeonId, slotId, {
       assetId,
       clearError: true,
@@ -86,11 +121,24 @@ export class DungeonService {
     payload: DungeonServiceApi["cancel"]["payload"],
   ): Promise<DungeonServiceApi["cancel"]["response"]> {
     const generationId = requireGenerationId(payload.generationId);
+    const queued = await this.generationQueue?.cancel(generationId);
     const stopped = await Promise.all([
       this.coordinator.abort(generationId),
       this.slotGenerator.abort(generationId),
     ]);
-    return { stopped: stopped.some(Boolean) };
+    if (queued) {
+      const job = await this.inflight.get(generationId);
+      if (job) {
+        await this.finishFailedSlot(
+          job.dungeonId,
+          job.slotId,
+          generationId,
+          new GenerationCancelledException(),
+        );
+        await this.inflight.delete(generationId);
+      }
+    }
+    return { stopped: Boolean(queued) || stopped.some(Boolean) };
   }
 
   /**
@@ -138,31 +186,61 @@ export class DungeonService {
     const slotId = requireDungeonId(payload.slotId, "Slot id");
     const generationId = requireGenerationId(payload.generationId);
     const started = await this.beginSlot(dungeonId, slotId, generationId);
+    const input: QueuedDungeonSlot = {
+      ...started,
+      dungeonId,
+      generationId,
+      sessionId,
+      slotId,
+    };
 
     try {
-      const assetId = await this.slotGenerator.generate({
-        ...started,
-        generationId,
-        sessionId,
-      });
-      await this.blueprints.updateSlot(
-        dungeonId,
-        slotId,
-        {
-          assetId,
-          clearError: true,
-          clearGenerationId: true,
-          status: "ready",
-        },
-        generationId,
-      );
-      return await this.blueprints.read(dungeonId);
+      if (this.generationQueue) {
+        return await this.generationQueue.enqueueAndWait(
+          "dungeon-slot",
+          generationId,
+          input,
+        );
+      }
+      return await this.executeSlot(input);
     } catch (error) {
-      await this.finishFailedSlot(dungeonId, slotId, generationId, error);
+      await this.recordSlotFailure(input, error);
       throw error;
-    } finally {
-      await this.inflight.delete(generationId);
     }
+  }
+
+  /** Executes a prepared dungeon slot and commits its asset assignment. */
+  private async executeSlot(
+    input: QueuedDungeonSlot,
+  ): Promise<DungeonBlueprint> {
+    const assetId = await this.slotGenerator.generate(input);
+    await this.blueprints.updateSlot(
+      input.dungeonId,
+      input.slotId,
+      {
+        assetId,
+        clearError: true,
+        clearGenerationId: true,
+        status: "ready",
+      },
+      input.generationId,
+    );
+    await this.inflight.delete(input.generationId);
+    return this.blueprints.read(input.dungeonId);
+  }
+
+  /** Records one terminal slot failure and clears its refresh-safe marker. */
+  private async recordSlotFailure(
+    input: QueuedDungeonSlot,
+    error: unknown,
+  ): Promise<void> {
+    await this.finishFailedSlot(
+      input.dungeonId,
+      input.slotId,
+      input.generationId,
+      error,
+    );
+    await this.inflight.delete(input.generationId);
   }
 
   /**
@@ -201,6 +279,21 @@ export class DungeonService {
       async ({ blueprint, updateSlot }) => {
         const slot = requireStoredSlot(blueprint, slotId);
         if (slot.status === "generating") {
+          if (slot.generationId === generationId) {
+            const prepared = await this.slotGenerator.prepare(
+              slot,
+              blueprint.slots,
+            );
+            await this.inflight.put({
+              dungeonId,
+              generationId,
+              kind: slot.kind,
+              prompt: slot.prompt,
+              slotId,
+              startedAt: new Date().toISOString(),
+            });
+            return prepared;
+          }
           throw new BadRequestException("This prompt is already generating.");
         }
         if (slot.status === "ready") {
@@ -250,7 +343,10 @@ export class DungeonService {
     generationId: string,
     error: unknown,
   ): Promise<void> {
-    if (error instanceof GenerationCancelledException) {
+    if (
+      error instanceof GenerationCancelledException ||
+      (error instanceof HttpException && error.getStatus() === 499)
+    ) {
       await this.blueprints.updateSlot(
         dungeonId,
         slotId,
@@ -277,7 +373,9 @@ export class DungeonService {
   private async settle(): Promise<DungeonInFlightJob[]> {
     const now = Date.now();
     for (const job of await this.inflight.list()) {
-      if (isStaleInFlightJob(job, now)) {
+      const queueOwnsJob =
+        (await this.generationQueue?.isInProgress(job.generationId)) ?? false;
+      if (isStaleInFlightJob(job, now) && !queueOwnsJob) {
         await this.blueprints.updateSlot(
           job.dungeonId,
           job.slotId,
@@ -302,7 +400,15 @@ export class DungeonService {
     }
 
     const live = await this.inflight.list();
-    return live.filter((job) => !isStaleInFlightJob(job, Date.now()));
+    const current: DungeonInFlightJob[] = [];
+    for (const job of live) {
+      const queueOwnsJob =
+        (await this.generationQueue?.isInProgress(job.generationId)) ?? false;
+      if (!isStaleInFlightJob(job, Date.now()) || queueOwnsJob) {
+        current.push(job);
+      }
+    }
+    return current;
   }
 
   /**
@@ -324,11 +430,16 @@ export class DungeonService {
           return;
         }
         const jobs = await this.inflight.list();
-        const owned = jobs.some(
-          (job) =>
-            job.generationId === slot.generationId &&
-            !isStaleInFlightJob(job, Date.now()),
+        const job = jobs.find(
+          (entry) => entry.generationId === slot.generationId,
         );
+        const queueOwnsJob = job
+          ? ((await this.generationQueue?.isInProgress(job.generationId)) ??
+            false)
+          : false;
+        const owned =
+          job !== undefined &&
+          (!isStaleInFlightJob(job, Date.now()) || queueOwnsJob);
         if (owned) {
           return;
         }
@@ -340,6 +451,14 @@ export class DungeonService {
       },
     );
   }
+}
+
+/** Serializable queue input for one prepared dungeon slot. */
+interface QueuedDungeonSlot extends PreparedDungeonSlot {
+  dungeonId: string;
+  generationId: string;
+  sessionId: string;
+  slotId: string;
 }
 
 /**
@@ -393,6 +512,9 @@ function slotLabel(kind: DungeonSlotKind): string {
   }
   if (kind === "sprite-sheet") {
     return "sprite sheet";
+  }
+  if (kind === "audio") {
+    return "audio clip";
   }
   return "playable card";
 }

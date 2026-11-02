@@ -1,4 +1,5 @@
 import type Phaser from "phaser";
+import { attackSoundUrl, playClip } from "../tower/audio/clips";
 import { playSound, type SoundName } from "../tower/audio/sound";
 import { type CardTargeting, cardTargeting } from "../tower/logic/cardRules";
 import {
@@ -1054,7 +1055,10 @@ export function createBattleSceneClass(
       if (!source || !target) {
         return;
       }
-      playVaried("slash");
+      const clip = attackSoundUrl(this.combat.enemies, event.sourceId);
+      if (!clip) {
+        playVaried("slash");
+      }
       source.container.setDepth(DEPTH.units + 1);
       source.dash(target.feet.x, wait(DASH_IMPACT_MS));
       this.sprites.playMove(event.sourceId, "attack");
@@ -1069,9 +1073,17 @@ export function createBattleSceneClass(
      * @param state - State after the step it belongs to
      */
     private animateEvent(event: CombatEvent, state: CombatState): void {
-      const sound = soundForEvent(event);
-      if (sound && event.kind !== "card-played") {
-        playVaried(sound);
+      const clip =
+        event.kind === "damage"
+          ? attackSoundUrl(this.combat.enemies, event.sourceId)
+          : undefined;
+      if (clip) {
+        void playClip(clip);
+      } else {
+        const sound = soundForEvent(event);
+        if (sound && event.kind !== "card-played") {
+          playVaried(sound);
+        }
       }
       if (event.kind === "damage") {
         this.showHit(event);
@@ -1230,7 +1242,12 @@ export function createBattleSceneClass(
       this.cancelHeld();
       this.showTooltip(undefined);
       const victory = this.combat.phase === "victory";
-      playSound(victory ? "victory" : "defeat");
+      const sting = victory ? input.room.victoryUrl : input.room.defeatUrl;
+      if (sting) {
+        void playClip(sting);
+      } else {
+        playSound(victory ? "victory" : "defeat");
+      }
       this.discardViews(this.hand);
       this.hand = [];
       this.refreshHud();

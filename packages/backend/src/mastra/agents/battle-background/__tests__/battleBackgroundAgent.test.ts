@@ -73,6 +73,7 @@ describe("BattleBackgroundAgent", () => {
     });
     expect(saved).toEqual([
       {
+        id: GENERATION_ID,
         image: backgroundImage("/tmp/not-read").images[0],
         sourcePrompt: "a moon gate over a quiet garden",
       },

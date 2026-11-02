@@ -1,6 +1,8 @@
 import type { Service, ServiceDefinition } from "../genericTypes/service";
 import type {
   AssetGenerationPayload,
+  AudioCue,
+  AudioRole,
   CancelAssetGenerationPayload,
   CancelAssetGenerationResponse,
   CardCharacterLevelNumber,
@@ -9,7 +11,9 @@ import type {
 /**
  * Asset kinds a dungeon package can ask another agent to create.
  * The counts are fixed: 2 rooms, 3 characters with 4 cards and 1 sprite
- * sheet each, and 2 enemies with 1 sprite sheet each.
+ * sheet each, and 2 enemies with 1 sprite sheet each. A package read also
+ * gains audio slots: room ambience, an attack for each enemy, and the
+ * climb's music and stingers.
  */
 export const DUNGEON_SLOT_KINDS = [
   "battle-background",
@@ -17,6 +21,7 @@ export const DUNGEON_SLOT_KINDS = [
   "enemy",
   "playable-card",
   "sprite-sheet",
+  "audio",
 ] as const;
 
 /** One agent a dungeon slot sends its prompt to. */
@@ -24,6 +29,7 @@ export type DungeonSlotKind = (typeof DUNGEON_SLOT_KINDS)[number];
 
 /** Workshop tab id for each dungeon slot kind. */
 export const DUNGEON_SLOT_ASSET_CLASS_ID = {
+  audio: "audio",
   "battle-background": "battle-backgrounds",
   "card-character": "card-characters",
   enemy: "enemies",
@@ -50,8 +56,10 @@ export type DungeonSlotStatus = (typeof DUNGEON_SLOT_STATUSES)[number];
  * Present on API responses when that asset can still be read.
  */
 export interface DungeonSlotPreview {
-  /** Absolute image URL */
-  imageUrl: string;
+  /** Absolute audio URL, when the linked asset is a clip */
+  audioUrl?: string;
+  /** Absolute image URL, when the linked asset has a picture */
+  imageUrl?: string;
   /** Secondary line, such as health or aether cost */
   subtitle: string;
   /** Display name of the linked asset */
@@ -111,6 +119,20 @@ export interface DungeonSpriteSlot extends DungeonSlotBase {
 }
 
 /**
+ * Prompt for one clip. Room ambience and enemy attacks name their owner.
+ * Music and stingers belong to the package and omit `ownerSlotId`.
+ */
+export interface DungeonAudioSlot extends DungeonSlotBase {
+  cue: AudioCue;
+  kind: "audio";
+  /** Whether the climb repeats this file. */
+  loop: boolean;
+  /** Background or enemy this clip belongs to. */
+  ownerSlotId?: string;
+  role: AudioRole;
+}
+
+/**
  * One prompt in a dungeon package.
  * The `kind` discriminator makes card and sprite ownership fields required.
  */
@@ -119,7 +141,8 @@ export type DungeonSlot =
   | DungeonCharacterSlot
   | DungeonEnemySlot
   | DungeonCardSlot
-  | DungeonSpriteSlot;
+  | DungeonSpriteSlot
+  | DungeonAudioSlot;
 
 /**
  * A dungeon package: the prompts for its rooms, characters, cards, enemies,

@@ -14,7 +14,9 @@ export type SocketGatewayHandler<Message extends WebsocketEvents> = {
   [Key in keyof RemoveExtendsString<Message["clientToServer"]>]: (
     payload: Message["clientToServer"][Key]["payload"],
     client?: Socket,
-  ) => void;
+  ) =>
+    | Message["clientToServer"][Key]["response"]
+    | Promise<Message["clientToServer"][Key]["response"]>;
 };
 
 /**

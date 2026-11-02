@@ -1,3 +1,4 @@
+import { ProductNowProvider } from "@/components/productNow/ProductNowProvider";
 import { Theme } from "@/lib/radix/Theme";
 import "@radix-ui/themes/styles.css";
 import { Analytics } from "@vercel/analytics/next";
@@ -32,7 +33,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={clsx(styles.body, font.className, display.variable)}>
         <Theme className={styles.entryPoint}>
-          {children}
+          <ProductNowProvider>{children}</ProductNowProvider>
           <Analytics />
           <SpeedInsights />
         </Theme>

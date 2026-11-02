@@ -47,6 +47,7 @@ export const RewardScreen = ({
   run,
 }: RewardScreenProps) => {
   const { choose, chosen } = useChoiceFlourish(reducedMotion, {
+    clipUrl: content.soundtrack?.stingers.reward,
     hold: true,
     sound: "reward",
   });

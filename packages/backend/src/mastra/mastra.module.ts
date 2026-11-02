@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { AudioAgentModule } from "./agents/audio/audioAgent.module";
 import { BattleBackgroundAgentModule } from "./agents/battle-background/battleBackgroundAgent.module";
 import { CardCharacterAgentModule } from "./agents/card-character/cardCharacterAgent.module";
 import { CardGeneratorAgentModule } from "./agents/card-generator/cardGeneratorAgent.module";
@@ -14,6 +15,7 @@ import { MastraCoreModule } from "./mastraCore.module";
 @Module({
   exports: [
     MastraCoreModule,
+    AudioAgentModule,
     BattleBackgroundAgentModule,
     CardCharacterAgentModule,
     CardGeneratorAgentModule,
@@ -23,6 +25,7 @@ import { MastraCoreModule } from "./mastraCore.module";
   ],
   imports: [
     MastraCoreModule,
+    AudioAgentModule,
     BattleBackgroundAgentModule,
     CardCharacterAgentModule,
     CardGeneratorAgentModule,

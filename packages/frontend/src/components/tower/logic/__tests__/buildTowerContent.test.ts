@@ -157,11 +157,78 @@ const DUNGEON: DungeonBlueprint = {
       ownerSlotId: "enemy-b",
       status: "planned",
     }),
+    {
+      assetId: "audio-room",
+      cue: "room",
+      id: "room-1-room",
+      kind: "audio",
+      loop: true,
+      ownerSlotId: "room-1",
+      preview: {
+        audioUrl: "https://cdn.test/room.mp3",
+        subtitle: "ambience · room",
+        title: "Gate tone",
+      },
+      prompt: "Rain on stone",
+      role: "ambience",
+      status: "ready",
+      title: "Gate tone",
+    },
+    {
+      assetId: "audio-attack",
+      cue: "attack",
+      id: "enemy-a-attack",
+      kind: "audio",
+      loop: false,
+      ownerSlotId: "enemy-a",
+      preview: {
+        audioUrl: "https://cdn.test/attack.mp3",
+        subtitle: "effect · attack",
+        title: "Lantern slam",
+      },
+      prompt: "A lantern slammed shut",
+      role: "effect",
+      status: "ready",
+      title: "Lantern slam",
+    },
+    {
+      assetId: "audio-battle",
+      cue: "battle",
+      id: "dungeon-1-audio-battle",
+      kind: "audio",
+      loop: true,
+      preview: {
+        audioUrl: "https://cdn.test/battle.mp3",
+        subtitle: "music · battle",
+        title: "Battle music",
+      },
+      prompt: "A driving bed",
+      role: "music",
+      status: "ready",
+      title: "Battle music",
+    },
+    {
+      assetId: "audio-victory",
+      cue: "victory",
+      id: "dungeon-1-audio-victory",
+      kind: "audio",
+      loop: false,
+      preview: {
+        audioUrl: "https://cdn.test/victory.mp3",
+        subtitle: "effect · victory",
+        title: "Victory stinger",
+      },
+      prompt: "Bright bells",
+      role: "effect",
+      status: "ready",
+      title: "Victory stinger",
+    },
   ],
   summary: "Relight the beacon before the procession.",
 };
 
 const CATALOG: TowerCatalog = {
+  audio: [],
   backgrounds: [
     {
       createdAt: "",
@@ -188,9 +255,9 @@ describe("listTowerChoices", () => {
       "built-in",
     ]);
     expect(choices[0]).toMatchObject({
-      readySlots: 6,
+      readySlots: 10,
       title: "Lantern Ford waystation",
-      totalSlots: 11,
+      totalSlots: 15,
     });
   });
 
@@ -267,6 +334,19 @@ describe("buildTowerContent from a dungeon", () => {
       "room-2",
     ]);
     expect(content.scenes[1]?.imageUrl).toBeUndefined();
+  });
+
+  test("plays generated room tone, attacks, music, and stingers", () => {
+    expect(content.scenes[0]?.ambienceUrl).toBe("https://cdn.test/room.mp3");
+    expect(content.scenes[1]?.ambienceUrl).toBeUndefined();
+    expect(content.enemies[0]?.attackSoundUrl).toBe(
+      "https://cdn.test/attack.mp3",
+    );
+    expect(content.enemies[1]?.attackSoundUrl).toBeUndefined();
+    expect(content.soundtrack).toEqual({
+      music: { battle: "https://cdn.test/battle.mp3" },
+      stingers: { victory: "https://cdn.test/victory.mp3" },
+    });
   });
 });
 

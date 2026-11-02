@@ -1,7 +1,17 @@
-import { Injectable, InternalServerErrorException } from "@nestjs/common";
+import {
+  Injectable,
+  InternalServerErrorException,
+  OnModuleInit,
+  Optional,
+} from "@nestjs/common";
 import type { PlayableCardServiceApi } from "@towers-of-coreborn/api";
 import { ConfigurationService } from "src/configuration/configuration.service";
+import {
+  ASSET_GENERATION_JOB_TIMEOUT_MS,
+  GenerationQueueService,
+} from "src/generation-queue/generationQueue.service";
 import { CardGeneratorAgent } from "src/mastra/agents/card-generator/cardGeneratorAgent";
+import { runWithProductNowSession } from "src/product-now-mcp/productNowSessionContext";
 import { requireGenerationId } from "../shared/requireGenerationId";
 import { requireGenerationPrompt } from "../shared/requireGenerationPrompt";
 import { PLAYABLE_CARD_STORAGE } from "./playableCardStorage";
@@ -12,11 +22,25 @@ import { readPlayableCard, readPlayableCards } from "./readPlayableCards";
  * cards already stored.
  */
 @Injectable()
-export class PlayableCardService {
+export class PlayableCardService implements OnModuleInit {
   public constructor(
     private readonly cardGeneratorAgent: CardGeneratorAgent,
     private readonly configurationService: ConfigurationService,
+    @Optional()
+    private readonly generationQueue?: GenerationQueueService,
   ) {}
+
+  /** Registers this asset class on worker-enabled processes. */
+  public onModuleInit(): void {
+    this.generationQueue?.register(
+      "playable-card",
+      (input: QueuedPlayableCard) => this.executeGeneration(input),
+      {
+        onTimeout: (input) => this.cardGeneratorAgent.abort(input.generationId),
+        timeoutMs: ASSET_GENERATION_JOB_TIMEOUT_MS,
+      },
+    );
+  }
 
   /**
    * Stops an in-flight card generation.
@@ -27,7 +51,11 @@ export class PlayableCardService {
     payload: PlayableCardServiceApi["cancel"]["payload"],
   ): Promise<PlayableCardServiceApi["cancel"]["response"]> {
     const generationId = requireGenerationId(payload.generationId);
-    return { stopped: await this.cardGeneratorAgent.abort(generationId) };
+    const [queued, active] = await Promise.all([
+      this.generationQueue?.cancel(generationId) ?? false,
+      this.cardGeneratorAgent.abort(generationId),
+    ]);
+    return { stopped: queued || active };
   }
 
   /**
@@ -48,22 +76,45 @@ export class PlayableCardService {
       "Describe the card to generate.",
     );
     const generationId = requireGenerationId(payload.generationId);
-    const { cardId } = await this.cardGeneratorAgent.query({
-      generationId,
-      prompt,
-      sessionId,
-    });
-    const card = await readPlayableCard(
-      PLAYABLE_CARD_STORAGE.rootPath(),
-      cardId,
-      this.getPublicBaseUrl(),
-    );
-    if (card === undefined) {
-      throw new InternalServerErrorException(
-        `Playable card ${cardId} was generated but could not be read back.`,
+    const input = { generationId, prompt, sessionId };
+    if (this.generationQueue) {
+      return this.generationQueue.enqueueAndWait(
+        "playable-card",
+        generationId,
+        input,
       );
     }
-    return card;
+    return this.executeGeneration(input);
+  }
+
+  /** Executes one idempotent playable-card generation inside a queue worker. */
+  private executeGeneration(
+    input: QueuedPlayableCard,
+  ): Promise<PlayableCardServiceApi["generate"]["response"]> {
+    return runWithProductNowSession(input.sessionId, async () => {
+      const existing = await readPlayableCard(
+        PLAYABLE_CARD_STORAGE.rootPath(),
+        input.generationId,
+        this.getPublicBaseUrl(),
+      );
+      if (existing) return existing;
+      const { cardId } = await this.cardGeneratorAgent.query({
+        generationId: input.generationId,
+        prompt: input.prompt,
+        sessionId: input.sessionId,
+      });
+      const card = await readPlayableCard(
+        PLAYABLE_CARD_STORAGE.rootPath(),
+        cardId,
+        this.getPublicBaseUrl(),
+      );
+      if (card === undefined) {
+        throw new InternalServerErrorException(
+          `Playable card ${cardId} was generated but could not be read back.`,
+        );
+      }
+      return card;
+    });
   }
 
   /**
@@ -86,4 +137,11 @@ export class PlayableCardService {
       this.configurationService.get("BACKEND_API_URL"),
     );
   }
+}
+
+/** Serializable input carried across the asset-generation queue. */
+interface QueuedPlayableCard {
+  generationId: string;
+  prompt: string;
+  sessionId: string;
 }

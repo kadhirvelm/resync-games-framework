@@ -8,10 +8,14 @@ export const BACKDROP_IMAGE_KEY = "battle-backdrop";
 /** Room details the battle shows in its banner. */
 export interface BattleRoomInfo {
   backdropUrl?: string;
+  /** Generated sting played if the battle is lost */
+  defeatUrl?: string;
   floor: number;
   floorCount: number;
   isBoss: boolean;
   title: string;
+  /** Generated sting played if the battle is won */
+  victoryUrl?: string;
 }
 
 /** Everything the battle scene needs from the run. */

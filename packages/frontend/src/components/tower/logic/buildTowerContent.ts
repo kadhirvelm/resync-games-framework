@@ -1,4 +1,5 @@
 import type {
+  AudioAsset,
   BattleBackgroundAsset,
   CardCharacterSetAsset,
   DungeonBlueprint,
@@ -29,11 +30,13 @@ import type {
   RoomScene,
   TierNumber,
   TowerContent,
+  TowerSoundtrack,
   UnitSprite,
 } from "./towerTypes";
 
 /** Every stored asset the tower can be built from. */
 export interface TowerCatalog {
+  audio: AudioAsset[];
   backgrounds: BattleBackgroundAsset[];
   cards: PlayableCardAsset[];
   characters: CardCharacterSetAsset[];
@@ -44,6 +47,7 @@ export interface TowerCatalog {
 
 /** An empty catalog, used before loading and when the backend is down. */
 export const EMPTY_TOWER_CATALOG: TowerCatalog = {
+  audio: [],
   backgrounds: [],
   cards: [],
   characters: [],
@@ -161,7 +165,8 @@ function buildDungeonTower(
     .map((slot, index) => dungeonEnemy(slot, index, dungeon.slots, catalog));
   const scenes = dungeon.slots
     .filter((slot) => slot.kind === "battle-background")
-    .map((slot) => dungeonScene(slot, catalog));
+    .map((slot) => dungeonScene(slot, dungeon.slots, catalog));
+  const soundtrack = packageSoundtrack(dungeon.slots, catalog);
 
   return {
     coreborn: coreborn.length > 0 ? coreborn : BUILT_IN_COREBORN,
@@ -170,6 +175,7 @@ function buildDungeonTower(
     id: `dungeon-${dungeon.id}`,
     scenes: scenes.length > 0 ? scenes : BUILT_IN_SCENES,
     source: "dungeon",
+    ...(soundtrack ? { soundtrack } : {}),
     summary: dungeon.summary || dungeon.prompt,
     techniques: BUILT_IN_TECHNIQUES,
     title: dungeonTitle(dungeon),
@@ -261,10 +267,12 @@ function dungeonEnemy(
   catalog: TowerCatalog,
 ): EnemyTemplate {
   const sprite = dungeonSprite(slot, dungeonSlots, catalog);
+  const attackSoundUrl = clipUrlFor(dungeonSlots, slot.id, "attack", catalog);
   const withSprite = sprite ? { sprite } : {};
+  const withAttack = attackSoundUrl ? { attackSoundUrl } : {};
   const asset = catalog.enemies.find((entry) => entry.id === slot.assetId);
   if (asset) {
-    return { ...toEnemyTemplate(asset), ...withSprite };
+    return { ...toEnemyTemplate(asset), ...withSprite, ...withAttack };
   }
   const stand = BUILT_IN_ENEMIES[
     index % BUILT_IN_ENEMIES.length
@@ -275,6 +283,7 @@ function dungeonEnemy(
     id: slot.id,
     name: slot.title,
     ...withSprite,
+    ...withAttack,
   };
 }
 
@@ -283,9 +292,15 @@ function dungeonEnemy(
  * @param catalog - Stored assets
  * @returns The room, with art when the slot has a linked background
  */
-function dungeonScene(slot: DungeonSlot, catalog: TowerCatalog): RoomScene {
+function dungeonScene(
+  slot: DungeonSlot,
+  slots: readonly DungeonSlot[],
+  catalog: TowerCatalog,
+): RoomScene {
   const asset = catalog.backgrounds.find((entry) => entry.id === slot.assetId);
+  const ambienceUrl = clipUrlFor(slots, slot.id, "room", catalog);
   return {
+    ...(ambienceUrl ? { ambienceUrl } : {}),
     description: shorten(asset?.description || slot.prompt),
     id: slot.id,
     imageUrl: asset?.imageUrl,
@@ -315,24 +330,28 @@ function buildGalleryTower(catalog: TowerCatalog): TowerContent {
     });
   });
   const generatedTechniques = catalog.cards.map(toCardDefinition);
+  const scenes =
+    catalog.backgrounds.length > 0
+      ? catalog.backgrounds.map((background) => ({
+          description: shorten(background.description),
+          id: background.id,
+          imageUrl: background.imageUrl,
+          title: background.title,
+        }))
+      : BUILT_IN_SCENES;
+  const enemies =
+    catalog.enemies.length > 0
+      ? catalog.enemies.map(toEnemyTemplate)
+      : BUILT_IN_ENEMIES;
+  const heard = hearGalleryAudio(scenes, enemies, catalog.audio);
   return {
     coreborn: coreborn.length > 0 ? coreborn : BUILT_IN_COREBORN,
     cultivator: BUILT_IN_CULTIVATOR,
-    enemies:
-      catalog.enemies.length > 0
-        ? catalog.enemies.map(toEnemyTemplate)
-        : BUILT_IN_ENEMIES,
+    enemies: heard.enemies,
     id: "gallery",
-    scenes:
-      catalog.backgrounds.length > 0
-        ? catalog.backgrounds.map((background) => ({
-            description: shorten(background.description),
-            id: background.id,
-            imageUrl: background.imageUrl,
-            title: background.title,
-          }))
-        : BUILT_IN_SCENES,
+    scenes: heard.scenes,
     source: "gallery",
+    ...(heard.soundtrack ? { soundtrack: heard.soundtrack } : {}),
     summary:
       "Every character, enemy, and room in the Blueprint Workshop, stacked into one tower. Climb it and see what the generators made.",
     techniques: [...generatedTechniques, ...BUILT_IN_TECHNIQUES],
@@ -509,4 +528,136 @@ export function shorten(text: string, maxLength = 220): string {
     return result.trim();
   }
   return `${clean.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+/**
+ * @param slots - Package slots
+ * @param ownerSlotId - Room or enemy the clip belongs to
+ * @param cue - room or attack
+ * @param catalog - Stored clips, used when the slot preview has no URL
+ * @returns The clip URL, when that slot is ready
+ */
+function clipUrlFor(
+  slots: readonly DungeonSlot[],
+  ownerSlotId: string,
+  cue: "room" | "attack",
+  catalog: TowerCatalog,
+): string | undefined {
+  const slot = slots.find(
+    (entry) =>
+      entry.kind === "audio" &&
+      entry.ownerSlotId === ownerSlotId &&
+      entry.cue === cue,
+  );
+  if (slot === undefined) {
+    return undefined;
+  }
+  return clipUrl(slot, catalog);
+}
+
+/**
+ * @param slots - Package slots
+ * @param catalog - Stored clips
+ * @returns Music and stingers that are ready, or undefined when none are
+ */
+function packageSoundtrack(
+  slots: readonly DungeonSlot[],
+  catalog: TowerCatalog,
+): TowerSoundtrack | undefined {
+  const music: TowerSoundtrack["music"] = {};
+  const stingers: TowerSoundtrack["stingers"] = {};
+  for (const slot of slots) {
+    if (slot.kind !== "audio" || slot.ownerSlotId !== undefined) {
+      continue;
+    }
+    const url = clipUrl(slot, catalog);
+    if (url === undefined) {
+      continue;
+    }
+    if (slot.cue === "camp" || slot.cue === "battle" || slot.cue === "boss") {
+      music[slot.cue] = url;
+    }
+    if (
+      slot.cue === "victory" ||
+      slot.cue === "defeat" ||
+      slot.cue === "reward"
+    ) {
+      stingers[slot.cue] = url;
+    }
+  }
+  if (Object.keys(music).length === 0 && Object.keys(stingers).length === 0) {
+    return undefined;
+  }
+  return { music, stingers };
+}
+
+/**
+ * @param slot - Audio slot
+ * @param catalog - Stored clips
+ * @returns The clip URL from the slot preview or the catalog
+ */
+function clipUrl(slot: DungeonSlot, catalog: TowerCatalog): string | undefined {
+  if (slot.kind !== "audio" || slot.status !== "ready") {
+    return undefined;
+  }
+  if (slot.preview?.audioUrl) {
+    return slot.preview.audioUrl;
+  }
+  return catalog.audio.find((entry) => entry.id === slot.assetId)?.audioUrl;
+}
+
+/**
+ * Lays loose workshop clips onto the gallery tower: room tones in scene
+ * order, attack clips in enemy order, and music or stingers by cue.
+ * @param scenes - Gallery rooms
+ * @param enemies - Gallery enemies
+ * @param clips - Stored audio, newest first
+ * @returns The same lists with any matching clips attached
+ */
+function hearGalleryAudio(
+  scenes: RoomScene[],
+  enemies: EnemyTemplate[],
+  clips: readonly AudioAsset[],
+): {
+  enemies: EnemyTemplate[];
+  scenes: RoomScene[];
+  soundtrack?: TowerSoundtrack;
+} {
+  const rooms = clips.filter((clip) => clip.cue === "room");
+  const attacks = clips.filter((clip) => clip.cue === "attack");
+  const soundtrack = packageSoundtrack(
+    clips.map((clip) => ({
+      cue: clip.cue,
+      id: clip.id,
+      kind: "audio" as const,
+      loop: clip.loop,
+      preview: {
+        audioUrl: clip.audioUrl,
+        subtitle: clip.cue,
+        title: clip.title,
+      },
+      prompt: clip.prompt,
+      role: clip.role,
+      status: "ready" as const,
+      title: clip.title,
+    })),
+    { ...EMPTY_TOWER_CATALOG, audio: [...clips] },
+  );
+  return {
+    enemies: enemies.map((enemy, index) => {
+      const attack = attacks[index];
+      if (attack === undefined) {
+        return enemy;
+      }
+      return { ...enemy, attackSoundUrl: attack.audioUrl };
+    }),
+    scenes: scenes.map((scene, index) => {
+      const room = rooms[index];
+      if (room === undefined) {
+        return scene;
+      }
+      return { ...scene, ambienceUrl: room.audioUrl };
+    }),
+    ...(soundtrack ? { soundtrack } : {}),
+  };
 }

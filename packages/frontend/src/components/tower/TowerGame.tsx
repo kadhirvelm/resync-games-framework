@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { useCallback, useMemo, useState } from "react";
 import { playSound } from "./audio/sound";
 import { buildTowerContent, listTowerChoices } from "./logic/buildTowerContent";
+import { cultivatorDefinition, withCultivator } from "./logic/cultivators";
 import {
   nextUpgradeCost,
   purchaseUpgrade,
@@ -22,6 +23,7 @@ import { RunEndScreen } from "./screens/RunEndScreen";
 import { AmbientBackdrop } from "./shell/AmbientBackdrop";
 import { ChronicleScreen } from "./shell/ChronicleScreen";
 import { CultivationScreen } from "./shell/CultivationScreen";
+import { CultivatorScreen, NEW_CULTIVATOR } from "./shell/CultivatorScreen";
 import { Curtain } from "./shell/Curtain";
 import { MainMenu } from "./shell/MainMenu";
 import { MergeCelebration } from "./shell/MergeCelebration";
@@ -36,24 +38,33 @@ import { useTowerCatalog } from "./useTowerCatalog";
 import { useTowerRun } from "./useTowerRun";
 
 /** Screens reachable from the title when no climb is open. */
-type ShellScreen = "menu" | "towers" | "cultivation" | "chronicle";
+type ShellScreen =
+  | "menu"
+  | "towers"
+  | "cultivators"
+  | "cultivation"
+  | "chronicle";
 
 /**
- * The whole game: the title menu, tower select, cultivation, and chronicle
- * between climbs; recruit, camp, battle, and rewards during one. Climbs save
- * after every change, and a finished climb pays out Jade Essence.
+ * The whole game: the title menu, cultivators, tower select, cultivation,
+ * and chronicle between climbs; recruit, camp, battle, and rewards during
+ * one. Every climb is made by one of the player's cultivators and saves to
+ * the server after every change; a finished climb pays out Jade Essence.
  * @returns The current screen with its overlays
  */
 export const TowerGame = () => {
   const { catalog, isLoading, warnings } = useTowerCatalog();
   const { actions, session } = useTowerRun();
   const data = useGameData(session, actions);
-  const { profile, saves, setProfile, settings } = data;
+  const { player, profile, setProfile, settings } = data;
+  const { climbs: saves, cultivators } = player;
   const curtain = useCurtain(settings.reducedMotion);
   const { cover } = curtain;
   const [screen, setScreen] = useState<ShellScreen>("menu");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [chosenCultivatorId, setChosenCultivatorId] = useState<string>();
+  const [cultivatorSelection, setCultivatorSelection] = useState<string>();
   const [celebration, setCelebration] = useState<{
     templateId: string;
     tier: TierNumber;
@@ -68,6 +79,10 @@ export const TowerGame = () => {
     [catalog],
   );
   const latestSave = sortedClimbs(saves)[0];
+  const climberId =
+    cultivators.find((entry) => entry.id === chosenCultivatorId)?.id ??
+    cultivators.find((entry) => entry.id === latestSave?.cultivatorId)?.id ??
+    cultivators[0]?.id;
   const canCultivate = UPGRADES.some((upgrade) => {
     const cost = nextUpgradeCost(profile, upgrade.id);
     return cost !== undefined && profile.essence >= cost;
@@ -83,16 +98,56 @@ export const TowerGame = () => {
   const toMenu = useCallback(() => go("menu"), [go]);
 
   /**
+   * @param selection - Cultivator to open, or the creation form
+   */
+  const toCultivators = (selection?: string) => {
+    setCultivatorSelection(selection);
+    go("cultivators");
+  };
+
+  /** New climbs need a cultivator, so a player without one creates one first. */
+  const toNewClimb = () => {
+    if (player.status === "ready" && cultivators.length === 0) {
+      toCultivators(NEW_CULTIVATOR);
+      return;
+    }
+    go("towers");
+  };
+
+  /**
+   * Starts a climb as the chosen cultivator, wearing their name and art.
    * @param content - Tower to climb
    * @param ascension - Chosen ascension
    */
-  const startClimb = (content: TowerContent, ascension: number) =>
-    cover(() => actions.start(content, runOptionsFor(profile, ascension)));
+  const startClimb = (content: TowerContent, ascension: number) => {
+    const climber = cultivators.find((entry) => entry.id === climberId);
+    if (!climber) {
+      toCultivators(NEW_CULTIVATOR);
+      return;
+    }
+    cover(() =>
+      actions.start(
+        withCultivator(content, cultivatorDefinition(climber)),
+        runOptionsFor(profile, ascension),
+        climber.id,
+      ),
+    );
+  };
 
   /**
+   * Continues a climb with its cultivator's current name and art, which may
+   * have been repainted since it was saved.
    * @param saved - Climb to continue
    */
-  const resumeClimb = (saved: SavedClimb) => cover(() => actions.resume(saved));
+  const resumeClimb = (saved: SavedClimb) => {
+    const climber = cultivators.find(
+      (entry) => entry.id === saved.cultivatorId,
+    );
+    const content = climber
+      ? withCultivator(saved.content, cultivatorDefinition(climber))
+      : saved.content;
+    cover(() => actions.resume({ ...saved, content }));
+  };
 
   /**
    * Leaves the current climb for a title screen.
@@ -153,12 +208,22 @@ export const TowerGame = () => {
         {screen === "menu" ? (
           <MainMenu
             canCultivate={canCultivate}
+            cultivatorCount={cultivators.length}
             latestSave={latestSave}
+            latestSaveClimber={
+              cultivators.find((entry) => entry.id === latestSave?.cultivatorId)
+                ?.name
+            }
             onChronicle={() => go("chronicle")}
             onContinue={resumeClimb}
             onCultivation={() => go("cultivation")}
-            onNewClimb={() => go("towers")}
+            onCultivators={() => toCultivators()}
+            onNewClimb={toNewClimb}
+            onRetryPlayer={player.reload}
             onSettings={() => setSettingsOpen(true)}
+            playerError={
+              player.status === "error" ? player.loadError : undefined
+            }
             profile={profile}
             reducedMotion={settings.reducedMotion}
             saveCount={Object.keys(saves).length}
@@ -172,14 +237,32 @@ export const TowerGame = () => {
             <div className={styles.screenEnter} key={screen}>
               {screen === "towers" ? (
                 <TowerSelectScreen
+                  climbs={saves}
+                  cultivators={cultivators}
                   entries={entries}
                   isLoading={isLoading}
+                  onAbandon={player.removeClimb}
                   onBack={toMenu}
+                  onManageCultivators={toCultivators}
                   onResume={resumeClimb}
+                  onSelectCultivator={setChosenCultivatorId}
                   onStart={startClimb}
                   profile={profile}
-                  saves={saves}
+                  selectedCultivatorId={climberId}
                   warnings={warnings}
+                />
+              ) : null}
+              {screen === "cultivators" ? (
+                <CultivatorScreen
+                  climbs={saves}
+                  initialSelection={cultivatorSelection}
+                  onBack={toMenu}
+                  onClimb={(cultivatorId) => {
+                    setChosenCultivatorId(cultivatorId);
+                    go("towers");
+                  }}
+                  player={player}
+                  reducedMotion={settings.reducedMotion}
                 />
               ) : null}
               {screen === "cultivation" ? (
@@ -295,7 +378,11 @@ export const TowerGame = () => {
             onRestart={() => {
               playSound("climb");
               cover(() =>
-                actions.start(content, runOptionsFor(profile, run.ascension)),
+                actions.start(
+                  content,
+                  runOptionsFor(profile, run.ascension),
+                  session.cultivatorId,
+                ),
               );
             }}
             reducedMotion={settings.reducedMotion}

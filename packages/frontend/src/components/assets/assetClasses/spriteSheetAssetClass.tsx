@@ -1,5 +1,6 @@
 "use client";
 
+import { PersonStanding } from "lucide-react";
 import { SpriteSheetList } from "../SpriteSheetList";
 import type { AssetClassDefinition } from "./assetClassDefinition";
 import { createAssetClassGallery } from "./createAssetClassGallery";
@@ -28,6 +29,7 @@ const SpriteSheetGallery = createAssetClassGallery({
 export const SPRITE_SHEET_ASSET_CLASS: AssetClassDefinition = {
   cancel: (callers, generationId) =>
     callers.spriteSheet.cancel({ generationId }),
+  category: "Sprites",
   dialogDescription:
     "Describe a character. We'll check the Lore document, paint a pixel-art identity anchor, then paint one sheet from it and split it into idle, attack, defend, and hurt animations.",
   dialogTitle: "Generate Sprite Sheet",
@@ -42,6 +44,7 @@ export const SPRITE_SHEET_ASSET_CLASS: AssetClassDefinition = {
   generate: (callers, prompt, generationId) =>
     callers.spriteSheet.generate({ generationId, prompt }),
   generateButtonLabel: "+ Generate sprite sheet",
+  Icon: PersonStanding,
   id: "sprite-sheets",
   subtitle: "animated sprite sheet generation",
   tabLabel: "Sprite sheets",

@@ -6,7 +6,10 @@ import {
   type ToolId,
 } from "@towers-of-coreborn/api";
 import { ConsultProductNowAgent } from "../agents/consult-productnow/consultProductNowAgent";
+import { GenerateAudioToolService } from "../tools/generateAudioTool.service";
 import { GenerateImageToolService } from "../tools/generateImageTool.service";
+import { GenerateThreeDModelToolService } from "../tools/generateThreeDModelTool.service";
+import { RecordProductNowLoreToolService } from "../tools/recordProductNowLoreTool.service";
 
 type ToolRegistry = {
   [toolId in ToolId]: ToolsInput[string];
@@ -26,6 +29,9 @@ export class TowersOfCorebornAgentToolRegistry {
   public constructor(
     private readonly consultProductNowAgent: ConsultProductNowAgent,
     private readonly generateImageToolService: GenerateImageToolService,
+    private readonly generateThreeDModelToolService: GenerateThreeDModelToolService,
+    private readonly recordProductNowLoreToolService: RecordProductNowLoreToolService,
+    private readonly generateAudioToolService: GenerateAudioToolService,
   ) {}
 
   /**
@@ -57,8 +63,13 @@ export class TowersOfCorebornAgentToolRegistry {
    */
   private buildToolRegistry(): ToolRegistry {
     return {
+      [AgentTool.GenerateThreeDModel]:
+        this.generateThreeDModelToolService.createTool(),
       [AgentTool.ConsultProductNow]: this.consultProductNowAgent.createTool(),
+      [AgentTool.GenerateAudio]: this.generateAudioToolService.createTool(),
       [AgentTool.GenerateImage]: this.generateImageToolService.createTool(),
+      [AgentTool.RecordProductNowLore]:
+        this.recordProductNowLoreToolService.createTool(),
     };
   }
 }

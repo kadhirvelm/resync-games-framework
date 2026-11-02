@@ -106,6 +106,13 @@ describe("dungeon package files", () => {
       "sprite-sheet",
       "enemy",
       "sprite-sheet",
+      "audio",
+      "audio",
+      "audio",
+      "audio",
+      "audio",
+      "audio",
+      "audio",
     ]);
     expect(read?.slots[2]).toEqual({
       id: defaultSpriteSlotId(characterId),

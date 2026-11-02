@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { BattleSceneInput } from "@/components/phaserGame/battleAssetRequests";
 import { PhaserGameCanvas } from "@/components/phaserGame/PhaserGameCanvas";
 import { playSound } from "../audio/sound";
+import { useAmbience } from "../audio/useAmbience";
 import { type BattleReport, combatSetup, currentRoom } from "../logic/run";
 import { BATTLE_PACE, type GameSettings } from "../logic/settings";
 import type { RunState, TowerContent } from "../logic/towerTypes";
@@ -33,19 +34,22 @@ export const RoomBattle = ({
   run,
   settings,
 }: RoomBattleProps) => {
+  const room = currentRoom(run);
+  useAmbience(room?.scene?.ambienceUrl);
   // The canvas reads its input once, so it is built once; a new battle remounts this component.
   const [battle] = useState<BattleSceneInput>(() => {
-    const room = currentRoom(run);
     return {
       onFinish,
       pace: BATTLE_PACE[settings.battleSpeed],
       reducedMotion: settings.reducedMotion,
       room: {
         backdropUrl: room?.scene?.imageUrl,
+        defeatUrl: content.soundtrack?.stingers.defeat,
         floor: room?.floor ?? 1,
         floorCount: run.rooms.length,
         isBoss: room?.isBoss ?? false,
         title: room?.scene?.title ?? "The tower",
+        victoryUrl: content.soundtrack?.stingers.victory,
       },
       setup: combatSetup(run, content),
     };

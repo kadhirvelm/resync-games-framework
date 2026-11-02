@@ -1,3 +1,4 @@
+
 .sandbox {
   background:
     radial-gradient(circle at 22% 0%, rgb(63 151 133 / 22%), transparent 34%),
@@ -11,6 +12,106 @@
   padding: 76px clamp(18px, 4vw, 64px) 42px;
   position: relative;
   width: 100%;
+}
+
+.modelViewport {
+  height: 100%;
+  min-height: 380px;
+  position: relative;
+  width: 100%;
+}
+
+.modelStatus {
+  background: rgb(5 20 24 / 80%);
+  bottom: 10px;
+  color: #b8d9d1;
+  font-size: 11px;
+  left: 12px;
+  margin: 0;
+  max-width: 80%;
+  padding: 8px 12px;
+  pointer-events: none;
+  position: absolute;
+}
+
+.clipControl {
+  background: #142e34;
+  color: #b8d9d1;
+  font-size: 12px;
+  padding: 10px;
+  position: absolute;
+  right: 12px;
+  top: 12px;
+}
+
+.playViewport {
+  border: 1px solid #3b5b5a;
+  border-radius: 12px;
+  height: 56vh;
+  min-height: 380px;
+  overflow: hidden;
+}
+
+.gameToolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 13px;
+  gap: 18px;
+  margin: 18px 0;
+}
+
+.gameToolbar select, .gameToolbar button, .movementControls button {
+  background: #244a4b;
+  border: 1px solid #698f87;
+  border-radius: 6px;
+  color: #e4f4ef;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 9px 12px;
+}
+
+.gameHud {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  justify-content: space-between;
+  padding-top: 22px;
+}
+
+.gameHud h2 {
+  font-family: var(--font-display), georgia, serif;
+  font-size: 26px;
+  font-weight: 500;
+  margin: 8px 0;
+}
+
+.gameHud p {
+  color: #b2cbc3;
+  font-size: 12px;
+}
+
+.movementControls {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.movementControls button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.workshopLink {
+  color: #a5e5ca;
+  font-size: 13px;
+}
+
+.canvas:focus-visible {
+  outline: 2px solid #e7c683;
+  outline-offset: -4px;
 }
 
 .ambientGlow {

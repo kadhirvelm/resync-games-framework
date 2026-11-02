@@ -1,9 +1,13 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
 import type {
+  AudioCue,
+  AudioRole,
   DungeonSlotKind,
   DungeonSlotPreview,
   PlayableCardEffect,
 } from "@towers-of-coreborn/api";
+import { AUDIO_STORAGE } from "src/asset-classes/audio/audioStorage";
+import { readAudioClip } from "src/asset-classes/audio/readAudioClips";
 import { BATTLE_BACKGROUND_STORAGE } from "src/asset-classes/battle-background/battleBackgroundStorage";
 import { readBattleBackground } from "src/asset-classes/battle-background/readBattleBackgrounds";
 import { CARD_CHARACTER_STORAGE } from "src/asset-classes/card-character/cardCharacterStorage";
@@ -26,6 +30,8 @@ export interface LinkedCardRules {
 
 /** An existing asset that can be attached to a dungeon slot. */
 export interface LinkedDungeonAsset {
+  /** Set when the asset is an audio clip */
+  audio?: { cue: AudioCue; role: AudioRole };
   /** Set when the asset is a playable card */
   card?: LinkedCardRules;
   preview: DungeonSlotPreview;
@@ -105,6 +111,9 @@ export class DungeonAssetLookup {
     }
     if (kind === "sprite-sheet") {
       return readSprite(assetId, backendUrl);
+    }
+    if (kind === "audio") {
+      return readAudio(assetId, backendUrl);
     }
     return readCard(assetId, backendUrl);
   }
@@ -212,6 +221,33 @@ async function readSprite(
       subtitle: asset.animations
         .map((animation) => animation.label)
         .join(" · "),
+      title: asset.title,
+    },
+  };
+}
+
+/**
+ * @param assetId - Stored audio clip id
+ * @param backendUrl - Public backend origin
+ * @returns Preview of that clip, or undefined when it cannot be read
+ */
+async function readAudio(
+  assetId: string,
+  backendUrl: string,
+): Promise<LinkedDungeonAsset | undefined> {
+  const asset = await readAudioClip(
+    AUDIO_STORAGE.rootPath(),
+    assetId,
+    AUDIO_STORAGE.publicUrl(backendUrl),
+  );
+  if (asset === undefined) {
+    return undefined;
+  }
+  return {
+    audio: { cue: asset.cue, role: asset.role },
+    preview: {
+      audioUrl: asset.audioUrl,
+      subtitle: `${asset.role} · ${asset.cue}`,
       title: asset.title,
     },
   };

@@ -91,6 +91,27 @@ describe("DungeonService", () => {
     expect(enemyQuery).toHaveBeenCalledTimes(1);
   });
 
+  test("runs a slot through the durable queue handler", async () => {
+    const { queueCalls, service } = await createService({ withQueue: true });
+    const planned = await service.generate(
+      { generationId: GENERATION_ID, prompt: "A drowned bell tower" },
+      "session-1",
+    );
+
+    const filled = await service.generateSlot(
+      {
+        dungeonId: planned.id,
+        generationId: "11111111-1111-4111-8111-111111111111",
+        slotId: planned.slots[0]?.id ?? "",
+      },
+      "session-1",
+    );
+
+    expect(queueCalls()).toBe(1);
+    expect(filled.slots[0]?.status).toBe("ready");
+    expect(filled.slots[0]?.assetId).toBe(ASSET_ID);
+  });
+
   test("associates an existing asset into the package file", async () => {
     const { service } = await createService();
     const planned = await service.generate(
@@ -254,6 +275,7 @@ async function createService(options?: {
     summary: string;
   }>;
   progressionFor?: () => Promise<undefined>;
+  withQueue?: boolean;
 }) {
   root = await mkdtemp(join(tmpdir(), "dungeon-service-"));
   const redis = new MockRedisService();
@@ -311,14 +333,40 @@ async function createService(options?: {
     assets,
     storageAt(root),
   );
+  const handlers = new Map<string, (payload: unknown) => Promise<unknown>>();
+  let queued = 0;
+  const generationQueue = options?.withQueue
+    ? {
+        cancel: async () => false,
+        enqueueAndWait: async (
+          name: string,
+          _generationId: string,
+          payload: unknown,
+        ) => {
+          queued += 1;
+          const handler = handlers.get(name);
+          if (!handler) throw new Error(`Missing queue handler ${name}`);
+          return handler(payload);
+        },
+        isInProgress: async () => false,
+        register: (
+          name: string,
+          handler: (payload: unknown) => Promise<unknown>,
+        ) => {
+          handlers.set(name, handler);
+        },
+      }
+    : undefined;
   const service = new DungeonService(
     { abort: async () => true, query: plan } as never,
     slotGenerator as never,
     inflight,
     assets,
     blueprints,
+    generationQueue as never,
   );
-  return { inflight, service };
+  service.onModuleInit();
+  return { inflight, queueCalls: () => queued, service };
 }
 
 /**

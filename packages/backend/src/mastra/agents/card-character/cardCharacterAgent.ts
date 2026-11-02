@@ -112,6 +112,7 @@ export class CardCharacterAgent
         const saved =
           await this.cardCharacterToolService.saveGeneratedPortraits({
             portraits,
+            setId: input.generationId,
             sourcePrompt: input.prompt,
           });
         return { setId: saved.setId, summary: result.text };

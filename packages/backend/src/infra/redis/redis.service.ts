@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnApplicationShutdown } from "@nestjs/common";
 import Redis from "ioredis";
 import Redlock from "redlock";
+import { ConfigurationService } from "src/configuration/configuration.service";
 
 /**
  * Redis service that wraps ioredis client for pub/sub and data operations.
@@ -14,9 +15,9 @@ export class RedisService implements OnApplicationShutdown {
   private readonly publisher: Redis;
   private readonly redlock: Redlock;
 
-  constructor() {
-    const host = process.env.REDIS_HOST ?? "localhost";
-    const port = Number.parseInt(process.env.REDIS_PORT ?? "6379", 10);
+  constructor(configuration: ConfigurationService) {
+    const host = configuration.get("REDIS_HOST");
+    const port = configuration.get("REDIS_PORT");
 
     this.logger.log(`Connecting to Redis at ${host}:${port}`);
 
@@ -77,6 +78,17 @@ export class RedisService implements OnApplicationShutdown {
    */
   getPublisher(): Redis {
     return this.publisher;
+  }
+
+  /**
+   * Returns the Redis address for components that must own dedicated clients.
+   * @returns Host and port shared by the application Redis clients
+   */
+  getConnectionAddress(): { host: string; port: number } {
+    return {
+      host: this.client.options.host ?? "localhost",
+      port: this.client.options.port ?? 6379,
+    };
   }
 
   // === Data Operations ===

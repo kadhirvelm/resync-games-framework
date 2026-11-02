@@ -2,6 +2,8 @@ import type { Dirent } from "node:fs";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  AUDIO_CUES,
+  AUDIO_ROLES,
   DUNGEON_SLOT_KINDS,
   DUNGEON_SLOT_STATUSES,
   type DungeonBlueprint,
@@ -10,6 +12,7 @@ import {
   type DungeonSlotStatus,
 } from "@towers-of-coreborn/api";
 import { z } from "zod";
+import { withDungeonAudio } from "./dungeonAudioPlan";
 import { DUNGEON_FILE_NAME } from "./dungeonStorage";
 
 const slotFields = {
@@ -36,6 +39,14 @@ const slotSchema = z.discriminatedUnion("kind", [
     ...slotFields,
     kind: z.literal(DUNGEON_SLOT_KINDS[4]),
     ownerSlotId: z.string().min(1),
+  }),
+  z.object({
+    ...slotFields,
+    cue: z.enum(AUDIO_CUES),
+    kind: z.literal(DUNGEON_SLOT_KINDS[5]),
+    loop: z.boolean(),
+    ownerSlotId: z.string().min(1).optional(),
+    role: z.enum(AUDIO_ROLES),
   }),
 ]);
 
@@ -103,7 +114,7 @@ export async function readStoredDungeonBlueprint(
     if (!parsed.success || parsed.data.id !== id) {
       return undefined;
     }
-    return withUnitSprites(parsed.data);
+    return withDungeonAudio(withUnitSprites(parsed.data));
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ENOENT" || error instanceof SyntaxError) {

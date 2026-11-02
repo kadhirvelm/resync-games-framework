@@ -1,10 +1,10 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Injectable, InternalServerErrorException } from "@nestjs/common";
 import sharp from "sharp";
 import { deleteImageFiles } from "src/mastra/tools/generateImageTool.service";
 import { encodeGeneratedImageAsWebp } from "../shared/encodeGeneratedImageAsWebp";
+import { writeAssetDirectoryAtomically } from "../shared/writeAssetDirectoryAtomically";
 import {
   normalizeSpriteSheet,
   removeSpriteBackground,
@@ -36,68 +36,67 @@ export class SpriteSheetToolService {
    */
   public async saveGeneratedSpriteSheet(params: {
     draft: SpriteSheetDraft;
+    id: string;
     images: SpriteSheetImages;
     sourcePrompt: string;
   }): Promise<{ id: string }> {
-    const id = randomUUID();
+    const id = params.id;
     const directory = SPRITE_SHEET_STORAGE.filePath(id);
-    await mkdir(directory, { recursive: true });
 
     try {
-      const { anchor, sheet } = params.images;
-      await assertSheetSize(sheet.filePath);
-      const normalized = await normalizeSheet(sheet.filePath);
+      await writeAssetDirectoryAtomically(directory, async (pending) => {
+        const { anchor, sheet } = params.images;
+        await assertSheetSize(sheet.filePath);
+        const normalized = await normalizeSheet(sheet.filePath);
 
-      await Promise.all([
-        writeFile(
-          join(directory, SPRITE_SHEET_SOURCE_FILE_NAME),
-          await encodeGeneratedImageAsWebp(sheet.filePath),
-        ),
-        writeFile(
-          join(directory, SPRITE_SHEET_ANCHOR_FILE_NAME),
-          await removeSpriteBackground(anchor.filePath),
-        ),
-        ...normalized.animations.map((animation, index) =>
+        await Promise.all([
           writeFile(
-            join(directory, spriteAnimationFileName(animationKind(index))),
-            animation.strip,
+            join(pending, SPRITE_SHEET_SOURCE_FILE_NAME),
+            await encodeGeneratedImageAsWebp(sheet.filePath),
           ),
-        ),
-      ]);
-      await writeFile(
-        join(directory, SPRITE_SHEET_MANIFEST_FILE_NAME),
-        JSON.stringify(
-          {
-            animations: SPRITE_SHEET_ANIMATIONS.map((animation, index) => ({
-              description: animation.description,
-              fps: animation.fps,
-              frameCount:
-                normalized.animations[index]?.frameCount ??
-                SPRITE_SHEET_FRAMES_PER_ANIMATION,
-              kind: animation.kind,
-              label: animation.label,
-              loop: animation.loop,
-            })),
-            attackEffect: params.draft.attackEffect,
-            attackMove: params.draft.attackMove,
-            createdAt: new Date().toISOString(),
-            defendMove: params.draft.defendMove,
-            description: params.draft.description,
-            facing: params.draft.facing,
-            frameHeight: normalized.frameHeight,
-            frameWidth: normalized.frameWidth,
-            id,
-            prompt: params.sourcePrompt,
-            title: params.draft.name,
-          },
-          null,
-          2,
-        ),
-      );
+          writeFile(
+            join(pending, SPRITE_SHEET_ANCHOR_FILE_NAME),
+            await removeSpriteBackground(anchor.filePath),
+          ),
+          ...normalized.animations.map((animation, index) =>
+            writeFile(
+              join(pending, spriteAnimationFileName(animationKind(index))),
+              animation.strip,
+            ),
+          ),
+        ]);
+        await writeFile(
+          join(pending, SPRITE_SHEET_MANIFEST_FILE_NAME),
+          JSON.stringify(
+            {
+              animations: SPRITE_SHEET_ANIMATIONS.map((animation, index) => ({
+                description: animation.description,
+                fps: animation.fps,
+                frameCount:
+                  normalized.animations[index]?.frameCount ??
+                  SPRITE_SHEET_FRAMES_PER_ANIMATION,
+                kind: animation.kind,
+                label: animation.label,
+                loop: animation.loop,
+              })),
+              attackEffect: params.draft.attackEffect,
+              attackMove: params.draft.attackMove,
+              createdAt: new Date().toISOString(),
+              defendMove: params.draft.defendMove,
+              description: params.draft.description,
+              facing: params.draft.facing,
+              frameHeight: normalized.frameHeight,
+              frameWidth: normalized.frameWidth,
+              id,
+              prompt: params.sourcePrompt,
+              title: params.draft.name,
+            },
+            null,
+            2,
+          ),
+        );
+      });
       return { id };
-    } catch (error) {
-      await rm(directory, { force: true, recursive: true });
-      throw error;
     } finally {
       await deleteImageFiles([
         params.images.anchor.filePath,

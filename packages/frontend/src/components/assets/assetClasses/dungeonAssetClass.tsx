@@ -5,6 +5,7 @@ import {
   type DungeonBlueprint,
   isServiceError,
 } from "@towers-of-coreborn/api";
+import { Castle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { convertErrorToString } from "@/lib/convertErrorToString";
 import { useClientServiceCallers } from "@/services/clientServiceCallers";
@@ -77,11 +78,12 @@ function DungeonGallery({
 
 export const DUNGEON_ASSET_CLASS: AssetClassDefinition = {
   cancel: (callers, generationId) => callers.dungeon.cancel({ generationId }),
+  category: "Dungeons",
   dialogDescription:
     "Describe a dungeon. We'll write a prompt for each room, character, card, and enemy, and save them as a package you can fill in piece by piece.",
   dialogTitle: "New dungeon",
   form: {
-    hint: "Needs ProductNow connected. A dungeon package holds 2 room prompts, 3 character prompts, 4 card prompts for each character, and 2 enemy prompts.",
+    hint: "Needs ProductNow connected. A dungeon package holds 2 room prompts, 3 character prompts, 4 card prompts for each character, and 2 enemy prompts. Each room and enemy also gets a sound, and the package gets music and stingers.",
     placeholder: "e.g. a drowned bell tower held by clockwork wardens",
     promptLabel: "Describe the dungeon",
     submitLabel: "Lay out prompts",
@@ -90,6 +92,7 @@ export const DUNGEON_ASSET_CLASS: AssetClassDefinition = {
   generate: (callers, prompt, generationId) =>
     callers.dungeon.generate({ generationId, prompt }),
   generateButtonLabel: "+ New dungeon",
+  Icon: Castle,
   id: DUNGEON_ASSET_CLASS_ID,
   subtitle: "dungeon package",
   tabLabel: "Dungeons",
