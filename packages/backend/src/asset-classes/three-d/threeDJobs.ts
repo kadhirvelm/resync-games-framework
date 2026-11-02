@@ -1,5 +1,8 @@
 import { ConflictException, HttpException, Injectable } from "@nestjs/common";
-import type { ThreeDJob } from "@resync-game-framework/api";
+import type {
+  ThreeDJob,
+  ThreeDProviderSubmissionPhase,
+} from "@resync-game-framework/api";
 import { RedisService } from "src/infra/redis/redis.service";
 
 const JOB_KEY_PREFIX = "three-d:job:";
@@ -107,7 +110,7 @@ export class ThreeDJobs {
   /** Journals a potentially billable submission before the network request starts. */
   public async submitting(
     id: string,
-    phase: "preview" | "refine",
+    phase: ThreeDProviderSubmissionPhase,
   ): Promise<void> {
     await this.redis.withLock([`three-d:job-lock:${id}`], 5000, async () => {
       const job = await this.get(id);

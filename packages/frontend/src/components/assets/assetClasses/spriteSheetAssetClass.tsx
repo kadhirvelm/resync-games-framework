@@ -46,6 +46,7 @@ export const SPRITE_SHEET_ASSET_CLASS: AssetClassDefinition = {
   generateButtonLabel: "+ Generate sprite sheet",
   Icon: PersonStanding,
   id: "sprite-sheets",
+  medium: "2d",
   subtitle: "animated sprite sheet generation",
   tabLabel: "Sprite sheets",
 };

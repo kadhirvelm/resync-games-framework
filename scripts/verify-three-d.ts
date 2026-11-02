@@ -109,7 +109,7 @@ async function verify(): Promise<void> {
           kind: asset.kind,
           triangles: asset.validation.triangles,
         })),
-        play: `/?experience=three-d-sandbox&prototype=${prototype.id}`,
+        play: `/three-d-sandbox?prototype=${prototype.id}`,
         prototypeId: prototype.id,
       },
       null,

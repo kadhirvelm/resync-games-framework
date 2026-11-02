@@ -1,0 +1,119 @@
+{
+  "coinSinks": [
+    { "coin": 40, "grants": "ashborn_soldier", "id": "mercenary_ashborn" },
+    { "coin": 50, "grants": "treasure_blank", "id": "treasure_blank" },
+    { "amount": 5, "coin": 90, "grants": "spirit_herbs", "id": "herb_pack" }
+  ],
+  "layers": [
+    {
+      "buy": {
+        "essence": 30,
+        "food": 5,
+        "iron": 15,
+        "spirit_herbs": 20,
+        "stone": 8,
+        "water": 5,
+        "wood": 8
+      },
+      "id": "ashen_gate",
+      "name": "Ashen Gate",
+      "sell": {
+        "essence": 12,
+        "food": 2,
+        "iron": 6,
+        "spirit_herbs": 8,
+        "stone": 3,
+        "water": 2,
+        "wood": 3
+      }
+    },
+    {
+      "buy": {
+        "essence": 36,
+        "food": 6,
+        "iron": 18,
+        "spirit_herbs": 24,
+        "stone": 10,
+        "water": 6,
+        "wood": 10
+      },
+      "id": "bone_wastes",
+      "name": "Bone Wastes",
+      "sell": {
+        "essence": 14,
+        "food": 2,
+        "iron": 7,
+        "spirit_herbs": 9,
+        "stone": 4,
+        "water": 2,
+        "wood": 4
+      }
+    },
+    {
+      "buy": {
+        "essence": 44,
+        "food": 8,
+        "iron": 22,
+        "spirit_herbs": 30,
+        "stone": 12,
+        "water": 8,
+        "wood": 12
+      },
+      "id": "frozen_pit",
+      "name": "Frozen Pit",
+      "sell": {
+        "essence": 16,
+        "food": 3,
+        "iron": 8,
+        "spirit_herbs": 10,
+        "stone": 4,
+        "water": 3,
+        "wood": 4
+      }
+    },
+    {
+      "buy": {
+        "essence": 56,
+        "food": 10,
+        "iron": 28,
+        "spirit_herbs": 36,
+        "stone": 16,
+        "water": 10,
+        "wood": 16
+      },
+      "id": "blood_sea",
+      "name": "Blood Sea",
+      "sell": {
+        "essence": 20,
+        "food": 3,
+        "iron": 10,
+        "spirit_herbs": 12,
+        "stone": 5,
+        "water": 3,
+        "wood": 5
+      }
+    },
+    {
+      "buy": {
+        "essence": 72,
+        "food": 14,
+        "iron": 36,
+        "spirit_herbs": 48,
+        "stone": 20,
+        "water": 14,
+        "wood": 20
+      },
+      "id": "throne_of_hell",
+      "name": "Throne of Hell",
+      "sell": {
+        "essence": 24,
+        "food": 4,
+        "iron": 12,
+        "spirit_herbs": 16,
+        "stone": 6,
+        "water": 4,
+        "wood": 6
+      }
+    }
+  ]
+}

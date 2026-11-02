@@ -16,6 +16,7 @@
   "packageManager": "bun@1.4.2",
   "private": true,
   "scripts": {
+    "assets:descent": "bun run scripts/generate-descent-assets.ts",
     "build": "turbo run build",
     "check": "turbo run check",
     "ci": "turbo run ci",

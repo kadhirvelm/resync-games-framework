@@ -46,6 +46,7 @@ export const BATTLE_BACKGROUND_ASSET_CLASS: AssetClassDefinition = {
   generateButtonLabel: "+ Generate background",
   Icon: Mountain,
   id: "battle-backgrounds",
+  medium: "2d",
   subtitle: "per-room battle environment generation",
   tabLabel: "Battle backgrounds",
 };

@@ -7,6 +7,10 @@ import { Flex } from "@/lib/radix";
 import styles from "./Assets.module.scss";
 import type { AssetClassDefinition } from "./assetClasses/assetClassDefinition";
 import { ASSET_CLASSES } from "./assetClasses/assetClassRegistry";
+import {
+  assetClassMatchesQuery,
+  groupAssetClassesByMedium,
+} from "./assetClasses/groupAssetClasses";
 
 /** Running and failed job counts for one asset class, shown as a sidebar badge. */
 export interface AssetClassJobCounts {
@@ -21,54 +25,10 @@ interface AssetClassNavProps {
   onSelect: (assetClassId: string) => void;
 }
 
-/** One category's asset classes, in registry order. */
-interface AssetClassGroup {
-  category: string;
-  classes: AssetClassDefinition[];
-}
-
-/**
- * Groups asset classes by {@link AssetClassDefinition.category}, preserving
- * each category's first-seen order from the input list.
- * @param classes - Asset classes to group, already filtered
- * @returns Groups in first-seen order
- */
-function groupByCategory(
-  classes: readonly AssetClassDefinition[],
-): AssetClassGroup[] {
-  const order: string[] = [];
-  const byCategory = new Map<string, AssetClassDefinition[]>();
-  for (const assetClass of classes) {
-    if (!byCategory.has(assetClass.category)) {
-      byCategory.set(assetClass.category, []);
-      order.push(assetClass.category);
-    }
-    byCategory.get(assetClass.category)?.push(assetClass);
-  }
-  return order.map((category) => ({
-    category,
-    classes: byCategory.get(category) ?? [],
-  }));
-}
-
-/**
- * @param query - Lowercased, trimmed search text
- * @param assetClass - Candidate asset class
- * @returns Whether the class's label, category, or subtitle matches
- */
-function matchesQuery(
-  query: string,
-  assetClass: AssetClassDefinition,
-): boolean {
-  const haystack =
-    `${assetClass.tabLabel} ${assetClass.category} ${assetClass.subtitle}`.toLowerCase();
-  return haystack.includes(query);
-}
-
 /**
  * Sidebar (and mobile-dialog) navigation across every registered asset class.
- * Groups classes by category, and switches to a flat filtered list while
- * searching, so the nav stays usable as more generators are registered.
+ * Splits generators into 2D, 3D, and Both, then by category. A search keeps
+ * that split and hides sections with no matches.
  * @param activeClassId - Highlighted class
  * @param jobCounts - Running/failed job counts keyed by class id, shown as status badges
  * @param onSelect - Called with the clicked class id
@@ -86,11 +46,14 @@ export function AssetClassNav({
       trimmedQuery === ""
         ? ASSET_CLASSES
         : ASSET_CLASSES.filter((assetClass) =>
-            matchesQuery(trimmedQuery, assetClass),
+            assetClassMatchesQuery(trimmedQuery, assetClass),
           ),
     [trimmedQuery],
   );
-  const groups = useMemo(() => groupByCategory(filtered), [filtered]);
+  const sections = useMemo(
+    () => groupAssetClassesByMedium(filtered),
+    [filtered],
+  );
 
   return (
     <Flex className={styles.navPanel} direction="column">
@@ -106,22 +69,31 @@ export function AssetClassNav({
         />
       </div>
       <nav className={styles.navGroups}>
-        {groups.length === 0 ? (
+        {sections.length === 0 ? (
           <span className={styles.navEmpty}>
             No generators match “{query.trim()}”.
           </span>
         ) : (
-          groups.map((group) => (
-            <div className={styles.navGroup} key={group.category}>
-              <span className={styles.navGroupLabel}>{group.category}</span>
-              {group.classes.map((assetClass) => (
-                <AssetClassNavItem
-                  assetClass={assetClass}
-                  isActive={assetClass.id === activeClassId}
-                  jobCounts={jobCounts[assetClass.id]}
-                  key={assetClass.id}
-                  onSelect={onSelect}
-                />
+          sections.map((section) => (
+            <div
+              className={styles.navSection}
+              data-medium={section.medium}
+              key={section.medium}
+            >
+              <span className={styles.navSectionLabel}>{section.label}</span>
+              {section.categories.map((group) => (
+                <div className={styles.navGroup} key={group.category}>
+                  <span className={styles.navGroupLabel}>{group.category}</span>
+                  {group.classes.map((assetClass) => (
+                    <AssetClassNavItem
+                      assetClass={assetClass}
+                      isActive={assetClass.id === activeClassId}
+                      jobCounts={jobCounts[assetClass.id]}
+                      key={assetClass.id}
+                      onSelect={onSelect}
+                    />
+                  ))}
+                </div>
               ))}
             </div>
           ))

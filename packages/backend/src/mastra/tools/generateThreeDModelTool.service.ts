@@ -38,7 +38,7 @@ export class GenerateThreeDModelToolService {
   public createTool() {
     return createTool({
       description:
-        "Generate a budgeted GLB from a structured design or Meshy job. Returns only validated stored model references. Characters use the built-in six-joint rig.",
+        "Generate a budgeted GLB from a structured design or Meshy job. Meshy characters are textured, auto-rigged, and receive the five required game clips. Returns only validated stored model references.",
       execute: (input, context) =>
         this.generate(
           input,
@@ -78,25 +78,34 @@ export class GenerateThreeDModelToolService {
         throw new BadRequestException(
           "Meshy submission outcome is unknown. Inspect the provider dashboard before retrying with a new generation id.",
         );
-      if (request.kind === "character")
-        throw new BadRequestException(
-          "Use Low-poly AI for rigged characters. Meshy character rigging is not enabled.",
+      const report = async (stage: string, progress: number, id?: string) => {
+        if (id) jobIds.push(id);
+        await this.jobs.progress(
+          request.generationId,
+          id ? `${stage} · ${id}` : stage,
+          progress,
+          id,
         );
-      const generated = await this.meshy.generate(
-        request.prompt,
-        signal,
-        async (stage, progress, id) => {
-          if (id) jobIds.push(id);
-          await this.jobs.progress(
-            request.generationId,
-            id ? `${stage} · ${id}` : stage,
-            progress,
-            id,
-          );
-        },
-        previousJob?.providerJobIds ?? [],
-        (phase) => this.jobs.submitting(request.generationId, phase),
-      );
+      };
+      const resumeJobIds = previousJob?.providerJobIds ?? [];
+      const beforeSubmit = (phase: Parameters<ThreeDJobs["submitting"]>[1]) =>
+        this.jobs.submitting(request.generationId, phase);
+      const generated =
+        request.kind === "character"
+          ? await this.meshy.generateCharacter(
+              request.prompt,
+              signal,
+              report,
+              resumeJobIds,
+              beforeSubmit,
+            )
+          : await this.meshy.generate(
+              request.prompt,
+              signal,
+              report,
+              resumeJobIds,
+              beforeSubmit,
+            );
       bytes = generated.bytes;
       jobIds = generated.jobIds;
     } else {
@@ -116,7 +125,7 @@ export class GenerateThreeDModelToolService {
     await this.jobs.progress(
       request.generationId,
       "Validating geometry, textures and animations",
-      90,
+      request.provider === "meshy" && request.kind === "character" ? 95 : 90,
     );
     const asset = await this.store.save(
       {
@@ -124,11 +133,14 @@ export class GenerateThreeDModelToolService {
         design,
         id: request.generationId,
         kind: request.kind,
-        name: design?.name ?? request.prompt.slice(0, 60),
+        name: design?.name ?? this.assetName(request.prompt),
         prompt: request.prompt,
         provenance: {
           elapsedMs: Date.now() - started,
-          estimatedCredits: request.provider === "meshy" ? 30 : null,
+          estimatedCredits: this.estimatedCredits(
+            request.provider,
+            request.kind,
+          ),
           jobIds,
           provider: request.provider,
         },
@@ -147,5 +159,21 @@ export class GenerateThreeDModelToolService {
       "3D asset accepted",
     );
     return asset;
+  }
+
+  /** Returns a concise gallery name from the first sentence of a model brief. */
+  private assetName(prompt: string): string {
+    return (
+      prompt.split(/[.!?\n]/, 1)[0]?.trim() || "Generated 3D asset"
+    ).slice(0, 60);
+  }
+
+  /** Returns the current bounded estimate for the selected provider workflow. */
+  private estimatedCredits(
+    provider: ThreeDProvider,
+    kind: ThreeDAssetKind,
+  ): number | null {
+    if (provider !== "meshy") return null;
+    return kind === "character" ? 50 : 30;
   }
 }

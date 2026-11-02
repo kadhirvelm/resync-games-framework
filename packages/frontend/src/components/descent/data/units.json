@@ -1,0 +1,109 @@
+[
+  {
+    "armor": 8,
+    "attackKind": "melee",
+    "attackRange": 1.4,
+    "attacksPerSecond": 0.8,
+    "barkKey": "hold.warden",
+    "classId": "warden",
+    "damage": 16,
+    "defaultRankTitle": "Ashborn",
+    "id": "hold-warden",
+    "maxHitPoints": 140,
+    "name": "Hold Warden",
+    "popCost": 1,
+    "speed": 2.4,
+    "structureDamageMultiplier": 1,
+    "trainingCost": {
+      "food": 30,
+      "water": 15
+    },
+    "vision": 8
+  },
+  {
+    "armor": 2,
+    "attackKind": "projectile",
+    "attackRange": 7,
+    "attacksPerSecond": 0.9,
+    "barkKey": "hold.hunter",
+    "classId": "hunter",
+    "damage": 18,
+    "defaultRankTitle": "Ashborn",
+    "id": "hold-hunter",
+    "maxHitPoints": 85,
+    "name": "Hold Hunter",
+    "popCost": 1,
+    "projectileSpeed": 12,
+    "speed": 3.2,
+    "structureDamageMultiplier": 1,
+    "trainingCost": {
+      "food": 25,
+      "water": 20
+    },
+    "vision": 10
+  },
+  {
+    "armor": 3,
+    "attackKind": "melee",
+    "attackRange": 1.3,
+    "attacksPerSecond": 1.1,
+    "barkKey": "hold.raider",
+    "classId": "raider",
+    "damage": 15,
+    "defaultRankTitle": "Ashborn",
+    "id": "hold-raider",
+    "maxHitPoints": 95,
+    "name": "Hold Raider",
+    "popCost": 1,
+    "speed": 4,
+    "structureDamageMultiplier": 1,
+    "trainingCost": {
+      "food": 35,
+      "water": 10
+    },
+    "vision": 9
+  },
+  {
+    "armor": 5,
+    "attackKind": "melee",
+    "attackRange": 1.5,
+    "attacksPerSecond": 0.55,
+    "barkKey": "hold.breaker",
+    "classId": "breaker",
+    "damage": 26,
+    "defaultRankTitle": "Ashborn",
+    "id": "hold-breaker",
+    "maxHitPoints": 155,
+    "name": "Hold Breaker",
+    "popCost": 1,
+    "speed": 2,
+    "structureDamageMultiplier": 2,
+    "trainingCost": {
+      "food": 40,
+      "water": 20
+    },
+    "vision": 7
+  },
+  {
+    "armor": 1,
+    "attackKind": "projectile",
+    "attackRange": 6,
+    "attacksPerSecond": 0.75,
+    "barkKey": "hold.adept",
+    "classId": "adept",
+    "damage": 20,
+    "defaultRankTitle": "Ashborn",
+    "id": "hold-adept",
+    "maxHitPoints": 80,
+    "name": "Hold Adept",
+    "popCost": 1,
+    "projectileSpeed": 10,
+    "speed": 2.8,
+    "structureDamageMultiplier": 1,
+    "trainingCost": {
+      "food": 20,
+      "water": 30
+    },
+    "vision": 10
+  }
+]

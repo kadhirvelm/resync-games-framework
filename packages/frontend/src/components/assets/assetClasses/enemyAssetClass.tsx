@@ -45,6 +45,7 @@ export const ENEMY_ASSET_CLASS: AssetClassDefinition = {
   generateButtonLabel: "+ Generate enemy",
   Icon: Skull,
   id: "enemies",
+  medium: "2d",
   subtitle: "enemy portrait generation",
   tabLabel: "Enemies",
 };

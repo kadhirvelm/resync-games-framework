@@ -347,6 +347,9 @@ $blueprint-accent: rgb(80 160 255 / 85%);
 }
 
 .previewDialog {
+  --scrollbar-thumb: rgb(168 198 236 / 36%);
+  --scrollbar-thumb-hover: rgb(198 220 248 / 62%);
+
   background: #012;
   border: 1px solid $blueprint-border;
   border-radius: 12px;

@@ -1,5 +1,7 @@
+import Link from "next/link";
 import type { CSSProperties } from "react";
 import { ProductNowConnection } from "@/components/productNow/ProductNowConnection";
+import { gameExperiencePath } from "./gameExperiencePaths";
 import styles from "./gameExperiences.module.scss";
 import type {
   GameExperienceDefinition,
@@ -8,7 +10,6 @@ import type {
 
 type GameSelectorProps = {
   experiences: readonly GameExperienceDefinition[];
-  onSelect: (id: GameExperienceId) => void;
   resumeExperienceIds: ReadonlySet<GameExperienceId>;
 };
 
@@ -20,19 +21,17 @@ type ArtworkStyle = CSSProperties & {
 /**
  * Top-level library of independently mounted game experiments.
  * @param experiences - Registered games to show
- * @param onSelect - Called with the game the player opens
  * @param resumeExperienceIds - Games with resumable local data
  * @returns A responsive experience-card selector
  */
 export const GameSelector = ({
   experiences,
-  onSelect,
   resumeExperienceIds,
 }: GameSelectorProps) => (
   <main className={styles.selector}>
     <div aria-hidden="true" className={styles.selectorGlow} />
     <header className={styles.selectorHeader}>
-      <p className={styles.eyebrow}>Coreborn experiments</p>
+      <p className={styles.eyebrow}>Resync games experiments</p>
       <h1>Choose your path</h1>
       <p>
         Each experience has its own runtime and rules. Return here whenever you
@@ -87,10 +86,13 @@ export const GameSelector = ({
                     : "Curated prototype"}
                 </li>
               </ul>
-              <button onClick={() => onSelect(experience.id)} type="button">
+              <Link
+                className={styles.launchLink}
+                href={gameExperiencePath(experience.id)}
+              >
                 {actionLabel}
                 <span aria-hidden="true">→</span>
-              </button>
+              </Link>
             </div>
           </article>
         );

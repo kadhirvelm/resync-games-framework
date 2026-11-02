@@ -123,11 +123,17 @@ export interface ThreeDPrototype {
   createdAt: string;
   slots: ThreeDPrototypeSlot[];
 }
+/** Billable Meshy submission stages journaled before their task IDs exist. */
+export type ThreeDProviderSubmissionPhase =
+  | "preview"
+  | "refine"
+  | "rig"
+  | "animation";
 /** Persisted generation state allows workshop refreshes during slow jobs. */
 export interface ThreeDJob {
   requestHash?: string;
   providerJobIds?: string[];
-  providerSubmissionPending?: "preview" | "refine";
+  providerSubmissionPending?: ThreeDProviderSubmissionPhase;
   generationId: string;
   kind: ThreeDAssetKind;
   prompt: string;

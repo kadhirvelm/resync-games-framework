@@ -1,6 +1,10 @@
 declare module "bun:test" {
   export function describe(name: string, fn: () => void): void;
-  export function test(name: string, fn: () => void | Promise<void>): void;
+  export function test(
+    name: string,
+    fn: () => void | Promise<void>,
+    options?: number | { timeout?: number },
+  ): void;
   export namespace test {
     function only(name: string, fn: () => void | Promise<void>): void;
     function skip(name: string, fn: () => void | Promise<void>): void;

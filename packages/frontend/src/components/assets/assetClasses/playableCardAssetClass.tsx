@@ -45,6 +45,7 @@ export const PLAYABLE_CARD_ASSET_CLASS: AssetClassDefinition = {
   generateButtonLabel: "+ Generate card",
   Icon: Layers,
   id: "playable-cards",
+  medium: "2d",
   subtitle: "playable card generation",
   tabLabel: "Playable cards",
 };

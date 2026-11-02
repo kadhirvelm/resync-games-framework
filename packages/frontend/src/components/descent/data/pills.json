@@ -1,0 +1,61 @@
+[
+  {
+    "description": "+10% maximum health in the current realm.",
+    "effect": { "amount": 0.1, "stat": "max_health" },
+    "id": "body_pill",
+    "name": "Body Pill",
+    "role": "permanent"
+  },
+  {
+    "description": "+10% school resistance in the current realm.",
+    "effect": { "amount": 0.1, "stat": "school_resistance" },
+    "id": "spirit_pill",
+    "name": "Spirit Pill",
+    "role": "permanent"
+  },
+  {
+    "description": "+8% movement speed in the current realm.",
+    "effect": { "amount": 0.08, "stat": "move_speed" },
+    "id": "wind_pill",
+    "name": "Wind Pill",
+    "role": "permanent"
+  },
+  {
+    "description": "+20% Ember school effect, or +10% when taken off-school.",
+    "effect": { "amount": 0.2, "stat": "school_effect" },
+    "id": "ember_dao_pill",
+    "name": "Ember Dao Pill",
+    "role": "dao",
+    "school": "ember"
+  },
+  {
+    "description": "+20% Rime school effect, or +10% when taken off-school.",
+    "effect": { "amount": 0.2, "stat": "school_effect" },
+    "id": "rime_dao_pill",
+    "name": "Rime Dao Pill",
+    "role": "dao",
+    "school": "rime"
+  },
+  {
+    "description": "+20% Blood school effect, or +10% when taken off-school.",
+    "effect": { "amount": 0.2, "stat": "school_effect" },
+    "id": "blood_dao_pill",
+    "name": "Blood Dao Pill",
+    "role": "dao",
+    "school": "blood"
+  },
+  {
+    "description": "+20% success chance and consumed when a breakthrough begins.",
+    "effect": { "amount": 0.2, "stat": "success_chance" },
+    "id": "breakthrough_pill",
+    "name": "Breakthrough Pill",
+    "role": "breakthrough"
+  },
+  {
+    "description": "Deferred mid-fight consumable; data only in the MVP.",
+    "effect": { "amount": 0.15, "stat": "battle_power" },
+    "id": "battle_pill",
+    "name": "Battle Pill",
+    "role": "battle"
+  }
+]

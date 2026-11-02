@@ -1,0 +1,94 @@
+{
+  "altarBuildingType": "calamity_altar",
+  "altarMinTier": "Citadel",
+  "bossCoreItemId": "boss_core",
+  "calamities": [
+    {
+      "bossCores": 1,
+      "classId": "warden",
+      "counterHints": ["breaker", "hunter", "seal_ward"],
+      "essenceCost": 600,
+      "id": "infernal_colossus",
+      "lore": "A furnace that learned to walk. Stone does not stop it; it only burns.",
+      "name": "Infernal Colossus",
+      "schoolId": "ember",
+      "stats": {
+        "armor": 18,
+        "attackKind": "melee",
+        "attackRange": 2.5,
+        "attacksPerSecond": 0.5,
+        "damage": 90,
+        "maxHitPoints": 2400,
+        "speed": 1.6,
+        "structureDamageMultiplier": 1.5,
+        "vision": 12
+      },
+      "summonSeconds": 45,
+      "traits": {
+        "burnsPath": true,
+        "passesWalls": true,
+        "wallBurnFraction": 0.5
+      }
+    },
+    {
+      "bossCores": 1,
+      "classId": "warden",
+      "counterHints": ["breaker", "hunter", "seal_ward"],
+      "essenceCost": 600,
+      "id": "glacier_leviathan",
+      "lore": "The Frozen Pit given a spine. The air goes still for a long way around it.",
+      "name": "Glacier Leviathan",
+      "schoolId": "rime",
+      "stats": {
+        "armor": 22,
+        "attackKind": "melee",
+        "attackRange": 3,
+        "attacksPerSecond": 0.4,
+        "damage": 80,
+        "maxHitPoints": 2800,
+        "speed": 1.3,
+        "structureDamageMultiplier": 1,
+        "vision": 12
+      },
+      "summonSeconds": 45,
+      "traits": {
+        "chillFieldRadius": 6
+      }
+    },
+    {
+      "bossCores": 1,
+      "classId": "warden",
+      "counterHints": ["breaker", "hunter", "seal_ward"],
+      "essenceCost": 600,
+      "id": "blood_titan",
+      "lore": "Every death near it is a meal. Leave it fighting long enough and it outgrows the field.",
+      "name": "Blood Titan",
+      "schoolId": "blood",
+      "stats": {
+        "armor": 14,
+        "attackKind": "melee",
+        "attackRange": 2.5,
+        "attacksPerSecond": 0.6,
+        "damage": 85,
+        "maxHitPoints": 2200,
+        "speed": 1.8,
+        "structureDamageMultiplier": 1,
+        "vision": 12
+      },
+      "summonSeconds": 45,
+      "traits": {
+        "growOnKill": 0.05,
+        "healOnNearbyDeath": 40,
+        "nearbyDeathRadius": 5
+      }
+    }
+  ],
+  "maxActive": 1,
+  "popCost": 10,
+  "sealWardBuildingType": "seal_ward",
+  "telegraph": {
+    "beacon": true,
+    "hornPitchSemitones": -7,
+    "hornSoundFamily": "omen"
+  }
+}

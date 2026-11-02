@@ -5,6 +5,7 @@ import { CardCharacterModule } from "./card-character/card-character.module";
 import { EnemyModule } from "./enemy/enemy.module";
 import { PlayableCardModule } from "./playable-card/playable-card.module";
 import { SpriteSheetModule } from "./sprite-sheet/sprite-sheet.module";
+import { StaticImageModule } from "./static-image/static-image.module";
 import { ThreeDModule } from "./three-d/three-d.module";
 
 /**
@@ -20,6 +21,7 @@ import { ThreeDModule } from "./three-d/three-d.module";
     EnemyModule,
     PlayableCardModule,
     SpriteSheetModule,
+    StaticImageModule,
   ],
 })
 export class AssetClassesModule {}

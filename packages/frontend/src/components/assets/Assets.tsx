@@ -8,13 +8,14 @@ import { type AssetClassJobCounts, AssetClassNav } from "./AssetClassNav";
 import styles from "./Assets.module.scss";
 import type { AssetClassDefinition } from "./assetClasses/assetClassDefinition";
 import { ASSET_CLASSES } from "./assetClasses/assetClassRegistry";
+import { assetClassEyebrow } from "./assetClasses/groupAssetClasses";
 import { GenerateAssetForm } from "./GenerateAssetForm";
 import { useAssetGenerationJobs } from "./useAssetGenerationJobs";
 
 /**
- * Blueprint workshop. A sidebar groups every registered asset class by
- * category and can be filtered by name, so the workshop stays navigable as
- * more generators are added. The active class gets a content header, its own
+ * Blueprint workshop. A sidebar splits every registered asset class into 2D,
+ * 3D, and Both, then by category, and can be filtered by name. The active
+ * class gets a content header, its own
  * generate dialog (unless it manages its own generation controls), and its
  * gallery.
  */
@@ -105,7 +106,7 @@ export function Assets() {
               </span>
               <div className={styles.contentHeading}>
                 <span className={styles.contentEyebrow}>
-                  {activeClass.category}
+                  {assetClassEyebrow(activeClass)}
                 </span>
                 <h1 className={styles.contentTitle}>{activeClass.tabLabel}</h1>
                 <p className={styles.contentDescription}>

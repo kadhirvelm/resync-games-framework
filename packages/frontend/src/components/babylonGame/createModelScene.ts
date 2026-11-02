@@ -18,12 +18,24 @@ import type {
 } from "@resync-game-framework/api";
 import { attachBabylonRuntimeLifecycle } from "./babylonRuntimeLifecycle";
 import type { PrototypeRun } from "./logic/prototypeRun";
+import {
+  fitModelCameraRadius,
+  MODEL_CAMERA_MAX_RADIUS,
+  MODEL_CAMERA_MIN_RADIUS,
+  type ModelCameraZoomDirection,
+  zoomModelCameraRadius,
+} from "./modelCamera";
+import { getCharacterModelScale } from "./modelSizing";
 
 /** Imperative renderer handle; all gameplay state belongs to pure rules. */
 export interface ModelSceneHandle {
   dispose: () => void;
   update: (state: PrototypeRun) => void;
   animate: (name: string) => void;
+  /** Restores the padded view calculated from the loaded model's bounds. */
+  frameModel: () => void;
+  /** Moves an orbit camera closer to or farther from its target. */
+  zoom: (direction: ModelCameraZoomDirection) => void;
 }
 
 /**
@@ -58,13 +70,26 @@ export function createModelScene(
       new Vector3(0, 1, 0),
       scene,
     );
-    camera.lowerRadiusLimit = 2;
-    camera.upperRadiusLimit = 35;
+    camera.lowerRadiusLimit = MODEL_CAMERA_MIN_RADIUS;
+    camera.upperRadiusLimit = MODEL_CAMERA_MAX_RADIUS;
     camera.upperBetaLimit = Math.PI / 2.05;
     camera.inertia = input.reducedMotion ? 0 : 0.6;
     camera.attachControl(canvas, true);
     if (input.player.cameraMode === "follow")
       camera.inputs.removeByType("ArcRotateCameraKeyboardMoveInput");
+    let framedTarget = camera.target.clone();
+    let framedRadius = camera.radius;
+    /** Restores the most recently calculated single-model framing. */
+    const frameModel = () => {
+      if (input.player.cameraMode !== "orbit") return;
+      camera.setTarget(framedTarget);
+      camera.radius = framedRadius;
+    };
+    /** Applies one bounded explicit zoom step to the orbit camera. */
+    const zoom = (direction: ModelCameraZoomDirection) => {
+      if (input.player.cameraMode !== "orbit") return;
+      camera.radius = zoomModelCameraRadius(camera.radius, direction);
+    };
     const light = new HemisphericLight(
       "ambient",
       new Vector3(0.3, 1, 0.5),
@@ -174,7 +199,9 @@ export function createModelScene(
           );
           const size = entity.kind === "environment" ? 18 / span : 1.8 / span;
           placement.scaling.setAll(
-            entity.kind === "character" ? 2 / height : size,
+            entity.kind === "character"
+              ? getCharacterModelScale(model, 1.75)
+              : size,
           );
           if (entity.kind !== "environment")
             modelRoot.position.set(
@@ -198,17 +225,19 @@ export function createModelScene(
             let minimum = new Vector3(Infinity, Infinity, Infinity);
             let maximum = new Vector3(-Infinity, -Infinity, -Infinity);
             for (const mesh of meshes) {
+              mesh.refreshBoundingInfo(true, true);
               mesh.computeWorldMatrix(true);
               const bounds = mesh.getBoundingInfo().boundingBox;
               minimum = Vector3.Minimize(minimum, bounds.minimumWorld);
               maximum = Vector3.Maximize(maximum, bounds.maximumWorld);
             }
             if (meshes.length > 0) {
-              camera.setTarget(minimum.add(maximum).scale(0.5));
-              camera.radius = Math.max(
-                3,
-                maximum.subtract(minimum).length() * 1.3,
+              framedTarget = minimum.add(maximum).scale(0.5);
+              framedRadius = fitModelCameraRadius(
+                maximum.subtract(minimum).length(),
+                entity.kind === "character" ? 7 : 4,
               );
+              frameModel();
             }
           }
         })
@@ -295,6 +324,7 @@ export function createModelScene(
         canvas.removeEventListener("blur", blur);
         detach();
       },
+      frameModel,
       update: (state) => {
         if (player) {
           const dx = state.x - player.position.x;
@@ -309,6 +339,7 @@ export function createModelScene(
         for (const id of state.activated) placements.get(id)?.setEnabled(false);
         if (state.finished) emit({ type: "finished" });
       },
+      zoom,
     };
   } catch (error) {
     engine.dispose();

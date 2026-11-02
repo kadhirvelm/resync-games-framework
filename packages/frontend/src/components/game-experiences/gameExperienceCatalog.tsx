@@ -2,6 +2,7 @@ import dynamic from "next/dynamic";
 import styles from "./gameExperiences.module.scss";
 import type {
   GameExperienceDefinition,
+  GameExperienceEntryProps,
   GameExperienceId,
 } from "./gameExperienceTypes";
 
@@ -24,10 +25,27 @@ const TowerGameExperience = dynamic(
   { loading: ExperienceLoading },
 );
 
-const ThreeDSandboxGame = dynamic(
+const ThreeDSandboxRuntime = dynamic(
   () =>
     import("../babylonGame/ThreeDSandboxGame").then(
       (module) => module.ThreeDSandboxGame,
+    ),
+  { loading: ExperienceLoading, ssr: false },
+);
+
+/**
+ * Adapts the standalone 3D sandbox to the common library entry contract.
+ * @param _props - Library navigation handled by the host overlay for now
+ * @returns The mounted 3D sandbox
+ */
+const ThreeDSandboxGame = (_props: GameExperienceEntryProps) => (
+  <ThreeDSandboxRuntime />
+);
+
+const DescentGameExperience = dynamic(
+  () =>
+    import("./DescentGameExperience").then(
+      (module) => module.DescentGameExperience,
     ),
   { loading: ExperienceLoading, ssr: false },
 );
@@ -65,6 +83,22 @@ export const gameExperienceCatalog = [
     launchLabel: "Launch sandbox",
     name: "3D Sandbox",
     status: "Prototype",
+  },
+  {
+    artwork: {
+      accent: "#e0603a",
+      glow: "#f2b544",
+      label: "An ember-lit shaft descending into dark rock",
+      monogram: "獄",
+    },
+    capabilities: { generatedAssets: true, localSaves: true },
+    description:
+      "Build a Hold, cultivate its defenders, and dig layer by layer into Hell.",
+    entry: DescentGameExperience,
+    id: "descent",
+    launchLabel: "Begin the descent",
+    name: "Descent",
+    status: "Playable",
   },
 ] as const satisfies readonly GameExperienceDefinition[];
 

@@ -1,0 +1,311 @@
+$ash: #100b0a;
+$ember: #e0603a;
+$ember-deep: #7f2418;
+$cinder: #f2b544;
+$bone: #efe4d6;
+$display: var(--font-display, "Iowan Old Style", georgia, serif);
+$ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+
+.startScreen {
+  background:
+    radial-gradient(circle at 72% 72%, rgba($ember, 0.28), transparent 34%),
+    linear-gradient(145deg, #17100e 0%, $ash 58%, #050303 100%);
+  color: $bone;
+  flex: 1;
+  font-family: var(--font-inter), sans-serif;
+  isolation: isolate;
+  min-height: 100dvh;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+
+.startScreen::before,
+.startScreen::after {
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+.startScreen::before {
+  background:
+    repeating-linear-gradient(116deg, transparent 0 74px, rgba(#fff, 0.014) 75px 76px),
+    repeating-linear-gradient(13deg, transparent 0 108px, rgba(#000, 0.13) 109px 112px);
+  mix-blend-mode: soft-light;
+  opacity: 0.7;
+  z-index: 2;
+}
+
+.startScreen::after {
+  background:
+    linear-gradient(90deg, rgba(#050303, 0.92), rgba($ash, 0.66) 27%, rgba($ash, 0.16) 53%, transparent 72%),
+    linear-gradient(180deg, rgba(#000, 0.22), transparent 26% 68%, rgba(#000, 0.56));
+  box-shadow: inset 0 0 150px 24px rgba(#000, 0.62);
+  z-index: 1;
+}
+
+.heroArtwork {
+  animation: artwork-drift 18s ease-in-out infinite alternate;
+  background-image: url("/descent/title-ashen-gate.webp");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  inset: -2%;
+  position: absolute;
+  transform: scale(1.03);
+  will-change: transform;
+  z-index: 0;
+}
+
+.cavernGlow {
+  animation: cavern-breathe 5.6s ease-in-out infinite alternate;
+  background: radial-gradient(ellipse, rgba($cinder, 0.3), rgba($ember, 0.1) 34%, transparent 70%);
+  bottom: -24%;
+  filter: blur(14px);
+  height: 70%;
+  position: absolute;
+  right: 4%;
+  width: 62%;
+  z-index: 2;
+}
+
+.embers {
+  animation: embers-rise 7s linear infinite;
+  background: $cinder;
+  border-radius: 50%;
+  bottom: 8%;
+  box-shadow:
+    80px -20px 0 -1px rgba($cinder, 0.7),
+    172px -84px 0 -1px rgba($ember, 0.7),
+    258px -30px 0 0 rgba($cinder, 0.55),
+    348px -130px 0 -1px rgba($ember, 0.8),
+    438px -58px 0 -1px rgba($cinder, 0.65),
+    530px -178px 0 0 rgba($ember, 0.5),
+    620px -90px 0 -1px rgba($cinder, 0.7);
+  filter: drop-shadow(0 0 4px $ember);
+  height: 3px;
+  opacity: 0.82;
+  position: absolute;
+  right: 4%;
+  width: 3px;
+  z-index: 3;
+}
+
+.libraryLink {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: rgba($bone, 0.42);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 700;
+  gap: 8px;
+  letter-spacing: 0.16em;
+  margin-top: 18px;
+  padding: 6px 0;
+  position: relative;
+  text-transform: uppercase;
+  transition: color 160ms ease;
+  width: max-content;
+  z-index: 1;
+
+  span {
+    color: $cinder;
+    font-size: 14px;
+  }
+
+  &:hover {
+    color: $bone;
+  }
+
+  &:focus-visible {
+    outline: 2px solid $cinder;
+    outline-offset: 5px;
+  }
+}
+
+.startContent {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: 110px clamp(28px, 7vw, 112px) 92px;
+  position: relative;
+  width: min(760px, 62vw);
+  z-index: 4;
+}
+
+.titleBlock {
+  animation: title-arrive 700ms $ease-out both;
+  max-width: 650px;
+
+  h1 {
+    color: #fff8ed;
+    font-family: $display;
+    font-size: clamp(84px, 11vw, 154px);
+    font-weight: 500;
+    letter-spacing: -0.065em;
+    line-height: 0.74;
+    margin: 0 0 22px -7px;
+    text-shadow:
+      0 3px 0 rgba($ember-deep, 0.8),
+      0 0 70px rgba($ember, 0.22);
+  }
+}
+
+.tagline {
+  color: rgba($bone, 0.72);
+  font-family: $display;
+  font-size: clamp(18px, 2vw, 24px);
+  line-height: 1.45;
+  margin: 0;
+  max-width: 490px;
+}
+
+.startMenu {
+  animation: menu-arrive 650ms 120ms $ease-out both;
+  display: grid;
+  gap: 8px;
+  margin-top: clamp(30px, 5vh, 52px);
+  max-width: 520px;
+
+  button {
+    align-items: center;
+    backdrop-filter: blur(12px);
+    background: rgba(#211714, 0.58);
+    border: 1px solid rgba($bone, 0.13);
+    border-left: 2px solid rgba($ember, 0.48);
+    color: $bone;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    font: inherit;
+    padding: 13px 18px 14px;
+    text-align: left;
+    transition:
+      background 180ms ease,
+      border-color 180ms ease,
+      transform 180ms $ease-out;
+
+    span {
+      width: 100%;
+    }
+
+    span {
+      font-family: $display;
+      font-size: 22px;
+      letter-spacing: 0.01em;
+    }
+
+    &:hover {
+      background: rgba($ember-deep, 0.23);
+      border-color: rgba($cinder, 0.62);
+      transform: translateX(7px);
+    }
+
+    &:focus-visible {
+      outline: 2px solid $cinder;
+      outline-offset: 3px;
+    }
+  }
+
+  .primaryAction {
+    background: linear-gradient(100deg, rgba($ember-deep, 0.64), rgba($ember, 0.2));
+    border-color: rgba($cinder, 0.52);
+    border-left-color: $cinder;
+    box-shadow: 0 10px 40px rgba(#000, 0.24);
+  }
+}
+
+@keyframes artwork-drift {
+  to {
+    transform: scale(1.07) translate3d(0.35%, -0.3%, 0);
+  }
+}
+
+@keyframes title-arrive {
+  from {
+    filter: blur(6px);
+    opacity: 0;
+    transform: translateY(18px);
+  }
+
+  to {
+    filter: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes menu-arrive {
+  from {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes cavern-breathe {
+  to {
+    opacity: 0.68;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes embers-rise {
+  to {
+    opacity: 0;
+    transform: translateY(-240px);
+  }
+}
+
+@media (width <= 900px) {
+  .heroArtwork {
+    background-position: 60% center;
+    opacity: 0.76;
+  }
+
+  .startScreen::after {
+    background:
+      linear-gradient(90deg, rgba(#050303, 0.88), rgba($ash, 0.58) 52%, rgba($ash, 0.22)),
+      linear-gradient(180deg, rgba(#000, 0.26), transparent 32% 66%, rgba(#000, 0.64));
+  }
+
+  .startContent {
+    width: min(760px, 88vw);
+  }
+}
+
+@media (width <= 620px) {
+  .startContent {
+    padding: 96px 24px 88px;
+    width: 100%;
+  }
+
+  .titleBlock h1 {
+    font-size: clamp(74px, 24vw, 112px);
+  }
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cavernGlow,
+  .embers,
+  .heroArtwork,
+  .startMenu,
+  .titleBlock {
+    animation: none;
+  }
+
+  .startMenu button {
+    transition: none;
+  }
+}

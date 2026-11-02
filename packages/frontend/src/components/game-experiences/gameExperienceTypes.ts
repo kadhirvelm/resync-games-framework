@@ -1,7 +1,10 @@
 import type { ComponentType } from "react";
 
 /** Stable identifiers used by navigation and future experience-specific data. */
-export type GameExperienceId = "three-d-sandbox" | "towers-of-coreborn";
+export type GameExperienceId =
+  | "descent"
+  | "three-d-sandbox"
+  | "towers-of-coreborn";
 
 /** Product maturity shown on an experience card. */
 export type GameExperienceStatus = "Playable" | "Prototype";
@@ -20,12 +23,18 @@ export interface GameExperienceCapabilities {
   localSaves: boolean;
 }
 
+/** Navigation supplied by the game library to one mounted experience. */
+export interface GameExperienceEntryProps {
+  /** Returns to the top-level game selector. */
+  onExit: () => void;
+}
+
 /** A selectable game and the lazily loaded component that runs it. */
 export interface GameExperienceDefinition {
   artwork: GameExperienceArtwork;
   capabilities: GameExperienceCapabilities;
   description: string;
-  entry: ComponentType;
+  entry: ComponentType<GameExperienceEntryProps>;
   id: GameExperienceId;
   launchLabel: string;
   name: string;

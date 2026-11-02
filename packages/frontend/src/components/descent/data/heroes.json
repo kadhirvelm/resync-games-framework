@@ -1,0 +1,137 @@
+{
+  "aliveCap": 3,
+  "hallBuildingType": "hero_hall",
+  "hallMinTier": "Stronghold",
+  "heroes": [
+    {
+      "classId": "warden",
+      "id": "edda_kesh",
+      "lore": "Blunt Hold commander and the player's voice. Breaks in the Bone Wastes when she recognizes the dead.",
+      "name": "Edda Kesh",
+      "schoolChoice": "preset",
+      "schoolId": "ember",
+      "startsLocked": false,
+      "stats": {
+        "armor": 12,
+        "attackKind": "melee",
+        "attackRange": 1.6,
+        "attacksPerSecond": 0.9,
+        "damage": 26,
+        "maxHitPoints": 320,
+        "speed": 2.6,
+        "structureDamageMultiplier": 1,
+        "vision": 10
+      },
+      "title": "Cinder Warlord",
+      "trainCost": { "coin": 120, "essence": 60, "food": 80 },
+      "trainSeconds": 40,
+      "ultimate": {
+        "cooldownSeconds": 90,
+        "description": "Plants the Hold banner; nearby Wardens take less damage and burn attackers.",
+        "executes": false,
+        "id": "cinder_oath",
+        "name": "Cinder Oath"
+      }
+    },
+    {
+      "classId": "adept",
+      "id": "tamsin_roe",
+      "lore": "Keeper of the Alchemy Furnace. Knows what every pill costs, and who paid it.",
+      "name": "Brother Tamsin Roe",
+      "schoolChoice": "preset",
+      "schoolId": "rime",
+      "startsLocked": false,
+      "stats": {
+        "armor": 4,
+        "attackKind": "projectile",
+        "attackRange": 6,
+        "attacksPerSecond": 0.7,
+        "damage": 30,
+        "maxHitPoints": 210,
+        "projectileSpeed": 10,
+        "speed": 2.8,
+        "structureDamageMultiplier": 0.8,
+        "vision": 11
+      },
+      "title": "Rime Seer",
+      "trainCost": { "coin": 100, "essence": 80, "spirit_herbs": 6 },
+      "trainSeconds": 40,
+      "ultimate": {
+        "cooldownSeconds": 100,
+        "description": "Freezes the ground in a wide ring; enemies inside are chilled and lose attack speed.",
+        "executes": false,
+        "id": "still_water_rite",
+        "name": "Still Water Rite"
+      }
+    },
+    {
+      "classId": "raider",
+      "id": "sera_quill",
+      "lore": "The only survivor of the Sable Watch. She carries the real story of what the harvest does.",
+      "name": "Sera Quill",
+      "schoolChoice": "preset",
+      "schoolId": "blood",
+      "startsLocked": false,
+      "stats": {
+        "armor": 5,
+        "attackKind": "melee",
+        "attackRange": 1.3,
+        "attacksPerSecond": 1.3,
+        "damage": 22,
+        "maxHitPoints": 240,
+        "speed": 3.8,
+        "structureDamageMultiplier": 1,
+        "vision": 10
+      },
+      "title": "Blood Reaver",
+      "trainCost": { "coin": 110, "essence": 70, "iron": 40 },
+      "trainSeconds": 40,
+      "ultimate": {
+        "cooldownSeconds": 80,
+        "description": "Dashes through a line of foes, drinking life from each one she cuts.",
+        "executes": false,
+        "id": "red_ledger",
+        "name": "Red Ledger"
+      }
+    },
+    {
+      "classId": null,
+      "id": "ilya_unnamed",
+      "lore": "A Governor who sealed the Ledger, reborn with no memory of it. A Great Soul, not a chosen one.",
+      "name": "Ilya the Unnamed",
+      "provisionalClassId": "warden",
+      "schoolChoice": "at_sworn",
+      "schoolId": null,
+      "startsLocked": true,
+      "stats": {
+        "armor": 8,
+        "attackKind": "melee",
+        "attackRange": 1.5,
+        "attacksPerSecond": 1,
+        "damage": 24,
+        "maxHitPoints": 280,
+        "speed": 3,
+        "structureDamageMultiplier": 1,
+        "vision": 10
+      },
+      "title": "Great Soul",
+      "trainCost": { "coin": 150, "essence": 120 },
+      "trainSeconds": 50,
+      "ultimate": {
+        "cooldownSeconds": 120,
+        "description": "Reads a line of the Ledger aloud; the effect follows the school Ilya chose at Sworn.",
+        "executes": false,
+        "id": "unwritten_line",
+        "name": "Unwritten Line"
+      }
+    }
+  ],
+  "popCost": 5,
+  "revive": {
+    "baseEssence": 40,
+    "baseSeconds": 30,
+    "essencePerRealm": 30,
+    "secondsPerRealm": 15
+  },
+  "treasureSlots": 3
+}

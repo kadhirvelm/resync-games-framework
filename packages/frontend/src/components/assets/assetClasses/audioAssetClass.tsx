@@ -138,6 +138,7 @@ export const AUDIO_ASSET_CLASS: AssetClassDefinition = {
   generateButtonLabel: "+ Generate audio",
   Icon: AudioLines,
   id: "audio",
+  medium: "both",
   subtitle: "effects, ambience, and music",
   tabLabel: "Audio",
 };

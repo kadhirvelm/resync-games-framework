@@ -1,0 +1,100 @@
+{
+  "chant": "Workers sing the harvest chant while they carry the quota home.",
+  "resources": [
+    {
+      "carryAmount": 10,
+      "gatherTicks": 5,
+      "id": "food",
+      "name": "Food",
+      "nodes": [
+        { "id": "fungus_grove", "minDistanceFromCamp": 2, "richness": "near" },
+        { "id": "bone_field", "minDistanceFromCamp": 6, "richness": "mid" },
+        {
+          "id": "cave_lurker_herd",
+          "minDistanceFromCamp": 10,
+          "richness": "far"
+        }
+      ],
+      "slang": "hearth"
+    },
+    {
+      "carryAmount": 10,
+      "gatherTicks": 5,
+      "id": "water",
+      "name": "Water",
+      "nodes": [
+        { "id": "spirit_spring", "minDistanceFromCamp": 2, "richness": "near" },
+        { "id": "well", "minDistanceFromCamp": 6, "richness": "mid" },
+        { "id": "brine_pool", "minDistanceFromCamp": 10, "richness": "far" }
+      ],
+      "slang": "spring"
+    },
+    {
+      "carryAmount": 10,
+      "gatherTicks": 5,
+      "id": "wood",
+      "name": "Wood",
+      "nodes": [
+        { "id": "dead_tree", "minDistanceFromCamp": 3, "richness": "near" },
+        { "id": "ash_grove", "minDistanceFromCamp": 8, "richness": "far" }
+      ],
+      "slang": "frame"
+    },
+    {
+      "carryAmount": 8,
+      "gatherTicks": 6,
+      "id": "stone",
+      "name": "Stone",
+      "nodes": [
+        { "id": "rock_vein", "minDistanceFromCamp": 4, "richness": "mid" },
+        { "id": "deep_rock", "minDistanceFromCamp": 10, "richness": "far" }
+      ],
+      "slang": "keep"
+    },
+    {
+      "carryAmount": 6,
+      "gatherTicks": 8,
+      "id": "iron",
+      "name": "Iron",
+      "nodes": [
+        { "id": "deep_vein", "minDistanceFromCamp": 12, "richness": "far" }
+      ],
+      "slang": "grit"
+    },
+    {
+      "carryAmount": 12,
+      "gatherTicks": 4,
+      "id": "coin",
+      "name": "Coin",
+      "nodes": [
+        { "id": "ruins", "minDistanceFromCamp": 8, "richness": "mid" },
+        { "id": "cursed_hoard", "minDistanceFromCamp": 12, "richness": "far" }
+      ],
+      "slang": "tithe"
+    },
+    {
+      "carryAmount": 4,
+      "gatherTicks": 6,
+      "id": "spirit_herbs",
+      "name": "Spirit Herbs",
+      "nodes": [
+        { "id": "common_patch", "minDistanceFromCamp": 4, "richness": "near" },
+        { "id": "ember_patch", "minDistanceFromCamp": 8, "richness": "mid" },
+        { "id": "rime_patch", "minDistanceFromCamp": 8, "richness": "mid" },
+        { "id": "blood_patch", "minDistanceFromCamp": 8, "richness": "mid" },
+        { "id": "rare_patch", "minDistanceFromCamp": 12, "richness": "far" }
+      ],
+      "slang": "green"
+    },
+    {
+      "carryAmount": 4,
+      "gatherTicks": 8,
+      "id": "essence",
+      "name": "Essence",
+      "nodes": [
+        { "id": "essence_well", "minDistanceFromCamp": 10, "richness": "far" }
+      ],
+      "slang": "ember"
+    }
+  ]
+}

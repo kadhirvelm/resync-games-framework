@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { NodeIO } from "@gltf-transform/core";
+import { Document, NodeIO } from "@gltf-transform/core";
+import sharp from "sharp";
 import { compileThreeDDesign, demoThreeDDesign } from "../compileThreeDDesign";
+import { normalizeMeshyCharacter } from "../normalizeMeshyCharacter";
+import { renderGlbPreview } from "../renderGlbPreview";
 import { THREE_D_STORAGE } from "../threeDAssetStore";
 import { readGlbJson, validateGlb } from "../validateGlb";
 
@@ -34,6 +37,76 @@ describe("3D GLB pipeline", () => {
     await expect(validateGlb(bytes, "character")).rejects.toThrow(
       "Characters require",
     );
+  });
+  test("normalizes Meshy clips and textures into the character contract", async () => {
+    const io = new NodeIO();
+    const document = await io.readBinary(
+      await compileThreeDDesign(demoThreeDDesign("character"), "character"),
+    );
+    const providerClipNames = [
+      "Idle",
+      "Casual_Walk",
+      "Reaping_Swing",
+      "Hit_Reaction",
+      "dying_backwards",
+    ];
+    for (const [index, animation] of document
+      .getRoot()
+      .listAnimations()
+      .entries())
+      animation.setName(providerClipNames[index] ?? "unexpected");
+    const image = await sharp({
+      create: {
+        background: { b: 72, g: 118, r: 42 },
+        channels: 3,
+        height: 2048,
+        width: 2048,
+      },
+    })
+      .png()
+      .toBuffer();
+    const texture = document
+      .createTexture("Meshy texture")
+      .setImage(image)
+      .setMimeType("image/png");
+    const buffer = document.getRoot().listBuffers()[0];
+    if (!buffer) throw new Error("Missing fixture buffer");
+    for (const mesh of document.getRoot().listMeshes()) {
+      for (const primitive of mesh.listPrimitives()) {
+        const vertexCount = primitive.getAttribute("POSITION")?.getCount();
+        if (!vertexCount) throw new Error("Missing fixture positions");
+        primitive.setAttribute(
+          "TEXCOORD_0",
+          document
+            .createAccessor()
+            .setType("VEC2")
+            .setArray(new Float32Array(vertexCount * 2))
+            .setBuffer(buffer),
+        );
+      }
+    }
+    document.getRoot().listMaterials()[0]?.setBaseColorTexture(texture);
+
+    const normalized = await normalizeMeshyCharacter(
+      await io.writeBinary(document),
+    );
+    const validation = await validateGlb(normalized, "character");
+    const normalizedDocument = await io.readBinary(normalized);
+    const normalizedTexture = normalizedDocument.getRoot().listTextures()[0];
+    const normalizedImage = normalizedTexture?.getImage();
+    if (!normalizedImage) throw new Error("Missing normalized texture");
+    const metadata = await sharp(normalizedImage).metadata();
+
+    expect(validation.animations.map((clip) => clip.name)).toEqual([
+      "idle",
+      "walk",
+      "attack",
+      "hit",
+      "death",
+    ]);
+    expect(normalizedTexture?.getMimeType()).toBe("image/jpeg");
+    expect(metadata.width).toBe(1024);
+    expect(metadata.height).toBe(1024);
   });
   test("enforces a configured lower triangle ceiling", async () => {
     const bytes = await compileThreeDDesign(demoThreeDDesign("prop"), "prop");
@@ -102,5 +175,62 @@ describe("3D GLB pipeline", () => {
         "model.glb",
       ),
     ).toBe("https://backend.test/static/three-d-props/a%20b/model.glb");
+  });
+  test("renders embedded base-color textures in workshop previews", async () => {
+    const document = new Document();
+    const buffer = document.createBuffer();
+    const positions = document
+      .createAccessor("positions")
+      .setType("VEC3")
+      .setArray(new Float32Array([-1, 0, -1, 1, 0, -1, 1, 0, 1, -1, 0, 1]))
+      .setBuffer(buffer);
+    const coordinates = document
+      .createAccessor("coordinates")
+      .setType("VEC2")
+      .setArray(new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]))
+      .setBuffer(buffer);
+    const indices = document
+      .createAccessor("indices")
+      .setType("SCALAR")
+      .setArray(new Uint16Array([0, 1, 2, 0, 2, 3]))
+      .setBuffer(buffer);
+    const image = await sharp({
+      create: {
+        background: { alpha: 1, b: 24, g: 28, r: 220 },
+        channels: 4,
+        height: 2,
+        width: 2,
+      },
+    })
+      .png()
+      .toBuffer();
+    const texture = document
+      .createTexture("red texture")
+      .setImage(image)
+      .setMimeType("image/png");
+    const material = document
+      .createMaterial("textured material")
+      .setBaseColorTexture(texture);
+    const primitive = document
+      .createPrimitive()
+      .setAttribute("POSITION", positions)
+      .setAttribute("TEXCOORD_0", coordinates)
+      .setIndices(indices)
+      .setMaterial(material);
+    const mesh = document.createMesh("quad").addPrimitive(primitive);
+    document
+      .createScene("preview")
+      .addChild(document.createNode("quad").setMesh(mesh));
+    const preview = await renderGlbPreview(
+      await new NodeIO().writeBinary(document),
+    );
+    const rendered = await sharp(preview)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const center = (160 * rendered.info.width + 160) * 4;
+    expect((rendered.data[center] ?? 0) > 150).toBe(true);
+    expect(rendered.data[center + 1] ?? 255).toBeLessThan(80);
+    expect(rendered.data[center + 2] ?? 255).toBeLessThan(80);
   });
 });
