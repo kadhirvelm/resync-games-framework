@@ -12,7 +12,7 @@ import type {
   ThreeDAssetKind,
   ThreeDGenerationPayload,
   ThreeDWorkshopServiceApi,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { RedisModule } from "src/infra/redis/redis.module";
 import { Timeout } from "src/library/timeout/timeout.decorator";
 import { TimeoutInterceptor } from "src/library/timeout/timeout.interceptor";

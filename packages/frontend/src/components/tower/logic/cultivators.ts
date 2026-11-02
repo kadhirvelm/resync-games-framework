@@ -1,4 +1,4 @@
-import type { CultivatorRecord } from "@towers-of-coreborn/api";
+import type { CultivatorRecord } from "@resync-game-framework/api";
 import { toUnitSprite } from "./buildTowerContent";
 import { BUILT_IN_CULTIVATOR } from "./builtInContent";
 import type { CultivatorDefinition, TowerContent } from "./towerTypes";

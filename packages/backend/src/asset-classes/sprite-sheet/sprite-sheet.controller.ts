@@ -1,4 +1,4 @@
-import { SpriteSheetServiceDefinition } from "@towers-of-coreborn/api";
+import { SpriteSheetServiceDefinition } from "@resync-game-framework/api";
 import { createAssetClassController } from "../shared/createAssetClassController";
 import { SpriteSheetService } from "./sprite-sheet.service";
 

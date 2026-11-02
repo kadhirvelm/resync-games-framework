@@ -4,7 +4,7 @@ import {
   AgentTool,
   type AgentToolSelection,
   type ToolId,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { ConsultProductNowAgent } from "../agents/consult-productnow/consultProductNowAgent";
 import { GenerateAudioToolService } from "../tools/generateAudioTool.service";
 import { GenerateImageToolService } from "../tools/generateImageTool.service";
@@ -16,16 +16,16 @@ type ToolRegistry = {
 };
 
 /**
- * Catalog of tools a Towers of Coreborn agent can be given.
+ * Catalog of tools a Resync Game Framework agent can be given.
  *
  * Add the id to {@link AgentTool}, then register the implementation in
- * {@link TowersOfCorebornAgentToolRegistry.buildToolRegistry}. An agent
+ * {@link ResyncGameFrameworkAgentToolRegistry.buildToolRegistry}. An agent
  * declares its own enum of the {@link AgentTool} members it calls and passes
  * that enum to the agent runner. The runner loads them with
- * {@link TowersOfCorebornAgentToolRegistry.buildTools}.
+ * {@link ResyncGameFrameworkAgentToolRegistry.buildTools}.
  */
 @Injectable()
-export class TowersOfCorebornAgentToolRegistry {
+export class ResyncGameFrameworkAgentToolRegistry {
   public constructor(
     private readonly consultProductNowAgent: ConsultProductNowAgent,
     private readonly generateImageToolService: GenerateImageToolService,

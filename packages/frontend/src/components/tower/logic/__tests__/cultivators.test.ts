@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type {
   CultivatorRecord,
   SpriteSheetAsset,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { BUILT_IN_CULTIVATOR, BUILT_IN_TOWER } from "../builtInContent";
 import {
   cultivatorArtLine,

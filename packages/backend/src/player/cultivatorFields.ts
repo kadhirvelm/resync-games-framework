@@ -4,7 +4,7 @@ import {
   CULTIVATOR_NAME_MAX_LENGTH,
   CULTIVATOR_TITLE_MAX_LENGTH,
   type CultivatorFields,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 
 /** Title given to a cultivator whose player leaves it blank. */
 export const DEFAULT_CULTIVATOR_TITLE = "Walker of the Jade Path";

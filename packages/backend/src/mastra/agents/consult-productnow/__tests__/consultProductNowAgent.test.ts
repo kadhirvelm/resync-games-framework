@@ -1,8 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
 import { RequestContext } from "@mastra/core/request-context";
 import { UnauthorizedException } from "@nestjs/common";
-import { AgentTool } from "@towers-of-coreborn/api";
-import { TowersOfCorebornAgentToolRegistry } from "src/mastra/shared/towersOfCorebornAgentToolRegistry";
+import { AgentTool } from "@resync-game-framework/api";
+import { ResyncGameFrameworkAgentToolRegistry } from "src/mastra/shared/resyncGameFrameworkAgentToolRegistry";
 import type { ProductNowMcpService } from "src/product-now-mcp/product-now-mcp.service";
 import {
   PRODUCT_NOW_SESSION_REQUEST_KEY,
@@ -131,7 +131,7 @@ describe("ConsultProductNowAgent", () => {
       expect(prompt).toBe("How is the Reach set up?");
       return { text: "  The Reach is climbed under the Warden Compact.  " };
     }) as unknown as typeof agent.subagent.generate;
-    const registry = new TowersOfCorebornAgentToolRegistry(
+    const registry = new ResyncGameFrameworkAgentToolRegistry(
       agent,
       {
         createTool: () => ({ id: AgentTool.GenerateImage }),

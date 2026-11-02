@@ -8,7 +8,7 @@ import {
   Logger,
   UnauthorizedException,
 } from "@nestjs/common";
-import type { ProductNowMcpTool } from "@towers-of-coreborn/api";
+import type { ProductNowMcpTool } from "@resync-game-framework/api";
 import { ConfigurationService } from "../configuration/configuration.service";
 import { ProductNowOAuthClientProvider } from "./productNowOAuthClient.provider";
 import { ProductNowOAuthSessionStore } from "./productNowOAuthSession.store";
@@ -269,7 +269,7 @@ export class ProductNowMcpService {
       { authProvider: provider },
     );
     const client = new Client(
-      { name: "towers-of-coreborn", version: "1.0.0" },
+      { name: "resync-game-framework", version: "1.0.0" },
       { capabilities: {} },
     );
     return { client, provider, transport };

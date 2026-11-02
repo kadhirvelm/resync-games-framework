@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { SaveClimbPayload } from "@towers-of-coreborn/api";
+import type { SaveClimbPayload } from "@resync-game-framework/api";
 import { readSaveClimbPayload } from "../climbPayload";
 
 const CLIMB_ID = "4f1c0b2e-6a7d-4c8e-9f10-123456789abc";

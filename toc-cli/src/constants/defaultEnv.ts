@@ -12,7 +12,7 @@ export const DEFAULT_LOCAL_ENV_VALUES: Record<string, string> = {
   ASSET_GENERATION_WORKER_CONCURRENCY: "2",
   ASSET_GENERATION_WORKER_ENABLED: "true",
   BACKEND_API_URL: "https://localhost:8080",
-  DATABASE_HOST_URL: `postgresql://postgres:${defaultPostgresPassword}@localhost:5432/towers-of-coreborn?schema=public`,
+  DATABASE_HOST_URL: `postgresql://postgres:${defaultPostgresPassword}@localhost:5432/resync-game-framework?schema=public`,
   // Optional audio vendor. Empty leaves sound generation unavailable.
   ELEVENLABS_API_KEY: "",
   FRONTEND_URL: "https://localhost:3000",

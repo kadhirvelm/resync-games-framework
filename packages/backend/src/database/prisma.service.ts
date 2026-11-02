@@ -1,6 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "@towers-of-coreborn/database";
+import { PrismaClient } from "@resync-game-framework/database";
 import { ConfigurationService } from "../configuration/configuration.service";
 @Injectable()
 export class PrismaService {

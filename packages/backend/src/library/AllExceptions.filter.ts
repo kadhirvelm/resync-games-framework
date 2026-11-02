@@ -7,7 +7,7 @@ import {
   Injectable,
   Logger,
 } from "@nestjs/common";
-import type { ServiceError } from "@towers-of-coreborn/api";
+import type { ServiceError } from "@resync-game-framework/api";
 import { ConfigurationService } from "../configuration/configuration.service";
 import { convertErrorToString } from "./utils/convertErroToString";
 

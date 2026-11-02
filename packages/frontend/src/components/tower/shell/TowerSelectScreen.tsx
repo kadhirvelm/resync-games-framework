@@ -1,4 +1,4 @@
-import type { CultivatorRecord } from "@towers-of-coreborn/api";
+import type { CultivatorRecord } from "@resync-game-framework/api";
 import clsx from "clsx";
 import { Crown, Lock, Mountain, Play, Plus, X } from "lucide-react";
 import { useState } from "react";

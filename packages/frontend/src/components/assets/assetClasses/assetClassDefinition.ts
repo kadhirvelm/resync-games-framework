@@ -1,4 +1,4 @@
-import type { DungeonSlot, ServiceError } from "@towers-of-coreborn/api";
+import type { DungeonSlot, ServiceError } from "@resync-game-framework/api";
 import type { ComponentType } from "react";
 import type { AvailableServiceCaller } from "@/services/helpers/types";
 import type { PendingJob } from "../PendingJobCard";

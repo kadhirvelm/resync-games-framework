@@ -1,6 +1,6 @@
 "use client";
 
-import type { ListAudioResponse } from "@towers-of-coreborn/api";
+import type { ListAudioResponse } from "@resync-game-framework/api";
 import { AudioLines } from "lucide-react";
 import { Flex } from "@/lib/radix";
 import styles from "../Assets.module.scss";

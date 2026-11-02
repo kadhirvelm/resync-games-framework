@@ -3,7 +3,7 @@
     "@babylonjs/core": "^9.33.1",
     "@babylonjs/loaders": "^9.33.1",
     "@radix-ui/themes": "^3.3.0",
-    "@towers-of-coreborn/api": "workspace:^",
+    "@resync-game-framework/api": "workspace:^",
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.0.0",
     "clsx": "^2.1.1",
@@ -32,7 +32,7 @@
     "typescript": "^6.0.3",
     "typescript-plugin-css-modules": "^5.2.0"
   },
-  "name": "@towers-of-coreborn/frontend",
+  "name": "@resync-game-framework/frontend",
   "scripts": {
     "build": "next build --turbo",
     "check": "tsc --noEmit",

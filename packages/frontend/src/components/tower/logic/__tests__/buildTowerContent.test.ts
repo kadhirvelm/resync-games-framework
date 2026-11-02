@@ -6,7 +6,7 @@ import type {
   EnemyAsset,
   PlayableCardAsset,
   SpriteSheetAsset,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import {
   buildTowerContent,
   characterBlurb,

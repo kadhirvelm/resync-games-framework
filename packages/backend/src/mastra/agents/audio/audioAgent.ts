@@ -6,7 +6,7 @@ import {
   AUDIO_ROLES,
   type AudioCue,
   type AudioRole,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import {
   AudioAssetWriter,
   deleteAudioFile,
@@ -16,7 +16,7 @@ import { AUDIO_STORAGE } from "src/asset-classes/audio/audioStorage";
 import { ElevenLabsClient } from "src/asset-classes/audio/elevenLabsClient";
 import { readAudioClip } from "src/asset-classes/audio/readAudioClips";
 import { ConfigurationService } from "src/configuration/configuration.service";
-import { TowersOfCorebornAgentService } from "src/mastra/shared/towersOfCorebornAgent.service";
+import { ResyncGameFrameworkAgentService } from "src/mastra/shared/resyncGameFrameworkAgent.service";
 import { z } from "zod";
 import { GenerationAbortCoordinator } from "../generationAbort.coordinator";
 import { throwIfAborted } from "../generationCancelled";
@@ -79,7 +79,7 @@ export class AudioAgent
   implements QueryableAgent<AudioAgentInput, AudioAgentResult>
 {
   public constructor(
-    private readonly agents: TowersOfCorebornAgentService,
+    private readonly agents: ResyncGameFrameworkAgentService,
     private readonly writer: AudioAssetWriter,
     private readonly elevenLabs: ElevenLabsClient,
     private readonly configurationService: ConfigurationService,

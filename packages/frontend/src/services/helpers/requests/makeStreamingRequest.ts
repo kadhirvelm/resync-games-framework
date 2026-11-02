@@ -2,7 +2,7 @@ import {
   ServiceError,
   StreamEventType,
   StreamingEvent,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { convertErrorToString } from "@/lib/convertErrorToString";
 import { cleanPayload } from "../cleanPayload";
 import { constructHeaders } from "../constructHeaders";

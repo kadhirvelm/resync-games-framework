@@ -1,4 +1,4 @@
-import type { ThreeDPrototype } from "@towers-of-coreborn/api";
+import type { ThreeDPrototype } from "@resync-game-framework/api";
 
 /** Versioned 3D-only save namespace; never overlaps climb/profile storage. */
 export const THREE_D_SAVE_KEY = "coreborn.three-d.runs.v1";

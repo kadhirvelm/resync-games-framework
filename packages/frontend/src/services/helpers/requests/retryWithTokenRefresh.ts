@@ -1,4 +1,4 @@
-import { isServiceError, type ServiceError } from "@towers-of-coreborn/api";
+import { isServiceError, type ServiceError } from "@resync-game-framework/api";
 
 export { isServiceError };
 

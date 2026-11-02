@@ -5,7 +5,7 @@ import {
   type DungeonSlot,
   type DungeonSlotKind,
   isServiceError,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import clsx from "clsx";
 import { useEffect, useState } from "react";
 import { Dialog, Flex } from "@/lib/radix";

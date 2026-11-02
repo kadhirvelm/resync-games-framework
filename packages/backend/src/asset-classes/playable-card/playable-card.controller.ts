@@ -2,7 +2,7 @@ import { Body, Controller, UseInterceptors } from "@nestjs/common";
 import {
   type PlayableCardServiceApi,
   PlayableCardServiceDefinition,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import {
   getDecorator,
   type ServiceControllerInterface,

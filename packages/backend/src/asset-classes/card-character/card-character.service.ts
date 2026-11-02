@@ -4,7 +4,7 @@ import {
   OnModuleInit,
   Optional,
 } from "@nestjs/common";
-import { CardCharacterServiceApi } from "@towers-of-coreborn/api";
+import { CardCharacterServiceApi } from "@resync-game-framework/api";
 import { ConfigurationService } from "src/configuration/configuration.service";
 import {
   ASSET_GENERATION_JOB_TIMEOUT_MS,

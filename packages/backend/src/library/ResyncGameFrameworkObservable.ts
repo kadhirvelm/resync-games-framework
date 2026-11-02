@@ -1,4 +1,4 @@
-import { StreamingEventError } from "@towers-of-coreborn/api";
+import { StreamingEventError } from "@resync-game-framework/api";
 import { Observable, Subscriber } from "rxjs";
 import { NestJSStreamingEvent } from "../genericTypes/controller";
 import { convertErrorToString } from "./utils/convertErroToString";
@@ -6,7 +6,7 @@ import { convertErrorToString } from "./utils/convertErroToString";
 /**
  * Handles errors and teardowns for a streaming observable.
  */
-export function towersOfCorebornObservable<Chunk, Finish>(
+export function resyncGameFrameworkObservable<Chunk, Finish>(
   promise: (
     subscriber: Subscriber<NestJSStreamingEvent<Chunk, Finish>>,
   ) => Promise<void>,
@@ -31,6 +31,6 @@ export function towersOfCorebornObservable<Chunk, Finish>(
   });
 }
 
-export type TowersOfCorebornObservable<Chunk, Finish> = ReturnType<
-  typeof towersOfCorebornObservable<Chunk, Finish>
+export type ResyncGameFrameworkObservable<Chunk, Finish> = ReturnType<
+  typeof resyncGameFrameworkObservable<Chunk, Finish>
 >;

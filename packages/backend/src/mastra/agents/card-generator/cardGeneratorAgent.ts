@@ -4,8 +4,8 @@ import { Injectable, InternalServerErrorException } from "@nestjs/common";
 import type {
   PlayableCardEffect,
   PlayableCardLoreSource,
-} from "@towers-of-coreborn/api";
-import { AgentTool } from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
+import { AgentTool } from "@resync-game-framework/api";
 import sharp from "sharp";
 import {
   type CardProgression,
@@ -29,9 +29,9 @@ import type { PlayableCardDraft } from "src/asset-classes/playable-card/validate
 import { encodeGeneratedImageAsWebp } from "src/asset-classes/shared/encodeGeneratedImageAsWebp";
 import { writeAssetDirectoryAtomically } from "src/asset-classes/shared/writeAssetDirectoryAtomically";
 import {
-  type TowersOfCorebornAgentChatResults,
-  TowersOfCorebornAgentService,
-} from "src/mastra/shared/towersOfCorebornAgent.service";
+  type ResyncGameFrameworkAgentChatResults,
+  ResyncGameFrameworkAgentService,
+} from "src/mastra/shared/resyncGameFrameworkAgent.service";
 import {
   collectImageFilePaths,
   deleteImageFiles,
@@ -109,7 +109,7 @@ export class CardGeneratorAgent
   implements QueryableAgent<CardGeneratorInput, CardGeneratorResult>
 {
   public constructor(
-    private readonly agents: TowersOfCorebornAgentService,
+    private readonly agents: ResyncGameFrameworkAgentService,
     private readonly productNowMcpService: ProductNowMcpService,
     private readonly generationAbort: GenerationAbortCoordinator,
   ) {}
@@ -218,7 +218,7 @@ export class CardGeneratorAgent
  * @throws InternalServerErrorException when research or painting did not finish
  */
 function readPaintedCard(
-  result: TowersOfCorebornAgentChatResults,
+  result: ResyncGameFrameworkAgentChatResults,
   state: PlayableCardResearchState,
 ): { draft: PlayableCardDraft; image: GeneratedImage } {
   const failedTool = result.toolErrors.find(
@@ -271,7 +271,7 @@ function readPaintedCard(
  * @returns A suffix naming the last rejection, missing passages, or the agent's text
  */
 function describeMissingCard(
-  result: TowersOfCorebornAgentChatResults,
+  result: ResyncGameFrameworkAgentChatResults,
   state: PlayableCardResearchState,
 ): string {
   const submissions = result.toolResults.filter(

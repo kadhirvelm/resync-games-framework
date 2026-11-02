@@ -1,4 +1,4 @@
-import type { ThreeDAssetKind } from "@towers-of-coreborn/api";
+import type { ThreeDAssetKind } from "@resync-game-framework/api";
 import type { AvailableServiceCaller } from "./helpers/types";
 
 /** Returns the generated API client for a 3D category. */

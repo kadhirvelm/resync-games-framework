@@ -4,12 +4,12 @@
     "@prisma/client": "^7.10.0"
   },
   "devDependencies": {
-    "@towers-of-coreborn/toc-cli": "workspace:*",
+    "@resync-game-framework/toc-cli": "workspace:*",
     "prisma": "^7.10.0",
     "ts-node": "^10.9.2"
   },
   "main": "dist/index.js",
-  "name": "@towers-of-coreborn/database",
+  "name": "@resync-game-framework/database",
   "scripts": {
     "build": "bun run db:generate",
     "db:create-migration": "bun run toc database 'bunx prisma migrate dev --create-only'",

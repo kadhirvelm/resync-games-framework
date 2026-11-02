@@ -1,5 +1,5 @@
 import { Injectable, InternalServerErrorException } from "@nestjs/common";
-import { AgentTool } from "@towers-of-coreborn/api";
+import { AgentTool } from "@resync-game-framework/api";
 import {
   readSpriteSheetImages,
   type SpriteSheetImages,
@@ -13,9 +13,9 @@ import {
   SUBMIT_SPRITE_SHEET_TOOL_ID,
 } from "src/asset-classes/sprite-sheet/spriteSheetTools";
 import {
-  type TowersOfCorebornAgentChatResults,
-  TowersOfCorebornAgentService,
-} from "src/mastra/shared/towersOfCorebornAgent.service";
+  type ResyncGameFrameworkAgentChatResults,
+  ResyncGameFrameworkAgentService,
+} from "src/mastra/shared/resyncGameFrameworkAgent.service";
 import {
   collectImageFilePaths,
   deleteImageFiles,
@@ -66,7 +66,7 @@ export class SpriteSheetAgent
   implements QueryableAgent<SpriteSheetInput, SpriteSheetResult>
 {
   public constructor(
-    private readonly agents: TowersOfCorebornAgentService,
+    private readonly agents: ResyncGameFrameworkAgentService,
     private readonly toolService: SpriteSheetToolService,
     private readonly generationAbort: GenerationAbortCoordinator,
   ) {}
@@ -127,7 +127,7 @@ export class SpriteSheetAgent
  * @returns The accepted design with its anchor and sheet
  */
 function readPaintedSpriteSheet(
-  result: TowersOfCorebornAgentChatResults,
+  result: ResyncGameFrameworkAgentChatResults,
   state: SpriteSheetGenerationState,
 ): { draft: SpriteSheetDraft; images: SpriteSheetImages } {
   const failedTool = result.toolErrors.find(

@@ -5,7 +5,7 @@ import {
   isServiceEndpointStreamingDefinition,
   type ServiceDefinition,
   type ServiceEndpointDefinition,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { makeFetchRequest } from "./requests/makeFetchRequest";
 import { makeFileDownloadRequest } from "./requests/makeFileDownloadRequest";
 import { makeFileUploadRequest } from "./requests/makeFileUploadRequest";

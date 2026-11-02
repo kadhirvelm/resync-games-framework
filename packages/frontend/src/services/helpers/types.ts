@@ -9,7 +9,7 @@ import type {
   StreamingEventChunk,
   StreamingEventLoading,
   StreamingService,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 
 /**
  * The service caller for a non-streaming endpoint.

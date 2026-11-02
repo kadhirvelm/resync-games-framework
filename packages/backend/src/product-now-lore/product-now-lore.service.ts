@@ -15,7 +15,7 @@ import {
   type ProductNowLoreEntryResult,
   type ProductNowLorePassage,
   type ProductNowLoreWriteResult,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { ProductNowMcpService } from "src/product-now-mcp/product-now-mcp.service";
 import { readProductNowSessionIdFromCookieHeader } from "src/product-now-mcp/productNowSessionCookie";
 import { readProductNowToolError } from "src/product-now-mcp/productNowToolResult";

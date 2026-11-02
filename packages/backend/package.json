@@ -12,9 +12,9 @@
     "@nestjs/platform-socket.io": "^12.1.0",
     "@nestjs/websockets": "^12.1.0",
     "@prisma/adapter-pg": "^7.10.0",
+    "@resync-game-framework/api": "workspace:^",
+    "@resync-game-framework/database": "workspace:^",
     "@socket.io/redis-adapter": "^8.3.0",
-    "@towers-of-coreborn/api": "workspace:^",
-    "@towers-of-coreborn/database": "workspace:^",
     "bullmq": "^6.5.3",
     "compression": "^1.8.2",
     "dotenv": "^18.0.4",
@@ -42,7 +42,7 @@
     "@types/node": "^25.9.8",
     "typescript": "6.0.3"
   },
-  "name": "@towers-of-coreborn/backend",
+  "name": "@resync-game-framework/backend",
   "scripts": {
     "build": "nest build",
     "check": "tsc --noEmit",

@@ -4,7 +4,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
-import { AgentTool } from "@towers-of-coreborn/api";
+import { AgentTool } from "@resync-game-framework/api";
 import { ProductNowLoreService } from "src/product-now-lore/product-now-lore.service";
 import { readProductNowSessionForTool } from "src/product-now-mcp/productNowSessionContext";
 import { z } from "zod";

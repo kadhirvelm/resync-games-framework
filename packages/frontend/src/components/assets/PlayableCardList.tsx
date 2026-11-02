@@ -4,7 +4,7 @@ import type {
   ListPlayableCardsResponse,
   PlayableCardAsset,
   PlayableCardKind,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { useState } from "react";
 import { Dialog, Flex } from "@/lib/radix";
 import styles from "./Assets.module.scss";

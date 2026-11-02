@@ -4,7 +4,7 @@ import type {
   ProductNowLoreEditStatus,
   ProductNowLorePassage,
   ProductNowLoreWriteResult,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import {
   isRecord,
   readFirstString,

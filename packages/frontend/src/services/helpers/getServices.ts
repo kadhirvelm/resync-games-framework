@@ -1,7 +1,7 @@
 import {
   AVAILABLE_SERVICES,
   type AvailableServices,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { noop } from "lodash-es";
 import { constructSingleServiceCaller } from "./constructSingleServiceCaller";
 import type { AvailableServiceCaller, ServiceCaller } from "./types";

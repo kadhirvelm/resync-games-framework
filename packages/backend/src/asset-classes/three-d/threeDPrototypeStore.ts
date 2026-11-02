@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import type { ThreeDPrototype } from "@towers-of-coreborn/api";
+import type { ThreeDPrototype } from "@resync-game-framework/api";
 import { RedisService } from "src/infra/redis/redis.service";
 import { createAssetClassStorage } from "../shared/assetClassStorage";
 import { ThreeDAssetStore } from "./threeDAssetStore";

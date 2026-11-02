@@ -1,7 +1,7 @@
 import {
   type CultivatorFields,
   MAX_CULTIVATORS_PER_PLAYER,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import clsx from "clsx";
 import { Plus } from "lucide-react";
 import { useState } from "react";

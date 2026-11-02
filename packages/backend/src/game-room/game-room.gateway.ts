@@ -9,7 +9,7 @@ import {
   RoomEventsDefinition,
   type RoomWebsocketEvents,
   type UpdateGameRoomStatePayload,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import {
   getSocketDecorator,
   SocketGatewayHandler,

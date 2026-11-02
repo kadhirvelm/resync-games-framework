@@ -1,7 +1,7 @@
 import type { Dirent } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { CardCharacterSetAsset } from "@towers-of-coreborn/api";
+import type { CardCharacterSetAsset } from "@resync-game-framework/api";
 import {
   CARD_CHARACTER_MANIFEST_FILE_NAME,
   type CardCharacterLevelNumber,

@@ -3,7 +3,7 @@
  *
  * Add a member to {@link AgentTool}, a matching entry in `AllAgentTools`,
  * and an implementation in
- * `packages/backend/src/mastra/shared/towersOfCorebornAgentToolRegistry.ts`.
+ * `packages/backend/src/mastra/shared/resyncGameFrameworkAgentToolRegistry.ts`.
  * An agent opts in by declaring its own enum whose values are these members.
  */
 

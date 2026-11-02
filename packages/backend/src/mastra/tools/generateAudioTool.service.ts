@@ -9,7 +9,7 @@ import {
   AUDIO_CUE_SECONDS,
   AUDIO_CUES,
   AUDIO_ROLES,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { ElevenLabsClient } from "src/asset-classes/audio/elevenLabsClient";
 import { z } from "zod";
 
@@ -73,7 +73,7 @@ export class GenerateAudioToolService {
             },
             context?.abortSignal,
           );
-          const filePath = join(tmpdir(), `toc-audio-${randomUUID()}.mp3`);
+          const filePath = join(tmpdir(), `resync-audio-${randomUUID()}.mp3`);
           await writeFile(filePath, rendered.bytes);
           return {
             cue: input.cue,

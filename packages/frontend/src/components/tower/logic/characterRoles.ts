@@ -1,4 +1,4 @@
-import type { PlayableCardRules } from "@towers-of-coreborn/api";
+import type { PlayableCardRules } from "@resync-game-framework/api";
 import { scaleCardRules } from "./cardRules";
 import {
   type CardDefinition,

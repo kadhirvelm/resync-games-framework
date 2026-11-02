@@ -1,4 +1,4 @@
-import { AgentTool } from "@towers-of-coreborn/api";
+import { AgentTool } from "@resync-game-framework/api";
 import { playableCardImageRules } from "./buildPlayableCardImagePrompt";
 import {
   LORE_DOCUMENT_ID,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { SaveClimbPayload } from "@towers-of-coreborn/api";
+import type { SaveClimbPayload } from "@resync-game-framework/api";
 import {
   type ClimbSyncOperation,
   createClimbSyncQueue,

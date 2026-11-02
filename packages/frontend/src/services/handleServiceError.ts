@@ -1,4 +1,4 @@
-import { isServiceError, ServiceError } from "@towers-of-coreborn/api";
+import { isServiceError, ServiceError } from "@resync-game-framework/api";
 import React from "react";
 import { toast } from "react-toastify";
 

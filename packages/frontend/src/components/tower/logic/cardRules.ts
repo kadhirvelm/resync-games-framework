@@ -1,7 +1,7 @@
 import type {
   PlayableCardEffect,
   PlayableCardRules,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 
 /** What a card must be aimed at before it resolves. */
 export type CardTargeting = "enemy" | "ally" | "none";

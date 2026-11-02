@@ -6,7 +6,7 @@ import {
   type ThreeDAssetKind,
   type ThreeDDesign,
   type ThreeDProvider,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import {
   compileThreeDDesign,
   demoThreeDDesign,

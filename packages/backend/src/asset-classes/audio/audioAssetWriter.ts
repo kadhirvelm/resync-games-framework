@@ -1,7 +1,7 @@
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Injectable } from "@nestjs/common";
-import type { AudioCue, AudioRole } from "@towers-of-coreborn/api";
+import type { AudioCue, AudioRole } from "@resync-game-framework/api";
 import { writeAssetDirectoryAtomically } from "../shared/writeAssetDirectoryAtomically";
 import {
   AUDIO_FILE_NAME,

@@ -1,4 +1,4 @@
-import { ServiceError } from "@towers-of-coreborn/api";
+import { ServiceError } from "@resync-game-framework/api";
 import { convertErrorToString } from "@/lib/convertErrorToString";
 import { constructHeaders } from "../constructHeaders";
 import { isServiceError, retryWithTokenRefresh } from "./retryWithTokenRefresh";

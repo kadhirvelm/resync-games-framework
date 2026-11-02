@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { PLAYABLE_CARD_KINDS } from "@towers-of-coreborn/api";
+import { PLAYABLE_CARD_KINDS } from "@resync-game-framework/api";
 import { playableCardEffectSchema } from "../playableCardTools";
 
 describe("playableCardEffectSchema", () => {

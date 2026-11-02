@@ -10,7 +10,7 @@ import type {
   ThreeDAssetKind,
   ThreeDGenerationPayload,
   ThreeDWorkshopServiceApi,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import {
   GenerationQueueService,
   hashGenerationRequest,

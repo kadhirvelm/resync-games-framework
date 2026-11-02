@@ -1,4 +1,4 @@
-import { BattleBackgroundServiceDefinition } from "@towers-of-coreborn/api";
+import { BattleBackgroundServiceDefinition } from "@resync-game-framework/api";
 import { createAssetClassController } from "../shared/createAssetClassController";
 import { BattleBackgroundService } from "./battle-background.service";
 

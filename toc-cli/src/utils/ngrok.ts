@@ -41,7 +41,7 @@ export const NGROK_DEV_NAME_ENV_VAR = "NGROK_DEV_NAME";
  * the product name to avoid clashing with other accounts.
  */
 const DEFAULT_NGROK_BASE_DOMAIN = "ngrok.app";
-const DEFAULT_NGROK_HOSTNAME_PREFIX = "towersofcoreborn";
+const DEFAULT_NGROK_HOSTNAME_PREFIX = "resync-game-framework";
 
 const TUNNEL_PORTS: Record<keyof NgrokUrls, number> = {
   backend: 8080,
@@ -76,7 +76,7 @@ export function getNgrokDevName(
 /**
  * Public hostname for `name`. Precedence: explicit `NGROK_*_DOMAIN`, then
  * `<dev>-<label>.<NGROK_DOMAIN_SUFFIX>`, otherwise
- * `towersofcoreborn-<dev>-<label>.ngrok.app`. Shell exports win over `.env`
+ * `resync-game-framework-<dev>-<label>.ngrok.app`. Shell exports win over `.env`
  * so a one-off `NGROK_FRONTEND_DOMAIN=... toc dev --network` still works.
  *
  * Every tunnel is always given its own hostname: asking ngrok for a random
@@ -107,7 +107,7 @@ export function getReservedNgrokDomain(
 export const DISTINCT_HOSTNAMES_HELP = [
   "A remote tester's browser loads the frontend from one hostname and calls the API on another, so each process needs its own public hostname.",
   "Custom hostnames are a paid ngrok feature; free accounts only have their single *.ngrok-free.dev dev domain, which ngrok pools every tunnel onto.",
-  "Fix: run `ngrok config add-authtoken <token>` with the team's paid account token. Hostnames default to towersofcoreborn-<you>-{frontend,api}.ngrok.app; set NGROK_DOMAIN_SUFFIX or distinct NGROK_FRONTEND_DOMAIN / NGROK_BACKEND_DOMAIN to change them.",
+  "Fix: run `ngrok config add-authtoken <token>` with the team's paid account token. Hostnames default to resync-game-framework-<you>-{frontend,api}.ngrok.app; set NGROK_DOMAIN_SUFFIX or distinct NGROK_FRONTEND_DOMAIN / NGROK_BACKEND_DOMAIN to change them.",
 ].join("\n");
 
 /**
@@ -147,7 +147,7 @@ export interface NgrokSession {
 export interface NgrokTunnelSpec {
   name: keyof NgrokUrls;
   port: number;
-  /** Public hostname (e.g. `towersofcoreborn-kadhir-frontend.ngrok.app`). */
+  /** Public hostname (e.g. `resync-game-framework-kadhir-frontend.ngrok.app`). */
   domain: string;
 }
 
@@ -238,7 +238,7 @@ function writeTunnelConfig(
       ? renderV2TunnelConfig(tunnels)
       : renderV3EndpointConfig(tunnels);
 
-  const configDir = mkdtempSync(join(tmpdir(), "toc-ngrok-"));
+  const configDir = mkdtempSync(join(tmpdir(), "resync-ngrok-"));
   const configPath = join(configDir, "ngrok.yml");
   writeFileSync(configPath, content);
   return configPath;
@@ -253,7 +253,7 @@ export function killExistingNgrokSessions(): void {
   if (process.platform === "win32") return;
 
   try {
-    const output = execSync("pgrep -f '[n]grok start .*toc-ngrok-'", {
+    const output = execSync("pgrep -f '[n]grok start .*resync-ngrok-'", {
       stdio: ["ignore", "pipe", "ignore"],
     })
       .toString()
@@ -445,7 +445,7 @@ export function printNgrokUrls(urls: NgrokUrls): void {
     [
       "",
       border,
-      "  Towers of Coreborn is publicly reachable via ngrok — share this link:",
+      "  Resync Game Framework is publicly reachable via ngrok — share this link:",
       "",
       `      ${urls.frontend}`,
       "",

@@ -4,7 +4,7 @@ import type {
   DungeonCardSlot,
   DungeonSlot,
   DungeonSpriteSlot,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 
 /**
  * @param slots - Every slot in the package

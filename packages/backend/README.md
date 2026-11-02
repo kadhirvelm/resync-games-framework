@@ -1,6 +1,6 @@
 # Backend
 
-NestJS API for Towers of Coreborn.
+NestJS API for Resync Game Framework.
 
 Run the full development environment from the repository root:
 
@@ -18,11 +18,11 @@ available in the local OpenObserve instance documented in the root README.
 
 ## ProductNow MCP OAuth
 
-Towers of Coreborn connects to ProductNow's MCP server as a public OAuth client
+Resync Game Framework connects to ProductNow's MCP server as a public OAuth client
 identified by a Client ID Metadata Document (CIMD):
 
 ```text
-${BACKEND_API_URL}/.well-known/oauth-client-metadata/towers-of-coreborn.json
+${BACKEND_API_URL}/.well-known/oauth-client-metadata/resync-game-framework.json
 ```
 
 That URL is the OAuth `client_id`, so ProductNow's authorization server must be

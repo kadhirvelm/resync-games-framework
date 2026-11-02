@@ -27,7 +27,7 @@ export interface StructuredOutputResult<T> {
 }
 
 /**
- * Configuration struct for initializing a TowersOfCorebornAgent.
+ * Configuration struct for initializing a ResyncGameFrameworkAgent.
  *
  * @property id - Unique agent ID (should be globally unique within the system)
  * @property instructions - System prompt/instructions given to the agent
@@ -36,7 +36,7 @@ export interface StructuredOutputResult<T> {
  *   containing both. Gemini entries are resolved by the service layer before the agent is created.
  * @property name - Human-readable name for the agent
  */
-export interface TowersOfCorebornAgentConfig {
+export interface ResyncGameFrameworkAgentConfig {
   /**
    * Unique agent ID (should be globally unique within the system)
    */
@@ -56,7 +56,7 @@ export interface TowersOfCorebornAgentConfig {
    * {@link GeminiModelConfig} objects or mixed arrays containing both Gemini and
    * standard model entries (e.g. Anthropic primary with Gemini fallback).
    * Gemini entries are resolved into Vertex AI SDK language-model instances by
-   * `TowersOfCorebornAgentService` before the agent is constructed.
+   * `ResyncGameFrameworkAgentService` before the agent is constructed.
    */
   model: AgentConfig["model"];
   /**
@@ -90,24 +90,24 @@ const GLOBAL_AGENT_INSTRUCTIONS = () =>
  * Thin wrapper around Mastra's Agent that applies project-wide defaults.
  *
  * Expects a fully-resolved `model` field (no {@link GeminiModelConfig} entries).
- * Resolution of Gemini configs is handled by `TowersOfCorebornAgentService` before
+ * Resolution of Gemini configs is handled by `ResyncGameFrameworkAgentService` before
  * this class is instantiated.
  *
  * Note: We extend MastraAgent directly so all typed overloads (generate, stream, etc.)
  * are inherited without re-wrapping.
  */
-export class TowersOfCorebornAgent extends MastraAgent {
+export class ResyncGameFrameworkAgent extends MastraAgent {
   private static readonly structuredOutputLogger = new Logger(
-    "TowersOfCorebornAgent.generateStructured",
+    "ResyncGameFrameworkAgent.generateStructured",
   );
 
   /** Original config for creating single-model retry agents. */
-  private readonly agentConfig: TowersOfCorebornAgentConfig;
+  private readonly agentConfig: ResyncGameFrameworkAgentConfig;
 
   /** Parsed model configs array for structured output retry loop. */
   private readonly modelConfigs: SingleModelConfig[];
 
-  public constructor(config: TowersOfCorebornAgentConfig) {
+  public constructor(config: ResyncGameFrameworkAgentConfig) {
     const defaultOptions: Record<string, unknown> = {};
     if (config.maxSteps) defaultOptions.maxSteps = config.maxSteps;
     if (config.toolCallConcurrency)
@@ -145,11 +145,11 @@ export class TowersOfCorebornAgent extends MastraAgent {
    * @throws Error if all models and retries are exhausted, or on non-validation errors
    */
   public async generateStructured<T extends z.ZodType>(
-    prompt: Parameters<TowersOfCorebornAgent["generate"]>[0],
+    prompt: Parameters<ResyncGameFrameworkAgent["generate"]>[0],
     schema: T,
     options?: AgentExecutionOptionsBase<unknown>,
   ): Promise<StructuredOutputResult<z.infer<T>>> {
-    const logger = TowersOfCorebornAgent.structuredOutputLogger;
+    const logger = ResyncGameFrameworkAgent.structuredOutputLogger;
     let lastError: Error | undefined;
 
     for (const modelConfig of this.modelConfigs) {
@@ -162,7 +162,7 @@ export class TowersOfCorebornAgent extends MastraAgent {
 
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
-          const singleModelAgent = new TowersOfCorebornAgent({
+          const singleModelAgent = new ResyncGameFrameworkAgent({
             ...this.agentConfig,
             model: [modelConfig],
           });
@@ -192,7 +192,9 @@ export class TowersOfCorebornAgent extends MastraAgent {
             steps: Array.isArray(rawResult.steps) ? rawResult.steps : undefined,
           };
         } catch (error) {
-          if (!TowersOfCorebornAgent.isStructuredOutputValidationError(error)) {
+          if (
+            !ResyncGameFrameworkAgent.isStructuredOutputValidationError(error)
+          ) {
             const errorMessage =
               error instanceof Error ? error.message : String(error);
             logger.error(
@@ -240,7 +242,7 @@ export class TowersOfCorebornAgent extends MastraAgent {
     }
 
     if (mastraError.cause) {
-      return TowersOfCorebornAgent.isStructuredOutputValidationError(
+      return ResyncGameFrameworkAgent.isStructuredOutputValidationError(
         mastraError.cause,
       );
     }

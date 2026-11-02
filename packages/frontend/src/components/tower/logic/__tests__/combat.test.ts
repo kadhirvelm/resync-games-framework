@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { PlayableCardRules } from "@towers-of-coreborn/api";
+import type { PlayableCardRules } from "@resync-game-framework/api";
 import {
   type CombatCard,
   type CombatSetup,

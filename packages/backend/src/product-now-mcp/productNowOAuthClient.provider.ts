@@ -9,7 +9,7 @@ import type {
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { ProductNowOAuthSessionStore } from "./productNowOAuthSession.store";
 
-/** Public URLs that identify Towers of Coreborn as an OAuth client. */
+/** Public URLs that identify Resync Game Framework as an OAuth client. */
 export interface ProductNowOAuthClientUrls {
   backendApiUrl: string;
   frontendUrl: string;
@@ -31,7 +31,7 @@ export class ProductNowOAuthClientProvider implements OAuthClientProvider {
   ) {
     const normalizedBackendUrl = urls.backendApiUrl.replace(/\/$/, "");
     this.frontendUrl = urls.frontendUrl.replace(/\/$/, "");
-    this.clientMetadataUrl = `${normalizedBackendUrl}/.well-known/oauth-client-metadata/towers-of-coreborn.json`;
+    this.clientMetadataUrl = `${normalizedBackendUrl}/.well-known/oauth-client-metadata/resync-game-framework.json`;
     this.redirectUrl = `${normalizedBackendUrl}/productnow-mcp/oauth/callback`;
   }
 
@@ -41,7 +41,7 @@ export class ProductNowOAuthClientProvider implements OAuthClientProvider {
    */
   public get clientMetadata(): OAuthClientMetadata {
     return {
-      client_name: "Towers of Coreborn",
+      client_name: "Resync Game Framework",
       grant_types: ["authorization_code", "refresh_token"],
       logo_uri: `${this.frontendUrl}/logo.png`,
       redirect_uris: [this.redirectUrl],

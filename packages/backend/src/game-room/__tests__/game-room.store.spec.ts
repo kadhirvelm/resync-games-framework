@@ -3,7 +3,7 @@ import type {
   CreateGameRoomPayload,
   GameRoomCommandResult,
   GameRoomState,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { MockRedisService } from "../../infra/redis/__tests__/mockRedis.module";
 import type { RedisService } from "../../infra/redis/redis.service";
 import { GameRoomStore } from "../game-room.store";

@@ -1,4 +1,4 @@
-import { AudioServiceDefinition } from "@towers-of-coreborn/api";
+import { AudioServiceDefinition } from "@resync-game-framework/api";
 import { createAssetClassController } from "../shared/createAssetClassController";
 import { AudioService } from "./audio.service";
 

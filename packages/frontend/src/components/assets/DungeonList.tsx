@@ -1,6 +1,6 @@
 "use client";
 
-import type { DungeonBlueprint, DungeonSlot } from "@towers-of-coreborn/api";
+import type { DungeonBlueprint, DungeonSlot } from "@resync-game-framework/api";
 import { Flex } from "@/lib/radix";
 import styles from "./Assets.module.scss";
 import { CopyableError } from "./CopyableError";

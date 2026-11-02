@@ -4,7 +4,7 @@ import {
   THREE_D_CHARACTER_ANIMATIONS,
   type ThreeDAssetKind,
   type ThreeDValidation,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { validateBytes } from "gltf-validator";
 import sharp from "sharp";
 import { THREE_D_LIMITS as limits } from "./threeDSchemas";

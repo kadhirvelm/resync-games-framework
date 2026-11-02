@@ -1,5 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
-import type { SaveClimbPayload } from "@towers-of-coreborn/api";
+import type { SaveClimbPayload } from "@resync-game-framework/api";
 import { requireUuid } from "./uuid";
 
 /** Longest tower id or title stored with a climb. */

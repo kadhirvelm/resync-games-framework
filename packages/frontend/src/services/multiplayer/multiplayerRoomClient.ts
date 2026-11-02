@@ -7,8 +7,8 @@ import type {
   JoinGameRoomPayload,
   LeaveGameRoomPayload,
   UpdateGameRoomStatePayload,
-} from "@towers-of-coreborn/api";
-import { RoomEventsDefinition } from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
+import { RoomEventsDefinition } from "@resync-game-framework/api";
 import { io, type Socket } from "socket.io-client";
 
 const COMMAND_TIMEOUT_MS = 8_000;

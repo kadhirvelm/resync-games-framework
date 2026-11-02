@@ -4,7 +4,7 @@ import {
   WebsocketEvents,
   WebsocketEventsDefinition,
   WebsocketServerToClientEvents,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { Socket } from "socket.io";
 
 /**

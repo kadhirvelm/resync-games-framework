@@ -1,4 +1,4 @@
-import type { PlayableCardRules } from "@towers-of-coreborn/api";
+import type { PlayableCardRules } from "@resync-game-framework/api";
 import { ROLE_BASE_HIT_POINTS, synthesizeTierCards } from "./characterRoles";
 import { toEnemyMoves } from "./enemyMoves";
 import type {

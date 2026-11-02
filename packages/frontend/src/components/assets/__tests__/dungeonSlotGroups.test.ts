@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { DungeonSlot } from "@towers-of-coreborn/api";
+import type { DungeonSlot } from "@resync-game-framework/api";
 import {
   cardsForCharacter,
   slotsStartedWith,

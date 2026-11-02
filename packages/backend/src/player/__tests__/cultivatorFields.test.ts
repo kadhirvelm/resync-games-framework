@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CULTIVATOR_NAME_MAX_LENGTH } from "@towers-of-coreborn/api";
+import { CULTIVATOR_NAME_MAX_LENGTH } from "@resync-game-framework/api";
 import {
   DEFAULT_CULTIVATOR_TITLE,
   readCultivatorChanges,

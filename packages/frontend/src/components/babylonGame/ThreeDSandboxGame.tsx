@@ -4,8 +4,8 @@ import type {
   ThreeDAssetKind,
   ThreeDPrototype,
   ThreeDSceneInput,
-} from "@towers-of-coreborn/api";
-import { isServiceError } from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
+import { isServiceError } from "@resync-game-framework/api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useClientServiceCallers } from "@/services/clientServiceCallers";
 import { threeDAssetCaller } from "@/services/threeDService";

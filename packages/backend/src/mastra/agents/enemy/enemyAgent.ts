@@ -1,5 +1,5 @@
 import { Injectable, InternalServerErrorException } from "@nestjs/common";
-import { AgentTool } from "@towers-of-coreborn/api";
+import { AgentTool } from "@resync-game-framework/api";
 import { ENEMY_AGENT_INSTRUCTIONS } from "src/asset-classes/enemy/enemyPrompt";
 import { EnemyToolService } from "src/asset-classes/enemy/enemyTool.service";
 import {
@@ -9,9 +9,9 @@ import {
 } from "src/asset-classes/enemy/enemyTools";
 import { readEnemyImage } from "src/asset-classes/enemy/readEnemyImage";
 import {
-  type TowersOfCorebornAgentChatResults,
-  TowersOfCorebornAgentService,
-} from "src/mastra/shared/towersOfCorebornAgent.service";
+  type ResyncGameFrameworkAgentChatResults,
+  ResyncGameFrameworkAgentService,
+} from "src/mastra/shared/resyncGameFrameworkAgent.service";
 import {
   collectImageFilePaths,
   deleteImageFiles,
@@ -59,7 +59,7 @@ export interface EnemyResult {
 @Injectable()
 export class EnemyAgent implements QueryableAgent<EnemyInput, EnemyResult> {
   public constructor(
-    private readonly agents: TowersOfCorebornAgentService,
+    private readonly agents: ResyncGameFrameworkAgentService,
     private readonly toolService: EnemyToolService,
     private readonly generationAbort: GenerationAbortCoordinator,
   ) {}
@@ -120,7 +120,7 @@ export class EnemyAgent implements QueryableAgent<EnemyInput, EnemyResult> {
  * @returns The accepted draft and generated portrait
  */
 function readPaintedEnemy(
-  result: TowersOfCorebornAgentChatResults,
+  result: ResyncGameFrameworkAgentChatResults,
   state: EnemyGenerationState,
 ) {
   const failedTool = result.toolErrors.find(

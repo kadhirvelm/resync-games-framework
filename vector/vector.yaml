@@ -7,7 +7,7 @@ sources:
     exclude_containers:
       - openobserve
     include_labels:
-      - dev.towersofcoreborn.logs=true
+      - dev.resync-game-framework.logs=true
 
 transforms:
   # OpenObserve stores one flat JSON object per record.

@@ -1,9 +1,9 @@
 import { Injectable } from "@nestjs/common";
-import { AgentTool } from "@towers-of-coreborn/api";
+import { AgentTool } from "@resync-game-framework/api";
 import { BATTLE_BACKGROUND_AGENT_INSTRUCTIONS } from "src/asset-classes/battle-background/battleBackgroundPrompt";
 import { BattleBackgroundToolService } from "src/asset-classes/battle-background/battleBackgroundTool.service";
 import { readBattleBackgroundImage } from "src/asset-classes/battle-background/readBattleBackgroundImage";
-import { TowersOfCorebornAgentService } from "src/mastra/shared/towersOfCorebornAgent.service";
+import { ResyncGameFrameworkAgentService } from "src/mastra/shared/resyncGameFrameworkAgent.service";
 import {
   collectImageFilePaths,
   deleteImageFiles,
@@ -54,7 +54,7 @@ export class BattleBackgroundAgent
   implements QueryableAgent<BattleBackgroundInput, BattleBackgroundResult>
 {
   public constructor(
-    private readonly agents: TowersOfCorebornAgentService,
+    private readonly agents: ResyncGameFrameworkAgentService,
     private readonly toolService: BattleBackgroundToolService,
     private readonly generationAbort: GenerationAbortCoordinator,
   ) {}

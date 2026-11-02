@@ -4,7 +4,7 @@ import {
   type ProductNowMcpServiceApi,
   ProductNowMcpServiceDefinition,
   type ProductNowMcpStatus,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import type { Request, Response } from "express";
 import { ConfigurationService } from "../configuration/configuration.service";
 import {
@@ -194,7 +194,7 @@ export class ProductNowMcpController
 }
 
 /**
- * Serves the OAuth Client ID Metadata Document that identifies Towers of Coreborn.
+ * Serves the OAuth Client ID Metadata Document that identifies Resync Game Framework.
  */
 @Controller(".well-known/oauth-client-metadata")
 export class ProductNowClientMetadataController {
@@ -206,7 +206,7 @@ export class ProductNowClientMetadataController {
    * Returns the CIMD whose URL is used as the OAuth client_id.
    * @returns OAuth client metadata including client_id
    */
-  @Get("towers-of-coreborn.json")
+  @Get("resync-game-framework.json")
   @Header("Cache-Control", "public, max-age=300")
   public getClientMetadata(): Record<string, unknown> {
     const provider = this.productNowMcpService.createProvider("metadata");

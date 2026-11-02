@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { createTool } from "@mastra/core/tools";
 import { Injectable } from "@nestjs/common";
-import type { ThreeDPrototype } from "@towers-of-coreborn/api";
+import type { ThreeDPrototype } from "@resync-game-framework/api";
 import { ThreeDPrototypeStore } from "src/asset-classes/three-d/threeDPrototypeStore";
-import { TowersOfCorebornAgentService } from "src/mastra/shared/towersOfCorebornAgent.service";
+import { ResyncGameFrameworkAgentService } from "src/mastra/shared/resyncGameFrameworkAgent.service";
 import { z } from "zod";
 import { GenerationAbortCoordinator } from "../generationAbort.coordinator";
 
@@ -26,7 +26,7 @@ const schema = z.object({
 @Injectable()
 export class ThreeDPrototypeAgent {
   public constructor(
-    private readonly agents: TowersOfCorebornAgentService,
+    private readonly agents: ResyncGameFrameworkAgentService,
     private readonly store: ThreeDPrototypeStore,
     private readonly aborts: GenerationAbortCoordinator,
   ) {}

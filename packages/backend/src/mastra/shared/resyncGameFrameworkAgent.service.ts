@@ -7,7 +7,7 @@ import {
   InternalServerErrorException,
   Logger,
 } from "@nestjs/common";
-import { type AgentToolSelection } from "@towers-of-coreborn/api";
+import { type AgentToolSelection } from "@resync-game-framework/api";
 import { ConfigurationService } from "src/configuration/configuration.service";
 import {
   PRODUCT_NOW_SESSION_REQUEST_KEY,
@@ -21,37 +21,37 @@ import {
 import { formatToolErrorMessage } from "./formatToolErrorMessage";
 import { resolveSingleToolChat } from "./resolveSingleToolChat";
 import {
+  ResyncGameFrameworkAgent,
+  ResyncGameFrameworkAgentConfig,
   StructuredOutputResult,
-  TowersOfCorebornAgent,
-  TowersOfCorebornAgentConfig,
-} from "./towersOfCorebornAgent";
+} from "./resyncGameFrameworkAgent";
 import {
   MixedModelEntry,
   resolveModelConfig,
-} from "./towersOfCorebornAgentModels";
-import { TowersOfCorebornAgentToolRegistry } from "./towersOfCorebornAgentToolRegistry";
+} from "./resyncGameFrameworkAgentModels";
+import { ResyncGameFrameworkAgentToolRegistry } from "./resyncGameFrameworkAgentToolRegistry";
 
 /**
- * Configuration settings for the TowersOfCorebornAgent that are not yet resolved.
+ * Configuration settings for the ResyncGameFrameworkAgent that are not yet resolved.
  */
-export type UnresolvedTowersOfCorebornAgentConfig = Omit<
-  TowersOfCorebornAgentConfig,
+export type UnresolvedResyncGameFrameworkAgentConfig = Omit<
+  ResyncGameFrameworkAgentConfig,
   "tools" | "model"
 > & {
   model: MixedModelEntry | MixedModelEntry[];
 };
 
 /**
- * Input parameters for a non-streaming TowersOfCorebornAgent generate call.
- * @property agentConfig - Configuration settings for the TowersOfCorebornAgent instance.
+ * Input parameters for a non-streaming ResyncGameFrameworkAgent generate call.
+ * @property agentConfig - Configuration settings for the ResyncGameFrameworkAgent instance.
  * @property tools - Tool ids or an agent tool enum. Omit or pass an empty list for no tools.
  * @property prompt - The user input or system prompt for the agent to process.
  */
-export interface TowersOfCorebornAgentGenerateInput {
+export interface ResyncGameFrameworkAgentGenerateInput {
   /**
-   * Configuration settings for the TowersOfCorebornAgent instance.
+   * Configuration settings for the ResyncGameFrameworkAgent instance.
    */
-  agentConfig: UnresolvedTowersOfCorebornAgentConfig;
+  agentConfig: UnresolvedResyncGameFrameworkAgentConfig;
   /**
    * Tool ids, or an enum of them declared on the agent. Omit or pass an empty list for no tools.
    */
@@ -67,11 +67,11 @@ export interface TowersOfCorebornAgentGenerateInput {
  * pre-built tools directly (e.g. tools with per-call context baked in).
  * This bypasses the global tool registry.
  */
-export interface TowersOfCorebornAgentGenerateWithToolsInput {
+export interface ResyncGameFrameworkAgentGenerateWithToolsInput {
   /**
-   * Configuration settings for the TowersOfCorebornAgent instance.
+   * Configuration settings for the ResyncGameFrameworkAgent instance.
    */
-  agentConfig: UnresolvedTowersOfCorebornAgentConfig;
+  agentConfig: UnresolvedResyncGameFrameworkAgentConfig;
   /**
    * The user input or system prompt for the agent to process.
    */
@@ -79,17 +79,17 @@ export interface TowersOfCorebornAgentGenerateWithToolsInput {
 }
 
 /**
- * Input parameters for a TowersOfCorebornAgent chat call.
- * @property agentConfig - Configuration settings for the TowersOfCorebornAgent instance.
+ * Input parameters for a ResyncGameFrameworkAgent chat call.
+ * @property agentConfig - Configuration settings for the ResyncGameFrameworkAgent instance.
  * @property prompt - The user input or system prompt for the agent to process.
  */
-export interface TowersOfCorebornAgentChatInput {
+export interface ResyncGameFrameworkAgentChatInput {
   /** Stops the chat and its tools when the caller aborts the generation. */
   abortSignal?: AbortSignal;
   /**
-   * Configuration settings for the TowersOfCorebornAgent instance.
+   * Configuration settings for the ResyncGameFrameworkAgent instance.
    */
-  agentConfig: UnresolvedTowersOfCorebornAgentConfig;
+  agentConfig: UnresolvedResyncGameFrameworkAgentConfig;
   /**
    * Tool ids, or an enum of them declared on the agent.
    */
@@ -125,7 +125,7 @@ export interface AssetClassAgentChatInput {
  * model as tool errors (so the model can apologize or retry) instead of
  * throwing, which means callers must inspect this list to detect failures.
  */
-export interface TowersOfCorebornAgentToolError {
+export interface ResyncGameFrameworkAgentToolError {
   /** Human-readable error message extracted from the thrown value */
   errorMessage: string;
   toolCallId: string;
@@ -135,7 +135,7 @@ export interface TowersOfCorebornAgentToolError {
 /**
  * A tool call that completed successfully during a chat session.
  */
-export interface TowersOfCorebornAgentToolResult {
+export interface ResyncGameFrameworkAgentToolResult {
   /** Arguments the model passed to the tool, when available */
   args?: unknown;
   /** The tool's returned value */
@@ -145,9 +145,9 @@ export interface TowersOfCorebornAgentToolResult {
 }
 
 /**
- * The results returned from a full TowersOfCorebornAgent chat session.
+ * The results returned from a full ResyncGameFrameworkAgent chat session.
  */
-export interface TowersOfCorebornAgentChatResults {
+export interface ResyncGameFrameworkAgentChatResults {
   /**
    * Whether the chat was aborted.
    */
@@ -159,24 +159,24 @@ export interface TowersOfCorebornAgentChatResults {
   /**
    * Tool calls that threw during the run, in order of occurrence.
    */
-  toolErrors: TowersOfCorebornAgentToolError[];
+  toolErrors: ResyncGameFrameworkAgentToolError[];
   /**
    * Tool calls that completed successfully during the run, in order of occurrence.
    */
-  toolResults: TowersOfCorebornAgentToolResult[];
+  toolResults: ResyncGameFrameworkAgentToolResult[];
 }
 
 /**
  * Input for a chat whose only job is to call one caller-owned tool.
  * Shared tools belong on {@link AgentTool} and are passed as an enum to
- * {@link TowersOfCorebornAgentService#runGenerationCoordinator}.
+ * {@link ResyncGameFrameworkAgentService#runGenerationCoordinator}.
  * @property outputLabel - Human-readable name used in error messages, e.g. "Sprite sheet generation"
  * @property readToolOutput - Narrows the tool's raw result; throw when the shape is wrong
  */
-export interface TowersOfCorebornAgentSingleToolChatInput<ToolOutput> {
+export interface ResyncGameFrameworkAgentSingleToolChatInput<ToolOutput> {
   /** Stops the coordinator and its tool when the caller aborts the generation. */
   abortSignal?: AbortSignal;
-  agentConfig: UnresolvedTowersOfCorebornAgentConfig;
+  agentConfig: UnresolvedResyncGameFrameworkAgentConfig;
   outputLabel: string;
   prompt: string;
   readToolOutput: (rawResult: unknown) => ToolOutput;
@@ -191,7 +191,7 @@ interface GenerationCoordinatorInput<ToolOutput> {
   /** Stops the coordinator and its tools when the caller aborts the generation. */
   abortSignal?: AbortSignal;
   /** Subagents this coordinator can delegate to, keyed by the name Mastra turns into `agent-<key>`. */
-  agents?: TowersOfCorebornAgentConfig["agents"];
+  agents?: ResyncGameFrameworkAgentConfig["agents"];
   agentId: string;
   instructions: string;
   model?: MixedModelEntry | MixedModelEntry[];
@@ -231,24 +231,24 @@ export interface OwnedToolGenerationCoordinatorInput<ToolOutput>
 /**
  * Result of a single-tool chat: the narrowed tool output and the agent's closing text.
  */
-export interface TowersOfCorebornAgentSingleToolChatResult<ToolOutput> {
+export interface ResyncGameFrameworkAgentSingleToolChatResult<ToolOutput> {
   text: string;
   toolOutput: ToolOutput;
 }
 
-/** The default timeout for a TowersOfCorebornAgent agent sessions */
+/** The default timeout for a ResyncGameFrameworkAgent agent sessions */
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 
 /**
  * Coordinator model for asset-class agents. A class can pass a different model
- * to {@link TowersOfCorebornAgentService#runGenerationCoordinator}.
+ * to {@link ResyncGameFrameworkAgentService#runGenerationCoordinator}.
  */
 export const ASSET_CLASS_COORDINATOR_MODEL = "openai/gpt-6-astra";
 
 /** How many steps a generation coordinator gets: one tool call, then a short reply. */
 const GENERATION_COORDINATOR_MAX_STEPS = 2;
 
-type TowersOfCorebornAgentGenerateResult<T extends z.ZodType | null> =
+type ResyncGameFrameworkAgentGenerateResult<T extends z.ZodType | null> =
   T extends z.ZodType<unknown>
     ? StructuredOutputResult<z.core.output<T>>
     : T extends null
@@ -256,18 +256,18 @@ type TowersOfCorebornAgentGenerateResult<T extends z.ZodType | null> =
       : never;
 
 /**
- * Service for executing TowersOfCorebornAgent chat logic within a NestJS application.
+ * Service for executing ResyncGameFrameworkAgent chat logic within a NestJS application.
  * Supports streaming responses (token-by-token) and logs progress using Nest's logger.
  */
 @Injectable()
-export class TowersOfCorebornAgentService {
+export class ResyncGameFrameworkAgentService {
   /**
    * Logger instance for debug output.
    */
-  public logger = new Logger(TowersOfCorebornAgentService.name);
+  public logger = new Logger(ResyncGameFrameworkAgentService.name);
 
   public constructor(
-    private readonly towersOfCorebornAgentToolRegistry: TowersOfCorebornAgentToolRegistry,
+    private readonly resyncGameFrameworkAgentToolRegistry: ResyncGameFrameworkAgentToolRegistry,
     public readonly configurationService: ConfigurationService,
   ) {}
 
@@ -279,18 +279,18 @@ export class TowersOfCorebornAgentService {
    * @returns An agent ready to run or to pass to a coordinator as a subagent
    */
   public createAgent(
-    config: UnresolvedTowersOfCorebornAgentConfig & {
-      tools?: TowersOfCorebornAgentConfig["tools"];
+    config: UnresolvedResyncGameFrameworkAgentConfig & {
+      tools?: ResyncGameFrameworkAgentConfig["tools"];
     },
-  ): TowersOfCorebornAgent {
-    return new TowersOfCorebornAgent({
+  ): ResyncGameFrameworkAgent {
+    return new ResyncGameFrameworkAgent({
       ...config,
       model: this.resolveModelConfigs(config.model),
     });
   }
 
   /**
-   * Executes a non-streaming generate call with the TowersOfCorebornAgent.
+   * Executes a non-streaming generate call with the ResyncGameFrameworkAgent.
    * Use this for pipeline agents that need structured or plain text output
    * without streaming. Tools (e.g. webSearch) can be injected via the
    * `tools` array without wiring them manually in the calling service.
@@ -302,18 +302,18 @@ export class TowersOfCorebornAgentService {
    * @returns The raw result from agent.generate(), including text, object, and usage.
    */
   public async runGenerate<T extends z.ZodType | null>(
-    input: TowersOfCorebornAgentGenerateInput,
+    input: ResyncGameFrameworkAgentGenerateInput,
     schema: T,
     options?: AgentExecutionOptionsBase<unknown>,
-  ): Promise<TowersOfCorebornAgentGenerateResult<T>> {
+  ): Promise<ResyncGameFrameworkAgentGenerateResult<T>> {
     this.logger.debug(`Running ${input.agentConfig.name} agent`);
 
-    const tools = this.towersOfCorebornAgentToolRegistry.buildTools(
+    const tools = this.resyncGameFrameworkAgentToolRegistry.buildTools(
       input.tools ?? [],
     );
     const resolvedModels = this.resolveModelConfigs(input.agentConfig.model);
 
-    const agent = new TowersOfCorebornAgent({
+    const agent = new ResyncGameFrameworkAgent({
       ...input.agentConfig,
       model: resolvedModels,
       tools,
@@ -331,11 +331,11 @@ export class TowersOfCorebornAgentService {
 
     this.logger.debug(`${input.agentConfig.name} agent completed`);
 
-    return result as TowersOfCorebornAgentGenerateResult<T>;
+    return result as ResyncGameFrameworkAgentGenerateResult<T>;
   }
 
   /**
-   * Executes a chat session with the TowersOfCorebornAgent.
+   * Executes a chat session with the ResyncGameFrameworkAgent.
    * Consumes the agent's full event stream, accumulating generated text and
    * recording every tool result and tool error along the way.
    *
@@ -348,13 +348,13 @@ export class TowersOfCorebornAgentService {
    * @returns Generated text plus the tool results and tool errors observed during the run.
    */
   public async runChat(
-    input: TowersOfCorebornAgentChatInput,
-  ): Promise<TowersOfCorebornAgentChatResults> {
+    input: ResyncGameFrameworkAgentChatInput,
+  ): Promise<ResyncGameFrameworkAgentChatResults> {
     return this.streamChat({
       abortSignal: input.abortSignal,
       agentConfig: input.agentConfig,
       prompt: input.prompt,
-      tools: this.towersOfCorebornAgentToolRegistry.buildTools(input.tools),
+      tools: this.resyncGameFrameworkAgentToolRegistry.buildTools(input.tools),
     });
   }
 
@@ -367,12 +367,12 @@ export class TowersOfCorebornAgentService {
    */
   public async runChatWithTools(input: {
     abortSignal?: AbortSignal;
-    agentConfig: UnresolvedTowersOfCorebornAgentConfig;
+    agentConfig: UnresolvedResyncGameFrameworkAgentConfig;
     prompt: string;
     /** Overrides the standard ten-minute timeout for long multi-asset runs. */
     timeoutMs?: number;
     tools: ToolsInput;
-  }): Promise<TowersOfCorebornAgentChatResults> {
+  }): Promise<ResyncGameFrameworkAgentChatResults> {
     return this.streamChat(input);
   }
 
@@ -385,7 +385,7 @@ export class TowersOfCorebornAgentService {
    */
   public async runAssetClassAgentChat(
     input: AssetClassAgentChatInput,
-  ): Promise<TowersOfCorebornAgentChatResults> {
+  ): Promise<ResyncGameFrameworkAgentChatResults> {
     return this.streamChat({
       abortSignal: input.abortSignal,
       agentConfig: {
@@ -401,7 +401,7 @@ export class TowersOfCorebornAgentService {
       prompt: input.prompt,
       timeoutMs: input.timeoutMs,
       tools: {
-        ...this.towersOfCorebornAgentToolRegistry.buildTools(
+        ...this.resyncGameFrameworkAgentToolRegistry.buildTools(
           input.catalogTools,
         ),
         ...(input.ownedTools ?? {}),
@@ -412,15 +412,15 @@ export class TowersOfCorebornAgentService {
   /**
    * Runs a coordinator agent that must call exactly one caller-owned tool.
    * Use this when the tool is not in the shared catalog. Catalog tools are
-   * passed as an enum to {@link TowersOfCorebornAgentService#runGenerationCoordinator}.
+   * passed as an enum to {@link ResyncGameFrameworkAgentService#runGenerationCoordinator}.
    *
    * @param input - Agent config, prompt, the tool, and how to read its result
    * @returns The narrowed tool output and the agent's closing text
    * @throws InternalServerErrorException when the tool failed or was never called
    */
   public async runSingleToolChat<ToolOutput>(
-    input: TowersOfCorebornAgentSingleToolChatInput<ToolOutput>,
-  ): Promise<TowersOfCorebornAgentSingleToolChatResult<ToolOutput>> {
+    input: ResyncGameFrameworkAgentSingleToolChatInput<ToolOutput>,
+  ): Promise<ResyncGameFrameworkAgentSingleToolChatResult<ToolOutput>> {
     const result = await this.streamChat({
       abortSignal: input.abortSignal,
       agentConfig: input.agentConfig,
@@ -449,7 +449,7 @@ export class TowersOfCorebornAgentService {
     input:
       | RegistryGenerationCoordinatorInput<ToolOutput>
       | OwnedToolGenerationCoordinatorInput<ToolOutput>,
-  ): Promise<TowersOfCorebornAgentSingleToolChatResult<ToolOutput>> {
+  ): Promise<ResyncGameFrameworkAgentSingleToolChatResult<ToolOutput>> {
     const result = await this.streamChat({
       abortSignal: input.abortSignal,
       agentConfig: {
@@ -488,13 +488,13 @@ export class TowersOfCorebornAgentService {
       const catalog =
         input.catalogTools === undefined
           ? {}
-          : this.towersOfCorebornAgentToolRegistry.buildTools(
+          : this.resyncGameFrameworkAgentToolRegistry.buildTools(
               input.catalogTools,
             );
       return { ...catalog, [input.toolId]: input.tool };
     }
 
-    const tools = this.towersOfCorebornAgentToolRegistry.buildTools(
+    const tools = this.resyncGameFrameworkAgentToolRegistry.buildTools(
       input.tools,
     );
     if (tools[input.toolId] === undefined) {
@@ -513,23 +513,23 @@ export class TowersOfCorebornAgentService {
    */
   private async streamChat(input: {
     abortSignal?: AbortSignal;
-    agentConfig: UnresolvedTowersOfCorebornAgentConfig;
+    agentConfig: UnresolvedResyncGameFrameworkAgentConfig;
     prompt: string;
     timeoutMs?: number;
     tools: ToolsInput;
-  }): Promise<TowersOfCorebornAgentChatResults> {
+  }): Promise<ResyncGameFrameworkAgentChatResults> {
     const { tools } = input;
     this.logger.debug(`Running ${input.agentConfig.name} agent`);
 
     // Accumulate the text as it is streamed from the agent.
     let accumulatedText = "";
-    const toolErrors: TowersOfCorebornAgentToolError[] = [];
-    const toolResults: TowersOfCorebornAgentToolResult[] = [];
+    const toolErrors: ResyncGameFrameworkAgentToolError[] = [];
+    const toolResults: ResyncGameFrameworkAgentToolResult[] = [];
 
     const resolvedModels = this.resolveModelConfigs(input.agentConfig.model);
 
-    // Instantiate a new TowersOfCorebornAgent with the fully-resolved configuration.
-    const agent = new TowersOfCorebornAgent({
+    // Instantiate a new ResyncGameFrameworkAgent with the fully-resolved configuration.
+    const agent = new ResyncGameFrameworkAgent({
       ...input.agentConfig,
       model: resolvedModels,
       tools,
@@ -660,7 +660,7 @@ export class TowersOfCorebornAgentService {
   }
 
   /**
-   * Resolves the model configs for the TowersOfCorebornAgent.
+   * Resolves the model configs for the ResyncGameFrameworkAgent.
    * @param models - The model configs to resolve.
    * @returns The resolved model configs.
    */
@@ -710,8 +710,8 @@ function productNowRequestContext(): RequestContext | undefined {
  * @returns Whether the run already did tool work worth keeping
  */
 function hasToolActivity(
-  toolResults: TowersOfCorebornAgentToolResult[],
-  toolErrors: TowersOfCorebornAgentToolError[],
+  toolResults: ResyncGameFrameworkAgentToolResult[],
+  toolErrors: ResyncGameFrameworkAgentToolError[],
 ): boolean {
   return toolResults.length > 0 || toolErrors.length > 0;
 }
@@ -726,9 +726,9 @@ function hasToolActivity(
 function chatResults(
   text: string,
   aborted: boolean,
-  toolErrors: TowersOfCorebornAgentToolError[],
-  toolResults: TowersOfCorebornAgentToolResult[],
-): TowersOfCorebornAgentChatResults {
+  toolErrors: ResyncGameFrameworkAgentToolError[],
+  toolResults: ResyncGameFrameworkAgentToolResult[],
+): ResyncGameFrameworkAgentChatResults {
   return { aborted, text, toolErrors, toolResults };
 }
 

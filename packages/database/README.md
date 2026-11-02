@@ -1,6 +1,6 @@
 # Database
 
-The prisma client for Towers of Coreborn's Postgres instance.
+The prisma client for Resync Game Framework's Postgres instance.
 
 ## Migrating
 

@@ -4,7 +4,7 @@ import {
   DUNGEON_ASSET_CLASS_ID,
   type DungeonBlueprint,
   isServiceError,
-} from "@towers-of-coreborn/api";
+} from "@resync-game-framework/api";
 import { Castle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { convertErrorToString } from "@/lib/convertErrorToString";

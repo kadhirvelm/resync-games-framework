@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { PRODUCT_NOW_GAMES_FOLDER_ID } from "@towers-of-coreborn/api";
+import { PRODUCT_NOW_GAMES_FOLDER_ID } from "@resync-game-framework/api";
 import { ProductNowLoreService } from "../product-now-lore.service";
 
 /** One scripted ProductNow tool response. */
@@ -169,7 +169,7 @@ describe("ProductNowLoreService", () => {
     const { service } = createService({});
 
     expect(
-      await service.requireSession("toc_productnow_session=browser-1"),
+      await service.requireSession("resync_productnow_session=browser-1"),
     ).toBe("browser-1");
     expect(await service.requireSession(undefined)).toBe("stored-session");
   });

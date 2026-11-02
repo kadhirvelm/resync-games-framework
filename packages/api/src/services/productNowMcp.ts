@@ -12,7 +12,7 @@ export interface ProductNowMcpStatus {
   connected: boolean;
 }
 
-/** ProductNow MCP operations exposed to the Towers of Coreborn frontend. */
+/** ProductNow MCP operations exposed to the Resync Game Framework frontend. */
 export interface ProductNowMcpServiceApi extends Service {
   callTool: {
     payload: {
