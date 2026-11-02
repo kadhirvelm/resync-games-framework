@@ -1,0 +1,30 @@
+[
+  {
+    "effect": "+10% Ember effect damage per essence grade.",
+    "id": "cinder_banner",
+    "name": "Cinder Banner",
+    "school": "ember"
+  },
+  {
+    "effect": "+10% Rime slow and shield strength per essence grade.",
+    "id": "rime_chain",
+    "name": "Rime Chain",
+    "school": "rime"
+  },
+  {
+    "effect": "+10% Blood lifesteal per essence grade.",
+    "id": "blood_chalice",
+    "name": "Blood Chalice",
+    "school": "blood"
+  },
+  {
+    "effect": "+8% armor per essence grade.",
+    "id": "wardstone",
+    "name": "Wardstone"
+  },
+  {
+    "effect": "+8% attack speed per essence grade.",
+    "id": "twin_gong",
+    "name": "Twin Gong"
+  }
+]

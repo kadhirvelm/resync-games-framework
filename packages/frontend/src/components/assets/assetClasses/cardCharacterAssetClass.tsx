@@ -45,6 +45,7 @@ export const CARD_CHARACTER_ASSET_CLASS: AssetClassDefinition = {
   generateButtonLabel: "+ Generate character",
   Icon: UserRound,
   id: "card-characters",
+  medium: "2d",
   subtitle: "card character generation",
   tabLabel: "Card characters",
 };

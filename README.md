@@ -35,13 +35,20 @@ point. Each registered experience is loaded only after it is selected:
 - **Towers of Coreborn** keeps the existing two-dimensional climb, local saves,
   and Phaser battle renderer unchanged.
 - **3D Sandbox** is an isolated, client-only Babylon.js prototype with its own
-  disposable engine and scene. It currently renders a bundled low-poly shrine;
-  the glTF loader is present for the validated GLB asset pipeline planned next.
+  disposable engine and scene. It loads validated generated/imported GLBs from
+  the Blueprint Workshop and keeps stand-ins for unavailable models.
+- **Descent** mounts the deterministic Ashen Gate vertical slice: gather, build,
+  train Wardens, cultivate one Sworn, survive Cinderjaw, and finish on a slice
+  victory screen. Its Babylon.js RTS battlefield uses the shared generated 3D
+  assets and remains playable with procedural stand-ins. It saves the active
+  run in browser local storage. Later layers, heroes, Calamities, and
+  Tribulation are not mounted yet.
 
 Experience metadata and lazy entry components live in
-`packages/frontend/src/components/game-experiences/`. Babylon-only code lives in
-`packages/frontend/src/components/babylonGame/`, so selecting or returning from
-one runtime never mounts Phaser and Babylon in the same scene.
+`packages/frontend/src/components/game-experiences/`. Shared 3D sandbox code
+lives in `packages/frontend/src/components/babylonGame/`; Descent keeps its RTS
+adapter beside its own views. Selecting or returning from one experience never
+mounts Phaser and Babylon in the same scene.
 
 ## Local development
 
@@ -85,6 +92,27 @@ Then start the development environment:
 
 ```bash
 bun run dev
+```
+
+Generate the local, deterministic Ashen Gate GLB roster after the backend is
+running. This uses the built-in structured-design compiler and no paid model
+provider credits:
+
+```bash
+bun run assets:descent
+```
+
+The generator defaults to `https://localhost:8080`. When the backend is on a
+different local port, pass its URL as the first argument, for example
+`bun run assets:descent -- https://localhost:8083`.
+
+To replace the four high-visibility Ashen Gate structures with detailed Meshy
+models, configure `MESHY_API_KEY` and opt in explicitly. This keeps the default
+command zero-credit and uses approximately 120 Meshy credits when no polished
+structure roster exists yet:
+
+```bash
+bun run assets:descent -- --meshy
 ```
 
 Useful commands:

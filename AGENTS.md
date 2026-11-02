@@ -56,7 +56,8 @@ that package directory.
   `sprite-sheet` paints a pixel-art identity anchor and then one 4×6 sheet
   from it (idle, attack, defend, hurt rows on pure white), which the backend
   keys out and splits into one normalized PNG strip per animation,
-  and   `card-generator` writes one
+  `static-image` paints one reusable icon, cutout, texture, illustration, or
+  backdrop, and `card-generator` writes one
   lore-backed playable card. `audio` renders one effect, ambience loop, or
   instrumental bed through ElevenLabs. `dungeon-coordinator` accepts one broad setup
   prompt and writes a dungeon package: two room prompts, three character
@@ -135,7 +136,9 @@ Components call the backend through `packages/frontend/src/services/`; do not
 fetch service endpoints directly from components. Prefer Server Components and
 add `"use client"` only for hooks, event handlers, or browser APIs.
 
-The game on the home route lives in `packages/frontend/src/components/tower/`.
+The home route is the game library. Each game is mounted at its own path
+(`/towers-of-coreborn`, `/descent`, `/three-d-sandbox`) so a refresh stays in
+that game. Towers of Coreborn lives in `packages/frontend/src/components/tower/`.
 `logic/` holds the pure, seeded rules: `buildTowerContent` turns a dungeon
 package (or the loose gallery, or built-in content) into a tower and fills
 missing assets with stand-ins; `generateTower` lays out the linear floors,
@@ -174,6 +177,28 @@ camp, battle, or boss bed, and falls back to the synthesized score when a
 cue is missing. The battle reads pace and reduced
 motion from `BattleSceneInput`.
 
+The Descent game experience lives in `components/descent/`. Its generic sim
+has no default modules; `createAshenGateSim` explicitly composes economy,
+waves, and the Ashen Gate integration bridge. Views read snapshots and enqueue
+commands only. Ashen Gate-owned map/content stays under
+`data/layers/ashen_gate/`, while its end-to-end contract stays in
+`logic/__tests__/ashenGateSlice.test.ts`. The mounted slice ends after
+Cinderjaw; later layers, heroes, Calamities, and Tribulation are not live
+runtime content. Browser autosave runs at layer start, every five sim-seconds,
+and at the terminal outcome. Camps and Barracks publish their three-slot
+training queues and saved rally points; completed batches receive movement
+orders toward that building's rally point. The battlefield is a Babylon.js
+presentation adapter with a DOM/WebGL fallback; it never owns rules. Generated
+Ashen Gate models are resolved by canonical names from the existing 3D asset
+services and fall back to procedural meshes. Combat units resolve by faction
+and class so Warden, Hunter, Raider, Breaker, and Adept keep distinct silhouettes.
+Surface nodes reuse four
+harvestable prop families (grove, tree, outcrop, and well) with resource-color
+cues, while ember vents use one generated hazard prop with a procedural glow.
+Rebuild the local zero-credit roster with `bun run assets:descent`; use
+`--meshy --roles=<comma-separated roles>` for a scoped detailed pass. Do not
+commit runtime-generated GLBs.
+
 ### Shared contracts
 
 The separate 3D experience lives in `components/babylonGame/`; pure gameplay and
@@ -183,9 +208,11 @@ Shared contracts are in `api/src/services/assetClasses/threeD.ts`. Backend
 `asset-classes/three-d/` owns validation, atomic storage, package hydration and
 the refresh-safe job journal; `mastra/agents/three-d/` owns model-design and prototype
 queries. `generate-3d-model` compiles safe structured low-poly designs or calls
-the optional server-side Meshy adapter. Characters use the built-in six-joint
-rig and five named clips. Keep 3D packages and saves independent of 2D dungeon
-files and climb data. See `docs/3d-workshop.md` for format budgets and setup.
+the optional server-side Meshy adapter. Low-poly characters use the built-in
+six-joint rig and five named clips. Meshy characters run as one journaled
+preview, refine, auto-rig, and multi-animation pipeline; normalize its output to
+the required idle, walk, attack, hit, and death clips before validation. Keep 3D
+packages and saves independent of 2D dungeon files and climb data.
 
 Anything shared between frontend and backend belongs in `packages/api/src/`
 and is imported from `@resync-game-framework/api`.
@@ -264,7 +291,8 @@ To add an asset class named `foo`:
    supplied `generationId` with atomic publication.
 4. Register its module in `asset-classes.module.ts`.
 5. Add a frontend `AssetClassDefinition` and register it in
-   `assetClassRegistry.ts`.
+   `assetClassRegistry.ts`. Set `medium` to `2d`, `3d`, or `both` so the
+   workshop sidebar keeps flat art, models, and shared generators apart.
 
 Service callers return `ServiceError` values rather than throwing. Check
 `isServiceError(result)` before using the response.

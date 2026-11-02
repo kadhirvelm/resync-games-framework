@@ -2,6 +2,12 @@ import {
   THREE_D_LAST_WORLD_KEY,
   THREE_D_SAVE_KEY,
 } from "@/components/babylonGame/logic/prototypeRun";
+import {
+  AUTOSAVE_SLOT,
+  SIM_SAVE_FORMAT,
+  SIM_SAVE_VERSION,
+  saveSlotKey,
+} from "@/components/descent/logic/sim";
 import { STORAGE_KEYS } from "@/components/tower/persistence";
 import type { GameExperienceId } from "./gameExperienceTypes";
 
@@ -42,6 +48,30 @@ export function hasStoredTowerClimb(storage: ReadableStorage): boolean {
 }
 
 /**
+ * Checks whether Descent has a current, structurally recognizable autosave.
+ * Full world validation happens when the title screen restores the sim.
+ * @param storage - Browser-compatible key/value storage
+ * @returns Whether the library should advertise Continue for Descent
+ */
+export function hasStoredDescentRun(storage: ReadableStorage): boolean {
+  try {
+    const raw = storage.getItem(saveSlotKey(AUTOSAVE_SLOT));
+    if (raw === null) return false;
+    const envelope: unknown = JSON.parse(raw);
+    if (typeof envelope !== "object" || envelope === null) return false;
+    const candidate = envelope as Record<string, unknown>;
+    return (
+      candidate.format === SIM_SAVE_FORMAT &&
+      candidate.version === SIM_SAVE_VERSION &&
+      typeof candidate.state === "object" &&
+      candidate.state !== null
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Finds every registered experience with currently resumable browser data.
  * @param storage - Browser-compatible key/value storage
  * @returns Experience ids whose selector cards should offer Continue
@@ -51,6 +81,7 @@ export function getResumeExperienceIds(
 ): ReadonlySet<GameExperienceId> {
   const ids = new Set<GameExperienceId>();
   if (hasStoredTowerClimb(storage)) ids.add("towers-of-coreborn");
+  if (hasStoredDescentRun(storage)) ids.add("descent");
   try {
     const lastWorld = storage.getItem(THREE_D_LAST_WORLD_KEY);
     const raw = lastWorld

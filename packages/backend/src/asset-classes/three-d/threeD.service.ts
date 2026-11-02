@@ -187,12 +187,9 @@ export class ThreeDService implements OnModuleInit {
       throw new BadRequestException(
         "Package and slot must be supplied together.",
       );
-    if (
-      input.provider === "meshy" &&
-      (!this.meshy.configured() || input.kind === "character")
-    )
+    if (input.provider === "meshy" && !this.meshy.configured())
       throw new BadRequestException(
-        "Meshy needs MESHY_API_KEY and supports props/environments here. Choose Low-poly AI for characters.",
+        "Meshy needs MESHY_API_KEY on the backend.",
       );
     if (input.prototypeId) {
       const prototype = await this.packages.read(input.prototypeId);

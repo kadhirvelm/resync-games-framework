@@ -185,7 +185,7 @@
     text-transform: uppercase;
   }
 
-  button {
+  .launchLink {
     align-items: center;
     background: $night;
     border: 1px solid $night;
@@ -199,6 +199,7 @@
     gap: 12px;
     justify-content: space-between;
     padding: 13px 17px;
+    text-decoration: none;
     transition:
       background 160ms ease,
       transform 160ms $ease-out;
@@ -386,7 +387,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .experienceCard,
-  .cardBody button,
+  .launchLink,
   .libraryButton,
   .loadingMark {
     animation: none;

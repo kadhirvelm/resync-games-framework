@@ -12,6 +12,9 @@ $workshop-gold-deep: #d99a12;
 
 // ── Blueprint grid background ──────────────────────────────────────────────
 .pageWrapper {
+  --scrollbar-thumb: rgb(168 198 236 / 36%);
+  --scrollbar-thumb-hover: rgb(198 220 248 / 62%);
+
   background-color: $blueprint-base;
   background-image:
     radial-gradient(ellipse 70% 42% at 12% -8%, rgb(88 150 255 / 28%), transparent 58%),
@@ -179,9 +182,41 @@ $workshop-gold-deep: #d99a12;
 .navGroups {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
   overflow-y: auto;
   padding-right: 2px;
+}
+
+.navSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  & + & {
+    border-top: 1px solid $blueprint-border;
+    padding-top: 12px;
+  }
+}
+
+.navSectionLabel {
+  color: vars.$white;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  padding: 2px 8px 0;
+  text-transform: uppercase;
+}
+
+.navSection[data-medium="2d"] .navSectionLabel {
+  color: #f0b429;
+}
+
+.navSection[data-medium="3d"] .navSectionLabel {
+  color: #7ddec8;
+}
+
+.navSection[data-medium="both"] .navSectionLabel {
+  color: #f3c6a0;
 }
 
 .navEmpty {
@@ -277,6 +312,11 @@ $workshop-gold-deep: #d99a12;
 .navItem[data-category="Sprites"],
 .contentIdentity[data-category="Sprites"] {
   --nav-accent: #c6e87a;
+}
+
+.navItem[data-category="Sound"],
+.contentIdentity[data-category="Sound"] {
+  --nav-accent: #f3c6a0;
 }
 
 .navItemIcon,
@@ -1049,6 +1089,91 @@ $workshop-gold-deep: #d99a12;
   color: vars.$font;
   font-size: 15px;
   font-weight: 700;
+}
+
+.staticImageGrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  width: 100%;
+}
+
+.staticImageCard {
+  background: vars.$white;
+  border: 1px solid vars.$border-color;
+  border-radius: 16px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  font: inherit;
+  gap: 8px;
+  overflow: hidden;
+  padding: 0 0 14px;
+  text-align: left;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+
+  &:hover {
+    border-color: vars.$blue-medium;
+    box-shadow: 0 12px 28px rgb(8 24 64 / 16%);
+    transform: translateY(-2px);
+  }
+}
+
+.staticImagePreview {
+  aspect-ratio: 1;
+  background:
+    linear-gradient(45deg, rgb(104 132 177 / 12%) 25%, transparent 25%),
+    linear-gradient(-45deg, rgb(104 132 177 / 12%) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgb(104 132 177 / 12%) 75%),
+    linear-gradient(-45deg, transparent 75%, rgb(104 132 177 / 12%) 75%),
+    #eef4fd;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-size: 16px 16px;
+  display: block;
+  object-fit: contain;
+  width: 100%;
+}
+
+.staticImageHeader {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 0 14px;
+}
+
+.staticImageTitle {
+  color: vars.$font;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.staticImageRatio {
+  color: vars.$gray;
+  flex-shrink: 0;
+  font-family: monospace;
+  font-size: 11px;
+}
+
+.staticImageDescription {
+  -webkit-box-orient: vertical;
+  color: vars.$gray-hover;
+  display: -webkit-box;
+  font-size: 12px;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  line-height: 1.4;
+  overflow: hidden;
+  padding: 0 14px;
+}
+
+.staticImageDetail {
+  background-color: #eef4fd;
+  display: block;
+  height: auto;
+  max-height: 76vh;
+  object-fit: contain;
+  width: 100%;
 }
 
 .dungeonCharacter {

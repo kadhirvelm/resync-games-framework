@@ -1,0 +1,11 @@
+<svg aria-label="Warden with shield and spear" role="img" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg" >
+  <defs><linearGradient id="bg" x2="0" y2="1"><stop stop-color="#553b22"/><stop offset="1" stop-color="#17100b"/></linearGradient></defs>
+  <rect fill="url(#bg)" height="92" rx="12" stroke="#d7ad56" stroke-width="3" width="92" x="2" y="2" />
+  <path d="M35 18h20l4 10-14 9-14-9z" fill="#d7ad56"/>
+  <circle cx="45" cy="31" fill="#bc7954" r="9" />
+  <path d="M27 76V48l18-10 18 10v28z" fill="#8b6337" stroke="#e7bd67" stroke-width="2"/>
+  <path d="M68 13v69" stroke="#f1cd78" stroke-linecap="round" stroke-width="4" />
+  <path d="M68 11l-7 12h14z" fill="#f1cd78"/>
+  <path d="M20 47q13-10 25 0v26q-13 13-25 0z" fill="#c58b3c" stroke="#f3d27f" stroke-width="2"/>
+  <circle cx="32" cy="57" fill="#f3d27f" r="5" />
+</svg>

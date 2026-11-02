@@ -1,0 +1,91 @@
+[
+  {
+    "breakthrough": {
+      "baseSuccessChance": 0.7,
+      "channelSeconds": 20,
+      "combatProof": 3,
+      "essence": 50,
+      "hallTier": "Camp",
+      "kind": "channel",
+      "materials": { "iron": 5, "spirit_herbs": 2 },
+      "merit": 100,
+      "targetRank": "Sworn"
+    },
+    "id": "qi_gathering",
+    "passives": ["Body Tempering"],
+    "population": 1,
+    "rank": "Ashborn",
+    "realm": "Qi Gathering",
+    "statMultiplier": 1
+  },
+  {
+    "breakthrough": {
+      "baseSuccessChance": 0.65,
+      "channelSeconds": 20,
+      "combatProof": 8,
+      "essence": 150,
+      "hallTier": "Stronghold",
+      "kind": "channel",
+      "materials": { "coin": 10, "iron": 10, "spirit_herbs": 5 },
+      "merit": 300,
+      "targetRank": "Veteran"
+    },
+    "id": "foundation",
+    "passives": ["Spirit Sense", "School Root"],
+    "population": 1,
+    "rank": "Sworn",
+    "realm": "Foundation",
+    "statMultiplier": 1.5
+  },
+  {
+    "breakthrough": {
+      "baseSuccessChance": 0.6,
+      "channelSeconds": 20,
+      "combatProof": 15,
+      "essence": 350,
+      "hallTier": "Citadel",
+      "kind": "channel",
+      "materials": { "iron": 20, "spirit_herbs": 10, "stone": 20 },
+      "merit": 700,
+      "targetRank": "Champion"
+    },
+    "id": "core_formation",
+    "passives": ["Golden Core", "Wind-Borne Step", "Core Presence"],
+    "population": 2,
+    "rank": "Veteran",
+    "realm": "Core Formation",
+    "statMultiplier": 3
+  },
+  {
+    "breakthrough": {
+      "baseSuccessChance": 0.8,
+      "channelSeconds": 30,
+      "combatProof": 25,
+      "essence": 800,
+      "hallTier": "Citadel",
+      "kind": "tribulation",
+      "materials": {
+        "coin": 50,
+        "iron": 40,
+        "spirit_herbs": 20,
+        "stone": 40
+      },
+      "merit": 1500,
+      "targetRank": "Ascended"
+    },
+    "id": "nascent_soul",
+    "passives": ["Spirit Avatar", "Lesser Domain", "Long Life"],
+    "population": 3,
+    "rank": "Champion",
+    "realm": "Nascent Soul",
+    "statMultiplier": 5.5
+  },
+  {
+    "id": "ascension",
+    "passives": ["True Domain", "Immortal Body", "Tribulation Scar"],
+    "population": 4,
+    "rank": "Ascended",
+    "realm": "Ascension",
+    "statMultiplier": 9
+  }
+]

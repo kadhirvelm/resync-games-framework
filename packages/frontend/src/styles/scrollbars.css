@@ -1,0 +1,43 @@
+/*
+ * Thin, trackless thumbs. The transparent border insets the pill so it
+ * floats inside the scrollport instead of painting a full-height rail.
+ * Dark surfaces can set --scrollbar-thumb to a faint light color.
+ */
+
+* {
+  scrollbar-color: var(
+      --scrollbar-thumb,
+      color-mix(in srgb, currentcolor 30%, transparent)
+    )
+    transparent;
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+*::-webkit-scrollbar-corner,
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-clip: padding-box;
+  background-color: var(
+    --scrollbar-thumb,
+    color-mix(in srgb, currentcolor 30%, transparent)
+  );
+  border: 3px solid transparent;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-clip: padding-box;
+  background-color: var(
+    --scrollbar-thumb-hover,
+    color-mix(in srgb, currentcolor 52%, transparent)
+  );
+  border: 3px solid transparent;
+}

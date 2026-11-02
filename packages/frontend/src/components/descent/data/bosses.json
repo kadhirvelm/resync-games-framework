@@ -1,0 +1,164 @@
+{
+  "bosses": [
+    {
+      "allyDeathHealFraction": 0,
+      "aoeRadius": 3.5,
+      "armor": 6,
+      "bossCoreId": "boss_core",
+      "classId": "raider",
+      "damage": 34,
+      "essenceBase": 50,
+      "id": "cinderjaw",
+      "layerId": "ashen_gate",
+      "lifesteal": false,
+      "maxHitPoints": 1000,
+      "name": "Cinderjaw",
+      "phases": [
+        {
+          "id": "vents",
+          "spawn": [
+            {
+              "classId": "raider",
+              "count": 4
+            }
+          ],
+          "threshold": 0.5,
+          "twist": "imps_from_vents"
+        }
+      ],
+      "speed": 3,
+      "title": "Gatekeeper",
+      "treasureChoice": ["cinder_banner", "wardstone"],
+      "vision": 9,
+      "windupSeconds": 3
+    },
+    {
+      "allyDeathHealFraction": 0,
+      "armor": 12,
+      "bossCoreId": "boss_core",
+      "classId": "warden",
+      "damage": 28,
+      "essenceBase": 50,
+      "id": "marshal_orrec_vane",
+      "layerId": "bone_wastes",
+      "lifesteal": false,
+      "maxHitPoints": 1600,
+      "name": "Marshal Orrec Vane",
+      "phases": [
+        {
+          "id": "shroud",
+          "threshold": 0.5,
+          "twist": "arena_fog",
+          "visionMultiplier": 0.5
+        }
+      ],
+      "speed": 2.4,
+      "title": "Bone Warden",
+      "treasureChoice": ["twin_gong", "blood_chalice"],
+      "vision": 14,
+      "windupSeconds": 3
+    },
+    {
+      "allyDeathHealFraction": 0,
+      "armor": 8,
+      "bossCoreId": "boss_core",
+      "classId": "adept",
+      "damage": 30,
+      "essenceBase": 50,
+      "id": "queen_isolde",
+      "layerId": "frozen_pit",
+      "lifesteal": false,
+      "maxHitPoints": 1500,
+      "name": "Queen Isolde",
+      "phases": [
+        {
+          "id": "advance",
+          "speedMultiplier": 1.35,
+          "threshold": 0.66,
+          "twist": "mobility"
+        },
+        {
+          "id": "whiteout",
+          "threshold": 0.33,
+          "twist": "freezing_ground"
+        }
+      ],
+      "speed": 3.2,
+      "title": "Rime Matron",
+      "treasureChoice": ["rime_chain", "wardstone"],
+      "vision": 11,
+      "windupSeconds": 3
+    },
+    {
+      "allyDeathHealFraction": 0.08,
+      "armor": 7,
+      "bossCoreId": "boss_core",
+      "classId": "raider",
+      "damage": 32,
+      "essenceBase": 50,
+      "id": "maw_of_tides",
+      "layerId": "blood_sea",
+      "lifesteal": true,
+      "maxHitPoints": 1800,
+      "name": "Maw-of-Tides",
+      "phases": [
+        {
+          "damageMultiplier": 1.25,
+          "id": "surge",
+          "threshold": 0.5,
+          "twist": "hunger"
+        }
+      ],
+      "school": "blood",
+      "speed": 2.8,
+      "title": "Crimson Tyrant",
+      "treasureChoice": ["blood_chalice", "rime_chain"],
+      "vision": 10,
+      "windupSeconds": 3
+    },
+    {
+      "allyDeathHealFraction": 0,
+      "armor": 14,
+      "bossCoreId": "boss_core",
+      "classId": "warden",
+      "damage": 40,
+      "essenceBase": 50,
+      "id": "warden_of_layers",
+      "layerId": "throne_of_hell",
+      "lifesteal": false,
+      "maxHitPoints": 2400,
+      "name": "The Warden of Layers",
+      "phases": [
+        {
+          "id": "ash",
+          "rotatedRule": "ember_vents",
+          "threshold": 0.75,
+          "twist": "rotate_rule"
+        },
+        {
+          "id": "bone",
+          "rotatedRule": "fog",
+          "threshold": 0.5,
+          "twist": "rotate_rule"
+        },
+        {
+          "id": "rime",
+          "rotatedRule": "cold",
+          "threshold": 0.25,
+          "twist": "rotate_rule"
+        },
+        {
+          "id": "tide",
+          "rotatedRule": "lifedrain",
+          "threshold": 0.12,
+          "twist": "rotate_rule"
+        }
+      ],
+      "speed": 2.6,
+      "title": "Hell King",
+      "treasureChoice": ["cinder_banner", "rime_chain", "blood_chalice"],
+      "vision": 12,
+      "windupSeconds": 3
+    }
+  ]
+}

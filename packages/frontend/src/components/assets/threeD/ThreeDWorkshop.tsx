@@ -10,6 +10,7 @@ import {
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { threeDSandboxHref } from "@/components/game-experiences/gameExperiencePaths";
 import { useClientServiceCallers } from "@/services/clientServiceCallers";
 import { readGlbUpload, threeDAssetCaller } from "@/services/threeDService";
 import { readReducedMotionPreference } from "../../babylonGame/reducedMotionPreference";
@@ -24,20 +25,69 @@ const ModelViewport = dynamic(
   { ssr: false },
 );
 const kinds: ThreeDAssetKind[] = ["prop", "environment", "character"];
-const examples = [
+const kindTitles: Record<ThreeDAssetKind, string> = {
+  character: "Character",
+  environment: "Environment",
+  prop: "Prop",
+};
+const worldExamples = [
   "A moonlit jade garden with a wandering clockwork gardener and three glowing seed shrines",
   "A desert observatory with a brass explorer and ancient star beacons",
   "A cozy mushroom grove with a tiny forest guardian and crystal lanterns",
 ];
+const assetExamples: Record<ThreeDAssetKind, string[]> = {
+  character: [
+    "A hooded ember-mine villager with layered work robes and a bronze gathering tool",
+    "A jade-armored frontier warden with a broad readable silhouette",
+    "A cinder imp raider carrying a chipped obsidian cleaver",
+  ],
+  environment: [
+    "An open Ashen Gate battlefield ringed by basalt cliffs and ember vents",
+    "A moonlit jade garden arena with clear walkable ground",
+    "A ruined mountain shrine arena with bronze braziers and drifting ash",
+  ],
+  prop: [
+    "A fortified dark-fantasy barracks with basalt walls and an ember-red roof",
+    "A bronze-bound jade resource coffer with a strong isometric silhouette",
+    "A compact cultivation shrine with a glowing blue spirit crystal",
+  ],
+};
 
-/** Complete authoring surface for 3D prototype packages and standalone assets. */
+interface ThreeDWorkshopProps {
+  /** Fixed asset category for a dedicated asset tab. */
+  initialKind?: ThreeDAssetKind;
+  /** Worlds plans packages; assets generates and lists one fixed model kind. */
+  mode?: "assets" | "worlds";
+}
+
+/** Returns the cost and capability guidance for the selected model route. */
+function generationHint(
+  provider: ThreeDProvider,
+  kind: ThreeDAssetKind,
+  isWorldWorkshop: boolean,
+): string {
+  if (provider !== "meshy")
+    return "Low-poly AI designs editable geometric models. Characters include a simple six-joint rig and five clips. Demo uses curated designs without model calls.";
+  if (isWorldWorkshop || kind === "character")
+    return "Uses prepaid Meshy credits: approximately 30 per textured prop or environment and 50 per fully rigged five-clip character. In-progress provider jobs may remain billable after Stop.";
+  return "Uses prepaid Meshy credits: approximately 30 per textured model. In-progress provider jobs may remain billable after Stop.";
+}
+
+/**
+ * Complete authoring surface for either 3D world packages or one asset kind.
+ * @param initialKind - Fixed category shown by a dedicated asset tab
+ * @param mode - Whether to plan worlds or manage standalone assets
+ * @returns Focused 3D authoring and library UI
+ */
 export function ThreeDWorkshop({
   initialKind,
-}: {
-  initialKind?: ThreeDAssetKind;
-}) {
+  mode = "worlds",
+}: ThreeDWorkshopProps) {
   const { clientServiceCallers: callers } = useClientServiceCallers();
-  const [kind, setKind] = useState<ThreeDAssetKind>(initialKind ?? "prop");
+  const kind = initialKind ?? "prop";
+  const kindTitle = kindTitles[kind];
+  const isWorldWorkshop = mode === "worlds";
+  const examples = isWorldWorkshop ? worldExamples : assetExamples[kind];
   const [provider, setProvider] = useState<ThreeDProvider>("design");
   const [prompt, setPrompt] = useState(examples[0] ?? "");
   const [name, setName] = useState("");
@@ -58,6 +108,11 @@ export function ThreeDWorkshop({
     prototypes.find((prototype) => prototype.id === selectedId) ??
     prototypes[0];
   const running = jobs.filter((job) => job.state === "running");
+  const visibleAssets = assets.filter((asset) => asset.kind === kind);
+  const visibleJobs = jobs.filter((job) => {
+    if (isWorldWorkshop) return job.prototypeId !== undefined;
+    return job.prototypeId === undefined && job.kind === kind;
+  });
 
   /** Refreshes all category assets, packages and server-persisted job progress. */
   const refresh = useCallback(async () => {
@@ -146,7 +201,7 @@ export function ThreeDWorkshop({
         slot.prompt,
         prototype,
         slot.id,
-        slot.kind === "character" && route === "meshy" ? "design" : route,
+        route,
       );
       let complete = false;
       while (mounted.current && !complete) {
@@ -206,18 +261,22 @@ export function ThreeDWorkshop({
       <div className={styles.layout}>
         <section className={styles.panel}>
           <div className={styles.heading}>
-            <h2>What are we building?</h2>
-            <a href="/?experience=three-d-sandbox">Playground ↗</a>
+            <h2>
+              {isWorldWorkshop ? "Plan a 3D world" : `Create a 3D ${kind}`}
+            </h2>
+            <a href={threeDSandboxHref()}>Playground ↗</a>
           </div>
-          <label>
-            Project or asset name
-            <input
-              maxLength={80}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="The moonlit garden"
-              value={name}
-            />
-          </label>
+          {isWorldWorkshop ? (
+            <label>
+              World name
+              <input
+                maxLength={80}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="The moonlit garden"
+                value={name}
+              />
+            </label>
+          ) : null}
           <label>
             Creative brief
             <textarea
@@ -250,14 +309,12 @@ export function ThreeDWorkshop({
               <option value="demo">Curated demo · no model calls</option>
               <option disabled={!meshyConfigured} value="meshy">
                 Meshy · detailed models{" "}
-                {meshyConfigured ? "" : "(needs backend key)"}
+                {!meshyConfigured ? "(needs backend key)" : ""}
               </option>
             </select>
           </label>
           <p className={styles.hint}>
-            {provider === "meshy"
-              ? "Uses prepaid Meshy credits: approximately 30 per textured model. In-progress provider jobs may remain billable after Stop. Characters use Low-poly AI. Review current Meshy pricing and your account terms."
-              : "Low-poly AI designs editable geometric models. Characters include a simple six-joint rig and five clips. Demo uses curated designs without model calls."}{" "}
+            {generationHint(provider, kind, isWorldWorkshop)}{" "}
             {!meshyConfigured
               ? "For detailed props, set MESHY_API_KEY on the backend and restart it."
               : ""}
@@ -270,85 +327,80 @@ export function ThreeDWorkshop({
             />{" "}
             Ground AI model designs in ProductNow lore
           </label>
-          <div className={styles.actions}>
-            <button
-              className={styles.primary}
-              disabled={Boolean(busy) || !prompt.trim()}
-              onClick={() =>
-                void perform("Planning world…", () => createPackage())
-              }
-              type="button"
-            >
-              Plan a 3D world
-            </button>
-            <button
-              disabled={Boolean(busy)}
-              onClick={() =>
-                void perform("Building demo world…", () => createPackage(true))
-              }
-              type="button"
-            >
-              Try a complete demo
-            </button>
-          </div>
-          <hr />
-          <h3>Or make one asset</h3>
-          <label>
-            Asset type
-            <select
-              onChange={(event) =>
-                setKind(event.target.value as ThreeDAssetKind)
-              }
-              value={kind}
-            >
-              {kinds.map((category) => (
-                <option key={category}>{category}</option>
-              ))}
-            </select>
-          </label>
-          <button
-            className={styles.primary}
-            disabled={
-              Boolean(busy) ||
-              !prompt.trim() ||
-              running.length >= 2 ||
-              (kind === "character" && provider === "meshy")
-            }
-            onClick={() =>
-              void perform("Starting generation…", async () => {
-                await generate(kind, prompt);
-              })
-            }
-            type="button"
-          >
-            Generate {kind}
-          </button>
-          <label className={styles.upload}>
-            Import a .glb
-            <input
-              accept=".glb"
-              disabled={Boolean(busy)}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (!file) return;
-                void perform("Validating GLB…", async () => {
-                  const result = await threeDAssetCaller(callers, kind).ingest({
-                    fileName: file.name,
-                    glbBase64: await readGlbUpload(file),
-                    name: name || file.name.replace(/\.glb$/i, ""),
-                  });
-                  if (isServiceError(result)) throw new Error(result.message);
-                  setPreview(result);
-                });
-                event.target.value = "";
-              }}
-              type="file"
-            />
-          </label>
-          <p className={styles.hint}>
-            Up to 20 MiB. Embedded PNG/JPEG textures, core glTF 2.0 only.
-            Characters need a skin and idle, walk, attack, hit, death clips.
-          </p>
+          {isWorldWorkshop ? (
+            <div className={styles.actions}>
+              <button
+                className={styles.primary}
+                disabled={Boolean(busy) || !prompt.trim()}
+                onClick={() =>
+                  void perform("Planning world…", () => createPackage())
+                }
+                type="button"
+              >
+                Plan world
+              </button>
+              <button
+                disabled={Boolean(busy)}
+                onClick={() =>
+                  void perform("Building demo world…", () =>
+                    createPackage(true),
+                  )
+                }
+                type="button"
+              >
+                Try complete demo
+              </button>
+            </div>
+          ) : (
+            <>
+              <button
+                className={styles.primary}
+                disabled={
+                  Boolean(busy) || !prompt.trim() || running.length >= 2
+                }
+                onClick={() =>
+                  void perform("Starting generation…", async () => {
+                    await generate(kind, prompt);
+                  })
+                }
+                type="button"
+              >
+                Generate {kind}
+              </button>
+              <label className={styles.upload}>
+                Import a {kind} .glb
+                <input
+                  accept=".glb"
+                  disabled={Boolean(busy)}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    void perform("Validating GLB…", async () => {
+                      const result = await threeDAssetCaller(
+                        callers,
+                        kind,
+                      ).ingest({
+                        fileName: file.name,
+                        glbBase64: await readGlbUpload(file),
+                        name: file.name.replace(/\.glb$/i, ""),
+                      });
+                      if (isServiceError(result))
+                        throw new Error(result.message);
+                      setPreview(result);
+                    });
+                    event.target.value = "";
+                  }}
+                  type="file"
+                />
+              </label>
+              <p className={styles.hint}>
+                Up to 20 MiB. Embedded PNG/JPEG textures, core glTF 2.0 only.
+                {kind === "character"
+                  ? " Characters need a skin and idle, walk, attack, hit, and death clips."
+                  : ""}
+              </p>
+            </>
+          )}
           {busy ? (
             <p aria-live="polite" role="status">
               {busy}
@@ -359,7 +411,7 @@ export function ThreeDWorkshop({
               {error}
             </p>
           ) : null}
-          {planningId ? (
+          {isWorldWorkshop && planningId ? (
             <button
               onClick={() =>
                 void callers.threeDWorkshop.cancel({ generationId: planningId })
@@ -371,171 +423,168 @@ export function ThreeDWorkshop({
           ) : null}
         </section>
         <section className={styles.workspace}>
-          <div className={styles.panel}>
-            <div className={styles.heading}>
-              <h2>Your 3D worlds</h2>
-              <select
-                aria-label="Select prototype"
-                onChange={(event) => setSelectedId(event.target.value)}
-                value={selected?.id ?? ""}
-              >
-                <option disabled={true} value="">
-                  Choose a world
-                </option>
-                {prototypes.map((prototype) => (
-                  <option key={prototype.id} value={prototype.id}>
-                    {prototype.name}
+          {isWorldWorkshop ? (
+            <div className={styles.panel}>
+              <div className={styles.heading}>
+                <h2>Your 3D worlds</h2>
+                <select
+                  aria-label="Select prototype"
+                  onChange={(event) => setSelectedId(event.target.value)}
+                  value={selected?.id ?? ""}
+                >
+                  <option disabled={true} value="">
+                    Choose a world
                   </option>
-                ))}
-              </select>
-            </div>
-            {selected ? (
-              <>
-                <p>{selected.objective}</p>
-                <div className={styles.actions}>
-                  <button
-                    className={styles.primary}
-                    disabled={
-                      Boolean(busy) ||
-                      running.some((job) => job.prototypeId === selected.id)
-                    }
-                    onClick={() =>
-                      void perform("Building missing slots…", () =>
-                        buildPackage(selected, provider),
-                      )
-                    }
-                    type="button"
-                  >
-                    Build missing assets
-                  </button>
-                  <a
-                    href={`/?experience=three-d-sandbox&prototype=${selected.id}`}
-                  >
-                    Play this world ↗
-                  </a>
-                  <button
-                    onClick={() => {
-                      const link = document.createElement("a");
-                      const url = URL.createObjectURL(
-                        new Blob([JSON.stringify(selected, null, 2)], {
-                          type: "application/json",
-                        }),
-                      );
-                      link.href = url;
-                      link.download = `${selected.id}.json`;
-                      link.click();
-                      URL.revokeObjectURL(url);
-                    }}
-                    type="button"
-                  >
-                    Export package
-                  </button>
-                </div>
-                <div className={styles.slots}>
-                  {selected.slots.map((slot) => {
-                    const job = running.find(
-                      (entry) =>
-                        entry.prototypeId === selected.id &&
-                        entry.slotId === slot.id,
-                    );
-                    return (
-                      <article className={styles.slot} key={slot.id}>
-                        <div className={styles.heading}>
-                          <strong>{slot.name}</strong>
-                          <span>{slot.kind}</span>
-                        </div>
-                        <p>{slot.prompt}</p>
-                        {slot.asset ? (
-                          <button
-                            className={styles.thumbnailButton}
-                            onClick={() => setPreview(slot.asset)}
-                            type="button"
-                          >
-                            <Image
-                              alt={slot.asset.name}
-                              height={320}
-                              src={slot.asset.thumbnailUrl}
-                              unoptimized={true}
-                              width={320}
-                            />
-                          </button>
-                        ) : (
-                          <div className={styles.emptyPreview}>
-                            {job
-                              ? `${job.stage} · ${Math.round(job.progress)}%`
-                              : "Ready for your model"}
-                          </div>
-                        )}
-                        <div className={styles.actions}>
-                          <button
-                            className={styles.primary}
-                            disabled={
-                              Boolean(busy) ||
-                              Boolean(job) ||
-                              running.length >= 2
-                            }
-                            onClick={() =>
-                              void perform("Starting slot…", async () => {
-                                await generate(
-                                  slot.kind,
-                                  slot.prompt,
-                                  selected,
-                                  slot.id,
-                                  slot.kind === "character" &&
-                                    provider === "meshy"
-                                    ? "design"
-                                    : provider,
-                                );
-                              })
-                            }
-                            type="button"
-                          >
-                            {slot.asset ? "Regenerate" : "Generate"}
-                          </button>
-                          <select
-                            aria-label={`Attach existing ${slot.kind} to ${slot.name}`}
-                            onChange={(event) => {
-                              const assetId = event.target.value;
-                              if (!assetId) return;
-                              void perform("Attaching model…", async () => {
-                                const result =
-                                  await callers.threeDWorkshop.attach({
-                                    assetId,
-                                    prototypeId: selected.id,
-                                    slotId: slot.id,
-                                  });
-                                if (isServiceError(result))
-                                  throw new Error(result.message);
-                              });
-                            }}
-                            value={slot.assetId ?? ""}
-                          >
-                            <option value="">Use existing…</option>
-                            {assets
-                              .filter((asset) => asset.kind === slot.kind)
-                              .map((asset) => (
-                                <option key={asset.id} value={asset.id}>
-                                  {asset.name}
-                                </option>
-                              ))}
-                          </select>
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
-              </>
-            ) : (
-              <div className={styles.emptyPreview}>
-                Start with a creative brief or try the complete demo. Your world
-                will appear here.
+                  {prototypes.map((prototype) => (
+                    <option key={prototype.id} value={prototype.id}>
+                      {prototype.name}
+                    </option>
+                  ))}
+                </select>
               </div>
-            )}
-          </div>
-          {jobs.length ? (
+              {selected ? (
+                <>
+                  <p>{selected.objective}</p>
+                  <div className={styles.actions}>
+                    <button
+                      className={styles.primary}
+                      disabled={
+                        Boolean(busy) ||
+                        running.some((job) => job.prototypeId === selected.id)
+                      }
+                      onClick={() =>
+                        void perform("Building missing slots…", () =>
+                          buildPackage(selected, provider),
+                        )
+                      }
+                      type="button"
+                    >
+                      Build missing assets
+                    </button>
+                    <a href={threeDSandboxHref({ prototype: selected.id })}>
+                      Play this world ↗
+                    </a>
+                    <button
+                      onClick={() => {
+                        const link = document.createElement("a");
+                        const url = URL.createObjectURL(
+                          new Blob([JSON.stringify(selected, null, 2)], {
+                            type: "application/json",
+                          }),
+                        );
+                        link.href = url;
+                        link.download = `${selected.id}.json`;
+                        link.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                      type="button"
+                    >
+                      Export package
+                    </button>
+                  </div>
+                  <div className={styles.slots}>
+                    {selected.slots.map((slot) => {
+                      const job = running.find(
+                        (entry) =>
+                          entry.prototypeId === selected.id &&
+                          entry.slotId === slot.id,
+                      );
+                      return (
+                        <article className={styles.slot} key={slot.id}>
+                          <div className={styles.heading}>
+                            <strong>{slot.name}</strong>
+                            <span>{slot.kind}</span>
+                          </div>
+                          <p>{slot.prompt}</p>
+                          {slot.asset ? (
+                            <button
+                              className={styles.thumbnailButton}
+                              onClick={() => setPreview(slot.asset)}
+                              type="button"
+                            >
+                              <Image
+                                alt={slot.asset.name}
+                                height={320}
+                                src={slot.asset.thumbnailUrl}
+                                unoptimized={true}
+                                width={320}
+                              />
+                            </button>
+                          ) : (
+                            <div className={styles.emptyPreview}>
+                              {job
+                                ? `${job.stage} · ${Math.round(job.progress)}%`
+                                : "Ready for your model"}
+                            </div>
+                          )}
+                          <div className={styles.actions}>
+                            <button
+                              className={styles.primary}
+                              disabled={
+                                Boolean(busy) ||
+                                Boolean(job) ||
+                                running.length >= 2
+                              }
+                              onClick={() =>
+                                void perform("Starting slot…", async () => {
+                                  await generate(
+                                    slot.kind,
+                                    slot.prompt,
+                                    selected,
+                                    slot.id,
+                                    provider,
+                                  );
+                                })
+                              }
+                              type="button"
+                            >
+                              {slot.asset ? "Regenerate" : "Generate"}
+                            </button>
+                            <select
+                              aria-label={`Attach existing ${slot.kind} to ${slot.name}`}
+                              onChange={(event) => {
+                                const assetId = event.target.value;
+                                if (!assetId) return;
+                                void perform("Attaching model…", async () => {
+                                  const result =
+                                    await callers.threeDWorkshop.attach({
+                                      assetId,
+                                      prototypeId: selected.id,
+                                      slotId: slot.id,
+                                    });
+                                  if (isServiceError(result))
+                                    throw new Error(result.message);
+                                });
+                              }}
+                              value={slot.assetId ?? ""}
+                            >
+                              <option value="">Use existing…</option>
+                              {assets
+                                .filter((asset) => asset.kind === slot.kind)
+                                .map((asset) => (
+                                  <option key={asset.id} value={asset.id}>
+                                    {asset.name}
+                                  </option>
+                                ))}
+                            </select>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <div className={styles.emptyPreview}>
+                  Start with a creative brief or try the complete demo. Your
+                  world will appear here.
+                </div>
+              )}
+            </div>
+          ) : null}
+          {visibleJobs.length ? (
             <section className={styles.panel}>
               <h2>Generation desk</h2>
-              {jobs.slice(0, 8).map((job) => (
+              {visibleJobs.slice(0, 8).map((job) => (
                 <div className={styles.job} key={job.generationId}>
                   <div>
                     <strong>
@@ -572,15 +621,14 @@ export function ThreeDWorkshop({
               ))}
             </section>
           ) : null}
-          <section className={styles.panel}>
-            <div className={styles.heading}>
-              <h2>Model library</h2>
-              <span>{assets.length} assets</span>
-            </div>
-            <div className={styles.library}>
-              {assets
-                .filter((asset) => asset.kind === kind)
-                .map((asset) => (
+          {!isWorldWorkshop ? (
+            <section className={styles.panel}>
+              <div className={styles.heading}>
+                <h2>{kindTitle} library</h2>
+                <span>{visibleAssets.length} assets</span>
+              </div>
+              <div className={styles.library}>
+                {visibleAssets.map((asset) => (
                   <article className={styles.asset} key={asset.id}>
                     <button
                       className={styles.thumbnailButton}
@@ -608,7 +656,10 @@ export function ThreeDWorkshop({
                         GLB ↗
                       </a>
                       <a
-                        href={`/?experience=three-d-sandbox&asset=${asset.id}&kind=${asset.kind}`}
+                        href={threeDSandboxHref({
+                          asset: asset.id,
+                          kind: asset.kind,
+                        })}
                       >
                         Try in playground
                       </a>
@@ -628,8 +679,9 @@ export function ThreeDWorkshop({
                     </div>
                   </article>
                 ))}
-            </div>
-          </section>
+              </div>
+            </section>
+          ) : null}
         </section>
       </div>
       {preview && previewInput ? (

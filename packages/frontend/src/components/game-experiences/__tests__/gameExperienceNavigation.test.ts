@@ -5,6 +5,7 @@ import {
 } from "../gameExperienceTypes";
 import {
   getResumeExperienceIds,
+  hasStoredDescentRun,
   hasStoredTowerClimb,
 } from "../resumeAvailability";
 
@@ -54,5 +55,21 @@ describe("experience navigation", () => {
 
     expect(hasStoredTowerClimb(malformedStorage)).toBe(false);
     expect(hasStoredTowerClimb(blockedStorage)).toBe(false);
+  });
+
+  test("offers resume for a versioned Descent autosave", () => {
+    const storage = {
+      getItem: (key: string) =>
+        key === "descent.save.autosave"
+          ? JSON.stringify({
+              format: "descent-sim",
+              state: { layerId: "ashen-gate" },
+              version: 1,
+            })
+          : null,
+    };
+
+    expect(hasStoredDescentRun(storage)).toBe(true);
+    expect([...getResumeExperienceIds(storage)]).toEqual(["descent"]);
   });
 });

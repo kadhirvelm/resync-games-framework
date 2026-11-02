@@ -3,6 +3,7 @@ import type {
   ThreeDSceneEvent,
   ThreeDSceneInput,
 } from "@resync-game-framework/api";
+import { Maximize2, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import styles from "./babylonGame.module.scss";
 import { createModelScene, type ModelSceneHandle } from "./createModelScene";
@@ -36,7 +37,7 @@ export function ModelViewport({
         input,
         (event) => {
           if (event.type === "ready")
-            setMessage("Drag to orbit · scroll to zoom");
+            setMessage("Drag to orbit · scroll or use the zoom controls");
           callback.current?.(event);
         },
         setMessage,
@@ -66,6 +67,40 @@ export function ModelViewport({
       <p aria-live="polite" className={styles.modelStatus}>
         {message}
       </p>
+      {input.player.cameraMode === "orbit" ? (
+        <fieldset className={styles.cameraControls}>
+          <legend className={styles.cameraControlLegend}>
+            Model camera controls
+          </legend>
+          <button
+            aria-label="Zoom out"
+            onClick={() => handle.current?.zoom("out")}
+            title="Zoom out"
+            type="button"
+          >
+            <ZoomOut aria-hidden="true" size={15} />
+            Zoom out
+          </button>
+          <button
+            aria-label="Fit model in view"
+            onClick={() => handle.current?.frameModel()}
+            title="Fit model in view"
+            type="button"
+          >
+            <Maximize2 aria-hidden="true" size={15} />
+            Fit
+          </button>
+          <button
+            aria-label="Zoom in"
+            onClick={() => handle.current?.zoom("in")}
+            title="Zoom in"
+            type="button"
+          >
+            <ZoomIn aria-hidden="true" size={15} />
+            Zoom in
+          </button>
+        </fieldset>
+      ) : null}
       {input.entities.some((entity) => entity.kind === "character") &&
       !state ? (
         <label className={styles.clipControl}>

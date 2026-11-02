@@ -12,6 +12,23 @@ export type AssetClassIcon = ComponentType<{
   size?: number;
 }>;
 
+/**
+ * Which games a generator feeds.
+ * `2d` is flat art for the card climb, `3d` is models, and `both` is shared
+ * by either kind of game.
+ */
+export const ASSET_MEDIUMS = ["2d", "3d", "both"] as const;
+
+/** Picture space a workshop generator belongs to. */
+export type AssetMedium = (typeof ASSET_MEDIUMS)[number];
+
+/** Sidebar section titles, in the order the workshop lists them. */
+export const ASSET_MEDIUM_LABELS: Record<AssetMedium, string> = {
+  "2d": "2D",
+  "3d": "3D",
+  both: "Both",
+};
+
 /** Text for the generate dialog's prompt form. */
 export interface AssetClassFormCopy {
   hint?: string;
@@ -54,11 +71,16 @@ export interface AssetGalleryProps {
  */
 export interface AssetClassDefinition {
   /**
-   * Sidebar group this class is listed under (e.g. "Characters",
-   * "Environments"). Classes sharing a category are grouped together, in
-   * first-seen order, by the workshop's navigation.
+   * Sidebar group this class is listed under inside its medium (e.g.
+   * "Characters", "Environments"). Classes sharing a category are grouped
+   * together, in first-seen order.
    */
   category: string;
+  /**
+   * Workshop section this class is listed under. `2d` and `3d` stay apart
+   * from generators that either kind of game can use.
+   */
+  medium: AssetMedium;
   /** The gallery owns structured generation controls instead of the generic dialog. */
   customGeneration?: boolean;
   dialogDescription: string;

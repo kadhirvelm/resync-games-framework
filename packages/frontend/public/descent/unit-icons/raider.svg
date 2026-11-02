@@ -1,0 +1,9 @@
+<svg aria-label="Raider with twin blades" role="img" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg" >
+  <defs><linearGradient id="bg" x2="0" y2="1"><stop stop-color="#57251f"/><stop offset="1" stop-color="#170d0c"/></linearGradient></defs>
+  <rect fill="url(#bg)" height="92" rx="12" stroke="#d66a45" stroke-width="3" width="92" x="2" y="2" />
+  <circle cx="48" cy="27" fill="#c77c54" r="10" />
+  <path d="M29 74V47l19-10 19 10v27z" fill="#7e3028" stroke="#e17a4c" stroke-width="2"/>
+  <path d="M18 18l60 63M78 18L18 81" stroke="#e6d4ad" stroke-linecap="round" stroke-width="5" />
+  <path d="M14 14l15 5-10 10zM82 14l-15 5 10 10z" fill="#f2dfb6"/>
+  <path d="M28 80h40" stroke="#260f0d" stroke-linecap="round" stroke-width="6" />
+</svg>

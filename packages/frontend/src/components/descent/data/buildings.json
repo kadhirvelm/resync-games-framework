@@ -1,0 +1,284 @@
+{
+  "basePopCap": 100,
+  "buildings": [
+    {
+      "buildTicks": 8,
+      "cost": { "wood": 20 },
+      "dropOff": true,
+      "id": "camp",
+      "job": "Starting hold and drop-off",
+      "maxHp": 400,
+      "name": "Camp",
+      "tier": "Camp"
+    },
+    {
+      "buildTicks": 10,
+      "cost": { "stone": 20, "wood": 30 },
+      "id": "housing",
+      "job": "Raises the population cap",
+      "maxHp": 180,
+      "name": "Housing",
+      "popBonus": 10,
+      "tier": "Camp"
+    },
+    {
+      "buildTicks": 8,
+      "cost": { "wood": 30 },
+      "dropOff": true,
+      "id": "storehouse",
+      "job": "Drop-off and stockpile",
+      "maxHp": 200,
+      "name": "Storehouse",
+      "tier": "Camp"
+    },
+    {
+      "adjacency": [
+        {
+          "bonus": { "amount": 10, "id": "recruit_xp" },
+          "partnerBuilding": "training_yard"
+        }
+      ],
+      "buildTicks": 12,
+      "cost": { "stone": 20, "wood": 40 },
+      "id": "barracks",
+      "job": "Train units",
+      "maxHp": 240,
+      "name": "Barracks",
+      "tier": "Camp",
+      "veinBonus": { "amount": 0.15, "id": "train_speed" }
+    },
+    {
+      "buildTicks": 8,
+      "cost": { "wood": 20 },
+      "id": "training_yard",
+      "job": "Trains recruits beside the Barracks",
+      "maxHp": 120,
+      "name": "Training Yard",
+      "tier": "Camp"
+    },
+    {
+      "auraRadius": 4,
+      "buildTicks": 10,
+      "cost": { "stone": 40, "wood": 20 },
+      "id": "ward_tower",
+      "job": "Defense and vision",
+      "maxHp": 220,
+      "name": "Ward Tower",
+      "overlapBonus": { "amount": 0.1, "id": "ward_damage_aura" },
+      "tier": "Camp"
+    },
+    {
+      "blocksAlly": true,
+      "blocksHorde": true,
+      "buildTicks": 4,
+      "cost": { "stone": 5, "wood": 5 },
+      "id": "wall",
+      "job": "Funnels hordes",
+      "maxHp": 300,
+      "name": "Wall",
+      "tier": "Camp"
+    },
+    {
+      "blocksAlly": true,
+      "blocksHorde": true,
+      "buildTicks": 6,
+      "cost": { "iron": 2, "stone": 8, "wood": 8 },
+      "id": "fire_ward_wall",
+      "job": "Funnels hordes and reduces Ember vent burn nearby",
+      "maxHp": 320,
+      "name": "Fire-ward Wall",
+      "tier": "Camp"
+    },
+    {
+      "blocksAlly": false,
+      "blocksHorde": true,
+      "buildTicks": 5,
+      "cost": { "stone": 10, "wood": 15 },
+      "id": "gate",
+      "job": "Ally passage in a wall",
+      "maxHp": 260,
+      "name": "Gate",
+      "tier": "Camp"
+    },
+    {
+      "buildTicks": 10,
+      "cost": { "stone": 15, "wood": 30 },
+      "flavor": "Quota is a promise.",
+      "id": "mess_hall",
+      "job": "Food and water become rations",
+      "maxHp": 180,
+      "name": "Mess Hall",
+      "ration": {
+        "food": 10,
+        "healthBonus": 0.1,
+        "regenBonus": 0.1,
+        "unitsPerRation": 5,
+        "water": 10,
+        "windowTicks": 180
+      },
+      "tier": "Camp"
+    },
+    {
+      "buildTicks": 10,
+      "cost": { "coin": 10, "wood": 40 },
+      "flavor": "Down is the only forward.",
+      "id": "hell_market",
+      "job": "Trade surplus for coin and shortages",
+      "maxHp": 160,
+      "name": "Hell Market",
+      "tier": "Camp"
+    },
+    {
+      "buildTicks": 8,
+      "cost": { "stone": 15, "wood": 20 },
+      "dropOff": true,
+      "id": "forward_shrine",
+      "job": "Frontier outpost and respawn",
+      "maxHp": 140,
+      "name": "Forward Shrine",
+      "respawn": true,
+      "tier": "Camp"
+    },
+    {
+      "buildTicks": 10,
+      "cost": { "stone": 30, "wood": 20 },
+      "id": "omen_tower",
+      "job": "Shows the next wave class mix",
+      "maxHp": 160,
+      "name": "Omen Tower",
+      "tier": "Camp"
+    },
+    {
+      "buildTicks": 8,
+      "cost": { "wood": 25 },
+      "id": "root_cellar",
+      "job": "Raid-immune food and water trickle",
+      "maxHp": 160,
+      "name": "Root Cellar",
+      "tier": "Camp"
+    },
+    {
+      "buildTicks": 3,
+      "cost": { "wood": 5 },
+      "id": "ward",
+      "job": "Villager ward placeholder",
+      "maxHp": 40,
+      "name": "Ward",
+      "placeholder": true,
+      "tier": "Camp"
+    },
+    {
+      "buildTicks": 3,
+      "cost": { "iron": 2, "wood": 5 },
+      "id": "trap",
+      "job": "Villager trap placeholder",
+      "maxHp": 30,
+      "name": "Trap",
+      "placeholder": true,
+      "tier": "Camp"
+    },
+    {
+      "buildTicks": 16,
+      "cost": { "iron": 20, "stone": 60, "wood": 40 },
+      "id": "hero_hall",
+      "job": "Train and revive heroes",
+      "maxHp": 280,
+      "name": "Hero Hall",
+      "tier": "Stronghold"
+    },
+    {
+      "buildTicks": 16,
+      "cost": { "essence": 10, "stone": 50, "wood": 30 },
+      "id": "cultivation_hall",
+      "job": "Breakthroughs",
+      "maxHp": 260,
+      "name": "Cultivation Hall",
+      "tier": "Stronghold",
+      "veinBonus": { "amount": 0.15, "id": "breakthrough_success" },
+      "veinBonusAtCitadel": { "amount": 0.25, "id": "breakthrough_success" }
+    },
+    {
+      "adjacency": [
+        {
+          "bonus": { "amount": 0.25, "id": "brew_speed" },
+          "partnerNodeType": "spirit_spring"
+        }
+      ],
+      "buildTicks": 14,
+      "cost": { "iron": 10, "stone": 30, "wood": 40 },
+      "id": "alchemy_furnace",
+      "job": "Brew pills",
+      "maxHp": 180,
+      "name": "Alchemy Furnace",
+      "tier": "Stronghold",
+      "veinBonus": { "amount": 0.1, "id": "brew_essence" },
+      "volatileDamage": 40
+    },
+    {
+      "buildTicks": 16,
+      "cost": { "essence": 8, "iron": 20, "stone": 35, "wood": 25 },
+      "id": "ember_forge",
+      "job": "Ashen Gate forge unlock for Ember equipment",
+      "maxHp": 210,
+      "name": "Ember Forge",
+      "placeholder": true,
+      "tier": "Stronghold"
+    },
+    {
+      "adjacency": [
+        {
+          "bonus": { "amount": -0.1, "id": "forge_cost" },
+          "partnerBuilding": "alchemy_furnace"
+        }
+      ],
+      "buildTicks": 16,
+      "cost": { "iron": 40, "stone": 40, "wood": 20 },
+      "id": "artifact_forge",
+      "job": "Forge treasures",
+      "maxHp": 200,
+      "name": "Artifact Forge",
+      "tier": "Stronghold"
+    },
+    {
+      "buildTicks": 14,
+      "cost": { "iron": 15, "stone": 40, "wood": 30 },
+      "id": "deep_mine",
+      "job": "Underground stone, iron, and coin",
+      "maxHp": 220,
+      "name": "Deep Mine",
+      "tier": "Stronghold"
+    },
+    {
+      "buildTicks": 20,
+      "cost": { "essence": 40, "iron": 40, "stone": 80 },
+      "id": "calamity_altar",
+      "job": "Summon one Calamity",
+      "maxHp": 320,
+      "name": "Calamity Altar",
+      "tier": "Citadel"
+    }
+  ],
+  "holdTiers": [
+    { "id": "Camp", "upgradeCost": {}, "upgradeTicks": 0 },
+    {
+      "id": "Stronghold",
+      "upgradeCost": { "stone": 40, "wood": 40 },
+      "upgradeTicks": 20
+    },
+    {
+      "id": "Citadel",
+      "upgradeCost": { "essence": 10, "iron": 30, "stone": 80, "wood": 60 },
+      "upgradeTicks": 30
+    }
+  ],
+  "repairHpPerTick": 8,
+  "trainingCosts": {
+    "adept": { "food": 20, "water": 30 },
+    "breaker": { "food": 40, "water": 20 },
+    "hunter": { "food": 25, "water": 20 },
+    "raider": { "food": 35, "water": 10 },
+    "villager": { "food": 10, "water": 8 },
+    "warden": { "food": 30, "water": 15 }
+  },
+  "workerBuildBonus": 1
+}

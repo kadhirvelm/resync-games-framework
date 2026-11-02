@@ -1,0 +1,10 @@
+<svg aria-label="Hunter with bow and arrow" role="img" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg" >
+  <defs><linearGradient id="bg" x2="0" y2="1"><stop stop-color="#30462d"/><stop offset="1" stop-color="#11150f"/></linearGradient></defs>
+  <rect fill="url(#bg)" height="92" rx="12" stroke="#91b967" stroke-width="3" width="92" x="2" y="2" />
+  <circle cx="43" cy="29" fill="#c4895e" r="10" />
+  <path d="M25 77V49l18-10 17 10v28z" fill="#49633e" stroke="#a9ca75" stroke-width="2"/>
+  <path d="M68 17q18 31 0 62M68 17v62" fill="none" stroke="#d8bb72" stroke-linecap="round" stroke-width="4" />
+  <path d="M36 51h43" stroke="#e7dfb1" stroke-linecap="round" stroke-width="3" />
+  <path d="M79 51l-10-6v12z" fill="#e7dfb1"/>
+  <path d="M27 80h38" stroke="#172014" stroke-linecap="round" stroke-width="6" />
+</svg>

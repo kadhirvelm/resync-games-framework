@@ -6,6 +6,7 @@ import { CardGeneratorAgentModule } from "./agents/card-generator/cardGeneratorA
 import { DungeonCoordinatorAgentModule } from "./agents/dungeon-coordinator/dungeonCoordinatorAgent.module";
 import { EnemyAgentModule } from "./agents/enemy/enemyAgent.module";
 import { SpriteSheetAgentModule } from "./agents/sprite-sheet/spriteSheetAgent.module";
+import { StaticImageAgentModule } from "./agents/static-image/staticImageAgent.module";
 import { MastraCoreModule } from "./mastraCore.module";
 
 /**
@@ -22,6 +23,7 @@ import { MastraCoreModule } from "./mastraCore.module";
     DungeonCoordinatorAgentModule,
     EnemyAgentModule,
     SpriteSheetAgentModule,
+    StaticImageAgentModule,
   ],
   imports: [
     MastraCoreModule,
@@ -32,6 +34,7 @@ import { MastraCoreModule } from "./mastraCore.module";
     DungeonCoordinatorAgentModule,
     EnemyAgentModule,
     SpriteSheetAgentModule,
+    StaticImageAgentModule,
   ],
 })
 export class MastraModule {}

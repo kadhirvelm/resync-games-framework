@@ -1,5 +1,8 @@
 
 .sandbox {
+  --scrollbar-thumb: rgb(184 217 209 / 32%);
+  --scrollbar-thumb-hover: rgb(184 217 209 / 55%);
+
   background:
     radial-gradient(circle at 22% 0%, rgb(63 151 133 / 22%), transparent 34%),
     radial-gradient(circle at 82% 8%, rgb(139 90 184 / 20%), transparent 30%),
@@ -42,6 +45,57 @@
   position: absolute;
   right: 12px;
   top: 12px;
+}
+
+.cameraControls {
+  align-items: center;
+  backdrop-filter: blur(12px);
+  background: rgb(5 20 24 / 82%);
+  border: 1px solid rgb(184 217 209 / 24%);
+  border-radius: 8px;
+  display: flex;
+  gap: 5px;
+  left: 12px;
+  margin: 0;
+  min-width: 0;
+  padding: 5px;
+  position: absolute;
+  top: 12px;
+  z-index: 2;
+
+  button {
+    align-items: center;
+    background: #17343a;
+    border: 1px solid #4d706c;
+    border-radius: 6px;
+    color: #e4f4ef;
+    cursor: pointer;
+    display: inline-flex;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 650;
+    gap: 6px;
+    padding: 7px 9px;
+
+    &:hover {
+      background: #245058;
+      border-color: #86b6aa;
+    }
+
+    &:focus-visible {
+      outline: 2px solid #e7c683;
+      outline-offset: 1px;
+    }
+  }
+}
+
+.cameraControlLegend {
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
 }
 
 .playViewport {

@@ -1,0 +1,126 @@
+{
+  "answers": {
+    "fireWardWall": { "buildingType": "fire_ward_wall", "radius": 2 },
+    "hearthWard": { "buildingType": "hearth_ward", "radius": 7 },
+    "omenTower": {
+      "buildingType": "omen_tower",
+      "radius": 6,
+      "rangeUpgrade": "omen_range",
+      "upgradedRadius": 10
+    },
+    "wardTower": { "buildingType": "ward_tower", "radius": 8 }
+  },
+  "hazards": {
+    "cold": { "gatherMultiplier": 0.8, "kind": "cold", "moveMultiplier": 0.8 },
+    "ember_vents": {
+      "burnPerSecond": 4,
+      "fireWardMitigation": 0.75,
+      "kind": "ember_vents"
+    },
+    "fog": { "kind": "fog", "visionMultiplier": 0.5 },
+    "lifedrain": {
+      "essencePerKill": 1,
+      "healingMultiplier": 0.5,
+      "immuneSchool": "blood",
+      "kind": "lifedrain"
+    }
+  },
+  "layers": [
+    {
+      "bossName": "Cinderjaw",
+      "bossTitle": "Gatekeeper",
+      "essenceGrade": 1,
+      "faction": "Imp Swarm",
+      "favoredEffect": "effect_damage",
+      "hazardRotation": null,
+      "hazards": ["ember_vents"],
+      "id": "ashen_gate",
+      "loreBeat": "The horde is starving, not organized.",
+      "name": "Ashen Gate",
+      "order": 1,
+      "realmCap": "Sworn",
+      "schoolModifiers": { "blood": 1, "ember": 1.25, "rime": 0.85 },
+      "unlocks": ["ember_forge", "fire_ward_wall"],
+      "ventVolumes": [
+        { "radius": 2.25, "x": 22, "y": 14 },
+        { "radius": 2.5, "x": 29, "y": 20 },
+        { "radius": 2.25, "x": 35, "y": 27 }
+      ]
+    },
+    {
+      "bossName": "Marshal Orrec Vane",
+      "bossTitle": "Bone Warden",
+      "essenceGrade": 2,
+      "faction": "Bone Legion",
+      "favoredEffect": "lifesteal",
+      "hazardRotation": null,
+      "hazards": ["fog"],
+      "id": "bone_wastes",
+      "loreBeat": "The undead wear Hold colors. They were our soldiers.",
+      "name": "Bone Wastes",
+      "order": 2,
+      "realmCap": "Veteran",
+      "schoolModifiers": { "blood": 1.25, "ember": 0.85, "rime": 1 },
+      "unlocks": ["bone_reclaimer", "omen_range"],
+      "ventVolumes": []
+    },
+    {
+      "bossName": "Queen Isolde",
+      "bossTitle": "Rime Matron",
+      "essenceGrade": 4,
+      "faction": "Frostbound",
+      "favoredEffect": "shield",
+      "hazardRotation": null,
+      "hazards": ["cold"],
+      "id": "frozen_pit",
+      "loreBeat": "The Frostbound remember the Ember Compact, and say so.",
+      "name": "Frozen Pit",
+      "order": 3,
+      "realmCap": "Veteran",
+      "schoolModifiers": { "blood": 0.85, "ember": 1, "rime": 1.25 },
+      "unlocks": ["hearth_ward", "frost_treasures", "heavy_siege"],
+      "ventVolumes": []
+    },
+    {
+      "bossName": "Maw-of-Tides",
+      "bossTitle": "Crimson Tyrant",
+      "essenceGrade": 8,
+      "faction": "Drowned Wraiths",
+      "favoredEffect": "lifesteal",
+      "hazardRotation": null,
+      "hazards": ["lifedrain"],
+      "id": "blood_sea",
+      "loreBeat": "The Sea is the harvest grown aware.",
+      "name": "Blood Sea",
+      "order": 4,
+      "realmCap": "Champion",
+      "schoolModifiers": { "blood": 1.25, "ember": 1, "rime": 0.85 },
+      "unlocks": ["calamity_altar"],
+      "ventVolumes": []
+    },
+    {
+      "bossName": "The Warden of Layers",
+      "bossTitle": "Hell King",
+      "essenceGrade": 16,
+      "faction": "Combined hordes",
+      "favoredEffect": "none",
+      "hazardRotation": {
+        "hazards": ["ember_vents", "fog", "cold", "lifedrain"],
+        "periodSeconds": 180
+      },
+      "hazards": [],
+      "id": "throne_of_hell",
+      "loreBeat": "The furnace can be shut off, at a cost.",
+      "name": "Throne of Hell",
+      "order": 5,
+      "realmCap": "Ascended",
+      "schoolModifiers": { "blood": 1, "ember": 1, "rime": 1 },
+      "unlocks": ["ascension"],
+      "ventVolumes": [
+        { "radius": 1.5, "x": 16, "y": 16 },
+        { "radius": 1.5, "x": 32, "y": 24 }
+      ]
+    }
+  ],
+  "version": 1
+}

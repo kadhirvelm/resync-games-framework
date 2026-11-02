@@ -1,0 +1,405 @@
+{
+  "layers": [
+    {
+      "id": "ashen_gate",
+      "lifestealClasses": [],
+      "siegeSwarmPortion": 0,
+      "waves": [
+        {
+          "composition": [
+            {
+              "classId": "raider",
+              "count": 2,
+              "statScale": 0.45
+            }
+          ],
+          "id": "ashen_scout",
+          "spawnAtSeconds": 90,
+          "type": "scout"
+        },
+        {
+          "composition": [
+            {
+              "classId": "raider",
+              "count": 5,
+              "statScale": 0.7
+            }
+          ],
+          "id": "ashen_swarm",
+          "spawnAtSeconds": 210,
+          "type": "swarm"
+        },
+        {
+          "composition": [
+            {
+              "classId": "raider",
+              "count": 3
+            }
+          ],
+          "elite": {
+            "affix": "summoner",
+            "classId": "raider"
+          },
+          "id": "ashen_elite_summoner",
+          "spawnAtSeconds": 330,
+          "type": "elite"
+        },
+        {
+          "composition": [
+            {
+              "classId": "raider",
+              "count": 3
+            },
+            {
+              "classId": "hunter",
+              "count": 2
+            }
+          ],
+          "elite": {
+            "affix": "armored",
+            "classId": "warden"
+          },
+          "id": "ashen_elite_armored",
+          "spawnAtSeconds": 450,
+          "type": "elite"
+        },
+        {
+          "bossId": "cinderjaw",
+          "composition": [
+            {
+              "classId": "raider",
+              "count": 4
+            }
+          ],
+          "id": "ashen_boss",
+          "spawnAtSeconds": 570,
+          "type": "boss"
+        }
+      ]
+    },
+    {
+      "id": "bone_wastes",
+      "lifestealClasses": [],
+      "siegeSwarmPortion": 0,
+      "waves": [
+        {
+          "composition": [
+            {
+              "classId": "warden",
+              "count": 3
+            },
+            {
+              "classId": "hunter",
+              "count": 4
+            }
+          ],
+          "id": "bone_scout",
+          "spawnAtSeconds": 90,
+          "type": "scout"
+        },
+        {
+          "composition": [
+            {
+              "classId": "warden",
+              "count": 8
+            },
+            {
+              "classId": "hunter",
+              "count": 12
+            }
+          ],
+          "id": "bone_swarm",
+          "spawnAtSeconds": 180,
+          "type": "swarm"
+        },
+        {
+          "composition": [
+            {
+              "classId": "warden",
+              "count": 4
+            },
+            {
+              "classId": "hunter",
+              "count": 4
+            }
+          ],
+          "elite": {
+            "affix": "berserker",
+            "classId": "hunter"
+          },
+          "id": "bone_elite_berserker",
+          "spawnAtSeconds": 300,
+          "type": "elite"
+        },
+        {
+          "bossId": "marshal_orrec_vane",
+          "composition": [
+            {
+              "classId": "warden",
+              "count": 4
+            },
+            {
+              "classId": "hunter",
+              "count": 6
+            }
+          ],
+          "id": "bone_boss",
+          "spawnAtSeconds": 450,
+          "type": "boss"
+        }
+      ]
+    },
+    {
+      "id": "frozen_pit",
+      "lifestealClasses": [],
+      "siegeSwarmPortion": 0.25,
+      "waves": [
+        {
+          "composition": [
+            {
+              "classId": "warden",
+              "count": 4
+            },
+            {
+              "classId": "adept",
+              "count": 2
+            }
+          ],
+          "id": "pit_scout",
+          "spawnAtSeconds": 90,
+          "type": "scout"
+        },
+        {
+          "composition": [
+            {
+              "classId": "warden",
+              "count": 8
+            },
+            {
+              "classId": "adept",
+              "count": 6
+            },
+            {
+              "classId": "breaker",
+              "count": 5
+            }
+          ],
+          "id": "pit_swarm",
+          "spawnAtSeconds": 180,
+          "type": "swarm"
+        },
+        {
+          "composition": [
+            {
+              "classId": "warden",
+              "count": 2
+            },
+            {
+              "classId": "adept",
+              "count": 2
+            }
+          ],
+          "elite": {
+            "affix": "armored",
+            "classId": "warden"
+          },
+          "id": "pit_elite_armored",
+          "spawnAtSeconds": 300,
+          "type": "elite"
+        },
+        {
+          "bossId": "queen_isolde",
+          "composition": [
+            {
+              "classId": "warden",
+              "count": 4
+            },
+            {
+              "classId": "adept",
+              "count": 4
+            }
+          ],
+          "id": "pit_boss",
+          "spawnAtSeconds": 450,
+          "type": "boss"
+        }
+      ]
+    },
+    {
+      "id": "blood_sea",
+      "lifestealClasses": ["raider"],
+      "siegeSwarmPortion": 0.25,
+      "waves": [
+        {
+          "composition": [
+            {
+              "classId": "hunter",
+              "count": 3
+            },
+            {
+              "classId": "raider",
+              "count": 3
+            }
+          ],
+          "id": "sea_scout",
+          "spawnAtSeconds": 90,
+          "type": "scout"
+        },
+        {
+          "composition": [
+            {
+              "classId": "hunter",
+              "count": 8
+            },
+            {
+              "classId": "raider",
+              "count": 7
+            },
+            {
+              "classId": "breaker",
+              "count": 5
+            }
+          ],
+          "id": "sea_swarm",
+          "spawnAtSeconds": 180,
+          "type": "swarm"
+        },
+        {
+          "composition": [
+            {
+              "classId": "hunter",
+              "count": 4
+            },
+            {
+              "classId": "raider",
+              "count": 6
+            }
+          ],
+          "elite": {
+            "affix": "siphon",
+            "classId": "raider"
+          },
+          "id": "sea_elite_siphon",
+          "spawnAtSeconds": 300,
+          "type": "elite"
+        },
+        {
+          "bossId": "maw_of_tides",
+          "composition": [
+            {
+              "classId": "hunter",
+              "count": 4
+            },
+            {
+              "classId": "raider",
+              "count": 6
+            }
+          ],
+          "id": "sea_boss",
+          "spawnAtSeconds": 450,
+          "type": "boss"
+        }
+      ]
+    },
+    {
+      "id": "throne_of_hell",
+      "lifestealClasses": [],
+      "siegeSwarmPortion": 0.25,
+      "waves": [
+        {
+          "composition": [
+            {
+              "classId": "warden",
+              "count": 3
+            }
+          ],
+          "id": "throne_scout",
+          "spawnAtSeconds": 90,
+          "type": "scout"
+        },
+        {
+          "composition": [
+            {
+              "classId": "warden",
+              "count": 2
+            },
+            {
+              "classId": "hunter",
+              "count": 4
+            },
+            {
+              "classId": "raider",
+              "count": 3
+            },
+            {
+              "classId": "breaker",
+              "count": 4
+            },
+            {
+              "classId": "adept",
+              "count": 2
+            }
+          ],
+          "id": "throne_swarm",
+          "spawnAtSeconds": 180,
+          "type": "swarm"
+        },
+        {
+          "composition": [
+            {
+              "classId": "warden",
+              "count": 1
+            },
+            {
+              "classId": "hunter",
+              "count": 1
+            },
+            {
+              "classId": "raider",
+              "count": 1
+            },
+            {
+              "classId": "adept",
+              "count": 1
+            }
+          ],
+          "elite": {
+            "affix": "armored",
+            "classId": "breaker"
+          },
+          "id": "throne_elite_armored",
+          "spawnAtSeconds": 300,
+          "type": "elite"
+        },
+        {
+          "bossId": "warden_of_layers",
+          "composition": [
+            {
+              "classId": "warden",
+              "count": 1
+            },
+            {
+              "classId": "hunter",
+              "count": 1
+            },
+            {
+              "classId": "raider",
+              "count": 1
+            },
+            {
+              "classId": "breaker",
+              "count": 1
+            },
+            {
+              "classId": "adept",
+              "count": 1
+            }
+          ],
+          "id": "throne_boss",
+          "spawnAtSeconds": 450,
+          "type": "boss"
+        }
+      ]
+    }
+  ]
+}

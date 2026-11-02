@@ -1,0 +1,61 @@
+{
+  "note": "Economy owns brewing production. Cultivation owns feeding effects. Ingredient amounts are placeholders.",
+  "recipes": [
+    {
+      "brewTicks": 8,
+      "id": "body_pill",
+      "ingredients": { "essence": 1, "spirit_herbs": 2, "water": 2 },
+      "name": "Body Pill"
+    },
+    {
+      "brewTicks": 8,
+      "id": "spirit_pill",
+      "ingredients": { "essence": 1, "spirit_herbs": 2, "water": 2 },
+      "name": "Spirit Pill"
+    },
+    {
+      "brewTicks": 8,
+      "id": "wind_pill",
+      "ingredients": { "essence": 1, "spirit_herbs": 2, "water": 2 },
+      "name": "Wind Pill"
+    },
+    {
+      "brewTicks": 12,
+      "id": "ember_dao_pill",
+      "ingredients": { "essence": 3, "spirit_herbs": 3, "water": 3 },
+      "name": "Ember Dao Pill",
+      "school": "ember"
+    },
+    {
+      "brewTicks": 12,
+      "id": "rime_dao_pill",
+      "ingredients": { "essence": 3, "spirit_herbs": 3, "water": 3 },
+      "name": "Rime Dao Pill",
+      "school": "rime"
+    },
+    {
+      "brewTicks": 12,
+      "id": "blood_dao_pill",
+      "ingredients": { "essence": 3, "spirit_herbs": 3, "water": 3 },
+      "name": "Blood Dao Pill",
+      "school": "blood"
+    },
+    {
+      "brewTicks": 8,
+      "id": "battle_pill",
+      "ingredients": { "essence": 1, "iron": 2, "spirit_herbs": 2, "water": 2 },
+      "name": "Battle Pill"
+    },
+    {
+      "brewTicks": 16,
+      "id": "breakthrough_pill",
+      "ingredients": {
+        "coin": 10,
+        "essence": 6,
+        "spirit_herbs": 4,
+        "water": 4
+      },
+      "name": "Breakthrough Pill"
+    }
+  ]
+}

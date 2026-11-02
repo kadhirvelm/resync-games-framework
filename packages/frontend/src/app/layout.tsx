@@ -1,6 +1,7 @@
 import { ProductNowProvider } from "@/components/productNow/ProductNowProvider";
 import { Theme } from "@/lib/radix/Theme";
 import "@radix-ui/themes/styles.css";
+import "@/styles/scrollbars.css";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import clsx from "clsx";

@@ -12,6 +12,8 @@ import {
   PlayableCardServiceDefinition,
   SpriteSheetServiceApi,
   SpriteSheetServiceDefinition,
+  StaticImageServiceApi,
+  StaticImageServiceDefinition,
 } from "./services/assetClasses";
 import {
   type ThreeDAssetServiceApi,
@@ -50,6 +52,7 @@ export type AvailableServices = {
   productNowLore: ProductNowLoreServiceApi;
   productNowMcp: ProductNowMcpServiceApi;
   spriteSheet: SpriteSheetServiceApi;
+  staticImage: StaticImageServiceApi;
 };
 
 export type AvailableServicesDefinition = {
@@ -67,6 +70,7 @@ export const AVAILABLE_SERVICES: AvailableServicesDefinition = {
   productNowLore: ProductNowLoreServiceDefinition,
   productNowMcp: ProductNowMcpServiceDefinition,
   spriteSheet: SpriteSheetServiceDefinition,
+  staticImage: StaticImageServiceDefinition,
   threeDCharacter: ThreeDCharacterServiceDefinition,
   threeDEnvironment: ThreeDEnvironmentServiceDefinition,
   threeDProp: ThreeDPropServiceDefinition,

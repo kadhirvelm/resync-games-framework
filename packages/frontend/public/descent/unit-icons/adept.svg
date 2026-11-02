@@ -1,0 +1,10 @@
+<svg aria-label="Adept with a spirit staff" role="img" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg" >
+  <defs><linearGradient id="bg" x2="0" y2="1"><stop stop-color="#244c55"/><stop offset="1" stop-color="#0d1518"/></linearGradient><radialGradient id="orb"><stop stop-color="#e8ffff"/><stop offset=".45" stop-color="#66d9e8"/><stop offset="1" stop-color="#28748a"/></radialGradient></defs>
+  <rect fill="url(#bg)" height="92" rx="12" stroke="#64cbd6" stroke-width="3" width="92" x="2" y="2" />
+  <circle cx="41" cy="29" fill="#c88a62" r="10" />
+  <path d="M22 77V49l19-10 19 10v28z" fill="#ded4b6" stroke="#7dd5dd" stroke-width="2"/>
+  <path d="M26 54l15 10 15-10" fill="none" stroke="#4fb9c6" stroke-width="5"/>
+  <path d="M70 25v59" stroke="#6bb9c8" stroke-linecap="round" stroke-width="5" />
+  <circle cx="70" cy="19" fill="url(#orb)" r="12" stroke="#d9ffff" stroke-width="2"/>
+  <path d="M70 3v8M54 19h8M78 19h8" stroke="#d9ffff" stroke-linecap="round" stroke-width="3" />
+</svg>

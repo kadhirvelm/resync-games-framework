@@ -94,6 +94,7 @@ export const DUNGEON_ASSET_CLASS: AssetClassDefinition = {
   generateButtonLabel: "+ New dungeon",
   Icon: Castle,
   id: DUNGEON_ASSET_CLASS_ID,
+  medium: "2d",
   subtitle: "dungeon package",
   tabLabel: "Dungeons",
 };

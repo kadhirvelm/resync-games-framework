@@ -5,4 +5,5 @@ export * from "./cardCharacter";
 export * from "./enemy";
 export * from "./playableCard";
 export * from "./spriteSheet";
+export * from "./staticImage";
 export * from "./threeD";
