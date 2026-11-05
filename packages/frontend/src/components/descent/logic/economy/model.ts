@@ -4,6 +4,7 @@
  * them with the world.
  */
 
+import type { CircleVolume } from "../layers/layerTypes";
 import type {
   BuildingState,
   ClassId,
@@ -45,16 +46,23 @@ export interface CarryLoad {
 export type VillagerTask =
   | { buildingId: string; kind: "build" }
   | { buildingId: string; kind: "carry" }
+  | { buildingId: string; kind: "harvest" }
   | { buildingId: string; kind: "garrison" }
   | { gatherTicksLeft: number; kind: "gather"; nodeId: string }
   | { kind: "move"; x: number; y: number }
-  | { buildingId: string; kind: "repair" };
+  | { buildingId: string; kind: "repair" }
+  | { buildingId: string; kind: "work" };
 
 /** One furnace batch. Progress is in the same units as `required`. */
 export interface BrewJob {
   pillId: string;
   progress: number;
   required: number;
+}
+
+/** One automatic building conversion whose inputs have already been paid. */
+export interface ProductionJob {
+  progress: number;
 }
 
 /** Unit fields this chunk adds on top of `UnitState`. */
@@ -69,6 +77,8 @@ export interface EconomyUnit extends UnitState {
   preferredNodeId?: string | null;
   realmId: RealmId | null;
   task: VillagerTask | null;
+  /** Producer the player sent this villager to work or harvest; it returns there after each load and after shelter. */
+  workplaceId?: string | null;
   /** Nodes and buildings this villager could not path to, skipped until `untilTick`. */
   unreachable?: UnreachableTarget[];
 }
@@ -91,6 +101,7 @@ export interface EconomyBuilding extends BuildingState {
   maxHp: number;
   onSpiritVein: boolean;
   placeholder: boolean;
+  production: ProductionJob | null;
   tier: HoldTier;
 }
 
@@ -106,6 +117,7 @@ export interface EconomyBuildingView extends BuildingState {
   maxHp: number;
   onSpiritVein: boolean;
   placeholder: boolean;
+  production: ProductionJob | null;
   tier: HoldTier;
   x: number;
   y: number;
@@ -180,6 +192,8 @@ export interface EconomyHost {
   readonly economy: EconomyMeta;
   /** @returns The current layer id, or null before the first descent. */
   getLayerId(): string | null;
+  /** @returns Vent disks that burn in this world; empty when none are active. */
+  getVentVolumes(): readonly CircleVolume[];
   readonly map: MapBounds;
   readonly resources: ResourceStockpile;
   /** @param layerId - Layer whose ground and prices now apply. */

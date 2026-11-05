@@ -37,12 +37,14 @@ export function insideMap(
 
 /**
  * Walks one cell toward `goal` on passable ground.
- * Already being adjacent, or having no path, returns null.
+ * Already being within reach, or having no path, returns null.
  * @param from - Cell the unit occupies
  * @param goal - Cell the unit is trying to reach
  * @param passable - Whether a cell can be entered
  * @param width - Map width
  * @param height - Map height
+ * @param reach - Chebyshev distance from `goal` that counts as arrived;
+ *   1 means beside it, more means beside a building's wider square
  * @returns The next cell, or null when no step is needed or possible
  */
 export function nextStep(
@@ -51,8 +53,9 @@ export function nextStep(
   passable: (x: number, y: number) => boolean,
   width: number,
   height: number,
+  reach = 1,
 ): Point | null {
-  if (chebyshev(from, goal) <= 1) return null;
+  if (chebyshev(from, goal) <= reach) return null;
   const startKey = keyOf(from);
   const previous = new Map<string, string | null>();
   previous.set(startKey, null);
@@ -64,10 +67,7 @@ export function nextStep(
     if (!current) continue;
     const step = expand(
       current,
-      goal,
-      passable,
-      width,
-      height,
+      { goal, height, passable, reach, width },
       startKey,
       previous,
       queue,
@@ -77,14 +77,20 @@ export function nextStep(
   return null;
 }
 
+/** Fixed inputs of one breadth-first search. */
+interface SearchFrame {
+  goal: Point;
+  height: number;
+  passable: (x: number, y: number) => boolean;
+  reach: number;
+  width: number;
+}
+
 /**
  * Adds the passable neighbors of `current` and returns a path when one of
  * them is already close enough to the goal.
  * @param current - Cell being expanded
- * @param goal - Destination
- * @param passable - Whether a cell can be entered
- * @param width - Map width
- * @param height - Map height
+ * @param frame - Goal, reach, passability, and map size
  * @param startKey - Key of the original cell
  * @param previous - Parent key of each visited cell
  * @param queue - Breadth-first queue, appended in place
@@ -92,14 +98,12 @@ export function nextStep(
  */
 function expand(
   current: Point,
-  goal: Point,
-  passable: (x: number, y: number) => boolean,
-  width: number,
-  height: number,
+  frame: SearchFrame,
   startKey: string,
   previous: Map<string, string | null>,
   queue: Point[],
 ): Point | null {
+  const { goal, height, passable, reach, width } = frame;
   for (const dir of DIRS) {
     const next = { x: current.x + dir.x, y: current.y + dir.y };
     if (!insideMap(next, width, height)) continue;
@@ -107,7 +111,7 @@ function expand(
     if (previous.has(nextKey)) continue;
     if (!passable(next.x, next.y)) continue;
     previous.set(nextKey, keyOf(current));
-    if (chebyshev(next, goal) <= 1)
+    if (chebyshev(next, goal) <= reach)
       return firstStep(previous, startKey, nextKey);
     queue.push(next);
   }

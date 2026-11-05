@@ -9,7 +9,7 @@ import type {
 
 export type { ClassId, RankTitle, ResourceId, SchoolId };
 
-/** The five classes that participate in the combat counter matrix. */
+/** The trainable classes that participate in combat. */
 export type CombatClassId = Exclude<ClassId, "villager">;
 
 /** A deterministic point in simulation space. */
@@ -121,6 +121,8 @@ export interface CombatUnit {
 /** A destructible wall or building target. */
 export interface CombatBuilding {
   armor: number;
+  /** Distance from the center to the building's edge; attackers reach the edge. */
+  bodyRadius?: number;
   factionId: string;
   hitPoints: number;
   id: string;

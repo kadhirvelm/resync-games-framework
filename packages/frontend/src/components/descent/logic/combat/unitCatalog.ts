@@ -4,6 +4,7 @@ import type { CombatClassId, RankTitle, UnitDefinition } from "./types";
 const COMBAT_CLASSES: readonly CombatClassId[] = [
   "warden",
   "hunter",
+  "rider",
   "raider",
   "breaker",
   "adept",
@@ -41,7 +42,7 @@ function parseRankTitle(value: string): RankTitle {
   throw new Error(`Unknown Descent rank title: ${value}`);
 }
 
-/** Data-driven definitions for the five trainable combat classes. */
+/** Data-driven definitions for the trainable combat classes. */
 export const UNIT_DEFINITIONS: readonly UnitDefinition[] = unitData.map(
   (definition): UnitDefinition => ({
     ...definition,

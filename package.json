@@ -17,6 +17,7 @@
   "private": true,
   "scripts": {
     "assets:descent": "bun run scripts/generate-descent-assets.ts",
+    "assets:descent:audio": "bun run scripts/generate-descent-audio.ts",
     "build": "turbo run build",
     "check": "turbo run check",
     "ci": "turbo run ci",

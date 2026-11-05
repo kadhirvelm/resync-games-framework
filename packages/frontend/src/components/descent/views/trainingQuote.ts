@@ -1,8 +1,11 @@
 import { MAX_QUEUE, SHIFT_TRAIN_COUNT } from "../logic/slice/sliceTraining";
+import { type CostLine, costLineFrom } from "./costLine";
 import type { TrainReadout } from "./presentation";
 
 /** The batch a shift-click can actually buy. */
 export interface TrainBatchQuote {
+  /** Price of the whole batch, for the icon cost row. */
+  cost: CostLine;
   count: number;
   detail: string;
 }
@@ -48,5 +51,9 @@ export function shiftTrainQuote(
   if (waterCost > 0) parts.push(`Water ${waterCost * count}`);
   const seconds = Math.round(option.seconds ?? 0);
   if (seconds > 0) parts.push(`${seconds}s each`);
-  return { count, detail: parts.join(" · ") };
+  const cost = costLineFrom(
+    { food: foodCost * count, water: waterCost * count },
+    { count, pop: popCost * count, seconds, secondsEach: true },
+  );
+  return { cost, count, detail: parts.join(" · ") };
 }

@@ -12,7 +12,9 @@ import {
   listDeepWorkDefs,
   listMarketLayers,
   listResources,
+  pillRecipe,
   populationWeight,
+  resourceDef,
 } from "../index";
 
 /**
@@ -136,7 +138,7 @@ describe("Descent economy", () => {
       units: [villager("villager-food", 1, 0), villager("villager-wood", 0, 1)],
     });
 
-    sim.step(5);
+    sim.step(resourceDef("food")?.gatherTicks ?? 1);
 
     const stock = sim.getStockpile();
     expect(stock.food).toBeGreaterThan(0);
@@ -162,7 +164,7 @@ describe("Descent economy", () => {
       units: [villager("porter", 0, 0)],
     });
 
-    sim.step(5);
+    sim.step(resourceDef("food")?.gatherTicks ?? 1);
 
     expect(sim.getStockpile().food).toBe(0);
     expect(unitById(sim.listUnits(), "porter").carry?.resourceId).toBe("food");
@@ -183,13 +185,13 @@ describe("Descent economy", () => {
     sim.enqueue({
       buildingType: "barracks",
       type: "place_building",
-      x: 8,
-      y: 2,
+      x: 12,
+      y: 4,
     });
     sim.step();
 
     const onVein = buildingAt(sim.listBuildings(), 4, 4);
-    const offVein = buildingAt(sim.listBuildings(), 8, 2);
+    const offVein = buildingAt(sim.listBuildings(), 12, 4);
     expect(sim.isOnSpiritVein(onVein.id)).toBe(true);
     expect(sim.isOnSpiritVein(offVein.id)).toBe(false);
     expect(onVein.bonuses.vein?.id).toBe("train_speed");
@@ -247,9 +249,16 @@ describe("Descent economy", () => {
       type: "brew_pill",
     });
     sim.enqueue({ furnaceId: "plain", pillId: "body_pill", type: "brew_pill" });
-    sim.step(7);
+    const required = pillRecipe("body_pill")?.brewTicks ?? 0;
+    let progress = 0;
+    let boostedSteps = 0;
+    while (progress < required) {
+      progress += 1.25;
+      boostedSteps += 1;
+    }
+    sim.step(boostedSteps);
     expect(sim.getItemCount("body_pill")).toBe(1);
-    sim.step(1);
+    sim.step(required - boostedSteps);
     expect(sim.getItemCount("body_pill")).toBe(2);
   });
 
@@ -365,7 +374,7 @@ describe("Descent economy", () => {
       tier: "Stronghold",
     });
     expect(sim.dig("mine")).toBe(true);
-    sim.step(40);
+    sim.step(level.digTicks + level.yieldEveryTicks + 4);
 
     const stock = sim.getStockpile();
     const work = sim
@@ -414,7 +423,7 @@ describe("Descent economy", () => {
         },
       ],
     });
-    sim.step(4);
+    sim.step(deepWorkDef("root_cellar")?.depths[0]?.yieldEveryTicks ?? 1);
     expect(sim.getStockpile().food).toBeGreaterThan(0);
     expect(sim.getStockpile().water).toBeGreaterThan(0);
     expect(sim.listNodes()[0]?.remaining).toBe(15);
@@ -501,13 +510,13 @@ describe("Descent economy", () => {
     sim.enqueue({
       buildingType: "barracks",
       type: "place_building",
-      x: 1,
-      y: 1,
+      x: 2,
+      y: 2,
     });
     sim.enqueue({
       buildingType: "alchemy_furnace",
       type: "place_building",
-      x: 3,
+      x: 6,
       y: 1,
     });
     sim.step();
@@ -528,14 +537,14 @@ describe("Descent economy", () => {
     sim.enqueue({
       buildingType: "alchemy_furnace",
       type: "place_building",
-      x: 3,
+      x: 6,
       y: 1,
     });
     sim.enqueue({
       buildingType: "calamity_altar",
       type: "place_building",
-      x: 5,
-      y: 1,
+      x: 10,
+      y: 2,
     });
     sim.step();
     expect(
@@ -555,8 +564,8 @@ describe("Descent economy", () => {
     sim.enqueue({
       buildingType: "calamity_altar",
       type: "place_building",
-      x: 5,
-      y: 1,
+      x: 10,
+      y: 2,
     });
     sim.step();
     expect(
@@ -603,7 +612,7 @@ describe("Descent economy", () => {
     expect(sim.isCellPassable(1, 1, "ally")).toBe(true);
     expect(sim.isCellPassable(1, 1, "horde")).toBe(false);
     expect(sim.isCellPassable(1, 0, "ally")).toBe(false);
-    sim.step(20);
+    sim.step((resourceDef("food")?.gatherTicks ?? 1) + 12);
     expect(sim.getStockpile().food).toBeGreaterThan(0);
   });
 
@@ -636,7 +645,7 @@ describe("Descent economy", () => {
     expect(sim.listNodes()[0]?.remaining).toBe(40);
 
     sim.releaseVillagers();
-    sim.step(8);
+    sim.step((resourceDef("food")?.gatherTicks ?? 1) + 4);
     expect(sim.getStockpile().food).toBeGreaterThan(0);
   });
 

@@ -8,6 +8,8 @@ const ELEVENLABS_ORIGIN = "https://api.elevenlabs.io";
 /** mp3 at 128kbps, available without a higher ElevenLabs tier. */
 const OUTPUT_FORMAT = "mp3_44100_128";
 const MIN_BYTES = 1000;
+/** Sound Generation rejects text longer than 450 characters. */
+const SOUND_PROMPT_MAX_LENGTH = 450;
 
 /** One render request for the ElevenLabs client. */
 export interface ElevenLabsRequest {
@@ -48,13 +50,26 @@ export function elevenLabsCall(request: ElevenLabsRequest): ElevenLabsCall {
       url: `${ELEVENLABS_ORIGIN}/v1/music?output_format=${OUTPUT_FORMAT}`,
     };
   }
+  return elevenLabsSoundGenerationCall(request);
+}
+
+/**
+ * Builds the Sound Generation request used for effects, ambience, and the
+ * paid-plan fallback for music beds.
+ * @param request - Role, cue, and prompt
+ * @returns ElevenLabs sound-generation call
+ */
+function elevenLabsSoundGenerationCall(
+  request: ElevenLabsRequest,
+): ElevenLabsCall {
+  const seconds = AUDIO_CUE_SECONDS[request.cue];
   return {
     body: {
       duration_seconds: clamp(seconds, 0.5, 30),
-      loop: request.role === "ambience",
+      loop: request.role !== "effect",
       model_id: "eleven_text_to_sound_v2",
       prompt_influence: 0.5,
-      text: request.prompt,
+      text: request.prompt.slice(0, SOUND_PROMPT_MAX_LENGTH),
     },
     url: `${ELEVENLABS_ORIGIN}/v1/sound-generation?output_format=${OUTPUT_FORMAT}`,
   };
@@ -81,8 +96,8 @@ export async function requestElevenLabsAudio(
       "ELEVENLABS_API_KEY is not set. Add it to the backend environment to generate audio.",
     );
   }
-  const call = elevenLabsCall(request);
-  const response = await fetchImpl(call.url, {
+  let call = elevenLabsCall(request);
+  let response = await fetchImpl(call.url, {
     body: JSON.stringify(call.body),
     headers: {
       "Content-Type": "application/json",
@@ -91,12 +106,37 @@ export async function requestElevenLabsAudio(
     method: "POST",
     signal,
   });
-  const type = response.headers.get("content-type") ?? "";
+  let type = response.headers.get("content-type") ?? "";
   if (!response.ok || type.includes("json") || type.startsWith("text/")) {
     const detail = (await response.text()).slice(0, 300);
-    throw new Error(
-      `ElevenLabs returned ${response.status}${detail === "" ? "" : `: ${detail}`}`,
-    );
+    const canFallback =
+      request.role === "music" &&
+      response.status === 402 &&
+      detail.includes("paid_plan_required");
+    if (!canFallback) {
+      throw new Error(
+        `ElevenLabs returned ${response.status}${detail === "" ? "" : `: ${detail}`}`,
+      );
+    }
+    call = elevenLabsSoundGenerationCall(request);
+    response = await fetchImpl(call.url, {
+      body: JSON.stringify(call.body),
+      headers: {
+        "Content-Type": "application/json",
+        "xi-api-key": key,
+      },
+      method: "POST",
+      signal,
+    });
+    type = response.headers.get("content-type") ?? "";
+    if (!response.ok || type.includes("json") || type.startsWith("text/")) {
+      const fallbackDetail = (await response.text()).slice(0, 300);
+      throw new Error(
+        `ElevenLabs returned ${response.status}${
+          fallbackDetail === "" ? "" : `: ${fallbackDetail}`
+        }`,
+      );
+    }
   }
   const bytes = new Uint8Array(await response.arrayBuffer());
   if (bytes.byteLength < MIN_BYTES) {

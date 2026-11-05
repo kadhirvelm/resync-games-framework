@@ -112,6 +112,7 @@ export function listBuildings(host: EconomyHost): EconomyBuildingView[] {
       maxHp: record.maxHp,
       onSpiritVein: record.onSpiritVein,
       placeholder: record.placeholder,
+      production: record.production ? { ...record.production } : null,
       tier: record.tier,
       x: record.x,
       y: record.y,

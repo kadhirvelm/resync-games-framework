@@ -97,7 +97,8 @@ export const SPAWN_EDGE_MARGIN = 1;
 
 /**
  * Map width assumed when a clock carries no bounds (old saves, headless
- * directors). Matches the live Ashen Gate map.
+ * directors). This is the fixed Ashen Gate size those saves were made on;
+ * live runs always pass the world's own bounds.
  */
 export const DEFAULT_WAVE_MAP_WIDTH = 128;
 

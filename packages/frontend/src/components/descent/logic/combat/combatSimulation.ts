@@ -85,6 +85,8 @@ export interface CombatSimulationOptions {
   healingMultiplier?: number;
   /** Disks a unit is hurt for standing in. Steps skirt them. */
   hurtZones?: readonly HurtDisk[];
+  /** Disks that block movement without hurting, such as large buildings. */
+  obstacles?: readonly HurtDisk[];
   /** Projectiles still in flight, from a previous `exportState`. */
   pendingProjectiles?: PendingProjectile[];
   /** Tick counter to resume from, from a previous `exportState`. */
@@ -242,6 +244,7 @@ export class CombatSimulation {
   private globalVisionMultiplier = 1;
   private healingMultiplier = 1;
   private readonly hurtZones: readonly HurtDisk[];
+  private readonly obstacles: readonly HurtDisk[];
   private readonly pendingProjectiles: PendingProjectile[] = [];
   private readonly tickMs: number;
   private readonly units = new Map<string, CombatUnit>();
@@ -260,6 +263,7 @@ export class CombatSimulation {
       options.healingMultiplier ?? 1,
     );
     this.hurtZones = options.hurtZones ?? [];
+    this.obstacles = options.obstacles ?? [];
     for (const unit of options.units ?? []) {
       this.units.set(unit.id, structuredClone(unit));
     }
@@ -717,7 +721,8 @@ export class CombatSimulation {
 
   /**
    * The gap an attack has to cover: center distance less the extra body
-   * size of the attacker and of a unit target. Ordinary units add nothing.
+   * size of the attacker and of the target. Ordinary units add nothing; a
+   * large building adds the distance to its edge.
    * @param source - Attacker
    * @param targetId - Unit or building being attacked
    * @param targetPosition - Target's current position
@@ -728,7 +733,10 @@ export class CombatSimulation {
     targetId: string,
     targetPosition: CombatPoint,
   ): number {
-    const targetRadius = this.units.get(targetId)?.bodyRadius ?? 0;
+    const targetRadius =
+      this.units.get(targetId)?.bodyRadius ??
+      this.buildings.get(targetId)?.bodyRadius ??
+      0;
     const sourceRadius = source.bodyRadius ?? 0;
     return Math.max(
       0,
@@ -823,7 +831,9 @@ export class CombatSimulation {
         (candidate) =>
           candidate.hitPoints > 0 &&
           candidate.factionId !== source.factionId &&
-          distance(source.position, candidate.position) <= range,
+          distance(source.position, candidate.position) -
+            (candidate.bodyRadius ?? 0) <=
+            range,
       )
       .sort((left, right) => {
         const distanceDifference =
@@ -917,12 +927,10 @@ export class CombatSimulation {
       x: unit.position.x + (destination.x - unit.position.x) * ratio,
       y: unit.position.y + (destination.y - unit.position.y) * ratio,
     };
-    const next = stepAroundHurt(
-      unit.position,
-      proposed,
-      destination,
-      this.hurtZones,
-    );
+    const next = stepAroundHurt(unit.position, proposed, destination, [
+      ...this.hurtZones,
+      ...this.obstacles,
+    ]);
     if (next.x === destination.x && next.y === destination.y) {
       unit.position = { ...destination };
       return true;

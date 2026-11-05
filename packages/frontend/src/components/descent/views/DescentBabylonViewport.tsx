@@ -3,6 +3,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useClientServiceCallers } from "@/services/clientServiceCallers";
+import { loadAshenGateThreeDAssets } from "./ashenGateThreeDAssets";
 import type {
   DescentBabylonSceneHandle,
   DescentScreenBox,
@@ -10,6 +12,11 @@ import type {
 import { DescentMinimap, type MinimapView } from "./DescentMinimap";
 import styles from "./descentView.module.scss";
 import { inspectRing, inspectTargetAt } from "./inspect";
+import {
+  createLoadingTracker,
+  type LoadingProgress,
+  settleWithin,
+} from "./loadingProgress";
 import { MapViewport, type MapViewportProps } from "./MapViewport";
 import {
   type MapPoint,
@@ -18,7 +25,6 @@ import {
   ordersForRightClick,
   similarVisibleUnitIds,
 } from "./selection";
-import { useAshenGateThreeDAssets } from "./useAshenGateThreeDAssets";
 
 /** A resource node under the pointer and where to draw its label. */
 interface NodeHint {
@@ -55,6 +61,23 @@ function nodeHintAction(
   return "Select villagers, then right-click to gather.";
 }
 
+/**
+ * Longest the opening load may hold the battlefield back. Anything still
+ * loading after this keeps streaming in behind the live game.
+ */
+const LOAD_DEADLINE_MS = 30_000;
+
+/** Battlefield props plus opening-load reporting. */
+export interface DescentBabylonViewportProps extends MapViewportProps {
+  /** Receives counts as models, paintings, and shaders load. */
+  onLoadProgress?: (progress: LoadingProgress) => void;
+  /**
+   * Fired once when the battlefield is ready to show: every model and
+   * painting has loaded or fallen back, or the load deadline passed.
+   */
+  onLoaded?: () => void;
+}
+
 interface DragState {
   additive: boolean;
   pointerId: number;
@@ -81,9 +104,28 @@ export function canUseBabylonRts(): boolean {
  * @param props - Current read model, selection, camera, and command callbacks
  * @returns A Babylon canvas or the DOM fallback when WebGL cannot start
  */
-export function DescentBabylonViewport(props: MapViewportProps) {
-  if (!canUseBabylonRts()) return <MapViewport {...props} />;
+export function DescentBabylonViewport(props: DescentBabylonViewportProps) {
+  if (!canUseBabylonRts()) return <ReadyMapViewport {...props} />;
   return <ActiveBabylonViewport {...props} />;
+}
+
+/**
+ * The DOM map has nothing to stream, so it reports ready as soon as it
+ * mounts.
+ * @param props - Map props and the ready callback
+ * @returns The accessible DOM map
+ */
+function ReadyMapViewport({
+  onLoaded,
+  onLoadProgress: _onLoadProgress,
+  ...props
+}: DescentBabylonViewportProps) {
+  const onLoadedRef = useRef(onLoaded);
+  onLoadedRef.current = onLoaded;
+  useEffect(() => {
+    onLoadedRef.current?.();
+  }, []);
+  return <MapViewport {...props} />;
 }
 
 /**
@@ -91,7 +133,7 @@ export function DescentBabylonViewport(props: MapViewportProps) {
  * @param props - Current read model and renderer-neutral interaction callbacks
  * @returns The interactive canvas and lightweight HTML overlays
  */
-function ActiveBabylonViewport(props: MapViewportProps) {
+function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
   const openingAnchor =
     props.model.buildings.find(
       (building) =>
@@ -117,56 +159,71 @@ function ActiveBabylonViewport(props: MapViewportProps) {
     rotation: 0,
     width: Math.min(58, props.model.map.width),
   });
-  const [sceneMessage, setSceneMessage] = useState(
-    "Starting Babylon battlefield…",
-  );
-  const generated = useAshenGateThreeDAssets();
-  const generatedAssets = useRef(generated.assets);
-  generatedAssets.current = generated.assets;
+  const { clientServiceCallers } = useClientServiceCallers();
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null) return;
     let active = true;
-    void import("./createDescentBabylonScene")
-      .then(({ createDescentBabylonScene }) => {
-        if (!active) return;
-        const current = latest.current;
-        handleRef.current = createDescentBabylonScene(
-          canvas,
-          current.model,
-          current.selection,
-          generatedAssets.current,
-          setSceneMessage,
-          setMinimapView,
-        );
-        setSceneMessage(
-          "RTS controls · WASD/arrows pan · Q/E rotate · wheel zoom",
-        );
-      })
-      .catch((cause) => {
-        if (!active) return;
-        setSceneMessage(
-          `3D unavailable: ${cause instanceof Error ? cause.message : "WebGL could not start"}`,
-        );
-        setFailed(true);
-      });
+    const tracker = createLoadingTracker((progress) => {
+      if (active) latest.current.onLoadProgress?.(progress);
+    });
+    const sceneModule = tracker.track(
+      "Raising the battlefield",
+      import("./createDescentBabylonScene"),
+    );
+    const generated = tracker.track(
+      "Charting the Ashen Gate",
+      loadAshenGateThreeDAssets(clientServiceCallers),
+    );
+
+    /**
+     * Builds the scene, then streams every generated model and painting
+     * into it and waits for shaders, so the first shown frame is complete.
+     * @returns Resolves when the battlefield is ready; rejects if WebGL fails
+     */
+    const open = async (): Promise<void> => {
+      const { createDescentBabylonScene } = await sceneModule;
+      if (!active) return;
+      const current = latest.current;
+      const handle = createDescentBabylonScene(
+        canvas,
+        current.model,
+        current.selection,
+        {},
+        () => undefined,
+        setMinimapView,
+      );
+      handleRef.current = handle;
+      const { assets, textures } = await generated;
+      if (!active) return;
+      await Promise.all([
+        handle.setAssets(assets, tracker.track),
+        handle.setTextures(textures, tracker.track),
+      ]);
+      if (!active) return;
+      await tracker.track("Kindling the forges", handle.whenReady());
+    };
+
+    const opening = open();
+    opening.catch(() => {
+      if (active) setFailed(true);
+    });
+    void settleWithin(opening, LOAD_DEADLINE_MS).then(() => {
+      if (active) latest.current.onLoaded?.();
+    });
     return () => {
       active = false;
       handleRef.current?.dispose();
       handleRef.current = null;
     };
-    // The scene owns a stable canvas; snapshots are synchronized below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // The scene owns a stable canvas and the service callers are a
+    // browser-wide singleton; snapshots are synchronized below.
+  }, [clientServiceCallers]);
 
   useEffect(() => {
     handleRef.current?.update(props.model, props.selection, props.placing);
   }, [props.model, props.placing, props.selection]);
-
-  useEffect(() => {
-    handleRef.current?.setAssets(generated.assets);
-  }, [generated.assets]);
 
   const focusId = props.focusRequest?.id ?? null;
   const focusPoint = useRef<MapPoint | null>(null);
@@ -218,6 +275,7 @@ function ActiveBabylonViewport(props: MapViewportProps) {
           buildings: props.model.buildings,
           ground: picked.point,
           nodes: props.model.nodes,
+          queue: event.shiftKey,
           selectedIds: props.selection.unitIds,
           targetBuildingId: picked.buildingId,
           targetUnitId: picked.unitId,
@@ -275,6 +333,10 @@ function ActiveBabylonViewport(props: MapViewportProps) {
           props.onSelectBuilding(picked.buildingId);
           return;
         }
+        if (picked.sceneryId !== null) {
+          props.onInspect({ id: picked.sceneryId, kind: "scenery" });
+          return;
+        }
         const feature = inspectTargetAt(props.model, picked.point);
         if (feature !== null) {
           props.onInspect(feature);
@@ -313,6 +375,7 @@ function ActiveBabylonViewport(props: MapViewportProps) {
         );
         handleRef.current?.setPlacementPoint(
           props.placing ? (picked?.point ?? null) : null,
+          props.placingFootprint,
         );
         const drag = dragRef.current;
         if (drag === null) return;
@@ -359,6 +422,27 @@ function ActiveBabylonViewport(props: MapViewportProps) {
       <DescentMinimap
         model={props.model}
         onNavigate={(point) => handleRef.current?.focusCamera(point)}
+        onOrder={(point, queue) => {
+          const orders = ordersForRightClick({
+            buildings: props.model.buildings,
+            ground: point,
+            nodes: props.model.nodes,
+            queue,
+            selectedIds: props.selection.unitIds,
+            targetBuildingId: null,
+            targetUnitId: null,
+            units: props.model.units,
+          });
+          for (const order of orders) props.onCommand(order);
+          const marker = orderMarkerFor({
+            buildings: props.model.buildings,
+            ground: point,
+            nodes: props.model.nodes,
+            orders,
+            units: props.model.units,
+          });
+          if (marker !== null) handleRef.current?.showOrderMarker(marker);
+        }}
         view={minimapView}
       />
       {dragBox === null ? null : (
@@ -383,9 +467,6 @@ function ActiveBabylonViewport(props: MapViewportProps) {
           {nodeHintAction(props.settingRally, props.rallyBuildingId)}
         </p>
       )}
-      <p aria-live="polite" className={styles.rendererStatus}>
-        {generated.message} · {sceneMessage}
-      </p>
       {props.status === null ? null : (
         <p className={styles.mapStatus}>{props.status}</p>
       )}

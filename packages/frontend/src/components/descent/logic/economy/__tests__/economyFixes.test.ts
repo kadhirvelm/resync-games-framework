@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { activeVentVolumes } from "../../layers/hazards";
 import type { SimWorldState } from "../../sim/world";
 import { RESOURCE_IDS, type ResourceId, type UnitState } from "../../types";
 import {
@@ -6,6 +7,7 @@ import {
   buildingDef,
   compareIds,
   constructionHp,
+  constructionProgressPerStep,
   createBuildingRecord,
   createEconomy,
   createEconomyMeta,
@@ -21,6 +23,7 @@ import {
   listMarketLayers,
   MAX_BUILDERS_PER_SITE,
   rationCost,
+  resourceDef,
   runEconomyTick,
 } from "../index";
 import { emptyStockpile } from "../stockpile";
@@ -45,6 +48,7 @@ function makeWorld(width = 12, height = 12): TestWorld {
     buildings: [],
     economy: createEconomyMeta(),
     getLayerId: () => layerId,
+    getVentVolumes: () => activeVentVolumes(layerId),
     map: { height, width },
     resources: emptyStockpile(),
     setLayerId(next) {
@@ -122,7 +126,7 @@ describe("Descent economy construction", () => {
     expect(site.buildTicksDone).toBe(0);
   });
 
-  test("up to three adjacent builders each add one progress per step", () => {
+  test("one builder is slow and up to four helpers add full progress", () => {
     const world = makeWorld();
     world.host.buildings.push(
       createBuildingRecord({ buildingType: "housing", id: "site", x: 5, y: 5 }),
@@ -132,6 +136,8 @@ describe("Descent economy construction", () => {
       [6, 5],
       [5, 4],
       [5, 6],
+      [4, 4],
+      [6, 6],
     ] as const;
     cells.forEach(([x, y], index) => {
       world.host.units.push(createUnitRecord({ id: `v-${index}`, x, y }));
@@ -140,9 +146,11 @@ describe("Descent economy construction", () => {
     const builders = world.host.units.filter(
       (unit) => (unit as EconomyUnit).task?.kind === "build",
     );
-    expect(MAX_BUILDERS_PER_SITE).toBe(3);
-    expect(builders).toHaveLength(3);
-    expect(siteById(world.host, "site").buildTicksDone).toBe(3);
+    expect(MAX_BUILDERS_PER_SITE).toBe(5);
+    expect(builders).toHaveLength(5);
+    expect(constructionProgressPerStep(1)).toBe(0.5);
+    expect(constructionProgressPerStep(2)).toBe(1.5);
+    expect(siteById(world.host, "site").buildTicksDone).toBe(4.5);
   });
 
   test("an idle villager builds a freshly placed site without micro", () => {
@@ -157,7 +165,7 @@ describe("Descent economy construction", () => {
       y: 1,
     });
     const buildTicks = buildingDef("housing")?.buildTicks ?? 0;
-    sim.step(buildTicks + 2);
+    sim.step(Math.ceil(buildTicks / constructionProgressPerStep(1)) + 2);
     const housing = sim.listBuildings()[0];
     expect(housing?.completed).toBe(true);
     expect(sim.getPopCap()).toBe(110);
@@ -177,7 +185,12 @@ describe("Descent economy construction", () => {
     world.step(3);
     expect(site.hp).toBe(constructionHp(site, site.buildTicksDone) - 20);
 
-    world.step(site.buildTicks - site.buildTicksDone);
+    world.step(
+      Math.ceil(
+        (site.buildTicks - site.buildTicksDone) /
+          constructionProgressPerStep(1),
+      ),
+    );
     expect(site.completed).toBe(true);
     expect(site.hp).toBe(site.maxHp - 20);
   });
@@ -212,7 +225,7 @@ describe("Descent villager orders", () => {
     expect(sim.listUnits()[0]?.garrisoned).toBe(true);
 
     sim.enqueue({ type: "release_villagers" });
-    sim.step(8);
+    sim.step((resourceDef("food")?.gatherTicks ?? 1) + 4);
     expect(sim.listUnits()[0]?.garrisoned).toBe(false);
     expect(sim.getStockpile().food).toBeGreaterThan(0);
   });
@@ -242,8 +255,8 @@ describe("Descent villager orders", () => {
         buildingType: "storehouse",
         completed: true,
         id: "store",
-        x: 1,
-        y: 3,
+        x: 4,
+        y: 4,
       }),
     );
     world.host.economy.nodes.push(
@@ -279,7 +292,7 @@ describe("Descent villager orders", () => {
     world.step();
     expect(lost.task).toMatchObject({ kind: "gather", nodeId: "open" });
 
-    world.step(20);
+    world.step((resourceDef("food")?.gatherTicks ?? 1) + 16);
     expect(world.host.resources.food).toBeGreaterThan(0);
     expect(world.host.economy.nodes[0]?.remaining).toBe(40);
   });
@@ -431,11 +444,11 @@ describe("Descent market and coin sinks", () => {
           buildingType: "hell_market",
           completed: true,
           id: "market",
-          x: 0,
-          y: 0,
+          x: 2,
+          y: 2,
         },
-        { buildingType: "wall", completed: true, id: "wall-a", x: 1, y: 0 },
-        { buildingType: "wall", completed: true, id: "wall-b", x: 0, y: 1 },
+        { buildingType: "wall", completed: true, id: "wall-a", x: 5, y: 0 },
+        { buildingType: "wall", completed: true, id: "wall-b", x: 5, y: 1 },
       ],
       stockpile: { coin: 200 },
       units: [{ id: "mercenary-1", x: 5, y: 5 }],
@@ -447,8 +460,8 @@ describe("Descent market and coin sinks", () => {
       .filter((unit) => unit.classId === "warden")
       .map((unit) => ({ id: unit.id, x: unit.x, y: unit.y }));
     expect(hires).toEqual([
-      { id: "mercenary-2", x: 1, y: 1 },
-      { id: "mercenary-3", x: 1, y: 1 },
+      { id: "mercenary-2", x: 5, y: 2 },
+      { id: "mercenary-3", x: 5, y: 2 },
     ]);
   });
 });

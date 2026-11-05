@@ -1,0 +1,179 @@
+// Opening load screen. It covers the whole shell, so theme variables
+// (--bronze, --parchment, …) come from `.shell`.
+
+$descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, sans-serif);
+$display: var(--font-display, "Iowan Old Style", georgia, serif);
+$ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+
+.loadingScreen {
+  align-items: center;
+  background: #0b0807;
+  color: var(--parchment);
+  display: flex;
+  font-family: $descent;
+  inset: 0;
+  justify-content: center;
+  overflow: hidden;
+  position: absolute;
+  transition:
+    opacity 520ms $ease-out,
+    visibility 0s linear 0s;
+  z-index: 100;
+}
+
+.loadingScreen[data-leaving="true"] {
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 520ms $ease-out,
+    visibility 0s linear 520ms;
+  visibility: hidden;
+}
+
+.artwork {
+  animation: artwork-drift 22s ease-in-out infinite alternate;
+  background:
+    radial-gradient(ellipse at 50% 58%, transparent 0%, rgb(11 8 7 / 72%) 62%, #0b0807 100%),
+    linear-gradient(180deg, rgb(11 8 7 / 55%), rgb(11 8 7 / 30%) 40%, rgb(11 8 7 / 88%)),
+    url("/descent/title-ashen-gate.webp") center / cover no-repeat;
+  filter: saturate(0.85) brightness(0.62);
+  inset: -2%;
+  position: absolute;
+}
+
+.content {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  max-width: min(440px, calc(100% - 48px));
+  position: relative;
+  text-align: center;
+  width: 100%;
+}
+
+.eyebrow {
+  color: var(--bronze);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  margin: 0 0 10px;
+  text-transform: uppercase;
+}
+
+.title {
+  color: var(--parchment);
+  font-family: $display;
+  font-size: clamp(36px, 5vw, 54px);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  margin: 0 0 30px;
+  text-shadow: 0 2px 24px rgb(0 0 0 / 70%);
+}
+
+.track {
+  background: rgb(232 220 197 / 12%);
+  border-radius: 1px;
+  height: 2px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.fill {
+  background: linear-gradient(90deg, var(--ember), var(--bronze-bright));
+  box-shadow: 0 0 12px rgb(239 201 119 / 55%);
+  display: block;
+  height: 100%;
+  transform-origin: left center;
+  transition: transform 360ms $ease-out;
+  width: 100%;
+}
+
+.detail {
+  color: var(--parchment-muted);
+  display: flex;
+  font-size: 12px;
+  gap: 16px;
+  justify-content: space-between;
+  letter-spacing: 0.04em;
+  margin: 12px 0 0;
+  min-height: 1.4em;
+  width: 100%;
+
+  span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.count {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.note {
+  color: var(--parchment-muted);
+  font-size: 12px;
+  margin: 14px 0 0;
+  opacity: 0.8;
+}
+
+.skip {
+  align-items: center;
+  animation: skip-arrive 420ms $ease-out both;
+  background: rgb(33 26 18 / 72%);
+  border: 1px solid rgb(198 154 85 / 45%);
+  color: var(--parchment);
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 3px;
+  letter-spacing: 0.14em;
+  margin-top: 28px;
+  padding: 10px 22px;
+  text-transform: uppercase;
+
+  span {
+    color: var(--parchment-muted);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    text-transform: none;
+  }
+
+  &:hover {
+    border-color: var(--bronze-bright);
+  }
+}
+
+@keyframes artwork-drift {
+  from {
+    transform: scale(1.02);
+  }
+
+  to {
+    transform: scale(1.07) translate3d(0.4%, -0.3%, 0);
+  }
+}
+
+@keyframes skip-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artwork,
+  .skip {
+    animation: none;
+  }
+
+  .fill,
+  .loadingScreen,
+  .loadingScreen[data-leaving="true"] {
+    transition: none;
+  }
+}

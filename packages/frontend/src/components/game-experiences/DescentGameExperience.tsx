@@ -3,6 +3,8 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { unlockDescentAudio } from "@/components/descent/audio/descentAudioEngine";
+import { useDescentAudio } from "@/components/descent/audio/useDescentAudio";
 import {
   ASHEN_GATE_SLICE_MODULE_ID,
   createAshenGateSim,
@@ -19,6 +21,7 @@ import {
   writeSaveSlot,
 } from "@/components/descent/logic/sim";
 import { DescentView } from "@/components/descent/views";
+import { useFullscreen } from "@/components/descent/views/useFullscreen";
 import styles from "./DescentGameExperience.module.scss";
 import type { GameExperienceEntryProps } from "./gameExperienceTypes";
 
@@ -28,10 +31,14 @@ interface PlayableDescentSession {
 }
 
 interface DescentStartScreenProps {
+  /** Whether the page is fullscreen. */
+  fullscreen: boolean;
   hasSavedRun: boolean;
   onContinue: () => void;
   onExit: () => void;
   onNewGame: () => void;
+  /** Enters or leaves fullscreen; the button hides without it. */
+  onToggleFullscreen?: () => void;
 }
 
 /**
@@ -141,10 +148,12 @@ function useDescentSim(active: boolean) {
  * @returns The Descent title screen
  */
 function DescentStartScreen({
+  fullscreen,
   hasSavedRun,
   onContinue,
   onExit,
   onNewGame,
+  onToggleFullscreen,
 }: DescentStartScreenProps) {
   const firstAction = useRef<HTMLButtonElement>(null);
 
@@ -189,50 +198,92 @@ function DescentStartScreen({
           </button>
         </nav>
 
-        <button className={styles.libraryLink} onClick={onExit} type="button">
-          <span aria-hidden="true">←</span>
-          All games
-        </button>
+        <div className={styles.startLinks}>
+          <button className={styles.libraryLink} onClick={onExit} type="button">
+            <span aria-hidden="true">←</span>
+            All games
+          </button>
+          {onToggleFullscreen === undefined ? null : (
+            <button
+              aria-pressed={fullscreen}
+              className={styles.libraryLink}
+              onClick={onToggleFullscreen}
+              type="button"
+            >
+              <span aria-hidden="true">{fullscreen ? "⤡" : "⤢"}</span>
+              {fullscreen ? "Windowed" : "Fullscreen"}
+            </button>
+          )}
+        </div>
       </section>
     </main>
   );
 }
 
 /**
- * Mounts Descent behind a title screen and starts real-time simulation only
- * after the player chooses Continue or New Game.
+ * Mounts Descent behind a title screen. Real-time simulation starts only
+ * after the player chooses Continue or New Game and the battlefield has
+ * finished loading behind its loading screen.
  * @param props - Navigation supplied by the game library
  * @returns The title screen or mounted Descent RTS
  */
 export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
   const [isPlaying, setIsPlaying] = useState(false);
-  const { hasSavedRun, restart, runId, sim, snapshot } =
-    useDescentSim(isPlaying);
+  const [battlefieldReady, setBattlefieldReady] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const screen = useFullscreen();
+  const toggleFullscreen = screen.available ? screen.toggle : undefined;
+  const { hasSavedRun, restart, runId, sim, snapshot } = useDescentSim(
+    isPlaying && battlefieldReady,
+  );
+  useDescentAudio({
+    active: isPlaying,
+    enabled: soundEnabled,
+    sim,
+    snapshot,
+  });
+
+  /** Starts a fresh run; its battlefield loads again before the clock runs. */
+  const restartRun = () => {
+    setBattlefieldReady(false);
+    restart();
+  };
 
   if (!isPlaying) {
     return (
       <DescentStartScreen
+        fullscreen={screen.fullscreen}
         hasSavedRun={hasSavedRun}
-        onContinue={() => setIsPlaying(true)}
-        onExit={onExit}
-        onNewGame={() => {
-          restart();
+        onContinue={() => {
+          unlockDescentAudio();
           setIsPlaying(true);
         }}
+        onExit={onExit}
+        onNewGame={() => {
+          unlockDescentAudio();
+          restartRun();
+          setIsPlaying(true);
+        }}
+        onToggleFullscreen={toggleFullscreen}
       />
     );
   }
 
   return (
     <DescentView
+      fullscreen={screen.fullscreen}
       key={runId}
       onCommand={(command) => {
         sim.enqueue(command);
       }}
-      onRestart={restart}
+      onLoaded={() => setBattlefieldReady(true)}
+      onRestart={restartRun}
       onSetPaused={(paused) => sim.setPaused(paused)}
+      onSetSoundEnabled={setSoundEnabled}
       onSetSpeed={(speed) => sim.setSpeed(speed)}
+      onToggleFullscreen={toggleFullscreen}
       snapshot={snapshot}
+      soundEnabled={soundEnabled}
     />
   );
 };

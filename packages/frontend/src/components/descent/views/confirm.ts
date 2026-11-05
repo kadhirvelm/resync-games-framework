@@ -409,7 +409,10 @@ export function buildConfirm(
     };
   }
   if (intent.type === "market") {
-    const rate = model.marketRates[0];
+    const rate = model.marketRates.find(
+      (candidate) =>
+        intent.sell === undefined || candidate.sell === intent.sell,
+    );
     if (rate === undefined) {
       return blocked("Trade", "Market unavailable.", [], "Trade");
     }
@@ -428,7 +431,7 @@ export function buildConfirm(
       confirmLabel: "Trade",
       revive: null,
       rows,
-      title: "Hell Market",
+      title: `Sell ${rate.sell === "spirit_herbs" ? "Spirit Herbs" : rate.sell.slice(0, 1).toUpperCase() + rate.sell.slice(1)}`,
       tradeAmount: true,
     };
   }

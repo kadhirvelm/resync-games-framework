@@ -10,14 +10,18 @@ import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
+import { Material } from "@babylonjs/core/Materials/material";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Plane } from "@babylonjs/core/Maths/math.plane";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
 import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder";
+import { CreateDisc } from "@babylonjs/core/Meshes/Builders/discBuilder";
 import { CreateGround } from "@babylonjs/core/Meshes/Builders/groundBuilder";
+import { CreateDashedLines } from "@babylonjs/core/Meshes/Builders/linesBuilder";
 import { CreateSphere } from "@babylonjs/core/Meshes/Builders/sphereBuilder";
 import { CreateTorus } from "@babylonjs/core/Meshes/Builders/torusBuilder";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
@@ -31,6 +35,7 @@ import {
   getCharacterModelScale,
   getModelHeight,
 } from "../../babylonGame/modelSizing";
+import type { AshenGateTextureSet } from "../data/layers/ashen_gate/environmentArt";
 import {
   type AshenGateAssetRole,
   type AshenGateAssetSet,
@@ -38,12 +43,11 @@ import {
   assetRoleForResource,
   assetRoleForUnit,
   isResourceAssetRole,
+  isSceneryAssetRole,
 } from "../data/layers/ashen_gate/threeDAssets";
-import {
-  ASHEN_HAZE,
-  ASHEN_SKY_ZENITH,
-  addAshenBackdrop,
-} from "./ashenBackdrop";
+import { isFogVisible } from "../logic/fog";
+import { ASHEN_HAZE, ASHEN_VOID, addAshenBackdrop } from "./ashenBackdrop";
+import { PLATEAU_RIM } from "./ashenTerrainLayout";
 import {
   cameraKeyFromInput,
   cameraPanDirection,
@@ -52,6 +56,8 @@ import {
 } from "./cameraControls";
 import { createCarryIconLayer } from "./carryIcons";
 import type { MinimapView } from "./DescentMinimap";
+import { createFogOverlay } from "./fogOverlay";
+import { type TrackLoad, untrackedLoad } from "./loadingProgress";
 import {
   cameraAlphaToMinimapRotation,
   mapYToWorldZ,
@@ -70,6 +76,8 @@ import {
   stepProgress,
   unitMotionPhase,
 } from "./motion";
+import { type RouteFlag, routePlan } from "./routeFlags";
+import { revealedSceneryIds } from "./sceneryFog";
 import { type ScreenPoint, unitAtScreenPoint } from "./screenPick";
 import type { MapPoint, OrderMarker, Selection } from "./selection";
 import {
@@ -78,12 +86,20 @@ import {
   type ShellUnit,
   unitDisplayScale,
 } from "./shellModel";
+import {
+  SILHOUETTE_OUTLINE_COLOR,
+  selectionRingDiameter,
+  UNIT_MARKER_RING,
+  unitMarkerDiameter,
+  unitOutlineWidth,
+} from "./unitContrast";
 import { isTypingTarget } from "./useHotkeys";
 
 /** A pick result translated back into renderer-neutral map coordinates. */
 export interface DescentScenePick {
   buildingId: string | null;
   point: MapPoint;
+  sceneryId: string | null;
   unitId: string | null;
 }
 
@@ -100,7 +116,21 @@ export interface DescentBabylonSceneHandle {
   dispose: () => void;
   focusCamera: (point: MapPoint) => void;
   pick: (clientX: number, clientY: number) => DescentScenePick;
-  setAssets: (assets: AshenGateAssetSet) => void;
+  /**
+   * Loads generated models into their roles. Resolves once each one is
+   * placed or has failed back to its stand-in.
+   */
+  setAssets: (assets: AshenGateAssetSet, track?: TrackLoad) => Promise<void>;
+  /**
+   * Swaps procedural ground, cliff, and lava for generated paintings.
+   * Resolves once each painting is applied or has failed.
+   */
+  setTextures: (
+    textures: AshenGateTextureSet,
+    track?: TrackLoad,
+  ) => Promise<void>;
+  /** Resolves once the scene can draw without compiling anything new. */
+  whenReady: () => Promise<void>;
   /**
    * Rings an inspected map feature (resource node, Spirit Vein, or vent), or
    * hides the ring when given null.
@@ -108,7 +138,7 @@ export interface DescentBabylonSceneHandle {
   setInspectRing: (
     ring: { radius: number; x: number; y: number } | null,
   ) => void;
-  setPlacementPoint: (point: MapPoint | null) => void;
+  setPlacementPoint: (point: MapPoint | null, footprint?: number) => void;
   showOrderMarker: (marker: OrderMarker) => void;
   unitsInScreenBox: (box: DescentScreenBox) => string[];
   update: (model: ShellModel, selection: Selection, placing: boolean) => void;
@@ -143,6 +173,8 @@ interface EntityVisual {
   role: AshenGateAssetRole;
   root: TransformNode;
   selection: AbstractMesh;
+  /** Width a building is drawn at, in map cells; 0 for units. */
+  span: number;
   /** How long the current glide lasts; zero snaps. */
   stepDuration: number;
   /** Where the current glide began. */
@@ -180,17 +212,60 @@ const DEFAULT_STEP_INTERVAL_MS = 500;
 /** A position change larger than this (map cells) snaps instead of gliding. */
 const TELEPORT_DISTANCE = 4;
 
-/** Environment parts that hang over the battlefield and hide units below. */
-const OVERHEAD_ENVIRONMENT_PARTS = ["gate lintel"] as const;
+/** Ground left open between neighboring buildings, in map cells. */
+const BUILDING_MARGIN = 0.3;
 
 /**
- * Whether an instantiated environment node is an overhead part to hide.
- * @param name - Babylon node name, possibly prefixed by the instance mapper
- * @returns True for parts that would block the RTS camera's view
+ * Width the building stand-ins, construction frames, and rings are modeled
+ * at. Each building scales them by its own span over this.
  */
-function isOverheadEnvironmentPart(name: string): boolean {
-  const normalized = name.toLowerCase();
-  return OVERHEAD_ENVIRONMENT_PARTS.some((part) => normalized.endsWith(part));
+const BUILDING_REFERENCE_SPAN = 2.75;
+
+/** Height of the building stand-in at the reference span. */
+const BUILDING_STAND_IN_HEIGHT = 2.13;
+
+/** Tallest a generated building may stand, as a multiple of its span. */
+const BUILDING_MAX_HEIGHT_RATIO = 1.4;
+
+/**
+ * Buildings drawn with extra presence: a little wider than their square and
+ * allowed to stand taller, so an upgraded Hold reads as a bigger keep.
+ */
+const BUILDING_ROLE_PRESENCE: Partial<
+  Record<AshenGateAssetRole, { heightRatio: number; spanScale: number }>
+> = {
+  citadel: { heightRatio: 2.2, spanScale: 1.24 },
+  stronghold: { heightRatio: 1.9, spanScale: 1.14 },
+};
+
+/** Model to try when an upgraded Hold's own model is not generated yet. */
+const HOLD_MODEL_FALLBACK: Partial<
+  Record<AshenGateAssetRole, AshenGateAssetRole>
+> = {
+  citadel: "stronghold",
+  stronghold: "camp",
+};
+
+/** Health bar clearance above a building's roof, in world units. */
+const BUILDING_HEALTH_CLEARANCE = 0.5;
+
+/**
+ * @param span - Width the building is drawn at
+ * @returns Width of its health bar, never narrower than a readable minimum
+ */
+function healthBarWidth(span: number): number {
+  return Math.max(1.2, span * 0.65);
+}
+
+/**
+ * @param footprint - Side of the building's square in map cells
+ * @returns Width to draw the building at. One-cell pieces such as walls fill
+ *   their cell so a row of them reads as one wall; larger buildings leave a
+ *   thin margin so neighbors stay distinct.
+ */
+function buildingSpan(footprint: number): number {
+  if (footprint <= 1) return 1;
+  return footprint - BUILDING_MARGIN;
 }
 
 /** Creates a shared flat-shaded scene material. */
@@ -207,6 +282,92 @@ function material(
   return result;
 }
 
+/**
+ * Paints a soft dark disc and a faction ring into one foot marker.
+ * @param context - Marker texture context
+ * @param size - Texture size in pixels
+ * @param ring - Faction ring color
+ */
+function paintUnitMarker(
+  context: CanvasRenderingContext2D,
+  size: number,
+  ring: string,
+): void {
+  const center = size / 2;
+  context.clearRect(0, 0, size, size);
+  const shadow = context.createRadialGradient(
+    center,
+    center,
+    size * 0.04,
+    center,
+    center,
+    size * 0.46,
+  );
+  shadow.addColorStop(0, "rgba(7, 5, 4, 0.72)");
+  shadow.addColorStop(0.62, "rgba(7, 5, 4, 0.5)");
+  shadow.addColorStop(1, "rgba(7, 5, 4, 0)");
+  context.fillStyle = shadow;
+  context.fillRect(0, 0, size, size);
+  context.strokeStyle = "rgba(8, 6, 5, 0.9)";
+  context.lineWidth = size * 0.058;
+  context.beginPath();
+  context.arc(center, center, size * 0.4, 0, Math.PI * 2);
+  context.stroke();
+  context.strokeStyle = ring;
+  context.lineWidth = size * 0.032;
+  context.beginPath();
+  context.arc(center, center, size * 0.4, 0, Math.PI * 2);
+  context.stroke();
+}
+
+/**
+ * Creates the shared unlit foot marker for one faction.
+ * @param scene - Battlefield that owns the material
+ * @param name - Unique material name
+ * @param ring - Faction ring color
+ * @returns A transparent ground material
+ */
+function createUnitMarkerMaterial(
+  scene: Scene,
+  name: string,
+  ring: string,
+): StandardMaterial {
+  const size = 128;
+  const texture = new DynamicTexture(
+    name,
+    { height: size, width: size },
+    scene,
+    false,
+  );
+  const context = texture.getContext() as unknown as CanvasRenderingContext2D;
+  paintUnitMarker(context, size, ring);
+  texture.hasAlpha = true;
+  texture.update();
+  const result = new StandardMaterial(name, scene);
+  result.emissiveTexture = texture;
+  result.opacityTexture = texture;
+  result.diffuseColor = Color3.Black();
+  result.emissiveColor = Color3.White();
+  result.transparencyMode = Material.MATERIAL_ALPHABLEND;
+  result.disableLighting = true;
+  result.specularColor = Color3.Black();
+  result.backFaceCulling = false;
+  result.disableDepthWrite = true;
+  return result;
+}
+
+/**
+ * Draws a thin dark ink line around one unit or building mesh, so its
+ * silhouette reads against the ground without changing its colors.
+ * @param mesh - Stand-in or generated mesh
+ * @param width - Outline width in world units
+ */
+function markSilhouette(mesh: AbstractMesh, width: number): void {
+  mesh.renderOutline = true;
+  mesh.outlineColor = Color3.FromHexString(SILHOUETTE_OUTLINE_COLOR);
+  mesh.outlineWidth = width;
+}
+
 /** Reads entity metadata from a picked mesh or one of its parents. */
 function entityMetadata(node: Node | null): EntityMetadata | null {
   let current = node;
@@ -220,6 +381,26 @@ function entityMetadata(node: Node | null): EntityMetadata | null {
         value.kind === "ground")
     ) {
       return value;
+    }
+    current = current.parent;
+  }
+  return null;
+}
+
+/** Reads a fixed scenery placement id from a picked mesh or one of its parents. */
+function sceneryPlacementId(node: Node | null): string | null {
+  let current = node;
+  while (current !== null) {
+    const value = current.metadata as
+      | { placementId?: unknown }
+      | null
+      | undefined;
+    if (
+      value !== null &&
+      value !== undefined &&
+      typeof value.placementId === "string"
+    ) {
+      return value.placementId;
     }
     current = current.parent;
   }
@@ -303,15 +484,19 @@ export function createDescentBabylonScene(
   );
   try {
     const scene = new Scene(engine);
-    const sky = Color3.FromHexString(ASHEN_SKY_ZENITH);
-    scene.clearColor = new Color4(sky.r, sky.g, sky.b, 1);
-    scene.ambientColor = Color3.FromHexString("#4e3124");
+    const void_ = Color3.FromHexString(ASHEN_VOID);
+    scene.clearColor = new Color4(void_.r, void_.g, void_.b, 1);
+    scene.ambientColor = Color3.FromHexString("#262a36");
     scene.fogMode = Scene.FOGMODE_EXP2;
     scene.fogColor = Color3.FromHexString(ASHEN_HAZE);
-    scene.fogDensity = 0.006;
-    scene.imageProcessingConfiguration.contrast = 1.12;
-    scene.imageProcessingConfiguration.exposure = 1.04;
-    scene.imageProcessingConfiguration.toneMappingEnabled = true;
+    scene.fogDensity = 0.0085;
+    const imaging = scene.imageProcessingConfiguration;
+    imaging.contrast = 1.16;
+    imaging.exposure = 1.08;
+    imaging.toneMappingEnabled = true;
+    imaging.vignetteEnabled = true;
+    imaging.vignetteWeight = 1.4;
+    imaging.vignetteColor = new Color4(0.02, 0.01, 0.02, 0);
     const reducedMotion = window.matchMedia?.(
       "(prefers-reduced-motion: reduce)",
     ).matches;
@@ -388,16 +573,17 @@ export function createDescentBabylonScene(
       new Vector3(0.2, 1, -0.3),
       scene,
     );
-    ambient.intensity = 1.15;
-    ambient.diffuse = Color3.FromHexString("#d9b28a");
-    ambient.groundColor = Color3.FromHexString("#351c18");
+    // Cool cavern light from above, lava light bouncing up from below.
+    ambient.intensity = 0.95;
+    ambient.diffuse = Color3.FromHexString("#a9b6d6");
+    ambient.groundColor = Color3.FromHexString("#b4471c");
     const sun = new DirectionalLight(
       "ashen-sun",
       new Vector3(-0.55, -1, 0.35),
       scene,
     );
-    sun.intensity = 1.1;
-    sun.diffuse = Color3.FromHexString("#ffbd82");
+    sun.intensity = 1.25;
+    sun.diffuse = Color3.FromHexString("#ffc792");
     const carryIcons = createCarryIconLayer(scene);
     const shadows = new ShadowGenerator(1024, sun);
     shadows.bias = 0.001;
@@ -422,16 +608,18 @@ export function createDescentBabylonScene(
       -0.08,
       initialModel.map.height / 2,
     );
-    ground.material = material(scene, "ashen-ground-material", "#38271f");
+    // The plateau draws the terrain; this map-sized plane only takes clicks.
+    ground.isVisible = false;
     ground.metadata = { kind: "ground" } satisfies EntityMetadata;
     ground.isPickable = true;
-    ground.receiveShadows = true;
-    addAshenBackdrop(
+    const backdrop = addAshenBackdrop(
       scene,
       initialModel.map.width,
       initialModel.map.height,
       glow,
+      reducedMotion,
     );
+    const fogOverlay = createFogOverlay(scene, PLATEAU_RIM, glow);
 
     const holdMaterial = material(scene, "hold-bronze", "#d0aa66");
     const holdDarkMaterial = material(scene, "hold-dark", "#473126");
@@ -447,14 +635,17 @@ export function createDescentBabylonScene(
       "construction-foundation",
       "#594136",
     );
-    const selectedMaterial = material(scene, "selected-gold", "#ffd978", true);
-    const enemyGroundMaterial = material(
+    const selectedMaterial = material(scene, "selected-gold", "#fff6d4", true);
+    const holdMarkerMaterial = createUnitMarkerMaterial(
       scene,
-      "enemy-ground-indicator",
-      "#d63232",
-      true,
+      "hold-foot-marker",
+      UNIT_MARKER_RING.hold,
     );
-    enemyGroundMaterial.alpha = 0.58;
+    const hordeMarkerMaterial = createUnitMarkerMaterial(
+      scene,
+      "horde-foot-marker",
+      UNIT_MARKER_RING.horde,
+    );
     const healthMaterial = material(scene, "health", "#67c977", true);
     const veinMaterial = material(scene, "spirit-vein", "#36a9c4", true);
     veinMaterial.alpha = 0.34;
@@ -479,6 +670,11 @@ export function createDescentBabylonScene(
       gather: material(scene, "order-gather", "#ffd36b", true),
       move: material(scene, "order-move", "#7dff9a", true),
     };
+    const routeRoot = new TransformNode("unit-route", scene);
+    let routeFlagRoot: TransformNode | null = null;
+    let routeLine: Mesh | null = null;
+    let routeFlagSignature = "";
+    let routeLineSignature = "";
     const nodeMaterials = new Map<string, StandardMaterial>();
     const placementMaterial = material(
       scene,
@@ -489,7 +685,7 @@ export function createDescentBabylonScene(
     placementMaterial.alpha = 0.48;
     const placementPreview = CreateBox(
       "placement-preview",
-      { depth: 2.4, height: 0.18, width: 2.4 },
+      { depth: 1, height: 0.18, width: 1 },
       scene,
     );
     placementPreview.material = placementMaterial;
@@ -533,15 +729,25 @@ export function createDescentBabylonScene(
     const entities = new Map<string, EntityVisual>();
     const containers = new Map<AshenGateAssetRole, AssetContainer>();
     const loadedAssetIds = new Map<AshenGateAssetRole, string>();
-    const loadingAssetIds = new Map<AshenGateAssetRole, string>();
+    const loadingAssetIds = new Map<
+      AshenGateAssetRole,
+      { assetId: string; done: Promise<void> }
+    >();
     const decorationMotions: DecorationMotion[] = [];
     const transientEffects: TransientEffect[] = [];
     const seenEffects = new Set<number>();
     let decorationRoot = new TransformNode("map-decoration", scene);
     let decorationAssetsDirty = false;
     let decorationSignature = "";
-    let environmentRoot: TransformNode | null = null;
-    let environmentContainer: AssetContainer | null = null;
+    let sceneryRoot: TransformNode | null = null;
+    const sceneryNodes = new Map<string, TransformNode>();
+    let revealedScenery = revealedSceneryIds(
+      initialModel.fog,
+      backdrop.placements,
+      initialModel.map.height,
+    );
+    let revealedSceneryCells = initialModel.fog?.cells ?? null;
+    backdrop.revealStandIns(revealedScenery);
     let currentModel = initialModel;
     let currentAssets = initialAssets;
     let disposed = false;
@@ -558,6 +764,42 @@ export function createDescentBabylonScene(
       if (presentationPaused === paused) return;
       presentationPaused = paused;
       scene.animationsEnabled = !paused;
+    };
+
+    let outlinedAtRadius = Number.NaN;
+    let outlinedAtHeight = -1;
+
+    /**
+     * Rim width for the camera's current zoom, in world units.
+     * @returns Outline width that stays a few pixels thick
+     */
+    const currentOutlineWidth = (): number =>
+      unitOutlineWidth(
+        camera.radius,
+        Math.max(1, engine.getRenderHeight()),
+        camera.fov,
+      );
+
+    /**
+     * Keeps every figure's rim a few pixels thick while the camera zooms.
+     * New figures pick up the width when they are created.
+     */
+    const syncOutlineWidth = (): void => {
+      const height = Math.max(1, engine.getRenderHeight());
+      if (
+        Math.abs(camera.radius - outlinedAtRadius) < 0.05 &&
+        height === outlinedAtHeight
+      ) {
+        return;
+      }
+      outlinedAtRadius = camera.radius;
+      outlinedAtHeight = height;
+      const width = unitOutlineWidth(camera.radius, height, camera.fov);
+      for (const visual of entities.values()) {
+        for (const mesh of visual.presentation.getChildMeshes()) {
+          if (mesh.renderOutline) mesh.outlineWidth = width;
+        }
+      }
     };
 
     const inspectMaterial = material(scene, "inspect-ring", "#b8ffe0", true);
@@ -592,12 +834,17 @@ export function createDescentBabylonScene(
       inspectMarker.setEnabled(true);
     };
 
-    /** Shows or hides the snapped building footprint under the cursor. */
-    const setPlacementPoint = (point: MapPoint | null): void => {
+    /**
+     * Shows or hides the snapped building footprint under the cursor.
+     * @param point - Cursor on the map, or null to hide the preview
+     * @param footprint - Side of the building's square in map cells
+     */
+    const setPlacementPoint = (point: MapPoint | null, footprint = 1): void => {
       if (point === null) {
         placementPreview.setEnabled(false);
         return;
       }
+      placementPreview.scaling.set(footprint, 1, footprint);
       placementPreview.position.set(
         Math.round(point.x),
         0.04,
@@ -769,6 +1016,45 @@ export function createDescentBabylonScene(
       return frame;
     };
 
+    /**
+     * Fits a generated building into its square without letting a slender
+     * model tower over the map.
+     * @param span - Width the building is drawn at
+     * @param modelWidth - Model's wider ground side, in model units
+     * @param modelHeight - Model's height, in model units
+     * @returns Uniform scale for the model
+     */
+    const buildingModelScale = (
+      role: AshenGateAssetRole,
+      span: number,
+      modelWidth: number,
+      modelHeight: number,
+    ): number => {
+      const presence = BUILDING_ROLE_PRESENCE[role];
+      const drawnSpan = span * (presence?.spanScale ?? 1);
+      const heightRatio = presence?.heightRatio ?? BUILDING_MAX_HEIGHT_RATIO;
+      return Math.min(
+        drawnSpan / modelWidth,
+        (drawnSpan * heightRatio) / Math.max(0.01, modelHeight),
+      );
+    };
+
+    /**
+     * The model role for a building. An upgraded Camp steps back through
+     * Citadel, Stronghold, and Camp until it finds a generated model.
+     * @param building - Published building
+     * @returns Role whose model to draw
+     */
+    const roleForBuilding = (building: ShellBuilding): AshenGateAssetRole => {
+      let role = assetRoleForBuilding(building.buildingType, building.tier);
+      let fallback = HOLD_MODEL_FALLBACK[role];
+      while (fallback !== undefined && currentAssets[role] === undefined) {
+        role = fallback;
+        fallback = HOLD_MODEL_FALLBACK[role];
+      }
+      return role;
+    };
+
     /** Adds a model instance to a gameplay visual and retires its stand-in. */
     const instantiateModel = (
       visual: EntityVisual,
@@ -788,13 +1074,19 @@ export function createDescentBabylonScene(
       const width = Math.max(0.01, (max[0] ?? 1) - (min[0] ?? 0));
       const height = getModelHeight(asset);
       const depth = Math.max(0.01, (max[2] ?? 1) - (min[2] ?? 0));
-      const targetSize = visual.kind === "unit" ? 1.8 : 2.75;
-      const span = visual.kind === "unit" ? height : Math.max(width, depth);
       const scale =
         visual.kind === "unit"
-          ? getCharacterModelScale(asset, targetSize)
-          : targetSize / span;
+          ? getCharacterModelScale(asset, 1.8)
+          : buildingModelScale(
+              visual.role,
+              visual.span,
+              Math.max(width, depth),
+              height,
+            );
       generated.scaling.setAll(scale);
+      if (visual.kind === "building" && visual.health !== null) {
+        visual.health.position.y = height * scale + BUILDING_HEALTH_CLEARANCE;
+      }
       generated.position.set(
         -(((max[0] ?? 0) + (min[0] ?? 0)) / 2) * scale,
         -(min[1] ?? 0) * scale,
@@ -803,6 +1095,7 @@ export function createDescentBabylonScene(
       for (const mesh of generated.getChildMeshes()) {
         mesh.receiveShadows = true;
         shadows.addShadowCaster(mesh);
+        markSilhouette(mesh, currentOutlineWidth());
       }
       visual.generated = generated;
       visual.animations = instance.animationGroups;
@@ -966,15 +1259,72 @@ export function createDescentBabylonScene(
       }
     };
 
-    /** Loads one role once, then instantiates it for all matching entities. */
-    const loadRole = (role: AshenGateAssetRole, asset: ThreeDAsset): void => {
-      if (role === "environment") return;
-      if (loadedAssetIds.get(role) === asset.id) return;
-      if (loadingAssetIds.get(role) === asset.id) return;
-      loadingAssetIds.set(role, asset.id);
-      void LoadAssetContainerAsync(asset.url, scene, {
-        pluginExtension: ".glb",
-      })
+    /**
+     * Places every fixed scenery copy of one generated model around the
+     * plateau and hides that role's stand-ins.
+     * @param role - Scenery role that just loaded
+     * @param asset - Validated generated prop
+     * @param container - Loaded Babylon asset container
+     */
+    const placeScenery = (
+      role: AshenGateAssetRole,
+      asset: ThreeDAsset,
+      container: AssetContainer,
+    ): void => {
+      if (!isSceneryAssetRole(role)) return;
+      sceneryRoot ??= new TransformNode("ashen-scenery", scene);
+      for (const node of sceneryRoot.getChildren()) {
+        if (node.name.startsWith(`scenery-${role}-`)) node.dispose();
+      }
+      for (const placement of backdrop.placements) {
+        if (placement.role === role) sceneryNodes.delete(placement.id);
+      }
+      for (const placement of backdrop.placements) {
+        if (placement.role !== role) continue;
+        const root = new TransformNode(
+          `scenery-${role}-${placement.id}`,
+          scene,
+        );
+        root.parent = sceneryRoot;
+        root.metadata = { placementId: placement.id };
+        root.position.set(placement.x, placement.y, placement.z);
+        root.rotation.y = placement.rotation;
+        root.setEnabled(revealedScenery.has(placement.id));
+        sceneryNodes.set(placement.id, root);
+        instantiateDecorationProp(
+          placement.id,
+          asset,
+          container,
+          root,
+          placement.footprint,
+          placement.height,
+        );
+        for (const mesh of root.getChildMeshes()) mesh.isPickable = true;
+      }
+      backdrop.hideStandIns(role);
+    };
+
+    /**
+     * Loads one role once, then instantiates it for all matching entities.
+     * @param role - Asset role to fill
+     * @param asset - Generated model for that role
+     * @param track - Counts the download for the loading screen
+     * @returns Resolves once the model is placed or its stand-in is kept
+     */
+    const loadRole = (
+      role: AshenGateAssetRole,
+      asset: ThreeDAsset,
+      track: TrackLoad,
+    ): Promise<void> => {
+      if (loadedAssetIds.get(role) === asset.id) return Promise.resolve();
+      const inFlight = loadingAssetIds.get(role);
+      if (inFlight?.assetId === asset.id) return inFlight.done;
+      const done = track(
+        asset.name,
+        LoadAssetContainerAsync(asset.url, scene, {
+          pluginExtension: ".glb",
+        }),
+      )
         .then((container) => {
           loadingAssetIds.delete(role);
           if (disposed) {
@@ -991,82 +1341,44 @@ export function createDescentBabylonScene(
           if (isResourceAssetRole(role) || role === "emberVent") {
             decorationAssetsDirty = true;
           }
+          placeScenery(role, asset, container);
         })
         .catch(() => {
           loadingAssetIds.delete(role);
           if (!disposed)
             status(`${asset.name} could not load · stand-in active`);
         });
+      loadingAssetIds.set(role, { assetId: asset.id, done });
+      return done;
     };
 
-    /** Loads the decorative environment without making it part of picking. */
-    const loadEnvironment = (asset: ThreeDAsset): void => {
-      if (loadedAssetIds.get("environment") === asset.id) return;
-      if (loadingAssetIds.get("environment") === asset.id) return;
-      loadingAssetIds.set("environment", asset.id);
-      void LoadAssetContainerAsync(asset.url, scene, {
-        pluginExtension: ".glb",
-      })
-        .then((container) => {
-          loadingAssetIds.delete("environment");
-          if (disposed) {
-            container.dispose();
-            return;
-          }
-          environmentRoot?.dispose();
-          environmentContainer?.dispose();
-          const generated = new TransformNode("generated-ashen-gate", scene);
-          const instance = container.instantiateModelsToScene(
-            (name) => `ashen-gate-${name}`,
-            false,
-          );
-          for (const rootNode of instance.rootNodes)
-            rootNode.parent = generated;
-          const { min, max } = asset.validation.bounds;
-          const width = Math.max(0.01, (max[0] ?? 1) - (min[0] ?? 0));
-          const depth = Math.max(0.01, (max[2] ?? 1) - (min[2] ?? 0));
-          const scaleX = currentModel.map.width / width;
-          const scaleZ = currentModel.map.height / depth;
-          // The glTF loader mirrors authored x when converting handedness, so
-          // negate x to keep the designed eastern gate at the horde edge.
-          // Negating z reflects the asset's north/south axis into the same
-          // top-origin map coordinates used by entities and the minimap.
-          generated.scaling.set(-scaleX, 0.8, -scaleZ);
-          generated.position.set(
-            currentModel.map.width / 2 -
-              (((max[0] ?? 0) + (min[0] ?? 0)) / 2) * scaleX,
-            0,
-            currentModel.map.height / 2 +
-              (((max[2] ?? 0) + (min[2] ?? 0)) / 2) * scaleZ,
-          );
-          for (const node of generated.getDescendants(false)) {
-            if (isOverheadEnvironmentPart(node.name)) node.setEnabled(false);
-          }
-          for (const mesh of generated.getChildMeshes()) {
-            mesh.isPickable = false;
-            mesh.receiveShadows = true;
-          }
-          environmentRoot = generated;
-          environmentContainer = container;
-          loadedAssetIds.set("environment", asset.id);
-        })
-        .catch(() => {
-          loadingAssetIds.delete("environment");
-          if (!disposed)
-            status(`${asset.name} could not load · terrain active`);
-        });
-    };
-
-    /** Applies all newly discovered generated models without resetting the scene. */
-    const setAssets = (assets: AshenGateAssetSet): void => {
+    /**
+     * Applies all newly discovered generated models without resetting the
+     * scene.
+     * @param assets - Generated models keyed by role
+     * @param track - Counts each download for the loading screen
+     * @returns Resolves once every model is placed or kept as a stand-in
+     */
+    const setAssets = async (
+      assets: AshenGateAssetSet,
+      track: TrackLoad = untrackedLoad,
+    ): Promise<void> => {
       currentAssets = assets;
-      for (const [role, asset] of Object.entries(assets) as [
-        AshenGateAssetRole,
-        ThreeDAsset,
-      ][]) {
-        if (role === "environment") loadEnvironment(asset);
-        else loadRole(role, asset);
-      }
+      await Promise.all(
+        (Object.entries(assets) as [AshenGateAssetRole, ThreeDAsset][]).map(
+          ([role, asset]) => loadRole(role, asset, track),
+        ),
+      );
+    };
+
+    /**
+     * Waits until every mesh, material, and texture in the scene is ready to
+     * draw, so the first visible frame does not stall on shader compiles.
+     * @returns Resolves when the scene is ready or has been disposed
+     */
+    const whenReady = async (): Promise<void> => {
+      if (disposed) return;
+      await scene.whenReadyAsync();
     };
 
     /** Creates a selectable entity root from the current read model. */
@@ -1078,7 +1390,12 @@ export function createDescentBabylonScene(
       const role =
         kind === "unit"
           ? assetRoleForUnit(entity as ShellUnit)
-          : assetRoleForBuilding((entity as ShellBuilding).buildingType);
+          : roleForBuilding(entity as ShellBuilding);
+      const span =
+        kind === "building"
+          ? buildingSpan((entity as ShellBuilding).footprint)
+          : 0;
+      const buildingScale = span / BUILDING_REFERENCE_SPAN;
       const root = new TransformNode(`${kind}-${entity.id}`, scene);
       const worldZ = mapYToWorldZ(entity.y, currentModel.map.height);
       root.position.set(entity.x, 0, worldZ);
@@ -1097,46 +1414,66 @@ export function createDescentBabylonScene(
       );
       const construction =
         kind === "building" ? createConstructionFrame(entity.id, root) : null;
+      if (kind === "building") fallback.scaling.setAll(buildingScale);
+      construction?.scaling.setAll(buildingScale);
       for (const mesh of fallback.getChildMeshes()) {
         mesh.receiveShadows = true;
         shadows.addShadowCaster(mesh);
+        markSilhouette(mesh, currentOutlineWidth());
       }
-      if (kind === "unit" && factionId === "horde") {
-        const enemyGround = CreateCylinder(
-          `enemy-ground-${entity.id}`,
-          {
-            diameter: role === "cinderjaw" ? 1.9 : 1.35,
-            height: 0.025,
-            tessellation: 32,
-          },
-          scene,
-        );
-        enemyGround.parent = root;
-        enemyGround.position.y = 0.015;
-        enemyGround.material = enemyGroundMaterial;
-        enemyGround.isPickable = false;
+      const markerDiameter = kind === "unit" ? unitMarkerDiameter(role) : 0;
+      const marker =
+        kind === "unit"
+          ? CreateGround(
+              `unit-marker-${entity.id}`,
+              {
+                height: markerDiameter,
+                subdivisions: 1,
+                width: markerDiameter,
+              },
+              scene,
+            )
+          : null;
+      if (marker !== null) {
+        marker.parent = root;
+        marker.position.y = 0.01;
+        marker.material =
+          factionId === "hold" ? holdMarkerMaterial : hordeMarkerMaterial;
+        marker.isPickable = false;
+        glow.addExcludedMesh(marker);
       }
       const ring = CreateTorus(
         `selection-${entity.id}`,
         {
-          diameter: kind === "unit" ? 1.35 : 3.25,
-          tessellation: 28,
-          thickness: kind === "unit" ? 0.055 : 0.08,
+          diameter: kind === "unit" ? selectionRingDiameter(role) : span + 0.5,
+          tessellation: kind === "unit" ? 32 : 48,
+          thickness: kind === "unit" ? 0.04 : 0.08,
         },
         scene,
       );
       ring.parent = root;
-      ring.position.y = 0.025;
+      ring.position.y = kind === "unit" ? 0.022 : 0.025;
       ring.material = selectedMaterial;
       ring.isPickable = false;
       ring.setEnabled(false);
       const health = CreateBox(
         `health-${entity.id}`,
-        { depth: 0.055, height: 0.07, width: kind === "unit" ? 0.9 : 1.8 },
+        {
+          depth: 0.055,
+          height: kind === "unit" ? 0.07 : 0.1,
+          width: kind === "unit" ? 0.9 : healthBarWidth(span),
+        },
         scene,
       );
       health.parent = root;
-      health.position.set(0, kind === "unit" ? 1.75 : 2.65, 0);
+      health.position.set(
+        0,
+        kind === "unit"
+          ? 1.75
+          : BUILDING_STAND_IN_HEIGHT * buildingScale +
+              BUILDING_HEALTH_CLEARANCE,
+        0,
+      );
       health.material = healthMaterial;
       health.billboardMode = Mesh.BILLBOARDMODE_ALL;
       health.isPickable = false;
@@ -1162,6 +1499,7 @@ export function createDescentBabylonScene(
         role,
         root,
         selection: ring,
+        span,
         stepDuration: 0,
         stepFrom: new Vector3(entity.x, 0, worldZ),
         stepInterval: DEFAULT_STEP_INTERVAL_MS,
@@ -1176,6 +1514,9 @@ export function createDescentBabylonScene(
         kind,
         unitId: kind === "unit" ? entity.id : undefined,
       });
+      // The marker is wider than the body. Leave clicks on the figure itself
+      // so a packed formation does not select whoever's ring is on top.
+      if (marker !== null) marker.isPickable = false;
       const generatedAsset = currentAssets[role];
       const container = containers.get(role);
       if (generatedAsset !== undefined && container !== undefined) {
@@ -1655,6 +1996,139 @@ export function createDescentBabylonScene(
       if (Math.hypot(dx, dz) > 0.01) visual.facing = Math.atan2(dx, dz);
     };
 
+    /**
+     * Hides rim and abyss scenery whose nearest map edge is still unseen,
+     * since tall props would otherwise stand above the flat fog sheet.
+     * @param model - Latest shell model
+     */
+    const syncSceneryFog = (model: ShellModel): void => {
+      const cells = model.fog?.cells ?? null;
+      if (cells === revealedSceneryCells) return;
+      revealedSceneryCells = cells;
+      revealedScenery = revealedSceneryIds(
+        model.fog,
+        backdrop.placements,
+        model.map.height,
+      );
+      backdrop.revealStandIns(revealedScenery);
+      for (const [id, node] of sceneryNodes) {
+        node.setEnabled(revealedScenery.has(id));
+      }
+    };
+
+    /**
+     * Plants one waypoint flag: a dark pole, a pennant in the order color,
+     * and a ring on the ground.
+     * @param flag - Flag to draw
+     * @param parent - Node that owns this set of flags
+     */
+    const plantRouteFlag = (flag: RouteFlag, parent: TransformNode): void => {
+      const color = markerMaterials[flag.attack ? "attack" : "move"];
+      const root = new TransformNode(`route-flag-${flag.order}`, scene);
+      root.parent = parent;
+      root.position.set(
+        flag.x,
+        0,
+        mapYToWorldZ(flag.y, currentModel.map.height),
+      );
+      const pole = CreateCylinder(
+        "route-flag-pole",
+        { diameter: 0.06, height: 1.5, tessellation: 6 },
+        scene,
+      );
+      pole.parent = root;
+      pole.position.y = 0.75;
+      pole.material = holdDarkMaterial;
+      const pennant = CreateDisc(
+        "route-flag-pennant",
+        { radius: 0.32, sideOrientation: Mesh.DOUBLESIDE, tessellation: 3 },
+        scene,
+      );
+      pennant.parent = root;
+      pennant.position.set(0.24, 1.3, 0);
+      pennant.material = color;
+      const ring = CreateTorus(
+        "route-flag-ring",
+        { diameter: 0.7, tessellation: 24, thickness: 0.05 },
+        scene,
+      );
+      ring.parent = root;
+      ring.position.y = 0.05;
+      ring.material = color;
+      for (const mesh of root.getChildMeshes()) mesh.isPickable = false;
+    };
+
+    /**
+     * Shows where the selected Hold units are headed: a flag per click and a
+     * dashed line from the group through each one. Hidden with no selection.
+     * @param model - Latest shell model
+     * @param selection - Current selection
+     */
+    const syncRoute = (model: ShellModel, selection: Selection): void => {
+      const selected = new Set(selection.unitIds);
+      const plan = routePlan(
+        model.units.filter(
+          (unit) => selected.has(unit.id) && unit.factionId === "hold",
+        ),
+      );
+      const flagSignature = plan.flags
+        .map(
+          (flag) =>
+            `${flag.attack ? "a" : "m"}${flag.x.toFixed(1)},${flag.y.toFixed(1)}`,
+        )
+        .join("|");
+      if (flagSignature !== routeFlagSignature) {
+        routeFlagSignature = flagSignature;
+        routeFlagRoot?.dispose();
+        routeFlagRoot = null;
+        if (plan.flags.length > 0) {
+          routeFlagRoot = new TransformNode("unit-route-flags", scene);
+          routeFlagRoot.parent = routeRoot;
+          for (const flag of plan.flags) plantRouteFlag(flag, routeFlagRoot);
+        }
+      }
+      const lineSignature =
+        plan.flags.length === 0
+          ? ""
+          : plan.path
+              .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+              .join("|");
+      if (lineSignature === routeLineSignature) return;
+      routeLineSignature = lineSignature;
+      routeLine?.dispose();
+      routeLine = null;
+      if (lineSignature === "") return;
+      const points = plan.path.map(
+        (point) =>
+          new Vector3(point.x, 0.09, mapYToWorldZ(point.y, model.map.height)),
+      );
+      let length = 0;
+      for (let index = 1; index < points.length; index += 1) {
+        length += Vector3.Distance(
+          points[index - 1] as Vector3,
+          points[index] as Vector3,
+        );
+      }
+      const line = CreateDashedLines(
+        "unit-route-line",
+        {
+          dashNb: Math.max(4, Math.round(length * 1.6)),
+          dashSize: 3,
+          gapSize: 2,
+          points,
+        },
+        scene,
+      );
+      line.color = Color3.FromHexString(
+        plan.flags.some((flag) => flag.attack) ? "#ff7a5c" : "#9dffb4",
+      );
+      line.alpha = 0.75;
+      line.isPickable = false;
+      line.parent = routeRoot;
+      glow.addExcludedMesh(line);
+      routeLine = line;
+    };
+
     /** Synchronizes entity presentation to the latest immutable sim snapshot. */
     const update = (
       model: ShellModel,
@@ -1663,6 +2137,8 @@ export function createDescentBabylonScene(
     ): void => {
       currentModel = model;
       setPresentationPaused(model.paused);
+      fogOverlay.update(model.fog);
+      syncSceneryFog(model);
       if (!placing) setPlacementPoint(null);
       const live = new Set<string>();
       for (const unit of model.units) {
@@ -1689,7 +2165,7 @@ export function createDescentBabylonScene(
       for (const building of model.buildings) {
         live.add(building.id);
         let visual = entities.get(building.id);
-        const role = assetRoleForBuilding(building.buildingType);
+        const role = roleForBuilding(building);
         if (visual !== undefined && visual.role !== role) {
           visual.root.dispose();
           entities.delete(building.id);
@@ -1735,24 +2211,35 @@ export function createDescentBabylonScene(
       for (const visual of entities.values()) {
         if (live.has(visual.id)) continue;
         if (visual.removeAt !== null) continue;
-        visual.removeAt = presentationNow + (reducedMotion ? 0 : 560);
+        // A horde body that walked out of sight is gone, not dead: drop it
+        // at once instead of playing a death.
+        const lostInFog =
+          visual.factionId === "horde" &&
+          !isFogVisible(model.fog, {
+            x: visual.target.x,
+            y: worldZToMapY(visual.target.z, model.map.height),
+          });
+        visual.removeAt =
+          presentationNow + (reducedMotion || lostInFog ? 0 : 560);
         visual.target.copyFrom(visual.root.position);
         visual.stepFrom.copyFrom(visual.root.position);
         visual.targetScale.setAll(reducedMotion ? 0 : 0.08);
         visual.health?.setEnabled(false);
         visual.selection.setEnabled(false);
         carryIcons.remove(visual.id);
-        if (visual.kind === "unit") {
+        if (visual.kind === "unit" && !lostInFog) {
           playAction(visual, "death", 520, presentationNow);
         }
       }
       clampCameraTarget();
       syncDecorations(model);
       syncEffects(model);
+      syncRoute(model, selection);
     };
 
     scene.onBeforeRenderObservable.add(() => {
       const deltaMs = Math.min(50, engine.getDeltaTime());
+      backdrop.update(deltaMs);
       const cameraBlend = reducedMotion ? 1 : motionBlend(deltaMs, 155);
       if (decorationAssetsDirty) {
         decorationAssetsDirty = false;
@@ -1768,7 +2255,9 @@ export function createDescentBabylonScene(
         smoothedCameraTarget,
       );
       camera.setTarget(smoothedCameraTarget);
+      syncOutlineWidth();
       publishCameraView(performance.now());
+      fogOverlay.render(performance.now());
       setPresentationPaused(currentModel.paused);
       presentationNow = advancePresentationTime(
         presentationNow,
@@ -1803,7 +2292,8 @@ export function createDescentBabylonScene(
         if (visual.health !== null) {
           visual.health.scaling.x = visual.healthRatio;
           visual.health.position.x =
-            -(1 - visual.healthRatio) * (visual.kind === "unit" ? 0.45 : 0.9);
+            -(1 - visual.healthRatio) *
+            (visual.kind === "unit" ? 0.45 : healthBarWidth(visual.span) / 2);
         }
         if (visual.kind !== "unit" || visual.removeAt !== null) continue;
         const progress = stepProgress(
@@ -1916,6 +2406,7 @@ export function createDescentBabylonScene(
       const y = clientY - rect.top;
       const result = scene.pick(x, y, (mesh) => mesh.isPickable);
       const metadata = entityMetadata(result?.pickedMesh ?? null);
+      const sceneryId = sceneryPlacementId(result?.pickedMesh ?? null);
       // Skinned GLB characters are picked against their bind pose, which need
       // not match what is drawn, so units are hit-tested on screen instead.
       const unitId = unitAtScreenPoint(
@@ -1939,6 +2430,7 @@ export function createDescentBabylonScene(
             ),
           ),
         },
+        sceneryId: unitId === null ? sceneryId : null,
         unitId: unitId ?? metadata?.unitId ?? null,
       };
     };
@@ -2028,7 +2520,7 @@ export function createDescentBabylonScene(
 
     const disposeRuntime = attachBabylonRuntimeLifecycle(engine, scene, window);
     update(initialModel, initialSelection, false);
-    setAssets(initialAssets);
+    void setAssets(initialAssets);
     return {
       dispose: () => {
         if (disposed) return;
@@ -2039,6 +2531,8 @@ export function createDescentBabylonScene(
         for (const effect of transientEffects) effect.mesh.dispose();
         transientEffects.length = 0;
         carryIcons.dispose();
+        fogOverlay.dispose();
+        routeRoot.dispose();
         disposeRuntime();
       },
       focusCamera,
@@ -2046,9 +2540,11 @@ export function createDescentBabylonScene(
       setAssets,
       setInspectRing,
       setPlacementPoint,
+      setTextures: backdrop.setTextures,
       showOrderMarker,
       unitsInScreenBox,
       update,
+      whenReady,
     };
   } catch (error) {
     engine.dispose();

@@ -1,4 +1,3 @@
-import { ASHEN_GATE_MAP } from "../../data/layers/ashen_gate";
 import { CombatSimulation, createCombatUnit } from "../combat/combatSimulation";
 import { getClassCounterMultiplier } from "../combat/counters";
 import type {
@@ -9,13 +8,15 @@ import type {
 } from "../combat/types";
 import { getUnitDefinition } from "../combat/unitCatalog";
 import { damageBuilding } from "../economy/actions";
+import { footprintBodyRadius } from "../economy/footprint";
 import type { EconomyUnit } from "../economy/model";
 import { addItem } from "../economy/queries";
 import { asBuilding, economyHost, isEconomyUnit } from "../economy/records";
 import { buildingDef } from "../economy/tables";
-import { activeVentVolumes, environmentAt } from "../layers/hazards";
+import { environmentAt, worldVentVolumes } from "../layers/hazards";
 import { LAYER_TABLE } from "../layers/layerTable";
 import type { HazardId, LayerBuilding } from "../layers/layerTypes";
+import type { HurtDisk } from "../pathing/avoidHurt";
 import { TICK_MS, TICKS_PER_SECOND } from "../sim/constants";
 import type { TickContext } from "../sim/modules";
 import type { SimWorldState } from "../sim/world";
@@ -106,7 +107,8 @@ export function runCombatTick(context: TickContext): void {
   const targets = buildingTargets(world);
   const simulation = new CombatSimulation({
     buildings: targets,
-    hurtZones: activeVentVolumes(world.layerId),
+    hurtZones: worldVentVolumes(world),
+    obstacles: buildingObstacles(world),
     pendingProjectiles: state.combat.projectiles,
     startTick: state.combat.tick,
     tickMs: TICK_MS,
@@ -263,6 +265,7 @@ function towerBody(
     attackKind: "projectile",
     attackRange: WARD_TOWER.attackRange,
     attacksPerSecond: WARD_TOWER.attacksPerSecond,
+    bodyRadius: footprintBodyRadius(tower.buildingType),
     classId: "hunter",
     damage: round(WARD_TOWER.damage * auraBonus),
     factionId: HOLD_FACTION,
@@ -351,6 +354,7 @@ function buildingTargets(world: SimWorldState): CombatBuilding[] {
     return [
       {
         armor: BUILDING_ARMOR,
+        bodyRadius: footprintBodyRadius(record.buildingType),
         factionId: HOLD_FACTION,
         hitPoints: record.hp,
         id: record.id,
@@ -411,7 +415,7 @@ function applyHazards(world: SimWorldState): void {
     activeHazards: hazards,
     buildings: layerBuildings(world),
     table: LAYER_TABLE,
-    ventVolumes: ASHEN_GATE_MAP.vents,
+    ventVolumes: worldVentVolumes(world),
   };
   const seconds = TICK_MS / 1_000;
   for (const unit of world.units) {
@@ -432,6 +436,21 @@ function applyHazards(world: SimWorldState): void {
     if (burn.burnPerSecond <= 0) continue;
     damageWaveUnit(waves, unit.id, burn.burnPerSecond * seconds, "spell");
   }
+}
+
+/**
+ * Large buildings as round obstacles that soldiers and the horde walk around.
+ * One-cell pieces are left out: walls stop the horde through `blockAtWalls`,
+ * and gates must stay open to the Hold.
+ * @param world - Sim world
+ * @returns One disk per building wider than a cell
+ */
+function buildingObstacles(world: SimWorldState): HurtDisk[] {
+  return world.buildings.flatMap((building) => {
+    const radius = footprintBodyRadius(building.buildingType);
+    if (radius <= 0) return [];
+    return [{ radius, x: building.x, y: building.y }];
+  });
 }
 
 /**
@@ -526,7 +545,12 @@ function damageWithNotice(
   if (world.buildings.some((entry) => entry.id === buildingId)) return;
   const name = buildingDef(building.buildingType)?.name ?? "A building";
   pushNotice(world, `${name} has fallen.`, "bad");
-  pushFx(world, { kind: "collapse", x: building.x, y: building.y });
+  pushFx(world, {
+    kind: "collapse",
+    sound: "building",
+    x: building.x,
+    y: building.y,
+  });
 }
 
 /**
@@ -686,6 +710,7 @@ function applyBossSplash(
     }
     pushFx(world, {
       kind: "collapse",
+      sound: "impact",
       x: target.position.x,
       y: target.position.y,
     });
@@ -948,6 +973,14 @@ function recordFx(
       pushFx(world, {
         from: { ...source.position },
         kind: event.attackKind === "melee" ? "melee" : "projectile",
+        ...(event.attackKind === "projectile"
+          ? {
+              sound:
+                source.classId === "adept"
+                  ? ("magic" as const)
+                  : ("projectile" as const),
+            }
+          : {}),
         to: { ...targetPoint },
       });
       continue;

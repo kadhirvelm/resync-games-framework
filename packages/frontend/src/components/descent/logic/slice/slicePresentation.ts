@@ -1,7 +1,7 @@
 import {
   ASHEN_GATE_BUILDINGS,
   ASHEN_GATE_CONTENT,
-  ASHEN_GATE_MAP,
+  ASHEN_GATE_STARTING_VILLAGERS,
 } from "../../data/layers/ashen_gate";
 import type {
   BossReadout,
@@ -10,6 +10,7 @@ import type {
   BuildReadout,
   DescentPresentation,
   HoldUpgradeReadout,
+  MarketReadout,
   ObjectiveReadout,
   PillFeedReadout,
   RationReadout,
@@ -22,6 +23,7 @@ import { getUnitDefinition } from "../combat/unitCatalog";
 import type { CultivationSystem } from "../cultivation/cultivationSystem";
 import { PILLS } from "../cultivation/data";
 import type { CultivationView } from "../cultivation/types";
+import { growthFraction } from "../economy/harvest";
 import type { EconomyUnit, HoldTier } from "../economy/model";
 import {
   getHoldTier,
@@ -36,7 +38,11 @@ import {
   holdTierDef,
   listBuildingDefs,
   listPillRecipes,
+  marketRates,
+  workerSlots,
 } from "../economy/tables";
+import { activeWorkers } from "../economy/villagers";
+import { worldVentVolumes } from "../layers/hazards";
 import { TICKS_PER_SECOND } from "../sim/constants";
 import type { SimWorldState } from "../sim/world";
 import type { ClassId, ResourceStockpile, SchoolId } from "../types";
@@ -49,6 +55,7 @@ import {
   layerSchoolModifier,
   openCultivation,
 } from "./sliceCultivation";
+import { readFogOfWar } from "./sliceFog";
 import {
   type AshenGateSliceState,
   ECONOMY_STEP_TICKS,
@@ -57,10 +64,12 @@ import {
 } from "./sliceState";
 import {
   BARRACKS_CLASSES,
+  isTrainingShortfall,
   trainingBlocker,
   trainingPlan,
   trainingRallyPoint,
 } from "./sliceTraining";
+import { unitRoute } from "./sliceWaypoints";
 
 const TIER_ORDER: readonly HoldTier[] = ["Camp", "Stronghold", "Citadel"];
 
@@ -81,10 +90,11 @@ export function publishPresentation(world: SimWorldState): void {
     buildings: buildingReadouts(world, state),
     buildOptions: buildOptions(world),
     calamities: [],
+    fog: readFogOfWar(world),
     fx: state.fx,
     hellPressure: waves.hellPressure,
     holdUpgrade: holdUpgrade(world),
-    marketRates: [],
+    marketRates: marketReadouts(world),
     nodes: host.economy.nodes
       .filter((node) => node.remaining > 0)
       .map((node) => ({
@@ -115,7 +125,7 @@ export function publishPresentation(world: SimWorldState): void {
     treasures: [],
     units: unitReadouts(world, state, waves, cultivation),
     veins: host.economy.veins.map((vein) => ({ ...vein, radius: 0.5 })),
-    vents: ASHEN_GATE_MAP.vents.map((vent, index) => ({
+    vents: worldVentVolumes(world).map((vent, index) => ({
       ...vent,
       id: `ashen-vent-${index + 1}`,
       label: "Ember vent",
@@ -202,6 +212,7 @@ function holdUnitReadout(
       idle: unit.task === null && !unit.garrisoned,
       maxHitPoints: unit.maxHp,
       name: "Villager",
+      ...routeField(world, unit),
       task: villagerTask(world, unit),
     };
   }
@@ -214,6 +225,7 @@ function holdUnitReadout(
     hitPoints: Math.max(0, Math.round(unit.hp)),
     maxHitPoints: Math.round(unit.maxHp),
     name: definition.name.replace("Hold ", ""),
+    ...routeField(world, unit),
   };
   if (!cultivation.hasUnit(unit.id)) return readout;
   const record = cultivation.getUnitState(unit.id);
@@ -235,6 +247,19 @@ function holdUnitReadout(
       ? layerSchoolModifier(world, record.school)
       : undefined,
   };
+}
+
+/**
+ * @param world - Sim world
+ * @param unit - Living Hold unit
+ * @returns A `route` field when the unit is headed somewhere, else nothing
+ */
+function routeField(
+  world: SimWorldState,
+  unit: EconomyUnit,
+): Pick<UnitReadout, "route"> {
+  const route = unitRoute(world, unit);
+  return route.length === 0 ? {} : { route };
 }
 
 /**
@@ -291,7 +316,24 @@ function villagerTask(world: SimWorldState, unit: EconomyUnit): string {
   const name = building ? buildingName(building.buildingType) : "a building";
   if (task.kind === "build") return `Building ${name}`;
   if (task.kind === "repair") return `Repairing ${name}`;
+  if (task.kind === "work") return `Working the ${name}`;
+  if (task.kind === "harvest") return harvesterTask(building, name);
   return "Hauling";
+}
+
+/**
+ * @param building - Harvested producer the villager tends, if it still stands
+ * @param name - Its display name
+ * @returns Whether the villager is picking a ripe crop or waiting on growth
+ */
+function harvesterTask(
+  building: SimWorldState["buildings"][number] | undefined,
+  name: string,
+): string {
+  const growth = building ? growthFraction(asBuilding(building)) : null;
+  if (growth === null) return `Tending the ${name}`;
+  if (growth >= 1) return `Harvesting the ${name}`;
+  return `Tending the ${name} (${Math.floor(growth * 100)}% grown)`;
 }
 
 /**
@@ -355,6 +397,30 @@ function buildingReadouts(
         record.brew.progress / Math.max(1, record.brew.required);
       readout.activity = `Brewing ${pillName(record.brew.pillId)}`;
     }
+    const production = buildingDef(record.buildingType)?.production;
+    const growth = growthFraction(record);
+    if (growth !== null) {
+      readout.progress = growth;
+      readout.growth = { progress: growth, ripe: growth >= 1 };
+      readout.activity = cropActivity(
+        record.buildingType,
+        record.production !== null,
+        growth,
+        harvesterAssigned(world, record.id),
+      );
+    } else if (
+      production !== null &&
+      production !== undefined &&
+      record.completed
+    ) {
+      readout.progress =
+        (record.production?.progress ?? 0) / Math.max(1, production.everyTicks);
+      readout.activity = productionActivity(
+        record.buildingType,
+        record.production !== null,
+        activeWorkers(host, record),
+      );
+    }
     if (record.buildingType === "camp" && host.economy.upgrade) {
       const total = holdTierDef(host.economy.upgrade.target)?.upgradeTicks ?? 1;
       readout.progress =
@@ -389,11 +455,27 @@ function buildOptions(world: SimWorldState): BuildReadout[] {
       if (definition.blocksHorde) hints.push("Blocks the horde.");
       if (definition.popBonus)
         hints.push(`+${definition.popBonus} population.`);
+      if (definition.production) {
+        const seconds =
+          (definition.production.everyTicks * ECONOMY_STEP_TICKS) /
+          TICKS_PER_SECOND;
+        const input = costLabel(definition.production.input);
+        const inputLabel = input === "Free" ? "No input" : `Uses ${input}`;
+        hints.push(
+          `${inputLabel}; makes ${costLabel(definition.production.output)} every ${seconds}s.`,
+        );
+        const workerHint = workerSlotHint(definition.production.workers);
+        if (workerHint !== null) hints.push(workerHint);
+        if (definition.production.harvest) {
+          hints.push("Grows on its own; a villager harvests it when ripe.");
+        }
+      }
       let lockedReason: string | undefined;
       if (!tierUnlocked) lockedReason = `Needs ${definition.tier}`;
       else if (!affordable) lockedReason = "Not enough resources";
       return {
         buildingType: definition.id,
+        cost: { ...definition.cost },
         costLabel: costLabel(definition.cost),
         hints,
         job: definition.job,
@@ -423,12 +505,15 @@ function trainOptions(world: SimWorldState): TrainReadout[] {
         allowed: reason === null,
         buildingId: record.id,
         classId,
+        cost: { ...plan.cost },
+        count: plan.count,
         detail: `${plan.count > 1 ? `×${plan.count} · ` : ""}${costLabel(plan.cost)} · ${Math.round(plan.seconds)}s`,
         food: plan.cost.food ?? 0,
         label: plan.count > 1 ? `${className(classId)}s` : className(classId),
         pop: plan.pop,
         reason: reason ?? undefined,
         seconds: plan.seconds,
+        shortfall: isTrainingShortfall(reason),
         water: plan.cost.water ?? 0,
       };
     });
@@ -558,13 +643,35 @@ function holdUpgrade(world: SimWorldState): HoldUpgradeReadout | null {
   const affordable = canAfford(world.resources, definition.upgradeCost);
   let reason: string | undefined;
   if (pending) reason = `${target} is already rising`;
-  else if (!affordable) reason = `Need ${costLabel(definition.upgradeCost)}`;
+  else if (!affordable) reason = "Not enough resources";
   return {
     allowed: reason === undefined,
+    cost: { ...definition.upgradeCost },
     costLabel: costLabel(definition.upgradeCost),
     currentTier: tier,
+    inProgress: upgradeProgress(host.economy.upgrade, definition.upgradeTicks),
     reason,
+    shortfall: !pending && !affordable,
     targetTier: target,
+  };
+}
+
+/**
+ * How far a started Hold upgrade has come.
+ * @param upgrade - The economy's running upgrade, if any
+ * @param totalSteps - Economy steps the whole upgrade takes
+ * @returns Progress and time left, or null when no upgrade is running
+ */
+function upgradeProgress(
+  upgrade: { ticksLeft: number } | null,
+  totalSteps: number,
+): HoldUpgradeReadout["inProgress"] {
+  if (upgrade === null) return null;
+  const total = Math.max(1, totalSteps);
+  const left = Math.min(total, Math.max(0, upgrade.ticksLeft));
+  return {
+    progress: 1 - left / total,
+    secondsLeft: Math.ceil((left * ECONOMY_STEP_TICKS) / TICKS_PER_SECOND),
   };
 }
 
@@ -690,11 +797,10 @@ function objectives(
     (unit) => isEconomyUnit(unit) && unit.popKind === "villager",
   );
   const working = villagers.some(
-    (unit) => isEconomyUnit(unit) && Boolean(unit.preferredNodeId),
+    (unit) =>
+      isEconomyUnit(unit) &&
+      (Boolean(unit.preferredNodeId) || Boolean(unit.workplaceId)),
   );
-  const startingVillagers = ASHEN_GATE_MAP.units.filter(
-    (unit) => (unit.popKind ?? "villager") === "villager",
-  ).length;
   return [
     {
       done: working,
@@ -702,7 +808,7 @@ function objectives(
       label: "Put villagers to work: select them, right-click a resource",
     },
     {
-      done: villagers.length > startingVillagers,
+      done: villagers.length > ASHEN_GATE_STARTING_VILLAGERS,
       id: "villager",
       label: "Select the Camp and train another villager",
     },
@@ -815,6 +921,97 @@ export function costLabel(cost: Partial<ResourceStockpile>): string {
   return entries
     .map(([resourceId, amount]) => `${resourceName(resourceId)} ${amount}`)
     .join(" · ");
+}
+
+/**
+ * Publishes the three renewable-resource sales offered by the Hell Market.
+ * @param world - Sim world whose current layer sets prices
+ * @returns Food, Water, and Wood sale choices in stable order
+ */
+function marketReadouts(world: SimWorldState): MarketReadout[] {
+  const rates = marketRates(world.layerId);
+  const resources = ["food", "water", "wood"] as const;
+  return resources.map((resource) => ({
+    buy: "coin",
+    label: `Sell 1 ${resourceName(resource)} for ${rates.sell[resource] ?? 0} Coin.`,
+    sell: resource,
+  }));
+}
+
+/**
+ * @param buildingType - Producer building id
+ * @param running - Whether its inputs have been paid and its timer is moving
+ * @param workers - Villagers working it this step
+ * @returns Short activity copy for the building panel
+ */
+function productionActivity(
+  buildingType: string,
+  running: boolean,
+  workers: number,
+): string {
+  const slots = workerSlots(buildingType);
+  if (slots > 0 && workers === 0) return "Needs a villager to work it";
+  const crew = slots > 1 ? ` (${workers}/${slots} workers)` : "";
+  if (running || buildingType === "well") {
+    return `${producingLabel(buildingType)}${crew}`;
+  }
+  return "Waiting for Water";
+}
+
+/**
+ * @param buildingType - Harvested producer id
+ * @param growing - Whether its inputs have been paid and a crop is in the ground
+ * @param growth - How far the crop has grown, 0 to 1
+ * @param harvester - Whether a villager is assigned to harvest it
+ * @returns Short activity copy with the growth percentage
+ */
+function cropActivity(
+  buildingType: string,
+  growing: boolean,
+  growth: number,
+  harvester: boolean,
+): string {
+  if (!growing) return "Waiting for Water";
+  if (growth < 1) {
+    return `${producingLabel(buildingType)}: ${Math.floor(growth * 100)}%`;
+  }
+  if (harvester) return "Ripe; harvester on the way";
+  return "Ripe; send a villager to harvest";
+}
+
+/**
+ * @param world - Sim world
+ * @param buildingId - Harvested producer
+ * @returns Whether a villager holds its harvest job
+ */
+function harvesterAssigned(world: SimWorldState, buildingId: string): boolean {
+  return world.units.some(
+    (unit) =>
+      isEconomyUnit(unit) &&
+      unit.task?.kind === "harvest" &&
+      unit.task.buildingId === buildingId,
+  );
+}
+
+/**
+ * @param buildingType - Producer building id
+ * @returns What the producer is doing while its timer runs
+ */
+function producingLabel(buildingType: string): string {
+  if (buildingType === "well") return "Drawing Water";
+  if (buildingType === "farm") return "Growing Food";
+  if (buildingType === "forest") return "Growing Wood";
+  return "Growing Spirit Herbs";
+}
+
+/**
+ * @param workers - Worker slots from the production row
+ * @returns Build-menu copy for how many villagers it takes, or null when none
+ */
+function workerSlotHint(workers: number | null): string | null {
+  if (workers === null) return null;
+  if (workers === 1) return "Needs 1 villager working it.";
+  return `Up to ${workers} villagers work it; each speeds it up.`;
 }
 
 /**

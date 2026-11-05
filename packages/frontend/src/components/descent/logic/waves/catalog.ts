@@ -33,6 +33,7 @@ const BOSS_LAYER: Record<NarrativeBossId, LayerId> = {
 const COMBAT_CLASSES: readonly CombatClassId[] = [
   "warden",
   "hunter",
+  "rider",
   "raider",
   "breaker",
   "adept",

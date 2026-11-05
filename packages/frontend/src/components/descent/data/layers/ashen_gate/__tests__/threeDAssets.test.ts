@@ -4,6 +4,7 @@ import {
   assetRoleForBuilding,
   assetRoleForResource,
   assetRoleForUnit,
+  isCharacterAssetRole,
   resolveAshenGateAssets,
 } from "../threeDAssets";
 
@@ -64,6 +65,11 @@ describe("Ashen Gate 3D asset routing", () => {
     expect(resolveAshenGateAssets([grove]).resourceGrove?.id).toBe(grove.id);
   });
 
+  test("resolves the canonical Rider character", () => {
+    const rider = asset("Descent Rider", "2026-11-04T00:00:00.000Z");
+    expect(resolveAshenGateAssets([rider]).rider?.id).toBe(rider.id);
+  });
+
   test("resolves the canonical ember vent prop", () => {
     const vent = asset(
       "Descent Ember Vent",
@@ -88,6 +94,13 @@ describe("Ashen Gate 3D asset routing", () => {
         name: "Adept",
       }),
     ).toBe("adept");
+    expect(
+      assetRoleForUnit({
+        classId: "rider",
+        factionId: "hold",
+        name: "Rider",
+      }),
+    ).toBe("rider");
     expect(
       assetRoleForUnit({
         classId: "raider",
@@ -118,10 +131,27 @@ describe("Ashen Gate 3D asset routing", () => {
     ).toBe("villager");
     expect(assetRoleForBuilding("barracks")).toBe("barracks");
     expect(assetRoleForBuilding("fire_ward_wall")).toBe("fireWard");
+    expect(assetRoleForBuilding("well")).toBe("well");
+    expect(assetRoleForBuilding("farm")).toBe("farm");
+    expect(assetRoleForBuilding("forest")).toBe("forest");
+    expect(assetRoleForBuilding("hell_market")).toBe("market");
+    expect(assetRoleForBuilding("spirit_herb_garden")).toBe("spiritHerbGarden");
     expect(assetRoleForResource("food")).toBe("resourceGrove");
     expect(assetRoleForResource("spirit_herbs")).toBe("resourceGrove");
     expect(assetRoleForResource("wood")).toBe("resourceTree");
     expect(assetRoleForResource("iron")).toBe("resourceOutcrop");
     expect(assetRoleForResource("essence")).toBe("resourceWell");
+    expect(isCharacterAssetRole("warden")).toBe(true);
+    expect(isCharacterAssetRole("cinderjaw")).toBe(true);
+    expect(isCharacterAssetRole("camp")).toBe(false);
+    expect(isCharacterAssetRole("basaltBoulders")).toBe(false);
+  });
+
+  test("the Camp is drawn as the Stronghold, then the Citadel", () => {
+    expect(assetRoleForBuilding("camp")).toBe("camp");
+    expect(assetRoleForBuilding("camp", "Camp")).toBe("camp");
+    expect(assetRoleForBuilding("camp", "Stronghold")).toBe("stronghold");
+    expect(assetRoleForBuilding("camp", "Citadel")).toBe("citadel");
+    expect(assetRoleForBuilding("barracks", "Stronghold")).toBe("barracks");
   });
 });

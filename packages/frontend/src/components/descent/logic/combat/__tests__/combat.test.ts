@@ -52,13 +52,29 @@ describe("class counter matrix", () => {
     breaker: ["warden"],
     hunter: ["warden"],
     raider: ["hunter", "adept", "breaker"],
-    warden: ["raider"],
+    rider: [],
+    warden: ["raider", "rider"],
   };
 
-  test("contains exactly the five data-driven combat classes", () => {
+  test("contains every data-driven combat class", () => {
     expect(
       UNIT_DEFINITIONS.map((definition) => definition.classId).sort(),
-    ).toEqual(["adept", "breaker", "hunter", "raider", "warden"]);
+    ).toEqual(["adept", "breaker", "hunter", "raider", "rider", "warden"]);
+  });
+
+  test("makes the Rider the roster's fast, far-seeing scout", () => {
+    const rider = getUnitDefinition("rider");
+    const otherUnits = UNIT_DEFINITIONS.filter(
+      (definition) => definition.classId !== "rider",
+    );
+    expect(rider.popCost).toBe(2);
+    expect(rider.trainingCost).toEqual({ food: 45, water: 25 });
+    expect(rider.speed).toBeGreaterThan(
+      Math.max(...otherUnits.map((definition) => definition.speed)),
+    );
+    expect(rider.vision).toBeGreaterThan(
+      Math.max(...otherUnits.map((definition) => definition.vision)),
+    );
   });
 
   test("applies +50% only to locked matchups", () => {

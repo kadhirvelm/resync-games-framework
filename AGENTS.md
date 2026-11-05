@@ -182,22 +182,61 @@ has no default modules; `createAshenGateSim` explicitly composes economy,
 waves, and the Ashen Gate integration bridge. Views read snapshots and enqueue
 commands only. Ashen Gate-owned map/content stays under
 `data/layers/ashen_gate/`, while its end-to-end contract stays in
-`logic/__tests__/ashenGateSlice.test.ts`. The mounted slice ends after
+`logic/__tests__/ashenGateSlice.test.ts`. Each run's Ashen Gate layout is
+generated from the run seed by `generateAshenGateMap` (reusable algorithms
+live in `logic/mapgen/`); node ids are stable, positions are not, so tests
+locate the Camp and nodes from the snapshot. Generated vents are saved in
+`world.meta.layerTerrain`; read them through `worldVentVolumes`, never the
+layer table directly. Fog of war (`logic/fog/`) is saved in
+`world.meta.fogOfWar` and refreshed by the slice from Hold unit and building
+sight; `buildShellModel` applies it, so views never show horde bodies out of
+sight or deposits, veins, and vents on unexplored ground. Rim and abyss scenery stands
+above the flat fog sheet, so `views/sceneryFog.ts` hides each piece until the
+map edge beside it is explored. The mounted slice ends after
 Cinderjaw; later layers, heroes, Calamities, and Tribulation are not live
 runtime content. Browser autosave runs at layer start, every five sim-seconds,
-and at the terminal outcome. Camps and Barracks publish their three-slot
-training queues and saved rally points; completed batches receive movement
-orders toward that building's rally point. The battlefield is a Babylon.js
-presentation adapter with a DOM/WebGL fallback; it never owns rules. Generated
+and at the terminal outcome. Each building covers an odd square of cells
+(`footprint` in `data/buildings.json`); placement, villager pathing,
+adjacency bonuses, and combat reach all go through `logic/economy/footprint`,
+and the battlefield draws each building to fill its square. Camps and
+Barracks publish their three-slot training queues and saved rally points;
+completed batches receive movement orders toward that building's rally point.
+Renewable economy buildings declare timed `production` rows in
+`data/buildings.json`; a cycle pays its inputs when it starts and grants its
+outputs after `everyTicks` progress. A row with `workers` (Well 3, Farm and
+Managed Forest 1) runs only while villagers with a `work` task stand beside
+it, each adding one progress per step; rows without it run on their own.
+A `harvest` row (Spirit Herb Garden) grows on its own, then waits ripe until
+one villager with a `harvest` task picks it and carries it to a drop-off
+(`logic/economy/harvest.ts`); the HUD tracker shows each crop's growth.
+The battlefield is a Babylon.js
+presentation adapter with a DOM/WebGL fallback; it never owns rules. A loading
+screen covers the shell until the viewport has loaded the asset manifests,
+every generated model and painting, and compiled shaders (or 30 seconds
+pass); the sim clock starts only then. New scene loads take a `TrackLoad`
+from `views/loadingProgress.ts` so the screen counts them. Generated
 Ashen Gate models are resolved by canonical names from the existing 3D asset
 services and fall back to procedural meshes. Combat units resolve by faction
-and class so Warden, Hunter, Raider, Breaker, and Adept keep distinct silhouettes.
+and class so Warden, Hunter, Rider, Raider, Breaker, and Adept keep distinct
+silhouettes. From Stronghold tier the Camp draws the larger `stronghold`
+model, keeping the Camp model until that one has been generated.
 Surface nodes reuse four
 harvestable prop families (grove, tree, outcrop, and well) with resource-color
 cues, while ember vents use one generated hazard prop with a procedural glow.
-Rebuild the local zero-credit roster with `bun run assets:descent`; use
-`--meshy --roles=<comma-separated roles>` for a scoped detailed pass. Do not
-commit runtime-generated GLBs.
+The battlefield sits on a basalt plateau a little larger than the map, with
+cliffs dropping to a lava sea (`views/ashenBackdrop.ts`). Its ground, cliff,
+and lava paintings come from the `static-image` agent and are found again by
+the prompt tags in `data/layers/ashen_gate/environmentArt.ts`. Generated
+scenery (Horde Gate, abyss spires, rim ruins, spirit crystals, boulders) is
+placed by `views/ashenTerrainLayout.ts` and never lands inside the playable
+map. Every surface and scenery role has a procedural stand-in.
+Rebuild the local zero-credit roster and missing textures with
+`bun run assets:descent`; use `--meshy --roles=<comma-separated roles>` for a
+scoped detailed pass and `--concurrency=<n>` to run model jobs in parallel. Do
+not commit runtime-generated GLBs or images.
+Generate Descent's tagged music, ambience, and effects through the audio queue
+with `bun run assets:descent:audio`; it requires ElevenLabs and skips clips whose
+exact manifest prompt already exists. Do not commit the runtime-generated MP3s.
 
 ### Shared contracts
 

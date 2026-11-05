@@ -3,7 +3,7 @@
   "resources": [
     {
       "carryAmount": 10,
-      "gatherTicks": 5,
+      "gatherTicks": 12,
       "id": "food",
       "name": "Food",
       "nodes": [
@@ -19,7 +19,7 @@
     },
     {
       "carryAmount": 10,
-      "gatherTicks": 5,
+      "gatherTicks": 12,
       "id": "water",
       "name": "Water",
       "nodes": [
@@ -31,7 +31,7 @@
     },
     {
       "carryAmount": 10,
-      "gatherTicks": 5,
+      "gatherTicks": 12,
       "id": "wood",
       "name": "Wood",
       "nodes": [
@@ -42,7 +42,7 @@
     },
     {
       "carryAmount": 8,
-      "gatherTicks": 6,
+      "gatherTicks": 16,
       "id": "stone",
       "name": "Stone",
       "nodes": [
@@ -53,7 +53,7 @@
     },
     {
       "carryAmount": 6,
-      "gatherTicks": 8,
+      "gatherTicks": 20,
       "id": "iron",
       "name": "Iron",
       "nodes": [
@@ -63,7 +63,7 @@
     },
     {
       "carryAmount": 12,
-      "gatherTicks": 4,
+      "gatherTicks": 10,
       "id": "coin",
       "name": "Coin",
       "nodes": [
@@ -74,7 +74,7 @@
     },
     {
       "carryAmount": 4,
-      "gatherTicks": 6,
+      "gatherTicks": 16,
       "id": "spirit_herbs",
       "name": "Spirit Herbs",
       "nodes": [
@@ -88,7 +88,7 @@
     },
     {
       "carryAmount": 4,
-      "gatherTicks": 8,
+      "gatherTicks": 20,
       "id": "essence",
       "name": "Essence",
       "nodes": [

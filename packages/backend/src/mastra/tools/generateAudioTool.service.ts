@@ -16,9 +16,7 @@ import { z } from "zod";
 const generateAudioInputSchema = z.object({
   cue: z
     .enum(AUDIO_CUES)
-    .describe(
-      "Where the clip plays: attack, room, camp, battle, boss, victory, defeat, or reward.",
-    ),
+    .describe(`Where the clip plays: ${AUDIO_CUES.join(", ")}.`),
   prompt: z
     .string()
     .trim()

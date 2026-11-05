@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ASHEN_GATE_MAP } from "../../../data/layers/ashen_gate";
-import { isInsideVolume } from "../../layers/hazards";
+import { activeVentVolumes, isInsideVolume } from "../../layers/hazards";
 import { createDescentSim, type DescentSim } from "../../sim";
 import type { SimModule } from "../../sim/modules";
 import { seedEconomyWorld } from "../economy";
@@ -60,7 +59,7 @@ describe("villagers walk around ember vents", () => {
       if (unit.x === 22 && unit.y === 18) break;
     }
     for (const point of seen) {
-      const burning = ASHEN_GATE_MAP.vents.some((vent) =>
+      const burning = activeVentVolumes("ashen_gate").some((vent) =>
         isInsideVolume(vent, point.x, point.y),
       );
       expect(burning).toBe(false);

@@ -2,6 +2,7 @@ import type { ServiceDefinition } from "../../genericTypes/service";
 import {
   ASSET_CLASS_ENDPOINTS,
   type AssetClassServiceApi,
+  type AssetGenerationPayload,
 } from "./assetClassService";
 
 /** What kind of clip ElevenLabs should render. */
@@ -16,6 +17,13 @@ export type AudioRole = (typeof AUDIO_ROLES)[number];
  */
 export const AUDIO_CUES = [
   "attack",
+  "impact",
+  "death",
+  "build",
+  "train",
+  "wave",
+  "breakthrough",
+  "heal",
   "room",
   "camp",
   "battle",
@@ -33,12 +41,31 @@ export const AUDIO_CUE_SECONDS: Record<AudioCue, number> = {
   attack: 1.5,
   battle: 30,
   boss: 30,
+  breakthrough: 4,
+  build: 2.5,
   camp: 30,
+  death: 2,
   defeat: 4,
+  heal: 2,
+  impact: 1,
   reward: 2.5,
   room: 12,
+  train: 2,
   victory: 4,
+  wave: 3,
 };
+
+/** Optional constraints for callers that already know how a clip is used. */
+export interface AudioGenerationPayload extends AssetGenerationPayload {
+  /** Exact runtime cue; inferred by the agent when omitted. */
+  cue?: AudioCue;
+  /** Whether playback repeats; inferred from the role when omitted. */
+  loop?: boolean;
+  /** Whether the agent may consult the caller's ProductNow lore. */
+  useLore?: boolean;
+  /** Exact clip role; inferred by the agent when omitted. */
+  role?: AudioRole;
+}
 
 /** One generated clip ready for a climb. */
 export interface AudioAsset {
@@ -73,7 +100,8 @@ export interface ListAudioResponse {
 /** Audio clips: one prompt becomes one ElevenLabs mp3. */
 export type AudioServiceApi = AssetClassServiceApi<
   AudioAsset,
-  ListAudioResponse
+  ListAudioResponse,
+  AudioGenerationPayload
 >;
 
 export const AudioServiceDefinition: ServiceDefinition<AudioServiceApi> = {

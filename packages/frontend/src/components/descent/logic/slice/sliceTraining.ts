@@ -1,5 +1,6 @@
 import type { CombatClassId } from "../combat/types";
 import { getUnitDefinition } from "../combat/unitCatalog";
+import { footprintRadius } from "../economy/footprint";
 import {
   canAffordPop,
   releasePopulation,
@@ -31,6 +32,7 @@ import {
 export const BARRACKS_CLASSES: readonly CombatClassId[] = [
   "warden",
   "hunter",
+  "rider",
   "raider",
   "breaker",
   "adept",
@@ -42,11 +44,20 @@ export const MAX_QUEUE = 20;
 /** How many orders one shift-click tries to add. */
 export const SHIFT_TRAIN_COUNT = 5;
 
-/** Seconds one soldier takes at a Barracks without a vein bonus. */
-const SOLDIER_SECONDS = 4;
+/**
+ * Seconds one soldier takes at a Barracks without a vein bonus.
+ * The first wave is at 90s and the rest are 120s apart. One builder raises
+ * a Barracks in about 15s, so an opening squad of five is out before the
+ * scouts, and one Barracks can field about twelve soldiers between waves
+ * when the stockpile can pay for them.
+ */
+const SOLDIER_SECONDS = 10;
 
-/** Seconds one villager takes at the Camp. */
-const VILLAGER_SECONDS = 7;
+/**
+ * Seconds one villager takes at the Camp. A little longer than a soldier,
+ * so the first extra worker finishes alongside the Barracks.
+ */
+const VILLAGER_SECONDS = 12;
 
 /** What one training order costs and yields. */
 export interface TrainingPlan {
@@ -98,6 +109,20 @@ export function trainingPlan(
   };
 }
 
+/** Blocker when the Hold has no free population. */
+export const POPULATION_BLOCKER = "Need spare population — build Housing.";
+
+/** Blocker when the stockpile cannot pay for an order. */
+export const RESOURCE_BLOCKER = "Need more food and water.";
+
+/**
+ * @param reason - A {@link trainingBlocker} result
+ * @returns Whether only resources or population stand in the way
+ */
+export function isTrainingShortfall(reason: string | null): boolean {
+  return reason === POPULATION_BLOCKER || reason === RESOURCE_BLOCKER;
+}
+
 /**
  * Explains why an order cannot be placed right now.
  * @param world - Sim world
@@ -125,10 +150,10 @@ export function trainingBlocker(
   if (queued >= MAX_QUEUE) return "Training queue is full.";
   const plan = trainingPlan(classId, trainSpeedBonus(record));
   if (!canAffordPop(economyHost(world, ECONOMY_STEP_TICKS), plan.pop)) {
-    return "Need spare population — build Housing.";
+    return POPULATION_BLOCKER;
   }
   if (!canAfford(world.resources, plan.cost)) {
-    return "Need more food and water.";
+    return RESOURCE_BLOCKER;
   }
   return null;
 }
@@ -203,7 +228,7 @@ export function queueTraining(
     blocker = trainingBlocker(world, buildingId, classId);
     if (blocker !== null) break;
     if (!enqueueTrainingOrder(context, buildingId, classId)) {
-      blocker = "Need more food and water.";
+      blocker = RESOURCE_BLOCKER;
       break;
     }
     queued += 1;
@@ -394,7 +419,7 @@ function spawnBatch(
   building: ReturnType<typeof asBuilding>,
 ): void {
   const world = context.world;
-  const cells = openCellsAround(world, building.x, building.y, job.count);
+  const cells = openCellsAround(world, building, job.count);
   const cultivation = openCultivation(world);
   const soldierIds: string[] = [];
   const villagerIds: string[] = [];
@@ -403,7 +428,12 @@ function spawnBatch(
     if (job.classId === "villager") {
       world.units.push(createUnitRecord({ id, x: cell.x, y: cell.y }));
       villagerIds.push(id);
-      pushFx(world, { kind: "spawn", x: cell.x, y: cell.y });
+      pushFx(world, {
+        kind: "spawn",
+        sound: "villager",
+        x: cell.x,
+        y: cell.y,
+      });
       continue;
     }
     const definition = getUnitDefinition(job.classId);
@@ -425,7 +455,7 @@ function spawnBatch(
       rank: "Ashborn",
       unitId: id,
     });
-    pushFx(world, { kind: "spawn", x: cell.x, y: cell.y });
+    pushFx(world, { kind: "spawn", sound: "soldier", x: cell.x, y: cell.y });
   }
   saveCultivation(world, cultivation);
   sendBatchToRallyPoint(world, building.id, villagerIds, soldierIds);
@@ -508,22 +538,26 @@ function readyMessage(job: TrainingJob): string {
 }
 
 /**
- * Finds open cells in widening rings around a building, south side first.
+ * Finds open cells in widening rings just outside a building's square.
  * @param world - Sim world
- * @param x - Building column
- * @param y - Building row
+ * @param building - Building and its center cell
  * @param count - Cells wanted
- * @returns Up to `count` open cells (fewer only on a packed map)
+ * @returns `count` cells; on a packed map the rest fall on the south edge
  */
 function openCellsAround(
   world: SimWorldState,
-  x: number,
-  y: number,
+  building: { buildingType: string; x: number; y: number },
   count: number,
 ): { x: number; y: number }[] {
+  const { x, y } = building;
+  const edge = footprintRadius(building.buildingType);
   const host = economyHost(world, ECONOMY_STEP_TICKS);
   const cells: { x: number; y: number }[] = [];
-  for (let radius = 1; radius <= 4 && cells.length < count; radius += 1) {
+  for (
+    let radius = edge + 1;
+    radius <= edge + 4 && cells.length < count;
+    radius += 1
+  ) {
     for (let dy = -radius; dy <= radius && cells.length < count; dy += 1) {
       for (let dx = -radius; dx <= radius && cells.length < count; dx += 1) {
         if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
@@ -537,6 +571,6 @@ function openCellsAround(
       }
     }
   }
-  while (cells.length < count) cells.push({ x, y: y + 1 });
+  while (cells.length < count) cells.push({ x, y: y + edge + 1 });
   return cells;
 }

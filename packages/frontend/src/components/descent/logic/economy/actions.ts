@@ -6,7 +6,12 @@
 
 import type { ClassId, ResourceId, ResourceStockpile } from "../types";
 import { recomputeBonuses } from "./bonuses";
-import { chebyshev } from "./grid";
+import {
+  footprintCells,
+  footprintCovers,
+  footprintDistance,
+  footprintGap,
+} from "./footprint";
 import type {
   EconomyBuilding,
   EconomyHost,
@@ -41,9 +46,12 @@ import { cellOpenToAlly } from "./villagers";
 import { resetWorks } from "./works";
 
 /**
- * Places a building when the tier, cell, and cost all allow it.
+ * Places a building when the tier, ground, and cost all allow it. The
+ * request names the center cell; the whole square must be on the map and
+ * clear of other buildings and surface nodes. Units standing on the square
+ * step off to the nearest open cell.
  * @param host - World that gains the site
- * @param request - Building type and cell
+ * @param request - Building type and center cell
  * @param id - Stable id from the sim
  * @returns A player-readable rejection, or null when the site was placed
  */
@@ -59,20 +67,38 @@ export function placeBuilding(
   if (!tierAllows(host.economy.tier, def.tier)) {
     return `${def.name} needs a ${def.tier}.`;
   }
-  if (!inBounds(host, x, y)) return "That cell is off the map.";
-  if (occupied(host, x, y)) return "That cell is already taken.";
+  const site = { buildingType: def.id, x, y };
+  const cells = footprintCells(site);
+  if (!cells.every((cell) => inBounds(host, cell.x, cell.y))) {
+    return `${def.name} does not fit on the map there.`;
+  }
+  if (occupied(host, site)) return "That ground is already taken.";
   if (!trySpend(host, def.cost)) {
     return `Need ${costPhrase(def.cost)} to place ${def.name}.`;
   }
-  host.buildings.push(
-    createBuildingRecord({
-      buildingType: def.id,
-      id,
-      x,
-      y,
-    }),
-  );
+  host.buildings.push(createBuildingRecord({ ...site, id }));
+  clearFootprint(host, site);
   return null;
+}
+
+/**
+ * Moves every living unit off a new building's square so nobody is walled in.
+ * @param host - World whose units may move
+ * @param site - Building that was just placed
+ */
+function clearFootprint(
+  host: EconomyHost,
+  site: { buildingType: string; x: number; y: number },
+): void {
+  for (const unit of host.units) {
+    if (!isEconomyUnit(unit) || unit.garrisoned) continue;
+    const cell = { x: Math.round(unit.x), y: Math.round(unit.y) };
+    if (!footprintCovers(site, cell.x, cell.y)) continue;
+    const open = nearestOpenCell(host, cell);
+    if (!open) continue;
+    unit.x = open.x;
+    unit.y = open.y;
+  }
 }
 
 /**
@@ -327,14 +353,18 @@ function inBounds(host: EconomyHost, x: number, y: number): boolean {
 
 /**
  * @param host - World of footprints and nodes
- * @param x - Cell column
- * @param y - Cell row
- * @returns Whether a building or a surface node already uses the cell
+ * @param site - Proposed building and its center cell
+ * @returns Whether another building's square or a surface node overlaps it
  */
-function occupied(host: EconomyHost, x: number, y: number): boolean {
-  if (host.buildings.some((building) => building.x === x && building.y === y))
+function occupied(
+  host: EconomyHost,
+  site: { buildingType: string; x: number; y: number },
+): boolean {
+  if (host.buildings.some((building) => footprintGap(building, site) === 0))
     return true;
-  return host.economy.nodes.some((node) => node.x === x && node.y === y);
+  return host.economy.nodes.some((node) =>
+    footprintCovers(site, node.x, node.y),
+  );
 }
 
 /**
@@ -446,19 +476,18 @@ function destroyBuilding(host: EconomyHost, building: EconomyBuilding): void {
   const index = host.buildings.findIndex((entry) => entry.id === building.id);
   if (index < 0) return;
   const splash = buildingDef(building.buildingType)?.volatileDamage ?? 0;
-  const origin = { x: building.x, y: building.y };
   host.buildings.splice(index, 1);
   host.economy.works = host.economy.works.filter(
     (work) => work.buildingId !== building.id,
   );
   if (splash <= 0) return;
   const victims = host.buildings.filter(
-    (other) => chebyshev(other, origin) <= 1,
+    (other) => footprintGap(other, building) <= 1,
   );
   for (const victim of victims) applyDamage(host, victim.id, splash);
   for (const unit of [...host.units]) {
     if (!isEconomyUnit(unit)) continue;
-    if (chebyshev(unit, origin) > 1) continue;
+    if (footprintDistance(building, unit) > 1) continue;
     const record = asUnit(unit);
     record.hp -= splash;
     if (record.hp > 0) continue;

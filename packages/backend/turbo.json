@@ -10,6 +10,7 @@
         "FRONTEND_URL",
         "GEMINI_CREDENTIALS",
         "ANTHROPIC_API_KEY",
+        "MESHY_API_KEY",
         "OPENAI_API_KEY"
       ],
       "outputs": ["dist/**"]
@@ -23,6 +24,7 @@
         "FRONTEND_URL",
         "GEMINI_CREDENTIALS",
         "ANTHROPIC_API_KEY",
+        "MESHY_API_KEY",
         "OPENAI_API_KEY"
       ]
     }

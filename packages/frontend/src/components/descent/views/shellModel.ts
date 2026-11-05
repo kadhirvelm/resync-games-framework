@@ -1,5 +1,6 @@
 import { BUILDING_TOOLTIPS } from "../data/narrative/tooltips";
 import type { CultivationView } from "../logic/cultivation/types";
+import { footprintSide } from "../logic/economy/footprint";
 import type {
   BuildingState,
   ResourceId,
@@ -8,10 +9,18 @@ import type {
 } from "../logic/types";
 import { BOSS_SIZE_SCALE } from "../logic/waves/constants";
 import {
+  cuesInSight,
+  effectsInSight,
+  exploredFeatures,
+  visibleToHold,
+} from "./fogFilter";
+import {
   type BuildingReadout,
+  type CropGrowthReadout,
   type DescentPresentation,
   type OnboardingFlags,
   type ReadPresentation,
+  type RouteReadout,
   readPresentation,
   type TrainingQueueReadout,
   type UnitReadout,
@@ -42,6 +51,8 @@ export interface ShellUnit {
   idle: boolean;
   maxHitPoints: number | null;
   name: string;
+  /** Where a Hold unit is headed: current destination, then queued legs. */
+  route?: readonly RouteReadout[];
   treasureSlots: number;
   treasures: readonly { id: string; name: string }[];
   x: number;
@@ -69,6 +80,10 @@ export interface ShellBuilding {
   buildingType: string;
   constructing: boolean;
   factionId: "hold" | "horde";
+  /** Side of the square of map cells the building covers. */
+  footprint: number;
+  /** Crop growth for a harvested producer, such as a Spirit Herb Garden. */
+  growth: CropGrowthReadout | null;
   hitPoints: number | null;
   id: string;
   maxHitPoints: number | null;
@@ -138,6 +153,22 @@ function buildingName(
 }
 
 /**
+ * Keeps only well-formed route points from a published readout.
+ * @param route - Published route, if any
+ * @returns Finite route points in walking order
+ */
+function readRoute(route: unknown): RouteReadout[] {
+  if (!Array.isArray(route)) return [];
+  return route.filter(
+    (point): point is RouteReadout =>
+      typeof point === "object" &&
+      point !== null &&
+      Number.isFinite((point as RouteReadout).x) &&
+      Number.isFinite((point as RouteReadout).y),
+  );
+}
+
+/**
  * Decorates a sim unit with published cultivation and faction data.
  * @param unit - Unit from the sim snapshot
  * @param readout - Matching `meta.ui` decoration, if any
@@ -163,6 +194,7 @@ function decorateUnit(
     maxHitPoints:
       typeof readout?.maxHitPoints === "number" ? readout.maxHitPoints : null,
     name: readout?.name ?? CLASS_LABEL[unit.classId],
+    route: readRoute(readout?.route),
     treasureSlots: readout?.treasureSlots ?? 0,
     treasures: readout?.treasures ?? [],
     x: unit.x,
@@ -206,6 +238,8 @@ function decorateBuilding(
     buildingType: building.buildingType,
     constructing: readout?.constructing === true,
     factionId: readout?.factionId === "horde" ? "horde" : "hold",
+    footprint: footprintSide(building.buildingType),
+    growth: readout?.growth ?? null,
     hitPoints,
     id: building.id,
     maxHitPoints,
@@ -243,29 +277,45 @@ function ventsFor(
 
 /**
  * Reads one sim snapshot into the shell model. Numbers stay as published.
+ * Fog of war is applied here, so every renderer, panel, and the minimap
+ * only ever sees what the Hold has discovered.
  * @param snapshot - Frozen sim snapshot
  * @returns The render model
  */
 export function buildShellModel(snapshot: SimSnapshot): ShellModel {
   const presentation = readPresentation(snapshot.meta);
   const banner = layerBannerFor(snapshot.layerId);
+  const { fog } = presentation;
   return {
     ...presentation,
     banner,
-    buildings: snapshot.buildings.map((building) =>
-      decorateBuilding(building, presentation.buildings[building.id]),
+    buildings: visibleToHold(
+      snapshot.buildings.map((building) =>
+        decorateBuilding(building, presentation.buildings[building.id]),
+      ),
+      fog,
     ),
+    fx: effectsInSight(presentation.fx, fog),
     map: snapshot.map,
+    nodes: exploredFeatures(presentation.nodes, fog),
     onboarding: resolveOnboarding(presentation.onboarding, banner.name),
     paused: snapshot.paused,
     resources: snapshot.resources,
     scale: mapDisplayScale(snapshot.map.width),
     speed: snapshot.speed,
+    telegraphs: cuesInSight(presentation.telegraphs, fog),
     tick: snapshot.tick,
-    units: snapshot.units.map((unit) =>
-      decorateUnit(unit, presentation.units[unit.id]),
+    units: visibleToHold(
+      snapshot.units.map((unit) =>
+        decorateUnit(unit, presentation.units[unit.id]),
+      ),
+      fog,
     ),
-    vents: ventsFor(snapshot.layerId, presentation.vents),
+    veins: exploredFeatures(presentation.veins, fog),
+    vents: exploredFeatures(
+      ventsFor(snapshot.layerId, presentation.vents),
+      fog,
+    ),
   };
 }
 

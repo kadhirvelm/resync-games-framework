@@ -217,6 +217,13 @@ export function createAshenGatePreview(): SimSnapshot {
         label: "Warden",
       },
       {
+        allowed: true,
+        buildingId: "barracks-1",
+        classId: "rider",
+        detail: "Pop 2",
+        label: "Rider",
+      },
+      {
         allowed: false,
         buildingId: "barracks-1",
         classId: "breaker",

@@ -1,15 +1,27 @@
 /**
- * Villagers gather, carry, build, repair, and garrison. Soldiers are skipped.
+ * Villagers gather, carry, build, repair, work and harvest producers, and
+ * garrison.
+ * Soldiers are skipped.
  * A carried load is delivered before a new job is chosen.
  */
 
-import { activeVentVolumes } from "../layers/hazards";
 import {
   cellStaysClear,
   escapeHurtCell,
   type HurtDisk,
 } from "../pathing/avoidHurt";
+import {
+  buildingCovering,
+  footprintDistance,
+  footprintReach,
+} from "./footprint";
 import { chebyshev, nextStep } from "./grid";
+import {
+  HARVESTERS_PER_BUILDING,
+  harvestDef,
+  isRipe,
+  takeHarvest,
+} from "./harvest";
 import { compareIds } from "./ids";
 import type {
   EconomyBuilding,
@@ -21,15 +33,34 @@ import type {
 } from "./model";
 import { asBuilding, findBuilding, isEconomyUnit } from "./records";
 import {
+  additionalWorkerBuildBonus,
   buildingDef,
+  firstWorkerBuildBonus,
   repairHpPerTick,
   resourceDef,
-  workerBuildBonus,
+  workerSlots,
 } from "./tables";
 import { seedWork } from "./works";
 
 /** Most villagers that can work one construction site at once. */
-export const MAX_BUILDERS_PER_SITE = 3;
+export const MAX_BUILDERS_PER_SITE = 5;
+
+/**
+ * Calculates construction progress for one economy step. The first villager
+ * establishes a deliberately slow baseline; helpers contribute at full speed.
+ * @param workers - Adjacent villagers assigned to the site
+ * @returns Progress to add this economy step
+ */
+export function constructionProgressPerStep(workers: number): number {
+  const activeWorkers = Math.min(
+    MAX_BUILDERS_PER_SITE,
+    Math.max(0, Math.floor(workers)),
+  );
+  if (activeWorkers === 0) return 0;
+  return (
+    firstWorkerBuildBonus() + (activeWorkers - 1) * additionalWorkerBuildBonus()
+  );
+}
 
 /** Economy steps a villager skips a target it could not reach (10 s at 0.5 s per step). */
 export const UNREACHABLE_COOLDOWN_STEPS = 20;
@@ -87,14 +118,17 @@ const SPREAD_OFFSETS: readonly { x: number; y: number }[] = [
 function taskAnchor(
   host: EconomyHost,
   unit: EconomyUnit,
-): { x: number; y: number } | null {
+): { reach: number; x: number; y: number } | null {
   const task = unit.task;
   if (!task) return null;
-  if (task.kind === "move") return { x: task.x, y: task.y };
+  if (task.kind === "move") return { reach: 1, x: task.x, y: task.y };
   if (task.kind === "gather") {
-    return host.economy.nodes.find((node) => node.id === task.nodeId) ?? null;
+    const node = host.economy.nodes.find((entry) => entry.id === task.nodeId);
+    return node ? { reach: 1, x: node.x, y: node.y } : null;
   }
-  return findBuilding(host, task.buildingId) ?? null;
+  const building = findBuilding(host, task.buildingId);
+  if (!building) return null;
+  return { reach: footprintReach(building), x: building.x, y: building.y };
 }
 
 /**
@@ -106,7 +140,7 @@ function taskAnchor(
  */
 export function spreadSettledVillagers(host: EconomyHost): void {
   const claimed = new Set<string>();
-  const disks = activeVentVolumes(host.getLayerId());
+  const disks = host.getVentVolumes();
   const nodeCells = new Set(
     host.economy.nodes.map((node) => `${node.x},${node.y}`),
   );
@@ -116,7 +150,7 @@ export function spreadSettledVillagers(host: EconomyHost): void {
       continue;
     }
     const anchor = taskAnchor(host, unit);
-    const settled = anchor === null || chebyshev(unit, anchor) <= 1;
+    const settled = anchor === null || chebyshev(unit, anchor) <= anchor.reach;
     if (!settled || unit.task?.kind === "move") continue;
     const key = `${unit.x},${unit.y}`;
     if (!claimed.has(key)) {
@@ -132,7 +166,7 @@ export function spreadSettledVillagers(host: EconomyHost): void {
         !nodeCells.has(`${cell.x},${cell.y}`) &&
         cellOpenToAlly(host, cell.x, cell.y) &&
         cellStaysClear(disks, cell.x, cell.y) &&
-        (anchor === null || chebyshev(cell, anchor) <= 1),
+        (anchor === null || chebyshev(cell, anchor) <= anchor.reach),
     );
     if (free === undefined) continue;
     unit.x = free.x;
@@ -179,6 +213,7 @@ export function orderVillagersMove(
   for (const unit of villagers) {
     unit.garrisoned = false;
     unit.preferredNodeId = null;
+    unit.workplaceId = null;
     unit.task = { kind: "move", x, y };
   }
   return villagers.length;
@@ -197,6 +232,7 @@ export function orderVillagersStop(
   const villagers = selectedVillagers(host, unitIds);
   for (const unit of villagers) {
     unit.preferredNodeId = null;
+    unit.workplaceId = null;
     unit.task = null;
   }
   return villagers.length;
@@ -220,6 +256,7 @@ export function orderVillagersGather(
   const villagers = selectedVillagers(host, unitIds);
   for (const unit of villagers) {
     unit.preferredNodeId = nodeId;
+    unit.workplaceId = null;
     unit.garrisoned = false;
     unit.unreachable = (unit.unreachable ?? []).filter(
       (entry) => entry.targetId !== nodeId,
@@ -231,8 +268,8 @@ export function orderVillagersGather(
 
 /**
  * Sends villagers to a Hold building. They build a site, repair a damaged
- * building, or deposit what they carry at a drop-off; otherwise they walk
- * next to it.
+ * building, deposit what they carry at a drop-off, or work a producer while
+ * it has a free worker slot; otherwise they walk next to it.
  * @param host - World of buildings
  * @param unitIds - Selected units; non-villagers are ignored
  * @param buildingId - Target building
@@ -251,17 +288,26 @@ export function orderVillagersBuild(
     unit.unreachable = (unit.unreachable ?? []).filter(
       (entry) => entry.targetId !== buildingId,
     );
-    unit.task = taskAtBuilding(unit, building);
+    unit.task = null;
+    unit.task = taskAtBuilding(host, unit, building);
+    if (unit.task.kind !== "work" && unit.task.kind !== "harvest") {
+      if (unit.workplaceId === building.id) unit.workplaceId = null;
+      continue;
+    }
+    unit.workplaceId = building.id;
+    unit.preferredNodeId = null;
   }
   return villagers.length;
 }
 
 /**
+ * @param host - World of villagers already working the building
  * @param unit - Villager receiving the order
  * @param building - Building the player right-clicked
  * @returns The job that building offers this villager
  */
 function taskAtBuilding(
+  host: EconomyHost,
   unit: EconomyUnit,
   building: EconomyBuilding,
 ): VillagerTask {
@@ -272,7 +318,75 @@ function taskAtBuilding(
   if (unit.carry && isDropOff(building)) {
     return { buildingId: building.id, kind: "carry" };
   }
+  const job = standingJobAt(building);
+  if (job !== null && hasFreeSlot(host, building)) {
+    return { buildingId: building.id, kind: job };
+  }
   return { kind: "move", x: building.x, y: building.y };
+}
+
+/**
+ * @param building - Candidate producer
+ * @returns The standing job it offers villagers: work it, harvest it, or none
+ */
+function standingJobAt(building: EconomyBuilding): "harvest" | "work" | null {
+  if (workerSlots(building.buildingType) > 0) return "work";
+  if (harvestDef(building.buildingType) !== null) return "harvest";
+  return null;
+}
+
+/**
+ * @param host - World of villagers
+ * @param building - Candidate producer
+ * @returns Whether it is finished, offers a standing job, and has a slot
+ *   for that job nobody holds
+ */
+function hasFreeSlot(host: EconomyHost, building: EconomyBuilding): boolean {
+  if (!building.completed) return false;
+  const job = standingJobAt(building);
+  if (job === null) return false;
+  const slots =
+    job === "work"
+      ? workerSlots(building.buildingType)
+      : HARVESTERS_PER_BUILDING;
+  return workersAssigned(host, job, building.id) < slots;
+}
+
+/**
+ * Counts the villagers working a producer this step: assigned to it, alive,
+ * and standing beside it, capped at its worker slots.
+ * @param host - World of villagers
+ * @param building - Producer to count for
+ * @returns Active workers, 0 when it takes none
+ */
+export function activeWorkers(
+  host: EconomyHost,
+  building: EconomyBuilding,
+): number {
+  const slots = workerSlots(building.buildingType);
+  if (slots === 0) return 0;
+  let count = 0;
+  for (const unit of host.units) {
+    if (!isEconomyUnit(unit)) continue;
+    if (unit.hp <= 0 || unit.popKind !== "villager") continue;
+    if (unit.task?.kind !== "work" || unit.task.buildingId !== building.id)
+      continue;
+    if (!besideBuilding(unit, building)) continue;
+    count += 1;
+  }
+  return Math.min(slots, count);
+}
+
+/**
+ * @param host - World of villagers
+ * @param building - Producer to count for
+ * @returns Villagers assigned to work it, whether or not they have arrived
+ */
+export function assignedWorkers(
+  host: EconomyHost,
+  building: EconomyBuilding,
+): number {
+  return workersAssigned(host, "work", building.id);
 }
 
 /**
@@ -303,7 +417,7 @@ export function expireModifiers(host: EconomyHost): void {
 /**
  * Advances construction. A site only progresses while builders stand next to
  * it: each adjacent builder (up to `MAX_BUILDERS_PER_SITE`) adds
- * `workerBuildBonus()` progress per step. Health rises with the ramp as a
+ * `constructionProgressPerStep()` progress. Health rises with the ramp as a
  * delta, so damage taken during construction is kept.
  * @param host - World whose construction sites update
  */
@@ -320,7 +434,7 @@ export function stepConstruction(
     );
     if (workers === 0) continue;
     const rampBefore = constructionHp(record, record.buildTicksDone);
-    record.buildTicksDone += workers * workerBuildBonus();
+    record.buildTicksDone += constructionProgressPerStep(workers);
     if (record.buildTicksDone >= record.buildTicks) {
       finishConstruction(host, record, rampBefore, policy);
       continue;
@@ -384,20 +498,22 @@ function assignIdle(host: EconomyHost, policy: VillagerPolicy): void {
 }
 
 /**
- * Manual villagers only return to the node the player gave them. A carried
- * load goes home first. With no standing job the villager stays idle.
+ * Manual villagers only return to the producer or node the player gave them.
+ * A carried load goes home first. With no standing job the villager stays idle.
  * @param host - World of nodes and drop-offs
  * @param unit - Idle villager
  */
 function resumeOrderedWork(host: EconomyHost, unit: EconomyUnit): void {
-  const node = standingNode(host, unit);
-  if (!node) return;
+  if (!unit.workplaceId && !unit.preferredNodeId) return;
   if (unit.carry) {
     const drop = nearestDropOff(host, unit);
     if (!drop) return;
     unit.task = { buildingId: drop.id, kind: "carry" };
     return;
   }
+  if (resumeWorkplace(host, unit)) return;
+  const node = standingNode(host, unit);
+  if (!node) return;
   unit.task = {
     gatherTicksLeft: resourceDef(node.resourceId)?.gatherTicks ?? 1,
     kind: "gather",
@@ -461,7 +577,27 @@ function nearestNodeWithin(
 }
 
 /**
- * @param host - World of sites, wrecks, and nodes
+ * Puts a villager back on its standing workplace while that producer still
+ * stands and has a slot for it. A lapsed workplace is forgotten.
+ * @param host - World of producers
+ * @param unit - Idle villager
+ * @returns Whether the villager went back to work
+ */
+function resumeWorkplace(host: EconomyHost, unit: EconomyUnit): boolean {
+  if (!unit.workplaceId) return false;
+  const building = findBuilding(host, unit.workplaceId);
+  const job = building ? standingJobAt(building) : null;
+  if (!building || job === null || !hasFreeSlot(host, building)) {
+    unit.workplaceId = null;
+    return false;
+  }
+  if (isUnreachable(unit, building.id)) return false;
+  unit.task = { buildingId: building.id, kind: job };
+  return true;
+}
+
+/**
+ * @param host - World of sites, wrecks, producers, and nodes
  * @param unit - Villager who needs a job
  */
 function assignOne(host: EconomyHost, unit: EconomyUnit): void {
@@ -471,6 +607,7 @@ function assignOne(host: EconomyHost, unit: EconomyUnit): void {
     unit.task = { buildingId: drop.id, kind: "carry" };
     return;
   }
+  if (resumeWorkplace(host, unit)) return;
   const site = nearestFree(host, unit, "build");
   if (site) {
     unit.task = { buildingId: site.id, kind: "build" };
@@ -479,6 +616,31 @@ function assignOne(host: EconomyHost, unit: EconomyUnit): void {
   const wreck = nearestFree(host, unit, "repair");
   if (wreck) {
     unit.task = { buildingId: wreck.id, kind: "repair" };
+    return;
+  }
+  const ripe = nearestMatching(
+    host,
+    unit,
+    (building) =>
+      !isUnreachable(unit, building.id) &&
+      isRipe(building) &&
+      hasFreeSlot(host, building),
+  );
+  if (ripe) {
+    unit.task = { buildingId: ripe.id, kind: "harvest" };
+    return;
+  }
+  const workplace = nearestMatching(
+    host,
+    unit,
+    (building) =>
+      !isUnreachable(unit, building.id) &&
+      standingJobAt(building) === "work" &&
+      hasFreeSlot(host, building),
+  );
+  if (workplace) {
+    unit.task = { buildingId: workplace.id, kind: "work" };
+    unit.workplaceId = workplace.id;
     return;
   }
   const node = preferredNode(host, unit) ?? nearestNode(host, unit);
@@ -518,7 +680,86 @@ function stepOne(host: EconomyHost, unit: EconomyUnit): void {
     stepMove(host, unit, task);
     return;
   }
+  if (task.kind === "work") {
+    stepWork(host, unit, task);
+    return;
+  }
+  if (task.kind === "harvest") {
+    stepHarvest(host, unit, task);
+    return;
+  }
   stepGarrison(host, unit, task);
+}
+
+/**
+ * Walks a harvester to its producer and waits there while the crop grows.
+ * Once it is ripe the harvester picks it and carries it to the nearest
+ * drop-off; a standing harvester then comes back for the next crop.
+ * @param host - World the harvester walks through
+ * @param unit - Villager assigned to a harvested producer
+ * @param task - Harvest order
+ */
+function stepHarvest(
+  host: EconomyHost,
+  unit: EconomyUnit,
+  task: Extract<VillagerTask, { kind: "harvest" }>,
+): void {
+  const building = findBuilding(host, task.buildingId);
+  if (!building?.completed || harvestDef(building.buildingType) === null) {
+    unit.task = null;
+    if (unit.workplaceId === task.buildingId) unit.workplaceId = null;
+    return;
+  }
+  if (unit.carry) {
+    deliverCarry(host, unit);
+    return;
+  }
+  if (!besideBuilding(unit, building)) {
+    moveToward(host, unit, building);
+    return;
+  }
+  const load = takeHarvest(building);
+  if (load === null) return;
+  unit.carry = load;
+  deliverCarry(host, unit);
+}
+
+/**
+ * Sends a loaded villager to the nearest drop-off and starts walking.
+ * @param host - World of drop-offs
+ * @param unit - Villager holding a load
+ */
+function deliverCarry(host: EconomyHost, unit: EconomyUnit): void {
+  const drop = nearestDropOff(host, unit);
+  if (!drop) {
+    unit.task = null;
+    return;
+  }
+  unit.task = { buildingId: drop.id, kind: "carry" };
+  stepCarry(host, unit, unit.task);
+}
+
+/**
+ * Walks a worker to its producer and keeps it there. The producer advances
+ * from `stepProduction` while the worker stands beside it. A destroyed or
+ * unfinished producer ends the job and the standing workplace.
+ * @param host - World the worker walks through
+ * @param unit - Villager assigned to a producer
+ * @param task - Work order
+ */
+function stepWork(
+  host: EconomyHost,
+  unit: EconomyUnit,
+  task: Extract<VillagerTask, { kind: "work" }>,
+): void {
+  const building = findBuilding(host, task.buildingId);
+  if (!building?.completed || workerSlots(building.buildingType) === 0) {
+    unit.task = null;
+    unit.workplaceId = null;
+    return;
+  }
+  if (besideBuilding(unit, building)) return;
+  moveToward(host, unit, building);
 }
 
 /**
@@ -537,11 +778,12 @@ function stepMove(
     unit.task = null;
     return;
   }
-  const disks = activeVentVolumes(host.getLayerId());
+  const disks = host.getVentVolumes();
   if (leaveHurt(host, unit, disks)) return;
-  const adjacent = chebyshev(unit, task) <= 1;
+  const goal = moveGoal(host, task);
+  const adjacent = chebyshev(unit, goal) <= goal.reach;
   if (adjacent) {
-    if (canWalk(host, disks, task.x, task.y)) {
+    if (goal.reach === 1 && canWalk(host, disks, task.x, task.y)) {
       unit.x = task.x;
       unit.y = task.y;
     }
@@ -550,10 +792,11 @@ function stepMove(
   }
   const next = nextStep(
     unit,
-    task,
+    goal,
     (x, y) => canWalk(host, disks, x, y),
     host.map.width,
     host.map.height,
+    goal.reach,
   );
   if (!next) {
     unit.task = null;
@@ -561,6 +804,24 @@ function stepMove(
   }
   unit.x = next.x;
   unit.y = next.y;
+}
+
+/**
+ * A move order onto a building's square walks to the side of the square
+ * instead, since the cells under it cannot be entered.
+ * @param host - World of footprints
+ * @param task - Move order
+ * @returns The cell to approach and how close counts as arrived
+ */
+function moveGoal(
+  host: EconomyHost,
+  task: Extract<VillagerTask, { kind: "move" }>,
+): { reach: number; x: number; y: number } {
+  const building = buildingCovering(host.buildings, task.x, task.y);
+  if (!building || cellOpenToAlly(host, task.x, task.y)) {
+    return { reach: 1, x: task.x, y: task.y };
+  }
+  return { reach: footprintReach(building), x: building.x, y: building.y };
 }
 
 /**
@@ -620,8 +881,8 @@ function stepCarry(
     unit.task = null;
     return;
   }
-  if (chebyshev(unit, drop) > 1) moveToward(host, unit, drop);
-  if (chebyshev(unit, drop) > 1 || !unit.carry || !unit.task) return;
+  if (!besideBuilding(unit, drop)) moveToward(host, unit, drop);
+  if (!besideBuilding(unit, drop) || !unit.carry || !unit.task) return;
   const carried = unit.carry;
   host.resources[carried.resourceId] =
     (host.resources[carried.resourceId] ?? 0) + carried.amount;
@@ -644,7 +905,7 @@ function stepBuild(
     unit.task = null;
     return;
   }
-  if (chebyshev(unit, building) <= 1) return;
+  if (besideBuilding(unit, building)) return;
   moveToward(host, unit, building);
 }
 
@@ -667,7 +928,7 @@ function stepRepair(
     unit.task = null;
     return;
   }
-  if (chebyshev(unit, building) > 1) {
+  if (!besideBuilding(unit, building)) {
     moveToward(host, unit, building);
     return;
   }
@@ -691,8 +952,8 @@ function stepGarrison(
     unit.task = null;
     return;
   }
-  if (chebyshev(unit, building) > 1) moveToward(host, unit, building);
-  if (chebyshev(unit, building) > 1 || !unit.task) return;
+  if (!besideBuilding(unit, building)) moveToward(host, unit, building);
+  if (!besideBuilding(unit, building) || !unit.task) return;
   if (unit.carry && isDropOff(building)) {
     const carried = unit.carry;
     host.resources[carried.resourceId] =
@@ -701,6 +962,18 @@ function stepGarrison(
   }
   unit.garrisoned = true;
   unit.task = null;
+}
+
+/**
+ * @param unit - Villager or other walker
+ * @param building - Building it works at
+ * @returns Whether the walker stands on a cell touching the building's square
+ */
+function besideBuilding(
+  unit: { x: number; y: number },
+  building: EconomyBuilding,
+): boolean {
+  return footprintDistance(building, unit) <= 1;
 }
 
 /**
@@ -715,10 +988,14 @@ function stepGarrison(
 function moveToward(
   host: EconomyHost,
   unit: EconomyUnit,
-  goal: { id: string; x: number; y: number },
+  goal: { buildingType?: string; id: string; x: number; y: number },
 ): boolean {
-  if (chebyshev(unit, goal) <= 1) return true;
-  const disks = activeVentVolumes(host.getLayerId());
+  const reach =
+    goal.buildingType === undefined
+      ? 1
+      : footprintReach({ buildingType: goal.buildingType });
+  if (chebyshev(unit, goal) <= reach) return true;
+  const disks = host.getVentVolumes();
   if (leaveHurt(host, unit, disks)) return true;
   const next = nextStep(
     unit,
@@ -726,6 +1003,7 @@ function moveToward(
     (x, y) => canWalk(host, disks, x, y),
     host.map.width,
     host.map.height,
+    reach,
   );
   if (next) {
     unit.x = next.x;
@@ -749,6 +1027,7 @@ function giveUpOn(
 ): void {
   unit.task = null;
   if (unit.preferredNodeId === targetId) unit.preferredNodeId = null;
+  if (unit.workplaceId === targetId) unit.workplaceId = null;
   const untilTick = host.tick() + UNREACHABLE_COOLDOWN_STEPS;
   const others = (unit.unreachable ?? []).filter(
     (entry) => entry.targetId !== targetId,
@@ -844,9 +1123,7 @@ export function cellOpen(
 ): boolean {
   if (x < 0 || y < 0 || x >= host.map.width || y >= host.map.height)
     return false;
-  const building = host.buildings.find(
-    (entry) => entry.x === x && entry.y === y,
-  );
+  const building = buildingCovering(host.buildings, x, y);
   if (!building) return true;
   const def = buildingDef(building.buildingType);
   if (!def) return false;
@@ -866,7 +1143,7 @@ function adjacentBuilders(host: EconomyHost, site: EconomyBuilding): number {
     if (unit.hp <= 0 || unit.popKind !== "villager") continue;
     if (unit.task?.kind !== "build" || unit.task.buildingId !== site.id)
       continue;
-    if (chebyshev(unit, site) > 1) continue;
+    if (!besideBuilding(unit, site)) continue;
     count += 1;
   }
   return count;
@@ -926,8 +1203,9 @@ function finishConstruction(
 }
 
 /**
- * Picks a manual builder's next job when its site finishes: help a nearby
- * site, keep its standing gather order, or work a node near a new drop-off.
+ * Picks a manual builder's next job when its site finishes: work the new
+ * producer while it has a free slot, help a nearby site, keep its standing
+ * gather order, or work a node near a new drop-off.
  * @param host - World of sites and nodes
  * @param unit - Builder whose site just finished
  * @param finished - The completed building
@@ -937,10 +1215,17 @@ function followUpAfterBuild(
   unit: EconomyUnit,
   finished: EconomyBuilding,
 ): void {
+  const job = standingJobAt(finished);
+  if (job !== null && hasFreeSlot(host, finished)) {
+    unit.task = { buildingId: finished.id, kind: job };
+    unit.workplaceId = finished.id;
+    unit.preferredNodeId = null;
+    return;
+  }
   const site = nearestMatching(host, unit, (building) => {
     if (!building.constructing) return false;
     if (isUnreachable(unit, building.id)) return false;
-    if (chebyshev(building, unit) > NEARBY_WORK_RADIUS) return false;
+    if (footprintDistance(building, unit) > NEARBY_WORK_RADIUS) return false;
     return workersAssigned(host, "build", building.id) < MAX_BUILDERS_PER_SITE;
   });
   if (site) {
@@ -1010,7 +1295,7 @@ function nearestMatching(
   for (const building of host.buildings) {
     const record = asBuilding(building);
     if (!accept(record)) continue;
-    const distance = chebyshev(record, origin);
+    const distance = footprintDistance(record, origin);
     if (distance > bestDistance) continue;
     if (distance === bestDistance && best && compareIds(record.id, best.id) > 0)
       continue;
@@ -1051,7 +1336,7 @@ function nearestFree(
  */
 function workersAssigned(
   host: EconomyHost,
-  kind: "build" | "repair",
+  kind: "build" | "harvest" | "repair" | "work",
   buildingId: string,
 ): number {
   let count = 0;

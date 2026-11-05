@@ -221,10 +221,10 @@ describe("descent shell read model", () => {
         layerName: "Ashen Gate",
         schoolChoiceVisible: true,
       }),
-    ).toBe("controls");
+    ).toBe("realm");
     expect(
       activeCoach({
-        dismissed: ["controls"],
+        dismissed: ["realm"],
         feedOpen: true,
         flags: { pill: true, realmGate: true, school: true },
         furnaceSelected: false,
@@ -232,7 +232,7 @@ describe("descent shell read model", () => {
         layerName: "Ashen Gate",
         schoolChoiceVisible: true,
       }),
-    ).toBe("realm");
+    ).toBe("pill");
   });
 
   test("preview snapshot publishes the panels the shell reads", () => {

@@ -9,7 +9,7 @@
           "digTicks": 0,
           "level": 1,
           "yield": { "food": 1, "water": 1 },
-          "yieldEveryTicks": 4
+          "yieldEveryTicks": 16
         }
       ],
       "id": "root_cellar",
@@ -24,26 +24,26 @@
         {
           "deposit": { "coin": 20, "iron": 20, "stone": 20 },
           "digCost": { "wood": 20 },
-          "digTicks": 4,
+          "digTicks": 16,
           "level": 1,
           "yield": { "coin": 1, "iron": 1, "stone": 1 },
-          "yieldEveryTicks": 4
+          "yieldEveryTicks": 16
         },
         {
           "deposit": { "coin": 30, "iron": 30, "stone": 30 },
           "digCost": { "stone": 20, "wood": 30 },
-          "digTicks": 6,
+          "digTicks": 24,
           "level": 2,
           "yield": { "coin": 2, "iron": 2, "stone": 2 },
-          "yieldEveryTicks": 3
+          "yieldEveryTicks": 12
         },
         {
           "deposit": { "coin": 40, "iron": 40, "stone": 40 },
           "digCost": { "iron": 20, "stone": 30, "wood": 40 },
-          "digTicks": 8,
+          "digTicks": 32,
           "level": 3,
           "yield": { "coin": 3, "iron": 3, "stone": 3 },
-          "yieldEveryTicks": 2
+          "yieldEveryTicks": 8
         }
       ],
       "id": "deep_mine",

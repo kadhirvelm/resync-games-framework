@@ -11,13 +11,19 @@
  *
  * Code lives in `logic/slice/`; this file wires it into a `SimModule`.
  */
-import { ASHEN_GATE_CONTENT, ASHEN_GATE_MAP } from "../data/layers/ashen_gate";
+import {
+  ASHEN_GATE_CONTENT,
+  ASHEN_GATE_MAP_SIZE,
+  generateAshenGateMap,
+} from "../data/layers/ashen_gate";
 import { BOSS_INTROS } from "../data/narrative";
 import type { CombatCommand } from "./combat/types";
 import { seedEconomyWorld } from "./economy/economy";
+import type { EconomyUnit } from "./economy/model";
 import { createEconomyModule } from "./economy/module";
 import { asBuilding, economyHost, isEconomyUnit } from "./economy/records";
 import { orderVillagersMove, orderVillagersStop } from "./economy/villagers";
+import { setLayerTerrain } from "./layers/hazards";
 import {
   createDescentSim,
   type DescentSim,
@@ -26,7 +32,7 @@ import {
   TICK_MS,
   type TickContext,
 } from "./sim";
-import { planFormation } from "./slice/formation";
+import { formationCenter, planFormation } from "./slice/formation";
 import { runCombatTick } from "./slice/sliceCombat";
 import {
   completedHall,
@@ -34,6 +40,7 @@ import {
   REALM_FOR_RANK,
   saveCultivation,
 } from "./slice/sliceCultivation";
+import { updateFogOfWar } from "./slice/sliceFog";
 import { publishPresentation } from "./slice/slicePresentation";
 import {
   ASHEN_GATE_SLICE_MODULE_ID,
@@ -53,6 +60,13 @@ import {
   setTrainingRallyPoint,
   trainingRallyPoint,
 } from "./slice/sliceTraining";
+import {
+  advanceWaypoints,
+  appendWaypoints,
+  clearWaypoints,
+  isUnitTravelling,
+  queuedWaypoints,
+} from "./slice/sliceWaypoints";
 import type { Command, SimSnapshot } from "./types";
 import { createWavesModule } from "./waves/module";
 
@@ -75,7 +89,7 @@ export interface AshenGateSimOptions {
 export function createAshenGateSim(options: AshenGateSimOptions): DescentSim {
   return createDescentSim({
     layerId: "ashen_gate",
-    map: { height: ASHEN_GATE_MAP.height, width: ASHEN_GATE_MAP.width },
+    map: { ...ASHEN_GATE_MAP_SIZE },
     modules: [
       createEconomyModule({
         manualVillagers: true,
@@ -146,20 +160,25 @@ export const ashenGateSliceModule: SimModule = {
       pushNotice(context.world, "The pill takes hold.", "good");
     },
     order_attack(command, context) {
+      clearWaypoints(context.world, command.unitIds);
       queueOrder(context.world, command);
     },
     order_attack_move(command, context) {
-      marchInFormation(context.world, command);
+      routeMove(context.world, command);
     },
     order_move(command, context) {
-      marchInFormation(context.world, command);
+      routeMove(context.world, command);
     },
     order_stop(command, context) {
+      clearWaypoints(context.world, command.unitIds);
       orderVillagersStop(
         economyHost(context.world, ECONOMY_STEP_TICKS),
         command.unitIds,
       );
       queueOrder(context.world, command);
+    },
+    set_formation(command, context) {
+      reformInPlace(context.world, command);
     },
     set_rally_point(command, context) {
       const accepted = setTrainingRallyPoint(
@@ -194,13 +213,20 @@ export const ashenGateSliceModule: SimModule = {
   },
   id: ASHEN_GATE_SLICE_MODULE_ID,
   init(world) {
-    seedEconomyWorld(world, {
-      buildings: [...ASHEN_GATE_MAP.buildings],
+    // The layout comes from the run seed, so each new run spreads the Hold,
+    // vents, and deposits differently while a save always reloads its own.
+    const layout = generateAshenGateMap(world.seed);
+    setLayerTerrain(world, {
       layerId: "ashen_gate",
-      nodes: [...ASHEN_GATE_MAP.nodes],
-      stockpile: ASHEN_GATE_MAP.stockpile,
-      units: [...ASHEN_GATE_MAP.units],
-      veins: [...ASHEN_GATE_MAP.veins],
+      ventVolumes: [...layout.vents],
+    });
+    seedEconomyWorld(world, {
+      buildings: [...layout.buildings],
+      layerId: "ashen_gate",
+      nodes: [...layout.nodes],
+      stockpile: layout.stockpile,
+      units: [...layout.units],
+      veins: [...layout.veins],
     });
     world.meta[ASHEN_GATE_SLICE_MODULE_ID] = createSliceState();
     const cultivation = openCultivation(world);
@@ -210,6 +236,7 @@ export const ashenGateSliceModule: SimModule = {
     }
     saveCultivation(world, cultivation);
     pushNotice(world, ASHEN_GATE_CONTENT.briefing, "info");
+    updateFogOfWar(world, true);
     publishPresentation(world);
   },
   processors: [
@@ -232,6 +259,7 @@ export const ashenGateSliceModule: SimModule = {
       run(context) {
         if (sliceState(context.world).outcome !== "playing") return;
         runCombatTick(context);
+        advanceWaypoints(context.world);
         advanceTraining(context);
         checkDefeat(context);
       },
@@ -250,11 +278,87 @@ export const ashenGateSliceModule: SimModule = {
       run(context) {
         announceBoss(context.world);
         pruneTransient(context.world);
+        updateFogOfWar(context.world);
         publishPresentation(context.world);
       },
     },
   ],
 };
+
+/**
+ * Repositions a living selection around its current center in a new shape.
+ * @param world - Sim world
+ * @param command - Formation and selected unit ids
+ */
+function reformInPlace(
+  world: SimWorldState,
+  command: Extract<Command, { type: "set_formation" }>,
+): void {
+  const selected = new Set(command.unitIds);
+  const members = world.units.filter(
+    (unit) => selected.has(unit.id) && isEconomyUnit(unit) && unit.hp > 0,
+  );
+  const center = formationCenter(members);
+  if (center === null) return;
+  clearWaypoints(world, command.unitIds);
+  marchInFormation(world, {
+    ...center,
+    formation: command.formation,
+    type: "order_move",
+    unitIds: command.unitIds,
+  });
+}
+
+/**
+ * A move or attack-move. With Shift held (`queue`) and the group still on
+ * its way, each unit's slot at the new point waits behind its current legs;
+ * otherwise the order replaces whatever the group was doing.
+ * @param world - Sim world
+ * @param command - Move or attack-move
+ */
+function routeMove(
+  world: SimWorldState,
+  command: Extract<Command, { type: "order_attack_move" | "order_move" }>,
+): void {
+  const members = livingMembers(world, command.unitIds);
+  const travelling = members.some((unit) => isUnitTravelling(world, unit));
+  if (command.queue !== true || !travelling) {
+    clearWaypoints(world, command.unitIds);
+    marchInFormation(world, command);
+    return;
+  }
+  // Plan the leg from where each unit will be when it starts it.
+  const startingPoints = members.map((unit) => {
+    const legs = queuedWaypoints(world, unit.id);
+    const last = legs[legs.length - 1];
+    return last === undefined ? unit : { ...unit, x: last.x, y: last.y };
+  });
+  const slots = clampSlots(
+    planFormation(
+      startingPoints,
+      { x: command.x, y: command.y },
+      command.formation ?? "ranks",
+    ),
+    world.map,
+  );
+  appendWaypoints(world, slots, command.type === "order_attack_move");
+}
+
+/**
+ * @param world - Sim world
+ * @param unitIds - Selected unit ids
+ * @returns The living Hold units among them
+ */
+function livingMembers(
+  world: SimWorldState,
+  unitIds: readonly string[],
+): EconomyUnit[] {
+  const selected = new Set(unitIds);
+  return world.units.filter(
+    (unit): unit is EconomyUnit =>
+      selected.has(unit.id) && isEconomyUnit(unit) && unit.hp > 0,
+  );
+}
 
 /**
  * Sends a selection to a point in formation. Every living Hold unit gets its
@@ -268,10 +372,7 @@ function marchInFormation(
   world: SimWorldState,
   command: Extract<Command, { type: "order_attack_move" | "order_move" }>,
 ): void {
-  const selected = new Set(command.unitIds);
-  const members = world.units.filter(
-    (unit) => selected.has(unit.id) && isEconomyUnit(unit) && unit.hp > 0,
-  );
+  const members = livingMembers(world, command.unitIds);
   const slots = clampSlots(
     planFormation(
       members,

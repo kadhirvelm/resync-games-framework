@@ -1,4 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import {
+  activeVentVolumes,
+  LAYER_TERRAIN_META_KEY,
+  setLayerTerrain,
+  worldVentVolumes,
+} from "../hazards";
 import { LayerRuntime } from "../layerRuntime";
 import { LAYER_TABLE } from "../layerTable";
 import type { LayerBuilding, LayerId, LayerUnit } from "../layerTypes";
@@ -157,5 +163,42 @@ describe("Blood Sea lifedrain", () => {
         : 0;
     expect(runtime.essenceForKill()).toBe(base * 8);
     expect(runtimeOn("frozen_pit").essenceForKill()).toBe(0);
+  });
+});
+
+describe("generated vent terrain", () => {
+  const generated = [{ radius: 2, x: 40, y: 30 }];
+
+  test("a world with generated vents burns those, not the table's", () => {
+    const world = { layerId: "ashen_gate", meta: {} };
+    setLayerTerrain(world, { layerId: "ashen_gate", ventVolumes: generated });
+    expect(worldVentVolumes(world)).toEqual(generated);
+  });
+
+  test("a world without generated terrain falls back to the layer table", () => {
+    const world = { layerId: "ashen_gate", meta: {} };
+    expect(worldVentVolumes(world)).toEqual(activeVentVolumes("ashen_gate"));
+    expect(worldVentVolumes(world).length).toBeGreaterThan(0);
+  });
+
+  test("terrain from another layer or a layer without vents never burns", () => {
+    const world = { layerId: "bone_wastes", meta: {} };
+    setLayerTerrain(world, { layerId: "ashen_gate", ventVolumes: generated });
+    expect(worldVentVolumes(world)).toEqual([]);
+    world.layerId = "ashen_gate";
+    expect(worldVentVolumes(world)).toEqual(generated);
+  });
+
+  test("malformed saved terrain is ignored", () => {
+    const world = {
+      layerId: "ashen_gate",
+      meta: {
+        [LAYER_TERRAIN_META_KEY]: {
+          layerId: "ashen_gate",
+          ventVolumes: [{ radius: "big", x: 1, y: 1 }],
+        },
+      },
+    };
+    expect(worldVentVolumes(world)).toEqual(activeVentVolumes("ashen_gate"));
   });
 });

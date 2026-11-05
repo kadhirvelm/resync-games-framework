@@ -6,6 +6,7 @@
 import { advanceUpgrade, stepBrewing } from "./actions";
 import { recomputeBonuses } from "./bonuses";
 import type { EconomyHost } from "./model";
+import { stepProduction } from "./production";
 import {
   AUTO_VILLAGERS,
   expireModifiers,
@@ -29,6 +30,7 @@ export function runEconomyTick(
   stepVillagers(host, policy);
   stepConstruction(host, policy);
   stepWorks(host);
+  stepProduction(host);
   recomputeBonuses(host);
   stepBrewing(host);
 }

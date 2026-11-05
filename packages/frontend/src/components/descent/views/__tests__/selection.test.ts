@@ -76,6 +76,12 @@ describe("ordersForRightClick", () => {
     ]);
   });
 
+  test("shift-click queues the move as a waypoint", () => {
+    expect(ordersForRightClick(click({ queue: true }))).toEqual([
+      { queue: true, type: "order_move", unitIds: ["v1", "w1"], x: 20, y: 20 },
+    ]);
+  });
+
   test("villagers gather a node near the click; soldiers walk there", () => {
     expect(ordersForRightClick(click({ ground: { x: 10.5, y: 4.4 } }))).toEqual(
       [
@@ -140,10 +146,17 @@ describe("selection helpers", () => {
   });
 
   test("placement uses selected villagers, else drafts idle ones", () => {
+    const roster = [
+      ...units,
+      { classId: "villager", factionId: "hold", id: "v3", idle: true },
+    ];
     expect(
-      placementBuilders(units, { buildingId: null, unitIds: ["v2", "w1"] }),
-    ).toEqual(["v2"]);
-    expect(placementBuilders(units, EMPTY_SELECTION)).toEqual(["v1"]);
+      placementBuilders(roster, {
+        buildingId: null,
+        unitIds: ["v2", "v3", "w1"],
+      }),
+    ).toEqual(["v2", "v3"]);
+    expect(placementBuilders(roster, EMPTY_SELECTION)).toEqual(["v1"]);
   });
 });
 
