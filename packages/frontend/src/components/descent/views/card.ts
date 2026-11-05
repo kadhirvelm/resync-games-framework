@@ -1,4 +1,10 @@
-import type { ClassId, FormationId, SchoolId } from "../logic/types";
+import type {
+  ClassId,
+  FormationId,
+  ResourceId,
+  SchoolId,
+} from "../logic/types";
+import { type CostLine, type CostStock, costLineFrom } from "./costLine";
 import type { InspectTarget } from "./inspect";
 import { idleVillagerIds, type Selection } from "./selection";
 import type { ShellBuilding, ShellModel, ShellUnit } from "./shellModel";
@@ -15,7 +21,7 @@ export type ConfirmIntent =
   | { treasureId: string; type: "equip"; unitId: string }
   | { type: "breakthrough"; unitId: string }
   | { type: "descend" }
-  | { type: "market" }
+  | { sell?: ResourceId; type: "market" }
   | { type: "rations" }
   | { type: "upgrade" };
 
@@ -31,7 +37,7 @@ export type CardIntent =
     }
   | { buildingId: string; type: "rally" }
   | { type: "build" }
-  | { formation: FormationId; type: "formation" }
+  | { formation: FormationId; type: "formation"; unitIds: string[] }
   | { count: "all" | "one"; nodeId: string; type: "gather_idle" }
   | { type: "hotkeys" }
   | { type: "idle" }
@@ -98,8 +104,12 @@ export function commandIconSrc(button: CardButton): string {
 export interface CardButton {
   /** Orders a shift-click will queue, when more than one fit. */
   batchCount?: number;
+  /** Price of {@link batchCount}, drawn while Shift is held. */
+  batchCost?: CostLine;
   /** Cost of {@link batchCount}, shown while Shift is held. */
   batchDetail?: string;
+  /** Price drawn as resource icons and amounts. */
+  cost?: CostLine;
   description?: string;
   detail?: string;
   disabled?: boolean;
@@ -169,6 +179,12 @@ export const UNIT_TRAINING_GUIDES: Record<ClassId, UnitTrainingGuide> = {
     description: "Fast twin-blade flanker that rushes fragile units.",
     iconSrc: "/descent/unit-icons/raider.svg",
     role: "Skirmisher",
+  },
+  rider: {
+    description:
+      "Very fast outrider with exceptional sight but light combat power.",
+    iconSrc: "/descent/unit-icons/rider.svg",
+    role: "Scout",
   },
   villager: {
     description: "Gathers resources, constructs buildings, and repairs.",
@@ -257,7 +273,11 @@ function unitButtons(
       buttons.push({
         description: choice.description,
         id: `formation-${choice.formation}`,
-        intent: { formation: choice.formation, type: "formation" },
+        intent: {
+          formation: choice.formation,
+          type: "formation",
+          unitIds: holdIds,
+        },
         label: choice.label,
         pressed: choice.formation === activeFormation,
         role: "Formation",
@@ -317,6 +337,35 @@ function unitButtons(
 }
 
 /**
+ * @param model - Shell model
+ * @returns What the player can spend, for marking short amounts
+ */
+export function costStock(model: ShellModel): CostStock {
+  return {
+    popFree: model.pop === null ? null : model.pop.cap - model.pop.used,
+    resources: model.resources,
+  };
+}
+
+/**
+ * The text line a priced button shows besides its cost row. A shortfall the
+ * row already marks in red gets no text; other blockers are spelled out.
+ * @param readout - Whether the action can run, why not, and if that is cost
+ * @param cost - Price drawn on the button, if the snapshot published one
+ * @param costText - Cost as text, for a snapshot without a structured price
+ * @returns The line to show, or undefined for none
+ */
+function blockerDetail(
+  readout: { allowed: boolean; reason?: string; shortfall?: boolean },
+  cost: CostLine | undefined,
+  costText: string,
+): string | undefined {
+  if (cost === undefined) return readout.allowed ? costText : readout.reason;
+  if (readout.allowed || readout.shortfall === true) return undefined;
+  return readout.reason;
+}
+
+/**
  * Buttons that apply to the selected building.
  * @param model - Shell model
  * @param building - Selected building
@@ -338,11 +387,18 @@ function buildingButtons(
       label: "Set rally",
     });
   }
-  if (building.buildingType === "camp" && model.holdUpgrade !== null) {
+  // A running upgrade leaves the card; the Camp panel shows its progress.
+  if (
+    building.buildingType === "camp" &&
+    model.holdUpgrade !== null &&
+    (model.holdUpgrade.inProgress ?? null) === null
+  ) {
+    const upgrade = model.holdUpgrade;
+    const cost =
+      upgrade.cost === undefined ? undefined : costLineFrom(upgrade.cost);
     buttons.push({
-      detail: model.holdUpgrade.allowed
-        ? model.holdUpgrade.costLabel
-        : model.holdUpgrade.reason,
+      cost,
+      detail: blockerDetail(upgrade, cost, upgrade.costLabel),
       id: "upgrade-hold",
       intent: { type: "upgrade" },
       label: `Upgrade to ${model.holdUpgrade.targetTier}`,
@@ -363,11 +419,21 @@ function buildingButtons(
           option,
         )
       : null;
+    const cost =
+      option.cost === undefined
+        ? undefined
+        : costLineFrom(option.cost, {
+            count: option.count,
+            pop: option.pop,
+            seconds: option.seconds,
+          });
     buttons.push({
+      batchCost: quote?.cost,
       batchCount: quote?.count,
       batchDetail: quote?.detail,
+      cost,
       description: guide.description,
-      detail: option.allowed ? option.detail : option.reason,
+      detail: blockerDetail(option, cost, option.detail),
       disabled: !option.allowed,
       id: `train-${option.classId}`,
       imageSrc: guide.iconSrc,
@@ -447,14 +513,30 @@ function buildingButtons(
       });
     }
   }
-  if (building.buildingType === "hell_market" && model.marketRates.length > 0) {
-    buttons.push({
-      id: "market",
-      intent: { type: "market" },
-      label: "Trade",
-    });
+  if (
+    !building.constructing &&
+    building.buildingType === "hell_market" &&
+    model.marketRates.length > 0
+  ) {
+    for (const rate of model.marketRates) {
+      buttons.push({
+        description: rate.label,
+        id: `market-${rate.sell}`,
+        intent: { sell: rate.sell, type: "market" },
+        label: `Sell ${resourceLabel(rate.sell)}`,
+      });
+    }
   }
   return buttons;
+}
+
+/**
+ * @param resource - Stable resource id
+ * @returns Player-facing resource name
+ */
+function resourceLabel(resource: ResourceId): string {
+  if (resource === "spirit_herbs") return "Spirit Herbs";
+  return resource.slice(0, 1).toUpperCase() + resource.slice(1);
 }
 
 /**

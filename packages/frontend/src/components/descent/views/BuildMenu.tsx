@@ -2,28 +2,21 @@
 /** @jsxImportSource react */
 
 import {
-  Anvil,
   ArrowLeft,
-  BrickWall,
-  Crown,
-  DoorOpen,
-  Eye,
-  Flame,
-  FlaskConical,
-  Hammer,
-  House,
   type LucideIcon,
-  PackageOpen,
   Shield,
-  Skull,
   Sparkles,
   Swords,
-  UtensilsCrossed,
   Warehouse,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { buildingIconSrc } from "./buildingIcons";
+import { buildMenuKeyAction, buildMenuKeyFor } from "./buildMenuHotkeys";
+import { CostRow } from "./CostRow";
+import { type CostStock, costLineFrom, costLineText } from "./costLine";
 import styles from "./descentView.module.scss";
 import type { BuildReadout } from "./presentation";
+import { isTypingTarget } from "./useHotkeys";
 
 type BuildingTone = "defense" | "economy" | "mystic" | "war";
 type BuildCategory = "cultivation" | "defense" | "economy" | "military";
@@ -31,7 +24,6 @@ type BuildCategory = "cultivation" | "defense" | "economy" | "military";
 interface BuildingGuide {
   category: BuildCategory;
   description: string;
-  icon: LucideIcon;
   tone: BuildingTone;
 }
 
@@ -83,112 +75,120 @@ const BUILDING_GUIDES: Record<string, BuildingGuide> = {
   alchemy_furnace: {
     category: "cultivation",
     description: "Brews cultivation pills from Spirit Herbs and Essence.",
-    icon: FlaskConical,
     tone: "mystic",
   },
   artifact_forge: {
     category: "cultivation",
     description: "Forges treasures that your strongest units can equip.",
-    icon: Hammer,
     tone: "mystic",
   },
   barracks: {
     category: "military",
     description: "Trains Wardens, Hunters, Raiders, Breakers, and Adepts.",
-    icon: Swords,
     tone: "war",
   },
   calamity_altar: {
     category: "cultivation",
     description: "Summons one powerful Calamity after reaching the Citadel.",
-    icon: Skull,
     tone: "mystic",
   },
   cultivation_hall: {
     category: "cultivation",
     description: "Lets trained units attempt cultivation breakthroughs.",
-    icon: Sparkles,
     tone: "mystic",
   },
   ember_forge: {
     category: "cultivation",
     description: "Unlocks Ember equipment forged for the Ashen Gate.",
-    icon: Anvil,
     tone: "mystic",
+  },
+  farm: {
+    category: "economy",
+    description: "Consumes Water over time to harvest a steady Food crop.",
+    tone: "economy",
   },
   fire_ward_wall: {
     category: "defense",
     description: "Funnels enemies and protects nearby units from vent burns.",
-    icon: Flame,
     tone: "defense",
+  },
+  forest: {
+    category: "economy",
+    description: "Consumes Water to regrow a managed source of Wood.",
+    tone: "economy",
   },
   gate: {
     category: "defense",
     description: "Blocks the horde while allowing your own units through.",
-    icon: DoorOpen,
     tone: "defense",
+  },
+  hell_market: {
+    category: "economy",
+    description: "Sells surplus Food, Water, or Wood for Coin.",
+    tone: "economy",
   },
   hero_hall: {
     category: "military",
     description: "Trains heroes and brings fallen heroes back to the fight.",
-    icon: Crown,
     tone: "war",
   },
   housing: {
     category: "economy",
     description: "Raises the population cap for more workers and soldiers.",
-    icon: House,
     tone: "economy",
   },
   mess_hall: {
     category: "economy",
     description: "Turns Food and Water into rations that strengthen a squad.",
-    icon: UtensilsCrossed,
     tone: "economy",
   },
   omen_tower: {
     category: "cultivation",
     description: "Reveals which enemy classes are in the next wave.",
-    icon: Eye,
     tone: "mystic",
   },
   root_cellar: {
     category: "economy",
     description: "Produces a raid-proof trickle of Food and Water.",
-    icon: PackageOpen,
+    tone: "economy",
+  },
+  spirit_herb_garden: {
+    category: "economy",
+    description: "Consumes Water, then slowly grows Spirit Herbs.",
     tone: "economy",
   },
   storehouse: {
     category: "economy",
     description: "A closer drop-off point that shortens villager haul trips.",
-    icon: Warehouse,
     tone: "economy",
   },
   wall: {
     category: "defense",
     description: "A tough barrier that blocks movement and funnels enemies.",
-    icon: BrickWall,
     tone: "defense",
   },
   ward_tower: {
     category: "defense",
     description: "Automatically shoots nearby enemies and extends vision.",
-    icon: Shield,
     tone: "defense",
+  },
+  well: {
+    category: "economy",
+    description: "Continually draws Water without consuming resources.",
+    tone: "economy",
   },
 };
 
 /**
  * Resolves a building's menu guide, retaining published copy for new types.
  * @param option - Build option published by the simulation
- * @returns Icon, tone, and player-facing purpose
+ * @returns Tone and player-facing purpose
  */
 function buildingGuide(option: BuildReadout): BuildingGuide {
   return (
     BUILDING_GUIDES[option.buildingType] ?? {
       category: "economy",
       description: option.job,
-      icon: Hammer,
       tone: "economy",
     }
   );
@@ -210,7 +210,8 @@ function BuildCategoryPicker({
 }) {
   return (
     <ul aria-label="Build categories" className={styles.buildCategoryGrid}>
-      {categories.map((category) => {
+      {categories.map((category, index) => {
+        const hotkey = buildMenuKeyFor("categories", index);
         const guide = BUILD_CATEGORY_GUIDES[category];
         const CategoryIcon = guide.icon;
         const count = options.filter(
@@ -219,6 +220,7 @@ function BuildCategoryPicker({
         return (
           <li key={category}>
             <button
+              aria-keyshortcuts={hotkey}
               aria-label={`${guide.label}. ${guide.description} ${count} ${count === 1 ? "building" : "buildings"}.`}
               className={styles.buildCategoryChoice}
               data-build-category={category}
@@ -239,6 +241,9 @@ function BuildCategoryPicker({
                   {count} {count === 1 ? "building" : "buildings"}
                 </small>
               </span>
+              {hotkey === undefined ? null : (
+                <kbd className={styles.buildHotkey}>{hotkey}</kbd>
+              )}
             </button>
           </li>
         );
@@ -249,21 +254,28 @@ function BuildCategoryPicker({
 
 /**
  * Individual structures inside one selected category.
- * @param props - Visible build options and placement callback
+ * @param props - Visible build options, placement callback, and stock
  * @returns The second level of the build menu
  */
 function BuildOptionGrid({
   onChoose,
   options,
+  stock,
 }: {
   onChoose: (option: BuildReadout) => void;
   options: readonly BuildReadout[];
+  stock: CostStock;
 }) {
   return (
     <ul className={styles.buildGrid}>
-      {options.map((option) => {
+      {options.map((option, index) => {
+        const hotkey = buildMenuKeyFor("buildings", index);
+        const cost =
+          option.cost === undefined ? undefined : costLineFrom(option.cost);
+        const costText =
+          cost === undefined ? option.costLabel : costLineText(cost);
         const guide = buildingGuide(option);
-        const BuildingIcon = guide.icon;
+        const iconSrc = buildingIconSrc(option.buildingType);
         return (
           <li
             className={`${styles.buildOption} ${option.unlocked ? "" : styles.locked}`}
@@ -274,7 +286,8 @@ function BuildOptionGrid({
             )}
           >
             <button
-              aria-label={`${option.name}. ${guide.description} Cost: ${option.costLabel}.`}
+              aria-keyshortcuts={hotkey}
+              aria-label={`${option.name}. ${guide.description} Cost: ${costText}.`}
               className={styles.buildChoice}
               disabled={!option.unlocked}
               onClick={() => onChoose(option)}
@@ -285,7 +298,14 @@ function BuildOptionGrid({
                 className={styles.buildIcon}
                 data-tone={guide.tone}
               >
-                <BuildingIcon size={30} strokeWidth={1.65} />
+                {iconSrc === null ? (
+                  <span className={styles.buildIconGlyph}>
+                    {option.name.slice(0, 1)}
+                  </span>
+                ) : (
+                  // biome-ignore lint/performance/noImgElement: bundled game HUD icon
+                  <img alt="" className={styles.buildIconImage} src={iconSrc} />
+                )}
               </span>
               <span className={styles.buildChoiceCopy}>
                 <span className={styles.buildChoiceHeader}>
@@ -304,8 +324,17 @@ function BuildOptionGrid({
                     ))}
                   </span>
                 )}
-                <span className={styles.buildCost}>{option.costLabel}</span>
+                <span className={styles.buildCost}>
+                  {cost === undefined ? (
+                    option.costLabel
+                  ) : (
+                    <CostRow line={cost} size="full" stock={stock} />
+                  )}
+                </span>
               </span>
+              {hotkey === undefined ? null : (
+                <kbd className={styles.buildHotkey}>{hotkey}</kbd>
+              )}
             </button>
             {option.lockedReason === undefined ? null : (
               <p className={styles.lockReason}>{option.lockedReason}</p>
@@ -319,7 +348,8 @@ function BuildOptionGrid({
 
 /**
  * Tier-gated build list. Hints are the strings the snapshot published.
- * @param props - Options and actions
+ * Grid hotkeys pick a category and then a building; Backspace goes back.
+ * @param props - Options, actions, and what the player can spend
  * @returns The build menu
  */
 export function BuildMenu({
@@ -327,11 +357,14 @@ export function BuildMenu({
   onClose,
   onGlossary,
   options,
+  stock,
 }: {
   onChoose: (option: BuildReadout) => void;
   onClose: () => void;
   onGlossary: () => void;
   options: readonly BuildReadout[];
+  /** What the player can spend, so short amounts draw in red. */
+  stock: CostStock;
 }) {
   const [selectedCategory, setSelectedCategory] =
     useState<BuildCategory | null>(null);
@@ -351,6 +384,53 @@ export function BuildMenu({
       : options.filter(
           (option) => buildingGuide(option).category === activeCategory,
         );
+  const keyState = useRef({
+    activeCategory,
+    availableCategories,
+    onChoose,
+    visibleOptions,
+  });
+  keyState.current = {
+    activeCategory,
+    availableCategories,
+    onChoose,
+    visibleOptions,
+  };
+  useEffect(() => {
+    /**
+     * Runs before the shell and camera listeners, so a grid key picks from
+     * the menu instead of panning or turning the camera.
+     * @param event - Keydown on the window, capture phase
+     */
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isTypingTarget(event.target)) return;
+      const state = keyState.current;
+      const level = state.activeCategory === null ? "categories" : "buildings";
+      const count =
+        level === "categories"
+          ? state.availableCategories.length
+          : state.visibleOptions.length;
+      const action = buildMenuKeyAction(event, level, count);
+      if (action === null) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (action.type === "back") {
+        setSelectedCategory(null);
+        return;
+      }
+      if (action.type !== "choose") return;
+      if (level === "categories") {
+        const category = state.availableCategories[action.index];
+        if (category !== undefined) setSelectedCategory(category);
+        return;
+      }
+      const option = state.visibleOptions[action.index];
+      if (option !== undefined) state.onChoose(option);
+    };
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    return () =>
+      window.removeEventListener("keydown", onKeyDown, { capture: true });
+  }, []);
   let title = "Build";
   let subtitle = "Choose a category for the selected villagers.";
   if (activeGuide !== null) {
@@ -374,6 +454,7 @@ export function BuildMenu({
             >
               <ArrowLeft aria-hidden="true" size={13} strokeWidth={2} />
               Categories
+              <kbd className={styles.buildBackHotkey}>⌫</kbd>
             </button>
           )}
           <button
@@ -403,7 +484,11 @@ export function BuildMenu({
         />
       )}
       {activeCategory === null ? null : (
-        <BuildOptionGrid onChoose={onChoose} options={visibleOptions} />
+        <BuildOptionGrid
+          onChoose={onChoose}
+          options={visibleOptions}
+          stock={stock}
+        />
       )}
     </section>
   );

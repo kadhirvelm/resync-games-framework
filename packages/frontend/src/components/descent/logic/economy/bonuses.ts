@@ -3,7 +3,7 @@
  * or a destroyed furnace updates the buildings around it.
  */
 
-import { chebyshev } from "./grid";
+import { footprintCovers, footprintDistance, footprintGap } from "./footprint";
 import type { BonusFlag, EconomyBuilding, EconomyHost } from "./model";
 import { asBuilding } from "./records";
 import { type BuildingDef, buildingDef } from "./tables";
@@ -16,8 +16,8 @@ export function recomputeBonuses(host: EconomyHost): void {
   for (const building of host.buildings) {
     const record = asBuilding(building);
     const def = buildingDef(record.buildingType);
-    record.onSpiritVein = host.economy.veins.some(
-      (vein) => vein.x === building.x && vein.y === building.y,
+    record.onSpiritVein = host.economy.veins.some((vein) =>
+      footprintCovers(record, vein.x, vein.y),
     );
     record.bonuses = {
       adjacency: def ? adjacencyFlags(host, record, def) : [],
@@ -88,7 +88,7 @@ function partnerBuilding(
   for (const other of host.buildings) {
     if (other.id === building.id) continue;
     if (other.buildingType !== partnerType) continue;
-    if (chebyshev(other, building) > 1) continue;
+    if (footprintGap(other, building) > 1) continue;
     const partner = asBuilding(other);
     if (!partner.completed) continue;
     return partner;
@@ -111,7 +111,7 @@ function partnerNode(
   for (const node of host.economy.nodes) {
     if (node.nodeType !== nodeType) continue;
     if (node.remaining <= 0) continue;
-    if (chebyshev(node, building) > 1) continue;
+    if (footprintDistance(building, node) > 1) continue;
     return node;
   }
   return null;
@@ -133,7 +133,7 @@ function overlapFlag(
     if (other.id === building.id) continue;
     if (other.buildingType !== building.buildingType) continue;
     if (!asBuilding(other).completed) continue;
-    if (chebyshev(other, building) > def.auraRadius) continue;
+    if (footprintGap(other, building) > def.auraRadius) continue;
     return { ...def.overlapBonus, partnerId: other.id };
   }
   return null;

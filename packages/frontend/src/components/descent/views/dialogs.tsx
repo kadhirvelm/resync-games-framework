@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource react */
 
+import { useEffect, useRef } from "react";
 import { COACH_MARKS, type CoachMarkId } from "./coach";
 import type { CommitModel } from "./confirm";
 import styles from "./descentView.module.scss";
@@ -141,31 +142,75 @@ export function HotkeyDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** How long a notice stays before it leaves on its own. */
+export const TOAST_DISMISS_MS = 2400;
+
 /**
- * Failure toasts. They stay until dismissed.
+ * One quiet notice. It leaves on its own after a short delay.
+ * @param props - Copy, lifetime, and dismiss handler
+ * @returns The status line
+ */
+function ToastNotice({
+  id,
+  lifetimeMs,
+  message,
+  onDismiss,
+}: {
+  id: number;
+  lifetimeMs: number;
+  message: string;
+  onDismiss: (id: number) => void;
+}) {
+  const dismiss = useRef(onDismiss);
+  dismiss.current = onDismiss;
+  useEffect(() => {
+    const timer = window.setTimeout(() => dismiss.current(id), lifetimeMs);
+    return () => window.clearTimeout(timer);
+  }, [id, lifetimeMs]);
+
+  return (
+    <p
+      className={styles.toast}
+      role="status"
+      style={{ ["--toast-life" as string]: `${lifetimeMs}ms` }}
+    >
+      <span>{message}</span>
+      <button
+        aria-label="Dismiss notice"
+        onClick={() => onDismiss(id)}
+        type="button"
+      >
+        ×
+      </button>
+    </p>
+  );
+}
+
+/**
+ * A short stack of notices. Each one leaves on its own.
  * @param props - Messages and dismiss handler
  * @returns The live region
  */
 export function ToastList({
+  lifetimeMs = TOAST_DISMISS_MS,
   onDismiss,
   toasts,
 }: {
+  /** How long each notice stays. Defaults to a short self-dismiss. */
+  lifetimeMs?: number;
   onDismiss: (id: number) => void;
   toasts: readonly { id: number; message: string }[];
 }) {
   return (
     <div aria-live="polite" className={styles.toasts} data-testid="toasts">
       {toasts.map((toast) => (
-        <p className={styles.toast} key={toast.id} role="status">
-          {toast.message}{" "}
-          <button
-            aria-label="Dismiss notice"
-            onClick={() => onDismiss(toast.id)}
-            type="button"
-          >
-            ×
-          </button>
-        </p>
+        <ToastNotice
+          id={toast.id}
+          key={toast.id}
+          lifetimeMs={lifetimeMs}
+          message={toast.message}
+          onDismiss={onDismiss}
+        />
       ))}
     </div>
   );

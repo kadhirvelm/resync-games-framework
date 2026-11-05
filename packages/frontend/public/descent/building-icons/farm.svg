@@ -1,0 +1,10 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" >
+  <title>Farm</title>
+  <rect fill="#151b17" height="64" rx="12" width="64" />
+  <path d="M8 46c12-11 36-11 48 0v10H8z" fill="#4b3223" stroke="#a16c38" stroke-width="2"/>
+  <path d="M13 47c5-7 10-10 15-11m23 11c-5-7-10-10-15-11" fill="none" stroke="#49bdd2" stroke-width="4"/>
+  <g fill="#d6a93e" stroke="#f3d77a" stroke-width="1.5">
+    <path d="M20 42V19m0 9-6-5m6 11 7-6m17 14V17m0 9-7-5m7 11 6-6"/>
+  </g>
+  <path d="M28 51h8" stroke="#7fe0e9" stroke-linecap="round" stroke-width="4" />
+</svg>

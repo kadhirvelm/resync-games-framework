@@ -33,6 +33,12 @@ export enum AudioAgentTool {
   GenerateAudio = AgentTool.GenerateAudio,
 }
 
+/** Tool set for batch renders that deliberately do not use workspace lore. */
+enum AudioRenderTool {
+  // biome-ignore lint/style/useLiteralEnumMembers: value is the shared AgentTool id
+  GenerateAudio = AgentTool.GenerateAudio,
+}
+
 /** Consult ProductNow, then render. Four steps covers both calls and a reply. */
 const AUDIO_COORDINATOR_STEPS = 4;
 
@@ -58,6 +64,8 @@ export interface AudioAgentInput {
   prompt: string;
   /** Effect, ambience, or music, when the caller already knows */
   role?: AudioRole;
+  /** Whether ProductNow lore may be consulted. Defaults to true. */
+  useLore?: boolean;
 }
 
 /** Result of one audio query. */
@@ -119,6 +127,7 @@ export class AudioAgent
     return this.generationAbort.run(input.generationId, async (signal) => {
       let toolOutput: unknown;
       try {
+        const useLore = input.useLore !== false;
         const result = await this.agents.runGenerationCoordinator({
           abortSignal: signal,
           agentId: "audio-generation-agent",
@@ -127,9 +136,11 @@ export class AudioAgent
           outputLabel: "Audio generation",
           prompt: agentPrompt(input),
           readToolOutput: (raw) => raw,
-          supportingToolIds: [AudioAgentTool.ConsultProductNow],
+          supportingToolIds: useLore
+            ? [AudioAgentTool.ConsultProductNow]
+            : undefined,
           toolId: AudioAgentTool.GenerateAudio,
-          tools: AudioAgentTool,
+          tools: useLore ? AudioAgentTool : AudioRenderTool,
         });
         toolOutput = result.toolOutput;
         throwIfAborted(signal);
@@ -164,6 +175,9 @@ function agentPrompt(input: AudioAgentInput): string {
   if (input.loop !== undefined) {
     lines.push(`Loop: ${input.loop ? "yes" : "no"}`);
   }
+  lines.push(
+    `Lore lookup: ${input.useLore === false ? "disabled" : "allowed"}`,
+  );
   if (input.cue !== undefined) {
     lines.push(`Duration seconds: ${AUDIO_CUE_SECONDS[input.cue]}`);
   }

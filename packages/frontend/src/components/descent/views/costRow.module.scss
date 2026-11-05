@@ -1,0 +1,90 @@
+// Icon-and-amount price rows, as RTS command cards draw them.
+
+.row {
+  align-items: center;
+  display: inline-flex;
+  flex-wrap: nowrap;
+  font-variant-numeric: tabular-nums;
+  gap: 7px;
+  line-height: 1;
+  max-width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+
+  &[data-size="full"] {
+    gap: 10px;
+  }
+}
+
+.item,
+.time {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+.icon {
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 70%));
+  height: 15px;
+  object-fit: contain;
+  width: 15px;
+
+  .row[data-size="full"] & {
+    height: 18px;
+    width: 18px;
+  }
+}
+
+.amount {
+  color: #f4e6c6;
+  font-size: 12px;
+  font-weight: 750;
+  text-shadow: 0 1px 1px rgb(0 0 0 / 80%);
+
+  .row[data-size="full"] & {
+    font-size: 13.5px;
+  }
+}
+
+// The player is short of this amount.
+.item[data-short="true"] .amount {
+  color: #ff6a4f;
+}
+
+.time .amount {
+  color: #b9a88b;
+  font-weight: 650;
+}
+
+.timeIcon {
+  color: #b9a88b;
+  height: 12px;
+  width: 12px;
+
+  .row[data-size="full"] & {
+    height: 14px;
+    width: 14px;
+  }
+}
+
+.count {
+  color: #ffd27a;
+  font-size: 12px;
+  font-weight: 800;
+
+  .row[data-size="full"] & {
+    font-size: 13.5px;
+  }
+}
+
+.srOnly {
+  /* stylelint-disable-next-line property-no-deprecated */
+  clip: rect(0 0 0 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}

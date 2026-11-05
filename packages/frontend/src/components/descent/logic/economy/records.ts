@@ -2,6 +2,7 @@
  * Constructors and lookups for the records stored on the sim world.
  */
 
+import { worldVentVolumes } from "../layers/hazards";
 import type { SimWorldState } from "../sim/world";
 import {
   type BuildingState,
@@ -111,6 +112,7 @@ export function economyHost(
     buildings: world.buildings,
     economy,
     getLayerId: () => world.layerId,
+    getVentVolumes: () => worldVentVolumes(world),
     map: world.map,
     resources: world.resources,
     setLayerId(layerId) {
@@ -215,6 +217,7 @@ export function createBuildingRecord(input: BuildingInit): EconomyBuilding {
     maxHp: def.maxHp,
     onSpiritVein: false,
     placeholder: def.placeholder,
+    production: null,
     tier: def.tier,
     x: input.x,
     y: input.y,
@@ -243,6 +246,7 @@ export function createUnitRecord(input: UnitInit): EconomyUnit {
     preferredNodeId: null,
     realmId: input.realmId ?? null,
     task: null,
+    workplaceId: null,
     x: input.x,
     y: input.y,
   };

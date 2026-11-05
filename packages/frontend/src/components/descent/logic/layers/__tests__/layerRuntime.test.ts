@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { ASHEN_GATE_MAP } from "../../../data/layers/ashen_gate/map";
 import rawLayerTable from "../../../data/layers.json";
 import { LayerRuntime } from "../layerRuntime";
 import { LAYER_TABLE, parseLayerTable } from "../layerTable";
@@ -265,12 +264,5 @@ describe("boss-phase hazard override", () => {
     });
     expect(runtime.getHazardOverride()).toBeNull();
     expect(runtime.getActiveHazards()).toEqual(["cold"]);
-  });
-});
-
-describe("Ashen Gate vents", () => {
-  test("layers.json matches the live map exactly", () => {
-    const ashen = LAYER_TABLE.layers.find((layer) => layer.id === "ashen_gate");
-    expect(ashen?.ventVolumes).toEqual(ASHEN_GATE_MAP.vents);
   });
 });

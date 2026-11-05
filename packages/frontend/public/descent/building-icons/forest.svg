@@ -1,0 +1,9 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" >
+  <title>Managed Forest</title>
+  <rect fill="#101a17" height="64" rx="12" width="64" />
+  <path d="M10 51h44" stroke="#3da9bb" stroke-linecap="round" stroke-width="5" />
+  <path d="M22 50V29m20 21V25" stroke="#8b5937" stroke-linecap="round" stroke-width="7" />
+  <path d="M9 32 22 9l13 23z" fill="#4c7650" stroke="#8eb56d" stroke-width="2"/>
+  <path d="M27 29 42 6l14 23z" fill="#345f46" stroke="#79a866" stroke-width="2"/>
+  <path d="M14 56h15m7 0h14" stroke="#b87945" stroke-linecap="round" stroke-width="4" />
+</svg>

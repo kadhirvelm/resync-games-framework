@@ -26,6 +26,16 @@ export interface UnitPanelProps {
   onSelectGroup?: (unitIds: readonly string[]) => void;
   /** Primary selected unit, for its cultivation bars. */
   unit: ShellUnit | null;
+  /** A running Hold upgrade, shown on the Camp's panel. */
+  upgrade?: HoldUpgradeProgress | null;
+}
+
+/** A Hold tier upgrade that has been paid for and is under way. */
+export interface HoldUpgradeProgress {
+  /** 0 to 1. */
+  progress: number;
+  secondsLeft: number;
+  targetTier: string;
 }
 
 /**
@@ -44,7 +54,13 @@ export function UnitPanel({
   onGlossary,
   onSelectGroup,
   unit,
+  upgrade = null,
 }: UnitPanelProps) {
+  const showUpgrade =
+    upgrade !== null &&
+    card.kind === "building" &&
+    building?.buildingType === "camp" &&
+    building.factionId === "hold";
   const showQueue =
     card.kind === "building" &&
     building !== null &&
@@ -113,6 +129,9 @@ export function UnitPanel({
             />
           </div>
         )}
+        {showUpgrade && upgrade !== null ? (
+          <HoldUpgradeRow upgrade={upgrade} />
+        ) : null}
         {showQueue && building !== null ? (
           <TrainingQueue building={building} onCancel={onCancelTraining} />
         ) : null}
@@ -221,7 +240,12 @@ function Facts({ facts }: { facts: readonly SelectionFact[] }) {
           <dd>
             {fact.iconSrc === undefined ? null : (
               // biome-ignore lint/performance/noImgElement: bundled game HUD icon
-              <img alt="" height={14} src={fact.iconSrc} width={14} />
+              <img
+                alt={fact.iconAlt ?? ""}
+                height={14}
+                src={fact.iconSrc}
+                width={14}
+              />
             )}
             {fact.value}
           </dd>
@@ -274,6 +298,43 @@ function SelectionGroups({
   );
 }
 
+/**
+ * The Camp's running tier upgrade: icon, target tier, a progress bar, and
+ * time left. It runs beside villager training, so it sits above that queue.
+ * @param props - The running upgrade
+ * @returns The upgrade row
+ */
+function HoldUpgradeRow({ upgrade }: { upgrade: HoldUpgradeProgress }) {
+  const percent = Math.round(Math.min(1, Math.max(0, upgrade.progress)) * 100);
+  return (
+    <div
+      aria-label={`Upgrading to ${upgrade.targetTier}, ${percent}% complete, ${upgrade.secondsLeft} seconds left`}
+      className={styles.upgradeRow}
+      role="status"
+    >
+      {/* biome-ignore lint/performance/noImgElement: bundled game HUD icon */}
+      <img
+        alt=""
+        className={styles.upgradeIcon}
+        src="/descent/command-icons/upgrade.png"
+      />
+      <span className={styles.upgradeCopy}>
+        <strong>Upgrading to {upgrade.targetTier}</strong>
+        <span>
+          {percent}% · {upgrade.secondsLeft}s left
+        </span>
+      </span>
+      <meter
+        aria-hidden="true"
+        className={styles.upgradeMeter}
+        max={1}
+        min={0}
+        value={upgrade.progress}
+      />
+    </div>
+  );
+}
+
 /** Empty slots kept on the first row so a short queue still reads as a queue. */
 const QUEUE_ROW = 5;
 
@@ -306,6 +367,7 @@ function TrainingQueue({
               ? undefined
               : (jobId) => onCancel(building.id, jobId)
           }
+          position={slot + 1}
           training={slot === 0}
         />
       ))}
@@ -322,10 +384,12 @@ function TrainingQueue({
 function TrainingQueueSlot({
   job,
   onCancel,
+  position,
   training,
 }: {
   job: TrainingQueueReadout | undefined;
   onCancel?: (jobId: string) => void;
+  position: number;
   training: boolean;
 }) {
   if (job === undefined) {
@@ -336,36 +400,47 @@ function TrainingQueueSlot({
     );
   }
   const name = job.count > 1 ? `${job.label} ×${job.count}` : job.label;
+  const percent = Math.round(job.progress * 100);
+  const state = training
+    ? `training, ${percent}% complete`
+    : `queued ${position}`;
   return (
     <li className={styles.queueItem} data-active={training}>
-      <span className={styles.queueName}>{name}</span>
-      {training ? (
-        <span className={styles.queueState}>
-          {Math.round(job.progress * 100)}%
-        </span>
-      ) : (
-        <span className={styles.queueState}>Queued</span>
-      )}
-      {onCancel === undefined ? null : (
-        <button
-          aria-label={`Cancel ${name}`}
-          className={styles.queueCancel}
-          onClick={() => onCancel(job.id)}
-          title="Cancel and refund"
-          type="button"
-        >
-          ×
-        </button>
-      )}
-      {training ? (
-        <meter
-          aria-label={`${job.label} training progress`}
-          className={styles.queueProgress}
-          max={1}
-          min={0}
-          value={job.progress}
+      <button
+        aria-label={`Cancel ${name}`}
+        className={styles.queueButton}
+        disabled={onCancel === undefined}
+        onClick={() => onCancel?.(job.id)}
+        title={`${name} — ${state}. Click to cancel and refund.`}
+        type="button"
+      >
+        {/* biome-ignore lint/performance/noImgElement: bundled game HUD icon */}
+        <img
+          alt=""
+          className={styles.queueIcon}
+          src={UNIT_TRAINING_GUIDES[job.classId].iconSrc}
         />
-      ) : null}
+        {training ? (
+          <span
+            aria-hidden="true"
+            className={styles.queueProgressFill}
+            style={{ height: `${percent}%` }}
+          />
+        ) : null}
+        <span aria-hidden="true" className={styles.queueCount}>
+          ×{job.count}
+        </span>
+        <span
+          aria-hidden="true"
+          className={training ? styles.queuePercent : styles.queuePosition}
+        >
+          {training ? `${percent}%` : position}
+        </span>
+        <span className={styles.srOnly}>
+          {job.label}.{" "}
+          {training ? `Training ${percent}%` : `Queued position ${position}`}.
+        </span>
+      </button>
     </li>
   );
 }

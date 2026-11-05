@@ -28,7 +28,9 @@ describe("commandIconSrc", () => {
 
   test("leaves formation buttons to their tactical diagram", () => {
     expect(
-      commandIconSrc(button({ formation: "wedge", type: "formation" })),
+      commandIconSrc(
+        button({ formation: "wedge", type: "formation", unitIds: ["u1"] }),
+      ),
     ).toBe("");
   });
 });
@@ -47,6 +49,13 @@ describe("formation command buttons", () => {
         entry.intent.type === "formation" ? entry.intent.formation : null,
       ),
     ).toEqual(["ranks", "line", "wedge", "column"]);
+    expect(
+      buttons.every(
+        (entry) =>
+          entry.intent.type === "formation" &&
+          entry.intent.unitIds.join(",") === "warden-1,adept-1",
+      ),
+    ).toBe(true);
     expect(buttons.find((entry) => entry.pressed)?.label).toBe("Wedge");
   });
 });

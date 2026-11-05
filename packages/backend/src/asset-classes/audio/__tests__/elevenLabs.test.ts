@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { elevenLabsCall } from "../elevenLabs";
+import { elevenLabsCall, requestElevenLabsAudio } from "../elevenLabs";
 
 describe("elevenLabsCall", () => {
   test("asks for an instrumental bed", () => {
@@ -44,5 +44,44 @@ describe("elevenLabsCall", () => {
       prompt_influence: 0.5,
       text: "An iron bell struck once",
     });
+  });
+
+  test("falls back to Sound Generation when the Music API needs a paid plan", async () => {
+    const urls: string[] = [];
+    const bodies: Record<string, unknown>[] = [];
+    const fetchMock = (async (input, init) => {
+      urls.push(String(input));
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      if (urls.length === 1) {
+        return new Response(
+          JSON.stringify({ detail: { code: "paid_plan_required" } }),
+          { headers: { "content-type": "application/json" }, status: 402 },
+        );
+      }
+      return new Response(new Uint8Array(1_200), {
+        headers: { "content-type": "audio/mpeg" },
+      });
+    }) as typeof fetch;
+
+    const rendered = await requestElevenLabsAudio(
+      "test-key",
+      { cue: "battle", prompt: "Driving instrumental bed", role: "music" },
+      fetchMock,
+    );
+
+    expect(rendered.bytes.byteLength).toBe(1_200);
+    expect(urls[0]).toContain("/v1/music");
+    expect(urls[1]).toContain("/v1/sound-generation");
+    expect(bodies[1]?.duration_seconds).toBe(30);
+    expect(bodies[1]?.loop).toBe(true);
+  });
+
+  test("keeps Sound Generation prompts inside the provider limit", () => {
+    const call = elevenLabsCall({
+      cue: "attack",
+      prompt: "a".repeat(500),
+      role: "effect",
+    });
+    expect(String(call.body.text)).toHaveLength(450);
   });
 });

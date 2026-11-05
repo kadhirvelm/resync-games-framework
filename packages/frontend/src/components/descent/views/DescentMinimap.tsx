@@ -4,6 +4,7 @@
 
 import type { PointerEvent as ReactPointerEvent } from "react";
 import styles from "./descentView.module.scss";
+import { FogCanvas } from "./FogCanvas";
 import type { MapPoint } from "./selection";
 import type { ShellModel } from "./shellModel";
 
@@ -20,6 +21,11 @@ export interface MinimapView {
 export interface DescentMinimapProps {
   model: ShellModel;
   onNavigate: (point: MapPoint) => void;
+  /**
+   * Orders the selection to a point: right-click moves, Shift+click (either
+   * button) queues a waypoint.
+   */
+  onOrder?: (point: MapPoint, queue: boolean) => void;
   view: MinimapView;
 }
 
@@ -73,33 +79,62 @@ export function minimapPointerToMap(
 }
 
 /**
+ * What a press on the minimap does, the way RTS minimaps read it.
+ * @param button - Pointer button (0 left, 2 right)
+ * @param shiftKey - Whether Shift is held
+ * @param canOrder - Whether the minimap can order units at all
+ * @returns `navigate` to move the camera, `move` or `queue` to order units,
+ *   or null to ignore the press
+ */
+export function minimapPressAction(
+  button: number,
+  shiftKey: boolean,
+  canOrder: boolean,
+): "move" | "navigate" | "queue" | null {
+  if (button !== 0 && button !== 2) return null;
+  if (canOrder && shiftKey) return "queue";
+  if (button === 0) return "navigate";
+  return canOrder ? "move" : null;
+}
+
+/**
  * Small strategic overview shared by the Babylon and accessible DOM maps.
- * @param props - Map entities, camera footprint, and navigation callback
- * @returns A clickable overview that recenters the active renderer
+ * @param props - Map entities, camera footprint, and navigation and order
+ *   callbacks
+ * @returns A clickable overview that recenters the camera or orders units
  */
 export function DescentMinimap({
   model,
   onNavigate,
+  onOrder,
   view,
 }: DescentMinimapProps) {
-  /** Recenters the battlefield on the pointer's map position. */
-  const navigate = (event: ReactPointerEvent<HTMLButtonElement>): void => {
-    if (event.button !== 0) return;
+  /** Recenters the camera or orders the selection at the pointer. */
+  const press = (event: ReactPointerEvent<HTMLButtonElement>): void => {
+    const action = minimapPressAction(
+      event.button,
+      event.shiftKey,
+      onOrder !== undefined,
+    );
+    if (action === null) return;
     event.preventDefault();
     event.stopPropagation();
-    onNavigate(
-      minimapPointerToMap(
-        event.clientX,
-        event.clientY,
-        event.currentTarget.getBoundingClientRect(),
-        model.map,
-      ),
+    const point = minimapPointerToMap(
+      event.clientX,
+      event.clientY,
+      event.currentTarget.getBoundingClientRect(),
+      model.map,
     );
+    if (action === "navigate") {
+      onNavigate(point);
+      return;
+    }
+    onOrder?.(point, action === "queue");
   };
 
   return (
     <button
-      aria-label="Battlefield minimap. Click to move camera."
+      aria-label="Battlefield minimap. Click to move camera, right-click to send the selection, Shift-click to add a waypoint."
       className={styles.minimap}
       data-testid="descent-minimap"
       onClick={(event) => {
@@ -112,12 +147,15 @@ export function DescentMinimap({
         event.stopPropagation();
       }}
       onDoubleClick={(event) => event.stopPropagation()}
-      onPointerDown={navigate}
+      onPointerDown={press}
       onPointerMove={(event) => event.stopPropagation()}
       onPointerUp={(event) => event.stopPropagation()}
       style={{ aspectRatio: `${model.map.width} / ${model.map.height}` }}
       type="button"
     >
+      {model.fog === null ? null : (
+        <FogCanvas className={styles.minimapFog} fog={model.fog} />
+      )}
       <span className={styles.minimapTitle}>Map</span>
       {model.vents.map((vent) => (
         <span

@@ -55,6 +55,23 @@ export interface RationDef {
   windowTicks: number;
 }
 
+/**
+ * One timed building conversion that completes after economy steps. With
+ * `workers`, the building only runs while villagers work it, and each worker
+ * adds one step of progress; without it, the building runs on its own. With
+ * `harvest`, it grows on its own and then waits until a villager harvests
+ * its single output and carries it home.
+ */
+export interface BuildingProductionDef {
+  everyTicks: number;
+  /** Whether a villager must harvest the grown output. */
+  harvest: boolean;
+  input: Partial<ResourceStockpile>;
+  output: Partial<ResourceStockpile>;
+  /** Most villagers that can work the building, or null when it needs none. */
+  workers: number | null;
+}
+
 /** One placeable building. */
 export interface BuildingDef {
   adjacency: AdjacencyRule[];
@@ -66,6 +83,8 @@ export interface BuildingDef {
   cost: Partial<ResourceStockpile>;
   dropOff: boolean;
   flavor: string;
+  /** Side of the square of cells the building covers. Always odd. */
+  footprint: number;
   id: string;
   job: string;
   maxHp: number;
@@ -73,6 +92,7 @@ export interface BuildingDef {
   overlapBonus: { amount: number; id: string } | null;
   placeholder: boolean;
   popBonus: number;
+  production: BuildingProductionDef | null;
   ration: RationDef | null;
   respawn: boolean;
   tier: HoldTier;
@@ -162,9 +182,13 @@ const PILL_RECIPES: readonly PillRecipeDef[] = readRecipes(pillFile);
 
 const BASE_POP_CAP = readNumber(buildingFile.basePopCap, "basePopCap");
 const REPAIR_HP = readNumber(buildingFile.repairHpPerTick, "repairHpPerTick");
-const WORKER_BONUS = readNumber(
-  buildingFile.workerBuildBonus,
-  "workerBuildBonus",
+const FIRST_WORKER_BUILD_BONUS = readNumber(
+  buildingFile.firstWorkerBuildBonus,
+  "firstWorkerBuildBonus",
+);
+const ADDITIONAL_WORKER_BUILD_BONUS = readNumber(
+  buildingFile.additionalWorkerBuildBonus,
+  "additionalWorkerBuildBonus",
 );
 const TRAINING = readTraining(buildingFile.trainingCosts);
 
@@ -221,10 +245,17 @@ export function repairHpPerTick(): number {
 }
 
 /**
- * @returns Construction progress each adjacent builder adds per economy step
+ * @returns Construction progress the first adjacent builder adds per economy step
  */
-export function workerBuildBonus(): number {
-  return WORKER_BONUS;
+export function firstWorkerBuildBonus(): number {
+  return FIRST_WORKER_BUILD_BONUS;
+}
+
+/**
+ * @returns Construction progress each helper after the first adds per economy step
+ */
+export function additionalWorkerBuildBonus(): number {
+  return ADDITIONAL_WORKER_BUILD_BONUS;
 }
 
 /**
@@ -387,6 +418,7 @@ function normalizeBuilding(raw: RawBuilding): BuildingDef {
     cost: raw.cost,
     dropOff: raw.dropOff ?? false,
     flavor: raw.flavor ?? "",
+    footprint: normalizeFootprint(raw.id, raw.footprint),
     id: raw.id,
     job: raw.job,
     maxHp: raw.maxHp,
@@ -394,6 +426,9 @@ function normalizeBuilding(raw: RawBuilding): BuildingDef {
     overlapBonus: raw.overlapBonus ?? null,
     placeholder: raw.placeholder ?? false,
     popBonus: raw.popBonus ?? 0,
+    production: raw.production
+      ? normalizeProduction(raw.id, raw.production)
+      : null,
     ration: raw.ration ? normalizeRation(raw.ration) : null,
     respawn: raw.respawn ?? false,
     tier: raw.tier,
@@ -401,6 +436,68 @@ function normalizeBuilding(raw: RawBuilding): BuildingDef {
     veinBonusAtCitadel: raw.veinBonusAtCitadel ?? null,
     volatileDamage: raw.volatileDamage ?? 0,
   };
+}
+
+/**
+ * @param id - Building id, for validation errors
+ * @param raw - Timed input and output row
+ * @returns A validated automatic production definition
+ */
+function normalizeProduction(
+  id: string,
+  raw: Partial<BuildingProductionDef>,
+): BuildingProductionDef {
+  const everyTicks = raw.everyTicks;
+  if (!Number.isInteger(everyTicks) || (everyTicks ?? 0) < 1) {
+    throw new Error(
+      `buildings.json ${id} production needs positive everyTicks`,
+    );
+  }
+  const workers = raw.workers ?? null;
+  if (workers !== null && (!Number.isInteger(workers) || workers < 1)) {
+    throw new Error(
+      `buildings.json ${id} production workers must be a positive integer`,
+    );
+  }
+  const harvest = raw.harvest ?? false;
+  const outputs = Object.keys(raw.output ?? {}).length;
+  if (harvest && (workers !== null || outputs !== 1)) {
+    throw new Error(
+      `buildings.json ${id} harvest production needs one output and no workers`,
+    );
+  }
+  return {
+    everyTicks: everyTicks as number,
+    harvest,
+    input: raw.input ?? {},
+    output: raw.output ?? {},
+    workers,
+  };
+}
+
+/**
+ * @param buildingType - Building id
+ * @returns How many villagers can work it, or 0 when it takes no workers
+ */
+export function workerSlots(buildingType: string): number {
+  return buildingDef(buildingType)?.production?.workers ?? 0;
+}
+
+/**
+ * @param id - Building id, for the error message
+ * @param footprint - Raw side length, if the row has one
+ * @returns The side length, 1 when omitted
+ * @throws When the side is not a positive odd integer, so the building has no
+ *   center cell to stand on
+ */
+function normalizeFootprint(id: string, footprint: number | undefined): number {
+  const side = footprint ?? 1;
+  if (!Number.isInteger(side) || side < 1 || side % 2 === 0) {
+    throw new Error(
+      `buildings.json ${id} footprint must be a positive odd integer`,
+    );
+  }
+  return side;
 }
 
 /**

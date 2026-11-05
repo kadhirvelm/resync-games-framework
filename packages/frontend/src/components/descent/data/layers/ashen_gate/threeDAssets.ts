@@ -2,10 +2,10 @@ import type { ThreeDAsset, ThreeDAssetKind } from "@resync-game-framework/api";
 
 /** Stable gameplay-facing roles for generated Ashen Gate models. */
 export type AshenGateAssetRole =
-  | "environment"
   | "villager"
   | "warden"
   | "hunter"
+  | "rider"
   | "holdRaider"
   | "breaker"
   | "adept"
@@ -16,14 +16,26 @@ export type AshenGateAssetRole =
   | "hordeAdept"
   | "cinderjaw"
   | "camp"
+  | "stronghold"
+  | "citadel"
   | "barracks"
   | "cultivationHall"
   | "fireWard"
+  | "well"
+  | "farm"
+  | "forest"
+  | "market"
+  | "spiritHerbGarden"
   | "emberVent"
   | "resourceGrove"
   | "resourceOutcrop"
   | "resourceTree"
-  | "resourceWell";
+  | "resourceWell"
+  | "hordeGate"
+  | "abyssSpire"
+  | "rimRuin"
+  | "spiritCrystals"
+  | "basaltBoulders";
 
 /** One generated model expected by the Ashen Gate Babylon renderer. */
 export interface AshenGateAssetDefinition {
@@ -37,10 +49,10 @@ export interface AshenGateAssetDefinition {
  * stable while generated ids may differ between machines and environments.
  */
 export const ASHEN_GATE_3D_ASSETS = [
-  { kind: "environment", name: "Descent Ashen Gate", role: "environment" },
   { kind: "character", name: "Descent Villager", role: "villager" },
   { kind: "character", name: "Descent Warden", role: "warden" },
   { kind: "character", name: "Descent Hunter", role: "hunter" },
+  { kind: "character", name: "Descent Rider", role: "rider" },
   { kind: "character", name: "Descent Raider", role: "holdRaider" },
   { kind: "character", name: "Descent Breaker", role: "breaker" },
   { kind: "character", name: "Descent Adept", role: "adept" },
@@ -67,6 +79,8 @@ export const ASHEN_GATE_3D_ASSETS = [
   },
   { kind: "character", name: "Descent Cinderjaw", role: "cinderjaw" },
   { kind: "prop", name: "Descent Camp", role: "camp" },
+  { kind: "prop", name: "Descent Stronghold", role: "stronghold" },
+  { kind: "prop", name: "Descent Citadel", role: "citadel" },
   { kind: "prop", name: "Descent Barracks", role: "barracks" },
   {
     kind: "prop",
@@ -74,6 +88,15 @@ export const ASHEN_GATE_3D_ASSETS = [
     role: "cultivationHall",
   },
   { kind: "prop", name: "Descent Fire Ward", role: "fireWard" },
+  { kind: "prop", name: "Descent Well", role: "well" },
+  { kind: "prop", name: "Descent Farm", role: "farm" },
+  { kind: "prop", name: "Descent Managed Forest", role: "forest" },
+  { kind: "prop", name: "Descent Hell Market", role: "market" },
+  {
+    kind: "prop",
+    name: "Descent Spirit Herb Garden",
+    role: "spiritHerbGarden",
+  },
   { kind: "prop", name: "Descent Ember Vent", role: "emberVent" },
   {
     kind: "prop",
@@ -94,6 +117,19 @@ export const ASHEN_GATE_3D_ASSETS = [
     kind: "prop",
     name: "Descent Spirit Well",
     role: "resourceWell",
+  },
+  { kind: "prop", name: "Descent Horde Gate", role: "hordeGate" },
+  { kind: "prop", name: "Descent Abyss Spire", role: "abyssSpire" },
+  { kind: "prop", name: "Descent Rim Ruin", role: "rimRuin" },
+  {
+    kind: "prop",
+    name: "Descent Spirit Crystals",
+    role: "spiritCrystals",
+  },
+  {
+    kind: "prop",
+    name: "Descent Basalt Boulders",
+    role: "basaltBoulders",
   },
 ] as const satisfies readonly AshenGateAssetDefinition[];
 
@@ -146,6 +182,7 @@ export function assetRoleForUnit(unit: {
     return "raider";
   }
   if (unit.classId === "hunter") return "hunter";
+  if (unit.classId === "rider") return "rider";
   if (unit.classId === "raider") return "holdRaider";
   if (unit.classId === "breaker") return "breaker";
   if (unit.classId === "adept") return "adept";
@@ -154,12 +191,25 @@ export function assetRoleForUnit(unit: {
 
 /**
  * Selects the nearest generated structure silhouette for a published building.
+ * The Camp grows into the Stronghold model, then the Citadel model, as the
+ * Hold climbs tiers.
  * @param buildingType - Stable economy building type
+ * @param tier - The building's published Hold tier, if any
  * @returns Asset role used for this building
  */
-export function assetRoleForBuilding(buildingType: string): AshenGateAssetRole {
+export function assetRoleForBuilding(
+  buildingType: string,
+  tier: string | null = null,
+): AshenGateAssetRole {
+  if (buildingType === "camp" && tier === "Citadel") return "citadel";
+  if (buildingType === "camp" && tier === "Stronghold") return "stronghold";
   if (buildingType === "barracks") return "barracks";
   if (buildingType === "cultivation_hall") return "cultivationHall";
+  if (buildingType === "well") return "well";
+  if (buildingType === "farm") return "farm";
+  if (buildingType === "forest") return "forest";
+  if (buildingType === "hell_market") return "market";
+  if (buildingType === "spirit_herb_garden") return "spiritHerbGarden";
   if (buildingType.includes("fire_ward") || buildingType.includes("wall")) {
     return "fireWard";
   }
@@ -188,4 +238,36 @@ export function assetRoleForResource(resourceId: string): AshenGateAssetRole {
  */
 export function isResourceAssetRole(role: AshenGateAssetRole): boolean {
   return role.startsWith("resource");
+}
+
+/**
+ * @param role - Generated Ashen Gate asset role
+ * @returns Whether the role is a battlefield character
+ */
+export function isCharacterAssetRole(role: AshenGateAssetRole): boolean {
+  return ASHEN_GATE_3D_ASSETS.some(
+    (definition) => definition.role === role && definition.kind === "character",
+  );
+}
+
+/** Scenery roles placed around the plateau rather than on map entities. */
+export const ASHEN_GATE_SCENERY_ROLES = [
+  "hordeGate",
+  "abyssSpire",
+  "rimRuin",
+  "spiritCrystals",
+  "basaltBoulders",
+] as const satisfies readonly AshenGateAssetRole[];
+
+/** A generated model that only dresses the world around the battlefield. */
+export type AshenGateSceneryRole = (typeof ASHEN_GATE_SCENERY_ROLES)[number];
+
+/**
+ * @param role - Generated Ashen Gate asset role
+ * @returns Whether the role is placed as fixed scenery around the plateau
+ */
+export function isSceneryAssetRole(
+  role: AshenGateAssetRole,
+): role is AshenGateSceneryRole {
+  return (ASHEN_GATE_SCENERY_ROLES as readonly string[]).includes(role);
 }

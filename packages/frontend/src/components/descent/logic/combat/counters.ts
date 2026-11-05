@@ -8,7 +8,8 @@ const COUNTER_TARGETS: Readonly<Record<CombatClassId, readonly ClassId[]>> = {
   breaker: ["warden"],
   hunter: ["warden"],
   raider: ["hunter", "adept", "breaker"],
-  warden: ["raider"],
+  rider: [],
+  warden: ["raider", "rider"],
 };
 
 /**

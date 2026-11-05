@@ -6,7 +6,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import clsx from "clsx";
 import type { Metadata } from "next";
-import { Cormorant_Garamond, Inter } from "next/font/google";
+import { Cormorant_Garamond, Inter, Plus_Jakarta_Sans } from "next/font/google";
 import styles from "./layout.module.scss";
 
 export const metadata: Metadata = {
@@ -25,6 +25,12 @@ const font = Inter({
   weight: ["200", "300", "400", "500", "600", "700"],
 });
 
+const descent = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  variable: "--font-descent",
+  weight: ["400", "500", "600", "700", "800"],
+});
+
 export default function RootLayout({
   children,
 }: {
@@ -32,7 +38,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={clsx(styles.body, font.className, display.variable)}>
+      <body
+        className={clsx(
+          styles.body,
+          font.className,
+          display.variable,
+          descent.variable,
+        )}
+      >
         <Theme className={styles.entryPoint}>
           <ProductNowProvider>{children}</ProductNowProvider>
           <Analytics />

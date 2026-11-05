@@ -3,6 +3,7 @@ export type HotkeyAction =
   | { type: "build" }
   | { type: "camera"; x: number; y: number }
   | { type: "close" }
+  | { type: "fullscreen" }
   | { type: "hotkeys" }
   | { type: "idle" }
   | { type: "pause" }
@@ -49,6 +50,7 @@ export function hotkeyFromInput(input: HotkeyInput): HotkeyAction | null {
   if (key === "r") return { type: "recall" };
   if (key === "g") return { type: "release" };
   if (key === "h") return { type: "selectCamp" };
+  if (key === "f") return { type: "fullscreen" };
   if (key === ".") return { type: "idle" };
   if (key === " ") return { type: "pause" };
   if (key === "Escape") return { type: "close" };
@@ -62,7 +64,12 @@ export const HOTKEY_ROWS = [
   { action: "Select all of a type on screen", key: "Double-click" },
   { action: "Add to selection", key: "Shift+click" },
   { action: "Move / gather / build / attack", key: "Right-click" },
-  { action: "Build", key: "B" },
+  { action: "Queue a waypoint", key: "Shift+right-click" },
+  { action: "Send / queue from the minimap", key: "Right-click / Shift+click" },
+  { action: "Build menu", key: "B" },
+  { action: "Build category", key: "Q W / A S" },
+  { action: "Building (key on its button)", key: "Q W E / A S D / Z X C" },
+  { action: "Back to categories", key: "Backspace" },
   { action: "Idle villager", key: "." },
   { action: "Camp", key: "H" },
   { action: "Train", key: "T" },
@@ -70,5 +77,6 @@ export const HOTKEY_ROWS = [
   { action: "Pan", key: "WASD / arrows" },
   { action: "Rotate", key: "Q / E" },
   { action: "Pause", key: "Space" },
+  { action: "Fullscreen", key: "F" },
   { action: "Close / controls", key: "Esc / ?" },
 ] as const;

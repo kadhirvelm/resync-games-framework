@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { minimapPointerToMap } from "../DescentMinimap";
+import { minimapPointerToMap, minimapPressAction } from "../DescentMinimap";
 
 describe("minimapPointerToMap", () => {
   test("maps the overview center into the battlefield center", () => {
@@ -21,5 +21,23 @@ describe("minimapPointerToMap", () => {
       x: 128,
       y: 80,
     });
+  });
+});
+
+describe("minimapPressAction", () => {
+  test("left-click moves the camera; right-click sends the selection", () => {
+    expect(minimapPressAction(0, false, true)).toBe("navigate");
+    expect(minimapPressAction(2, false, true)).toBe("move");
+  });
+
+  test("Shift-click with either button queues a waypoint", () => {
+    expect(minimapPressAction(0, true, true)).toBe("queue");
+    expect(minimapPressAction(2, true, true)).toBe("queue");
+  });
+
+  test("without an order handler only the camera moves", () => {
+    expect(minimapPressAction(0, true, false)).toBe("navigate");
+    expect(minimapPressAction(2, false, false)).toBeNull();
+    expect(minimapPressAction(1, false, true)).toBeNull();
   });
 });

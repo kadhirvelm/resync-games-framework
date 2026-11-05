@@ -3,8 +3,11 @@
 import { useEffect, useState } from "react";
 import type { FormationId } from "../logic/types";
 import styles from "./bottomHud.module.scss";
+import { CostRow } from "./CostRow";
 import { type CardButton, commandIconSrc } from "./card";
+import { type CostStock, costLineText } from "./costLine";
 import formationStyles from "./formationControls.module.scss";
+import { resourceLineParts } from "./resourceLine";
 
 /** Dot layouts for the four selectable military formations. */
 const FORMATION_ICON_POINTS: Record<
@@ -66,29 +69,61 @@ function FormationIcon({ formation }: { formation: FormationId }) {
 /**
  * Builds an accessible summary from the visible command-card copy.
  * @param button - Command or training choice
- * @returns Comma-separated label, role, behavior, and cost or blocker
+ * @returns Comma-separated label, role, behavior, cost, and blocker
  */
 function buttonAriaLabel(button: CardButton): string {
-  return [button.label, button.role, button.description, button.detail]
+  const cost =
+    button.cost === undefined
+      ? undefined
+      : `Cost: ${costLineText(button.cost)}`;
+  return [button.label, button.role, button.description, cost, button.detail]
     .filter((part): part is string => part !== undefined && part.length > 0)
     .join(", ");
+}
+
+/**
+ * Renders a cost line with each resource name replaced by its HUD icon.
+ * The name stays available to assistive tech.
+ * @param props - The cost or status line
+ * @returns Icon and text fragments
+ */
+function ResourceLine({ text }: { text: string }) {
+  return resourceLineParts(text).map((part) => {
+    if (part.kind === "text") {
+      return <span key={part.key}>{part.text}</span>;
+    }
+    return (
+      <span className={styles.resourceToken} key={part.key}>
+        {/* biome-ignore lint/performance/noImgElement: bundled game HUD icon */}
+        <img alt="" className={styles.resourceTokenIcon} src={part.iconSrc} />
+        <span className={styles.srOnly}>{part.name}</span>
+      </span>
+    );
+  });
 }
 
 /**
  * The copy a tile should show. Shift replaces a training cost with the batch.
  * @param button - Command-card button
  * @param shift - Whether Shift is held
- * @returns The button, with `detail` swapped when a batch is priced
+ * @returns The button, with its price swapped when a batch is priced
  */
 function shownButton(button: CardButton, shift: boolean): CardButton {
-  if (!shift || button.batchDetail === undefined) return button;
+  if (!shift) return button;
+  if (button.batchCost !== undefined) {
+    // A batch is only offered when the order is allowed, so the text line
+    // can only be a cost the batch price replaces.
+    return { ...button, cost: button.batchCost, detail: undefined };
+  }
+  if (button.batchDetail === undefined) return button;
   return { ...button, detail: button.batchDetail };
 }
 
 /**
- * One action tile: icon, label, and a short status line. Training tiles keep
- * their unit portrait and role. The full explanation shows in the hint strip.
- * @param props - Button, activation, hover callbacks, and whether Shift is held
+ * One action tile: icon, label, hotkey, and its price as resource icons with
+ * amounts, red where the player is short. Training tiles keep their unit
+ * portrait and role. The full explanation shows in the hint strip.
+ * @param props - Button, activation, hover callbacks, Shift, and stock
  * @returns The tile
  */
 function ActionTile({
@@ -96,11 +131,13 @@ function ActionTile({
   onActivate,
   onHint,
   shift,
+  stock,
 }: {
   button: CardButton;
   onActivate: (button: CardButton) => void;
   onHint: (button: CardButton | null) => void;
   shift: boolean;
+  stock: CostStock;
 }) {
   const training = button.intent.type === "train";
   const formation =
@@ -138,7 +175,6 @@ function ActionTile({
       onFocus={() => onHint(button)}
       onPointerEnter={() => onHint(button)}
       onPointerLeave={() => onHint(null)}
-      title={shown.detail ?? button.description}
       type="button"
     >
       {formation === null ? (
@@ -158,12 +194,21 @@ function ActionTile({
       {training && button.role !== undefined ? (
         <span className={styles.actionRole}>{button.role}</span>
       ) : null}
+      {shown.cost === undefined ? null : (
+        <span
+          className={styles.actionCost}
+          data-batch={shift && button.batchCost !== undefined}
+        >
+          <CostRow line={shown.cost} stock={stock} />
+        </span>
+      )}
       {shown.detail === undefined ? null : (
         <span
           className={styles.actionDetail}
           data-batch={shift && button.batchDetail !== undefined}
+          data-blocked={button.disabled === true}
         >
-          {shown.detail}
+          <ResourceLine text={shown.detail} />
         </span>
       )}
       {button.hotkey === undefined ? null : (
@@ -177,21 +222,36 @@ function ActionTile({
 }
 
 /**
- * The hint strip line for a hovered action.
- * @param props - The hovered action
- * @returns Its name, role, explanation, and cost or blocker
+ * The hint strip line for a hovered action, laid out like an RTS tooltip:
+ * name and hotkey, price, then any blocker and what the action does.
+ * @param props - The hovered action, whether Shift is held, and stock
+ * @returns Its name, role, price, blocker, and explanation
  */
-function ActionHint({ button, shift }: { button: CardButton; shift: boolean }) {
+function ActionHint({
+  button,
+  shift,
+  stock,
+}: {
+  button: CardButton;
+  shift: boolean;
+  stock: CostStock;
+}) {
   const shown = shownButton(button, shift);
   return (
     <>
       <strong>{shown.label}</strong>
+      {shown.hotkey === undefined ? null : (
+        <kbd className={styles.hintHotkey}>{shown.hotkey}</kbd>
+      )}
       {shown.role === undefined ? null : (
         <span className={styles.hintRole}>{shown.role}</span>
       )}
+      {shown.cost === undefined ? null : (
+        <CostRow line={shown.cost} size="full" stock={stock} />
+      )}
       {shown.detail === undefined ? null : (
         <span className={shown.disabled ? styles.hintBlocked : styles.hintCost}>
-          {shown.detail}
+          <ResourceLine text={shown.detail} />
         </span>
       )}
       {shown.description === undefined ? null : (
@@ -210,10 +270,13 @@ function ActionHint({ button, shift }: { button: CardButton; shift: boolean }) {
 export function CommandCard({
   buttons,
   onActivate,
+  stock,
   subject,
 }: {
   buttons: readonly CardButton[];
   onActivate: (button: CardButton) => void;
+  /** What the player can spend, so short amounts draw in red. */
+  stock: CostStock;
   /** What the actions apply to, e.g. "Camp" or "3 Villagers". */
   subject?: string;
 }) {
@@ -252,7 +315,7 @@ export function CommandCard({
                 : `Actions${subject === undefined ? "" : ` · ${subject}`} — hover one to see what it does`}
           </span>
         ) : (
-          <ActionHint button={hint} shift={shift} />
+          <ActionHint button={hint} shift={shift} stock={stock} />
         )}
       </p>
       <div className={styles.actionGrid}>
@@ -263,6 +326,7 @@ export function CommandCard({
             onActivate={onActivate}
             onHint={onHint}
             shift={shift}
+            stock={stock}
           />
         ))}
       </div>

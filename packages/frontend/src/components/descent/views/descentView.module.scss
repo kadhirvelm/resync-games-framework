@@ -1,3 +1,5 @@
+$descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, sans-serif);
+
 .shell {
   --bronze: #c69a55;
   --bronze-bright: #efc977;
@@ -17,7 +19,7 @@
   display: flex;
   flex: 1;
   flex-direction: column;
-  font-family: inherit;
+  font-family: $descent;
   height: 100%;
   isolation: isolate;
   min-height: 720px;
@@ -55,7 +57,7 @@
 .panelKicker {
   color: var(--bronze);
   display: block;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.15em;
   text-transform: uppercase;
@@ -155,13 +157,13 @@
 
 .resourceTipName {
   color: var(--parchment);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
 .resourceTipSlang {
   color: var(--bronze-bright);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
   letter-spacing: 0.08em;
   margin-left: 6px;
@@ -170,13 +172,13 @@
 
 .resourceTipUse {
   color: var(--parchment-muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
 }
 
 .resourceTipMore {
   color: var(--parchment);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -198,7 +200,7 @@
 
 .resourceAmount {
   color: #f4e7cc;
-  font-size: 12px;
+  font-size: 13.5px;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
   line-height: 1.1;
@@ -206,11 +208,20 @@
 
 .clockControls {
   align-items: center;
-  display: grid;
-  gap: 3px;
-  grid-template-columns: auto auto;
+  background: rgb(7 6 4 / 46%);
+  border: 1px solid rgb(198 154 85 / 22%);
+  border-radius: 9px;
+  box-shadow:
+    inset 0 1px rgb(255 255 255 / 3%),
+    0 2px 8px rgb(0 0 0 / 24%);
+  display: flex;
+  gap: 2px;
+  margin: 0;
+  min-inline-size: 0;
+  padding: 3px;
 }
 
+.controlButton,
 .pauseButton,
 .speed,
 .intelButton,
@@ -220,27 +231,90 @@
   color: #e8dcc5;
 }
 
-.pauseButton {
-  min-width: 56px;
-  padding: 5px 7px;
+.controlButton {
+  align-items: center;
+  appearance: none;
+  border-color: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  height: 30px;
+  justify-content: center;
+  padding: 0;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+  width: 32px;
+
+  &:hover {
+    background: linear-gradient(#4a3723, #2d1f13);
+    border-color: rgb(198 154 85 / 54%);
+    color: #f5d995;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--bronze-bright);
+    outline-offset: 1px;
+  }
+}
+
+.controlButton[data-muted="true"] {
+  color: #a89479;
+}
+
+.controlDivider {
+  align-self: stretch;
+  background: rgb(198 154 85 / 22%);
+  margin: 3px 2px;
+  width: 1px;
 }
 
 .speedGroup {
+  align-items: center;
+  border: 0;
   display: flex;
+  gap: 1px;
+  margin: 0;
+  min-inline-size: 0;
+  padding: 0;
+}
+
+.speedIcon {
+  color: #ae9c81;
+  margin: 0 3px 0 1px;
 }
 
 .speed {
-  border-left-width: 0;
-  padding: 5px 6px;
-}
+  appearance: none;
+  background: transparent;
+  border-color: transparent;
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+  height: 26px;
+  min-width: 28px;
+  padding: 0 5px;
 
-.speed:first-child {
-  border-left-width: 1px;
+  &:hover {
+    background: rgb(198 154 85 / 12%);
+    color: #f5d995;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--bronze-bright);
+    outline-offset: 1px;
+  }
 }
 
 .speed[aria-pressed="true"],
 .pauseButton[aria-pressed="true"] {
   background: linear-gradient(#d09e55, #8b5b28);
+  border-color: #e4bb73;
+  box-shadow: inset 0 1px rgb(255 255 255 / 20%);
   color: #140e08;
   font-weight: 800;
 }
@@ -281,10 +355,13 @@
 
 .minimap {
   appearance: none;
+
+  // Basalt ground, clearly lighter than the fog's near-black ink, so ground
+  // the Hold has seen shows up as it is explored.
   background:
-    linear-gradient(rgb(223 167 87 / 8%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(223 167 87 / 8%) 1px, transparent 1px),
-    #17110d;
+    linear-gradient(rgb(223 167 87 / 10%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(223 167 87 / 10%) 1px, transparent 1px),
+    radial-gradient(circle at 50% 50%, #5a4636, #3f3127 75%);
   background-size: 12.5% 12.5%;
   border: 2px solid #8c6536;
   bottom: 10px;
@@ -311,7 +388,7 @@
 .minimapTitle {
   background: rgb(12 9 7 / 76%);
   color: #d9bd83;
-  font-size: 8px;
+  font-size: 10px;
   left: 4px;
   letter-spacing: 0.12em;
   padding: 2px 4px;
@@ -320,6 +397,19 @@
   text-transform: uppercase;
   top: 4px;
   z-index: 3;
+}
+
+.minimapFog {
+  height: 100%;
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  width: 100%;
+}
+
+.fogLayer {
+  pointer-events: none;
+  position: absolute;
 }
 
 .minimapMarker {
@@ -401,7 +491,7 @@
   background: rgb(15 12 9 / 86%);
   border: 1px solid var(--bronze);
   color: var(--parchment);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.35;
   margin: 0;
   max-width: 220px;
@@ -415,20 +505,6 @@
     color: var(--bronze-bright);
     display: block;
   }
-}
-
-.rendererStatus {
-  background: rgb(15 12 9 / 76%);
-  border: 1px solid rgb(198 154 85 / 22%);
-  bottom: 10px;
-  color: #a99a82;
-  font-size: 10px;
-  left: 50%;
-  margin: 0;
-  padding: 5px 9px;
-  pointer-events: none;
-  position: absolute;
-  transform: translateX(-50%);
 }
 
 .world {
@@ -450,8 +526,9 @@
 }
 
 .pauseOverlay {
-  font-family: Georgia, serif;
-  font-size: 30px;
+  font-family: $descent;
+  font-size: 32px;
+  font-weight: 700;
   left: 50%;
   letter-spacing: 0.14em;
   top: 45%;
@@ -466,7 +543,7 @@
   border-radius: 999px;
   color: #1b120c;
   display: flex;
-  font-size: 11px;
+  font-size: 12px;
   justify-content: center;
   position: absolute;
   text-align: center;
@@ -524,9 +601,27 @@
 }
 
 .buildingToken {
+  align-items: center;
+  display: flex;
+  gap: 4px;
   max-width: 120px;
   min-width: 72px;
+  overflow: hidden;
   padding: 0 6px;
+}
+
+.buildingTokenIcon {
+  flex: none;
+  height: 18px;
+  object-fit: contain;
+  width: 18px;
+}
+
+.buildingTokenLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tokenHold,
@@ -580,24 +675,40 @@
 }
 
 .strategicHud {
+  align-items: stretch;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  gap: 0;
+  max-width: calc(100% - 20px);
+  min-height: 0;
   pointer-events: none;
   position: absolute;
   right: 10px;
   top: 10px;
-  width: 190px;
+  width: max-content;
   z-index: 2;
 }
 
+.strategicHud:has(.threatCluster) {
+  min-height: 88px;
+  width: min(405px, calc(100% - 20px));
+}
+
+.strategicHud[data-has-training="true"]:has(.threatCluster) {
+  width: min(760px, calc(100% - 20px));
+}
+
 .strategicHud > * {
+  border: 0;
+  box-shadow: none;
+  margin: 0;
   pointer-events: auto;
 }
 
-.threatPanel,
-.omenPanel,
-.trainingTracker,
+.strategicHud > * + * {
+  border-left: 1px solid rgb(198 154 85 / 24%);
+}
+
+.strategicHud,
 .panel,
 .commands,
 .menu,
@@ -613,18 +724,26 @@
 
 .trainingTracker {
   border-left: 3px solid var(--bronze-bright);
-  padding: 7px 8px 8px;
+  display: grid;
+  flex: 1 1 360px;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+  padding: 8px 10px;
 }
 
 .trainingTrackerHeader {
+  align-content: center;
   align-items: center;
+  border-right: 1px solid rgb(198 154 85 / 20%);
   color: var(--bronze-bright);
   display: grid;
-  font-size: 10px;
+  font-size: 11.5px;
   font-weight: 750;
-  gap: 6px;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 3px 6px;
+  grid-template-columns: auto minmax(0, 1fr);
   letter-spacing: 0.12em;
+  padding-right: 10px;
   text-transform: uppercase;
 }
 
@@ -632,8 +751,11 @@
   background: rgb(239 201 119 / 14%);
   border: 1px solid rgb(239 201 119 / 30%);
   color: #f7dfad;
-  font-size: 9px;
+  font-size: 10.5px;
+  grid-column: 1 / -1;
+  letter-spacing: 0.06em;
   padding: 1px 4px;
+  white-space: nowrap;
 }
 
 .trainingTrackerPulse {
@@ -647,8 +769,12 @@
 
 .trainingTrackerList {
   display: grid;
-  gap: 4px;
-  margin-top: 6px;
+  gap: 6px;
+  grid-auto-columns: minmax(200px, 1fr);
+  grid-auto-flow: column;
+  margin: 0;
+  min-width: 0;
+  overflow-x: auto;
 }
 
 .trainingTrackerItem {
@@ -659,9 +785,10 @@
   border: 1px solid #795126;
   color: inherit;
   display: grid;
-  gap: 3px 6px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  padding: 5px 6px;
+  gap: 3px 7px;
+  grid-template-columns: minmax(84px, 1fr) minmax(56px, 0.8fr) auto;
+  grid-template-rows: 1fr 1fr;
+  padding: 6px 7px;
   text-align: left;
   width: 100%;
 }
@@ -672,14 +799,16 @@
 }
 
 .trainingTrackerCopy {
+  align-self: center;
   display: flex;
   flex-direction: column;
+  grid-row: 1 / -1;
   min-width: 0;
 }
 
 .trainingTrackerCopy strong {
   color: #f7e7c7;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -689,7 +818,7 @@
 .trainingTrackerCopy span,
 .trainingTrackerQueue {
   color: #aa987d;
-  font-size: 8px;
+  font-size: 10px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -697,16 +826,20 @@
 .trainingTrackerPercent {
   align-self: center;
   color: #ffd98c;
-  font-size: 12px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
   font-weight: 800;
+  grid-column: 3;
+  grid-row: 1 / -1;
 }
 
 .trainingTrackerProgress {
+  align-self: end;
   appearance: none;
   background: #0f0c09;
   border: 1px solid #5e4022;
-  grid-column: 1 / -1;
+  grid-column: 2;
+  grid-row: 1;
   height: 7px;
   width: 100%;
 }
@@ -729,18 +862,97 @@
 }
 
 .trainingTrackerQueue {
-  grid-column: 1 / -1;
+  grid-column: 2;
+  grid-row: 2;
+  white-space: nowrap;
+}
+
+.threatChip {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--parchment-muted);
+  display: inline-flex;
+  gap: 7px;
+  line-height: 1;
+  min-height: 34px;
+  padding: 0 10px 0 12px;
+  white-space: nowrap;
+}
+
+.threatChip strong {
+  color: #e98464;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.threatChip:hover {
+  background: rgb(233 132 100 / 10%);
+  color: var(--parchment);
+}
+
+.threatChipLabel {
+  color: #c9baa1;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.threatChipDivider {
+  align-self: stretch;
+  background: rgb(198 154 85 / 28%);
+  margin: 9px 3px;
+  width: 1px;
+}
+
+.threatChipEta {
+  color: var(--bronze-bright);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.chevron {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.threatChip .chevron {
+  margin-left: 1px;
+  opacity: 0.7;
+}
+
+.threatChip:hover .chevron {
+  opacity: 1;
+}
+
+.threatCluster {
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  position: relative;
+}
+
+.threatCluster > * + * {
+  border-left: 1px solid rgb(198 154 85 / 24%);
 }
 
 .threatPanel {
-  padding: 7px 8px;
+  align-content: center;
+  box-sizing: border-box;
+  display: grid;
+  flex: 0 0 160px;
+  padding: 10px 12px;
 }
 
 .threatHeading {
   align-items: center;
   color: #c9baa1;
   display: flex;
-  font-size: 11px;
+  font-size: 12px;
   justify-content: space-between;
   letter-spacing: 0.08em;
   margin-bottom: 6px;
@@ -749,7 +961,7 @@
 
 .threatHeading strong {
   color: #e98464;
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .meter,
@@ -778,36 +990,44 @@
 }
 
 .omenPanel {
-  display: grid;
-  gap: 5px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  padding: 8px;
-  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex: 0 0 240px;
+  flex-direction: column;
+  gap: 7px;
+  justify-content: center;
+  padding: 8px 8px 10px 12px;
 }
 
 .omenHeading {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+  min-height: 26px;
   min-width: 0;
 }
 
 .panelTitle {
   color: #f6e9ce;
-  font-family: Georgia, serif;
-  font-size: 15px;
-  font-weight: 600;
+  font-family: $descent;
+  font-size: 16px;
+  font-weight: 700;
   line-height: 1.1;
   margin: 2px 0 0;
 }
 
+.omenHeading .panelTitle {
+  margin: 0;
+}
+
 .omenEta {
   color: var(--bronze-bright);
-  font-family: Georgia, serif;
-  font-size: 23px;
+  font-family: $descent;
+  font-size: 22px;
   font-variant-numeric: tabular-nums;
-  grid-column: 2;
-  grid-row: 1;
-  margin: 0;
-  padding-right: 20px;
-  text-align: right;
+  font-weight: 700;
+  line-height: 1;
+  margin: 0 0 0 auto;
 }
 
 .omenHeld {
@@ -818,7 +1038,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  grid-column: 1 / -1;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -828,27 +1047,68 @@
   background: #382519;
   border: 1px solid #634126;
   color: #cbbba2;
-  font-size: 10px;
+  font-size: 11px;
   padding: 3px 5px;
 }
 
 .omenEmpty {
   color: var(--parchment-muted);
-  font-size: 11px;
-  grid-column: 1 / -1;
+  font-size: 12px;
   margin: 0;
-  padding-right: 70px;
 }
 
 .intelButton {
-  font-size: 10px;
+  font-size: 11px;
   padding: 4px 6px;
 }
 
-.omenPanel .intelButton {
-  position: absolute;
-  right: 4px;
-  top: 4px;
+/* Quiet round help mark that sits beside a HUD panel title. */
+.hudHelp {
+  align-items: center;
+  background: transparent;
+  border: 1px solid rgb(198 154 85 / 42%);
+  border-radius: 50%;
+  color: var(--parchment-muted);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 800;
+  height: 16px;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+  width: 16px;
+}
+
+.hudHelp:hover {
+  background: rgb(198 154 85 / 14%);
+  border-color: var(--bronze-bright);
+  color: var(--bronze-bright);
+}
+
+/* Borderless icon button for folding a HUD panel away. */
+.hudCollapse {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--parchment-muted);
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 24px;
+  justify-content: center;
+  padding: 0;
+  width: 24px;
+}
+
+/* With no wave there is no countdown to push the collapse to the edge. */
+.panelTitle + .hudHelp + .hudCollapse {
+  margin-left: auto;
+}
+
+.hudCollapse:hover {
+  background: rgb(255 255 255 / 5%);
+  border-color: #75512a;
+  color: var(--parchment);
 }
 
 .coachDock {
@@ -866,14 +1126,15 @@
 
 .coach h3 {
   color: #f6e9ce;
-  font-family: Georgia, serif;
-  font-size: 13px;
+  font-family: $descent;
+  font-size: 14px;
+  font-weight: 700;
   margin: 0 0 3px;
 }
 
 .coach p {
   color: #c8b89f;
-  font-size: 10px;
+  font-size: 11.5px;
   margin: 0 0 6px;
 }
 
@@ -885,7 +1146,7 @@
   box-shadow: 0 -4px 16px rgb(0 0 0 / 36%);
   box-sizing: border-box;
   display: grid;
-  flex: 0 0 150px;
+  flex: 0 0 164px;
   gap: 8px;
   grid-template-columns: minmax(480px, 1.15fr) minmax(380px, 1fr);
   min-height: 0;
@@ -923,8 +1184,9 @@
   border: 2px solid var(--bronze);
   color: #f8dd9f;
   display: flex;
-  font-family: Georgia, serif;
-  font-size: 19px;
+  font-family: $descent;
+  font-size: 20px;
+  font-weight: 700;
   height: 32px;
   justify-content: center;
   width: 32px;
@@ -943,7 +1205,7 @@
 
 .selectionCount {
   color: var(--bronze);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .selectionGroups {
@@ -987,7 +1249,7 @@
   background: rgb(20 13 9 / 85%);
   bottom: 1px;
   color: #f6deb0;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1;
   padding: 1px 3px;
@@ -997,7 +1259,7 @@
 
 .unitEmpty {
   color: #aa9b84;
-  font-size: 12px;
+  font-size: 13px;
   margin: 8px 3px;
 }
 
@@ -1016,14 +1278,14 @@
 
 .resourceDescription {
   color: var(--parchment-muted);
-  font-size: 10px;
+  font-size: 11.5px;
   line-height: 1.35;
   margin: 0;
 
   strong {
     color: var(--bronze-bright);
     display: block;
-    font-size: 9px;
+    font-size: 10.5px;
     letter-spacing: 0.08em;
     margin-bottom: 2px;
     text-transform: uppercase;
@@ -1043,7 +1305,7 @@
 
   dt {
     color: var(--bronze-bright);
-    font-size: 9px;
+    font-size: 10.5px;
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -1051,7 +1313,7 @@
 
   dd {
     color: var(--parchment);
-    font-size: 10px;
+    font-size: 11.5px;
     line-height: 1.3;
     margin: 2px 0 0;
   }
@@ -1067,7 +1329,7 @@
   align-items: center;
   color: #c0af93;
   display: flex;
-  font-size: 9px;
+  font-size: 10.5px;
   justify-content: space-between;
   text-transform: capitalize;
 }
@@ -1080,7 +1342,7 @@
 
 .trainingActivity span {
   color: #eadcbe;
-  font-size: 10px;
+  font-size: 11.5px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1119,7 +1381,7 @@
   border: 1px solid #5b4027;
   color: #c9b793;
   display: grid;
-  font-size: 10px;
+  font-size: 11px;
   gap: 2px 4px;
   grid-template-columns: minmax(0, 1fr) auto;
   min-height: 31px;
@@ -1136,7 +1398,7 @@
   align-items: center;
   color: var(--parchment-muted);
   display: flex;
-  font-size: 11px;
+  font-size: 12px;
   gap: 5px;
   margin: 4px 0 0;
 
@@ -1155,7 +1417,7 @@
   border: 1px solid transparent;
   color: #a58b6a;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1;
   padding: 0 3px;
 
@@ -1185,7 +1447,7 @@
 
 .trainingQueueState {
   color: #927e61;
-  font-size: 8px;
+  font-size: 10px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -1210,7 +1472,7 @@
   background: #392719;
   border: 1px solid #654729;
   color: #d1bea0;
-  font-size: 10px;
+  font-size: 11px;
   padding: 3px 6px;
   text-transform: capitalize;
 }
@@ -1222,7 +1484,7 @@
 .statBarLabel {
   color: #c0af93;
   display: block;
-  font-size: 9px;
+  font-size: 10.5px;
   margin-bottom: 2px;
 }
 
@@ -1235,7 +1497,7 @@
 
 .unitStats span {
   color: #a99a83;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .unitStats strong {
@@ -1252,7 +1514,7 @@
 
 .unitDetails {
   color: #b6a68d;
-  font-size: 10px;
+  font-size: 11.5px;
   margin-top: 6px;
 }
 
@@ -1336,7 +1598,7 @@
 }
 
 .commandLabel {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1.15;
 }
@@ -1355,13 +1617,14 @@
 
 .trainingChoiceHeader strong {
   color: #f2dfbd;
-  font-family: Georgia, serif;
-  font-size: 12px;
+  font-family: $descent;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .trainingChoiceHeader span {
   color: #a9977d;
-  font-size: 9px;
+  font-size: 10.5px;
 }
 
 .trainingChoiceGrid {
@@ -1416,14 +1679,14 @@
 
 .trainingChoiceTitle {
   color: #f5e5c5;
-  font-size: 10px;
+  font-size: 11.5px;
   font-weight: 800;
   line-height: 1.1;
 }
 
 .trainingChoiceRole {
   color: #f0b85f;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -1431,19 +1694,19 @@
 
 .trainingChoiceDescription {
   color: #c5b59b;
-  font-size: 8px;
+  font-size: 10px;
   line-height: 1.2;
 }
 
 .trainingChoiceCost {
   color: #d2a65d;
-  font-size: 8px;
+  font-size: 10px;
   line-height: 1.15;
   margin-top: 1px;
 }
 
 .menu {
-  bottom: 160px;
+  bottom: 168px;
   left: min(38%, 520px);
   max-height: min(480px, calc(100% - 230px));
   overflow: auto;
@@ -1469,7 +1732,7 @@
 
 .buildMenuSubtitle {
   color: #aa987c;
-  font-size: 9px;
+  font-size: 11px;
   margin: 2px 0 0;
 }
 
@@ -1479,7 +1742,7 @@
   border: 1px solid #70502c;
   color: #d9c39b;
   display: flex;
-  font-size: 9px;
+  font-size: 11px;
   gap: 4px;
   padding: 4px 7px;
 }
@@ -1491,7 +1754,7 @@
 }
 
 .closeButton {
-  font-size: 19px;
+  font-size: 20px;
   height: 27px;
   line-height: 1;
   width: 29px;
@@ -1553,20 +1816,21 @@
 
 .buildCategoryCopy strong {
   color: #f3dfbb;
-  font-family: Georgia, serif;
-  font-size: 16px;
+  font-family: $descent;
+  font-size: 17px;
+  font-weight: 700;
   line-height: 1;
 }
 
 .buildCategoryCopy span {
   color: #bdad93;
-  font-size: 10px;
+  font-size: 11.5px;
   line-height: 1.3;
 }
 
 .buildCategoryCopy small {
   color: #d6aa5a;
-  font-size: 8px;
+  font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -1630,6 +1894,19 @@
   width: 52px;
 }
 
+.buildIconImage {
+  height: 42px;
+  object-fit: contain;
+  width: 42px;
+}
+
+.buildIconGlyph {
+  color: #f8dd9f;
+  font-family: $descent;
+  font-size: 22px;
+  line-height: 1;
+}
+
 .buildCategoryIcon[data-tone="defense"],
 .buildIcon[data-tone="defense"] {
   background-color: #251713;
@@ -1666,7 +1943,7 @@
 
 .buildChoiceCopy {
   display: grid;
-  font-size: 10px;
+  font-size: 11.5px;
   gap: 3px;
   min-width: 0;
 }
@@ -1680,14 +1957,15 @@
 
 .buildChoiceHeader strong {
   color: #f3dfbb;
-  font-family: Georgia, serif;
-  font-size: 12px;
+  font-family: $descent;
+  font-size: 13px;
+  font-weight: 700;
   line-height: 1.1;
 }
 
 .buildTier {
   color: #a99575;
-  font-size: 8px;
+  font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -1695,7 +1973,7 @@
 
 .buildDescription {
   color: #cab99d;
-  font-size: 9px;
+  font-size: 10.5px;
   line-height: 1.3;
 }
 
@@ -1706,7 +1984,7 @@
 
 .buildHint {
   color: #76bbb9;
-  font-size: 8px;
+  font-size: 10px;
   line-height: 1.25;
 }
 
@@ -1717,15 +1995,51 @@
 
 .buildCost {
   color: #dfb968;
-  font-size: 9px;
+  display: flex;
+  font-size: 10.5px;
   font-weight: 700;
-  margin-top: 1px;
+  margin-top: 3px;
+}
+
+// Grid hotkey badge in the corner of a category or building button.
+.buildHotkey,
+.buildBackHotkey {
+  background: rgb(0 0 0 / 50%);
+  border: 1px solid #896236;
+  color: #ffd27a;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 5px;
+}
+
+.buildHotkey {
+  pointer-events: none;
+  position: absolute;
+  right: 6px;
+  top: 6px;
+}
+
+.buildBackHotkey {
+  margin-left: 4px;
+  padding: 1px 4px;
+}
+
+.buildChoice,
+.buildCategoryChoice {
+  position: relative;
+}
+
+// Keep the tier label clear of the hotkey badge.
+.buildChoice .buildChoiceHeader {
+  padding-right: 26px;
 }
 
 .hint,
 .lockReason {
   color: #aa9a81;
-  font-size: 9px;
+  font-size: 10.5px;
   line-height: 1.2;
   margin: 2px 1px;
 }
@@ -1768,14 +2082,14 @@
 
 .dialog h2 {
   color: #f7e7c5;
-  font-family: Georgia, serif;
+  font-family: $descent;
+  font-weight: 700;
   margin: 0 0 12px;
 }
 
 .dialog button,
 .coach button,
-.outcome button,
-.toast button {
+.outcome button {
   background: linear-gradient(#d5a95f, #8e602d);
   border: 1px solid #efc977;
   color: #171008;
@@ -1788,12 +2102,19 @@
 }
 
 .toast button {
-  margin-left: 6px;
-  padding: 3px 6px;
+  background: transparent;
+  border: 0;
+  color: rgb(232 220 197 / 42%);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  margin: 0;
+  padding: 0 2px;
+  pointer-events: auto;
 }
 
 .coach button {
-  font-size: 10px;
+  font-size: 11.5px;
   padding: 5px 8px;
 }
 
@@ -1816,24 +2137,33 @@
 }
 
 .toasts {
+  align-items: flex-start;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  left: 50%;
+  gap: 2px;
+  left: 14px;
+  pointer-events: none;
   position: absolute;
-  top: 62px;
-  transform: translateX(-50%);
-  z-index: 5;
+  top: 10px;
+  z-index: 3;
 }
 
 .toast {
-  background: #3a2019;
-  border: 1px solid #b45c46;
-  box-shadow: 0 8px 22px rgb(0 0 0 / 45%);
+  align-items: baseline;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: rgb(232 220 197 / 74%);
+  display: flex;
   font-size: 11px;
+  font-weight: 500;
+  gap: 6px;
+  line-height: 1.35;
   margin: 0;
-  max-width: 360px;
-  padding: 6px 8px;
+  max-width: 240px;
+  padding: 0;
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 90%);
 }
 
 .outcome {
@@ -1853,8 +2183,9 @@
 }
 
 .outcome h2 {
-  font-family: Georgia, serif;
-  font-size: 30px;
+  font-family: $descent;
+  font-size: 32px;
+  font-weight: 700;
   margin: 0 0 12px;
 }
 
@@ -1898,6 +2229,27 @@
   }
 }
 
+@media (width <= 680px) {
+  .strategicHud[data-has-training="true"]:has(.threatCluster) {
+    flex-wrap: wrap;
+    width: min(520px, calc(100% - 20px));
+  }
+
+  .strategicHud[data-has-training="true"]:has(.threatCluster) .trainingTracker {
+    border-bottom: 1px solid rgb(198 154 85 / 24%);
+    flex-basis: 100%;
+  }
+
+  .strategicHud[data-has-training="true"] .threatCluster {
+    border-left: 0;
+    flex-basis: 100%;
+  }
+
+  .omenPanel {
+    flex: 1 1 230px;
+  }
+}
+
 @media (height <= 820px) {
   .topHud {
     flex-basis: 48px;
@@ -1905,15 +2257,17 @@
   }
 
   .bottomHud {
-    flex-basis: 138px;
+    flex-basis: 152px;
   }
 
   .menu {
-    bottom: 148px;
+    bottom: 162px;
   }
+}
 
-  .toasts {
-    top: 58px;
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
   }
 }
 
@@ -1932,6 +2286,10 @@
 
   .threatPanel {
     animation: threat-arrival 420ms ease-out both;
+  }
+
+  .toast {
+    animation: toast-life var(--toast-life, 2.4s) linear both;
   }
 }
 
@@ -1957,6 +2315,17 @@
 
   50% {
     opacity: 1;
+  }
+}
+
+@keyframes toast-life {
+  0%,
+  72% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
   }
 }
 

@@ -1,5 +1,8 @@
+import type { AshenGateSceneryRole } from "../data/layers/ashen_gate/threeDAssets";
 import { listBuildingDefs } from "../logic/economy/tables";
 import type { ResourceId } from "../logic/types";
+import { ashenSceneryPlacements } from "./ashenTerrainLayout";
+import { buildingIconSrc } from "./buildingIcons";
 import { UNIT_TRAINING_GUIDES } from "./card";
 import { type MapPoint, nodeNear, type Selection } from "./selection";
 import type { ShellBuilding, ShellModel, ShellUnit } from "./shellModel";
@@ -20,12 +23,15 @@ import {
  */
 export type InspectTarget =
   | { id: string; kind: "node" }
+  | { id: string; kind: "scenery" }
   | { id: string; kind: "vein" }
   | { id: string; kind: "vent" }
   | { kind: "stockpile"; resource: ResourceSelectionId };
 
 /** One labeled value in the selection panel, such as "Remaining 400". */
 export interface SelectionFact {
+  /** Accessible name for {@link iconSrc}, when the value no longer says it. */
+  iconAlt?: string;
   iconSrc?: string;
   label: string;
   /** Tooltip with the longer explanation, when the label is terse. */
@@ -48,6 +54,7 @@ export interface SelectionCard {
     | "empty"
     | "group"
     | "node"
+    | "scenery"
     | "stockpile"
     | "unit"
     | "vein"
@@ -72,6 +79,41 @@ export const NODE_NAME: Record<ResourceId, string> = {
   stone: "Rock Vein",
   water: "Spring",
   wood: "Dead Timber",
+};
+
+/** Plain-language identity and lore for decorative Ashen Gate scenery. */
+const SCENERY_COPY: Record<
+  AshenGateSceneryRole,
+  { glyph: string; summary: string; title: string }
+> = {
+  abyssSpire: {
+    glyph: "▲",
+    summary:
+      "A volcanic needle rising from the lava sea beyond the battlefield.",
+    title: "Abyss Spire",
+  },
+  basaltBoulders: {
+    glyph: "◆",
+    summary: "Fire-scarred basalt piled along the edge of the plateau.",
+    title: "Basalt Boulders",
+  },
+  hordeGate: {
+    glyph: "⌂",
+    summary:
+      "A monumental breach on the eastern rim, marking the direction the horde comes from.",
+    title: "Horde Gate",
+  },
+  rimRuin: {
+    glyph: "▥",
+    summary: "The remains of an old Ashen Hold watch post on the plateau rim.",
+    title: "Rim Ruin",
+  },
+  spiritCrystals: {
+    glyph: "✦",
+    summary:
+      "Spirit-lit crystals growing beyond usable ground, too unstable to harvest.",
+    title: "Spirit Crystals",
+  },
 };
 
 /** How close, in map cells, a click must land to pick a Spirit Vein. */
@@ -112,7 +154,7 @@ export function inspectTargetAt(
  */
 export function isInspected(
   target: InspectTarget | null,
-  kind: "node" | "vein" | "vent",
+  kind: "node" | "scenery" | "vein" | "vent",
   id: string,
 ): boolean {
   return target !== null && target.kind === kind && target.id === id;
@@ -126,10 +168,17 @@ export function isInspected(
  * @returns The same target, or null when it is gone
  */
 export function pruneInspectTarget(
-  model: Pick<ShellModel, "nodes" | "veins" | "vents">,
+  model: Pick<ShellModel, "map" | "nodes" | "veins" | "vents">,
   target: InspectTarget | null,
 ): InspectTarget | null {
   if (target === null || target.kind === "stockpile") return target;
+  if (target.kind === "scenery") {
+    const placements = ashenSceneryPlacements(
+      model.map.width,
+      model.map.height,
+    );
+    return placements.some((entry) => entry.id === target.id) ? target : null;
+  }
   const list = featureList(model, target.kind);
   return list.some((entry) => entry.id === target.id) ? target : null;
 }
@@ -144,7 +193,12 @@ export function inspectRing(
   model: Pick<ShellModel, "nodes" | "veins" | "vents">,
   target: InspectTarget | null,
 ): { radius: number; x: number; y: number } | null {
-  if (target === null || target.kind === "stockpile") return null;
+  if (
+    target === null ||
+    target.kind === "stockpile" ||
+    target.kind === "scenery"
+  )
+    return null;
   if (target.kind === "node") {
     const node = model.nodes.find((entry) => entry.id === target.id);
     return node === undefined ? null : { radius: 1.6, x: node.x, y: node.y };
@@ -237,8 +291,41 @@ function describeTarget(
   if (target.kind === "stockpile")
     return describeStockpile(model, target.resource);
   if (target.kind === "node") return describeNode(model, target.id);
+  if (target.kind === "scenery") return describeScenery(model, target.id);
   if (target.kind === "vein") return describeVein(model, target.id);
   return describeVent(model, target.id);
+}
+
+/**
+ * @param model - Shell model that determines the fixed scenery layout
+ * @param sceneryId - Placement to describe
+ * @returns The scenery card, or null when the placement is unknown
+ */
+function describeScenery(
+  model: ShellModel,
+  sceneryId: string,
+): SelectionCard | null {
+  const placement = ashenSceneryPlacements(
+    model.map.width,
+    model.map.height,
+  ).find((entry) => entry.id === sceneryId);
+  if (placement === undefined) return null;
+  const copy = SCENERY_COPY[placement.role];
+  return {
+    facts: [{ label: "Gameplay effect", value: "None" }],
+    glyph: copy.glyph,
+    health: null,
+    iconSrc: null,
+    kind: "scenery",
+    subtitle: "Scenery · No gameplay effect",
+    summary: copy.summary,
+    tips: [
+      "Decorative landmark only in the current Ashen Gate layer.",
+      "It cannot be harvested, occupied, attacked, or built on.",
+    ],
+    title: copy.title,
+    tone: "neutral",
+  };
 }
 
 /**
@@ -394,7 +481,7 @@ function describeBuilding(
     facts,
     glyph: building.name.slice(0, 1),
     health,
-    iconSrc: null,
+    iconSrc: buildingIconSrc(building.buildingType),
     kind: "building",
     subtitle: buildingSubtitle(building),
     summary: buildingJob(model, building.buildingType),
@@ -538,10 +625,12 @@ function unitFacts(unit: ShellUnit): SelectionFact[] {
       facts.push({ label: "Carrying", value: "Nothing" });
       return facts;
     }
+    const carried = RESOURCE_COPY[unit.carrying.resource];
     facts.push({
+      iconAlt: carried.name,
       iconSrc: resourceIconSrc(unit.carrying.resource),
       label: "Carrying",
-      value: `${Math.round(unit.carrying.amount)} ${RESOURCE_COPY[unit.carrying.resource].name}`,
+      value: String(Math.round(unit.carrying.amount)),
     });
     return facts;
   }

@@ -11,6 +11,7 @@ export const CLASS_LABEL: Record<ClassId, string> = {
   breaker: "Breaker",
   hunter: "Hunter",
   raider: "Raider",
+  rider: "Rider",
   villager: "Villager",
   warden: "Warden",
 };
@@ -132,6 +133,7 @@ export const CLASS_ORDER = [
   "villager",
   "warden",
   "hunter",
+  "rider",
   "raider",
   "breaker",
   "adept",

@@ -41,6 +41,8 @@ export type SliceFx =
       from: { x: number; y: number };
       id: number;
       kind: "melee" | "projectile" | "heal";
+      /** Distinguishes arrows from cultivation bolts for audio. */
+      sound?: "magic" | "projectile";
       tick: number;
       to: { x: number; y: number };
     }
@@ -55,7 +57,18 @@ export type SliceFx =
     }
   | {
       id: number;
-      kind: "death" | "ascend" | "spawn" | "collapse";
+      kind: "death" | "ascend" | "collapse";
+      /** Distinguishes a destroyed structure from a boss ground impact. */
+      sound?: "building" | "impact";
+      tick: number;
+      x: number;
+      y: number;
+    }
+  | {
+      id: number;
+      kind: "spawn";
+      /** Which kind of unit was born, so each gets its own audio cue. */
+      sound?: "soldier" | "villager";
       tick: number;
       x: number;
       y: number;
@@ -77,6 +90,14 @@ export interface TrainingJob {
 /** Where a training building sends new units, optionally onto a node. */
 export interface TrainingRallyPoint {
   nodeId?: string;
+  x: number;
+  y: number;
+}
+
+/** One shift-queued leg for a single unit, already placed in formation. */
+export interface QueuedWaypoint {
+  /** Whether the leg is an attack-move rather than a plain move. */
+  attack: boolean;
   x: number;
   y: number;
 }
@@ -109,6 +130,8 @@ export interface AshenGateSliceState {
   rallyPoints?: Record<string, TrainingRallyPoint>;
   stats: { kills: number; lost: number };
   training: TrainingJob[];
+  /** Shift-queued move legs per unit, oldest first. */
+  waypoints?: Record<string, QueuedWaypoint[]>;
   version: typeof SLICE_STATE_VERSION;
 }
 
@@ -132,6 +155,7 @@ export function createSliceState(): AshenGateSliceState {
     stats: { kills: 0, lost: 0 },
     training: [],
     version: SLICE_STATE_VERSION,
+    waypoints: {},
   };
 }
 

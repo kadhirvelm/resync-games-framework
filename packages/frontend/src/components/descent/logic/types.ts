@@ -29,6 +29,7 @@ export type ClassId =
   | "villager"
   | "warden"
   | "hunter"
+  | "rider"
   | "raider"
   | "breaker"
   | "adept";
@@ -63,10 +64,13 @@ export type Command =
   | {
       type: "order_move";
       formation?: FormationId;
+      /** Shift-click: walk there after the current legs instead of now. */
+      queue?: boolean;
       unitIds: string[];
       x: number;
       y: number;
     }
+  | { type: "set_formation"; formation: FormationId; unitIds: string[] }
   | { type: "order_attack"; unitIds: string[]; targetId: string }
   | {
       type: "place_building";
@@ -107,6 +111,8 @@ export type Command =
   | {
       type: "order_attack_move";
       formation?: FormationId;
+      /** Shift-click: go there after the current legs instead of now. */
+      queue?: boolean;
       unitIds: string[];
       x: number;
       y: number;

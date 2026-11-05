@@ -43,6 +43,27 @@
     "vision": 10
   },
   {
+    "armor": 2,
+    "attackKind": "melee",
+    "attackRange": 1.6,
+    "attacksPerSecond": 0.75,
+    "barkKey": "hold.rider",
+    "classId": "rider",
+    "damage": 11,
+    "defaultRankTitle": "Ashborn",
+    "id": "hold-rider",
+    "maxHitPoints": 105,
+    "name": "Hold Rider",
+    "popCost": 2,
+    "speed": 5.8,
+    "structureDamageMultiplier": 0.75,
+    "trainingCost": {
+      "food": 45,
+      "water": 25
+    },
+    "vision": 15
+  },
+  {
     "armor": 3,
     "attackKind": "melee",
     "attackRange": 1.3,

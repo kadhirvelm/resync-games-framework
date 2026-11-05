@@ -7,7 +7,10 @@ import { createEconomyModule } from "../module";
 import { economyHost } from "../records";
 import { orderVillagersMove } from "../villagers";
 
-/** Scenario: a finished Camp, two villagers, wood next door and wood farther out. */
+/**
+ * Scenario: a finished Camp (7×7, cells 2–8), two villagers beside it, wood
+ * next door and wood farther out.
+ */
 const scenarioModule: SimModule = {
   commands: {
     order_move(command, context) {
@@ -27,7 +30,7 @@ const scenarioModule: SimModule = {
           nodeType: "dead_tree",
           remaining: 10,
           resourceId: "wood",
-          x: 8,
+          x: 11,
           y: 5,
         },
         {
@@ -35,7 +38,7 @@ const scenarioModule: SimModule = {
           nodeType: "dead_tree",
           remaining: 400,
           resourceId: "wood",
-          x: 9,
+          x: 12,
           y: 8,
         },
         {
@@ -44,13 +47,13 @@ const scenarioModule: SimModule = {
           remaining: 400,
           resourceId: "food",
           x: 5,
-          y: 9,
+          y: 12,
         },
       ],
       stockpile: { food: 500, stone: 500, water: 500, wood: 500 },
       units: [
-        { id: "v1", x: 6, y: 6 },
-        { id: "v2", x: 6, y: 4 },
+        { id: "v1", x: 9, y: 6 },
+        { id: "v2", x: 9, y: 4 },
       ],
       veins: [],
     });
@@ -153,27 +156,27 @@ describe("manual villagers", () => {
       const bothGathering =
         first.task?.kind === "gather" &&
         second.task?.kind === "gather" &&
-        Math.max(Math.abs(first.x - 5), Math.abs(first.y - 9)) <= 1 &&
-        Math.max(Math.abs(second.x - 5), Math.abs(second.y - 9)) <= 1;
+        Math.max(Math.abs(first.x - 5), Math.abs(first.y - 12)) <= 1 &&
+        Math.max(Math.abs(second.x - 5), Math.abs(second.y - 12)) <= 1;
       if (!bothGathering) continue;
       expect(`${first.x},${first.y}`).not.toBe(`${second.x},${second.y}`);
     }
   });
 
-  test("build a placed site with the named builders, then return to work", () => {
+  test("build a placed site faster with both named builders, then return to work", () => {
     const sim = manualSim();
     sim.enqueue({ nodeId: "food-a", type: "assign_gather", unitIds: ["v1"] });
     sim.step(1);
     sim.enqueue({
-      builderIds: ["v1"],
+      builderIds: ["v1", "v2"],
       buildingType: "housing",
       type: "place_building",
-      x: 8,
-      y: 9,
+      x: 9,
+      y: 13,
     });
     sim.step(1);
     expect(villager(sim, "v1").task?.kind).toBe("build");
-    expect(villager(sim, "v2").task).toBeNull();
+    expect(villager(sim, "v2").task?.kind).toBe("build");
     let guard = 0;
     while (guard < 2_000) {
       const site = sim
@@ -188,6 +191,7 @@ describe("manual villagers", () => {
     sim.step(2);
     expect(villager(sim, "v1").preferredNodeId).toBe("food-a");
     expect(villager(sim, "v1").task?.kind).not.toBe("build");
+    expect(villager(sim, "v2").task?.kind).not.toBe("build");
   });
 
   test("an unbuilt site with no builders makes no progress", () => {
@@ -195,8 +199,8 @@ describe("manual villagers", () => {
     sim.enqueue({
       buildingType: "housing",
       type: "place_building",
-      x: 8,
-      y: 9,
+      x: 9,
+      y: 13,
     });
     sim.step(200);
     const site = sim

@@ -4,8 +4,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Command } from "../logic/types";
+import { buildingIconSrc } from "./buildingIcons";
 import { DescentMinimap } from "./DescentMinimap";
 import styles from "./descentView.module.scss";
+import { FogCanvas } from "./FogCanvas";
 import { type InspectTarget, isInspected } from "./inspect";
 import {
   type Camera,
@@ -47,6 +49,8 @@ export interface MapViewportProps {
     mode: "add" | "replace" | "toggle",
   ) => void;
   placing: boolean;
+  /** Side, in map cells, of the building being placed; 1 when not placing. */
+  placingFootprint: number;
   rallyBuildingId: string | null;
   /** Map feature currently being inspected, if any. */
   inspected: InspectTarget | null;
@@ -74,6 +78,34 @@ export function centeredCamera(
     x: Math.max(0, Math.min(maxX, point.x * model.scale - viewport.width / 2)),
     y: Math.max(0, Math.min(maxY, point.y * model.scale - viewport.height / 2)),
   };
+}
+
+/**
+ * Icon and short label for one building on the map.
+ * @param props - Building identity and whether it is still going up
+ * @returns The token contents
+ */
+function BuildingTokenMark({
+  buildingType,
+  constructing,
+  name,
+}: {
+  buildingType: string;
+  constructing: boolean;
+  name: string;
+}) {
+  const iconSrc = buildingIconSrc(buildingType);
+  return (
+    <>
+      {iconSrc === null ? null : (
+        // biome-ignore lint/performance/noImgElement: bundled game HUD icon
+        <img alt="" className={styles.buildingTokenIcon} src={iconSrc} />
+      )}
+      <span className={styles.buildingTokenLabel}>
+        {constructing ? "Building" : name}
+      </span>
+    </>
+  );
 }
 
 /**
@@ -168,6 +200,7 @@ export function MapViewport({
           buildings: model.buildings,
           ground,
           nodes: model.nodes,
+          queue: event.shiftKey,
           selectedIds: selection.unitIds,
           targetBuildingId: null,
           targetUnitId: null,
@@ -235,6 +268,18 @@ export function MapViewport({
           width: model.map.width * model.scale,
         }}
       >
+        {model.fog === null ? null : (
+          <FogCanvas
+            className={styles.fogLayer}
+            fog={model.fog}
+            style={{
+              height: model.fog.height * model.scale,
+              left: -0.5 * model.scale,
+              top: -0.5 * model.scale,
+              width: model.fog.width * model.scale,
+            }}
+          />
+        )}
         {model.veins.map((vein) => (
           <span
             className={styles.vein}
@@ -327,6 +372,7 @@ export function MapViewport({
                 buildings: model.buildings,
                 ground: { x: building.x, y: building.y },
                 nodes: model.nodes,
+                queue: event.shiftKey,
                 selectedIds: selection.unitIds,
                 targetBuildingId: building.id,
                 targetUnitId: null,
@@ -337,11 +383,17 @@ export function MapViewport({
             onPointerDown={(event) => event.stopPropagation()}
             style={{
               left: building.x * model.scale,
+              minHeight: building.footprint * model.scale,
+              minWidth: building.footprint * model.scale,
               top: building.y * model.scale,
             }}
             type="button"
           >
-            {building.constructing ? "Building" : building.name}
+            <BuildingTokenMark
+              buildingType={building.buildingType}
+              constructing={building.constructing}
+              name={building.name}
+            />
           </button>
         ))}
         {model.buildings.map((building) =>
@@ -388,6 +440,7 @@ export function MapViewport({
                   buildings: model.buildings,
                   ground: { x: unit.x, y: unit.y },
                   nodes: model.nodes,
+                  queue: event.shiftKey,
                   selectedIds: selection.unitIds,
                   targetBuildingId: null,
                   targetUnitId: unit.id,
@@ -445,6 +498,19 @@ export function MapViewport({
         model={model}
         onNavigate={(point) => {
           onCameraChange(centeredCamera(point, model, viewportSize));
+        }}
+        onOrder={(point, queue) => {
+          const orders = ordersForRightClick({
+            buildings: model.buildings,
+            ground: point,
+            nodes: model.nodes,
+            queue,
+            selectedIds: selection.unitIds,
+            targetBuildingId: null,
+            targetUnitId: null,
+            units: model.units,
+          });
+          for (const order of orders) onCommand(order);
         }}
         view={{
           centerX: (camera.x + viewportSize.width / 2) / model.scale,

@@ -8,8 +8,12 @@ export {
   type HazardBurn,
   healingMultiplierFor,
   isInsideVolume,
+  LAYER_TERRAIN_META_KEY,
+  type LayerTerrain,
+  setLayerTerrain,
   ventBurnPerSecondAt,
   visionMultiplierAt,
+  worldVentVolumes,
 } from "./hazards";
 export {
   LayerRuntime,

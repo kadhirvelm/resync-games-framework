@@ -13,6 +13,7 @@ import { buildShellModel } from "../shellModel";
 
 const model = buildShellModel(createAshenGatePreview());
 const features = {
+  map: model.map,
   nodes: [
     {
       gatherers: 2,
@@ -62,6 +63,15 @@ describe("pruneInspectTarget and inspectRing", () => {
     expect(isInspected(target, "node", "wood-1")).toBe(true);
     expect(isInspected(target, "vent", "wood-1")).toBe(false);
   });
+
+  test("keeps known scenery without drawing a map-space ring", () => {
+    const target = { id: "horde-gate", kind: "scenery" as const };
+    expect(pruneInspectTarget(features, target)).toBe(target);
+    expect(
+      pruneInspectTarget(features, { id: "missing", kind: "scenery" }),
+    ).toBeNull();
+    expect(inspectRing(features, target)).toBeNull();
+  });
 });
 
 describe("describeSelection", () => {
@@ -102,9 +112,10 @@ describe("describeSelection", () => {
     expect(card.title).toBe("Ash Cutter");
     expect(card.subtitle).toBe("Your unit · Worker");
     expect(card.health).toEqual({ max: 40, value: 40 });
-    expect(card.facts.find((fact) => fact.label === "Carrying")?.value).toBe(
-      "10 Wood",
-    );
+    const carrying = card.facts.find((fact) => fact.label === "Carrying");
+    expect(carrying?.value).toBe("10");
+    expect(carrying?.iconAlt).toBe("Wood");
+    expect(carrying?.iconSrc).toBe("/descent/resource-icons/wood.png");
   });
 
   test("marks enemies and says how to fight them", () => {
@@ -136,6 +147,7 @@ describe("describeSelection", () => {
     );
     expect(card.kind).toBe("building");
     expect(card.title).toBe("Barracks");
+    expect(card.iconSrc).toBe("/descent/building-icons/barracks.png");
     expect(card.summary.length).toBeGreaterThan(0);
     expect(card.tips.join(" ")).toContain("train");
   });
@@ -152,6 +164,21 @@ describe("describeSelection", () => {
     );
     expect(vent.tone).toBe("hazard");
     expect(vent.title).toBe("Ember vent");
+  });
+
+  test("identifies scenery and makes its lack of gameplay explicit", () => {
+    const card = describeSelection(model, EMPTY_SELECTION, {
+      id: "horde-gate",
+      kind: "scenery",
+    });
+    expect(card.kind).toBe("scenery");
+    expect(card.title).toBe("Horde Gate");
+    expect(card.subtitle).toContain("No gameplay effect");
+    expect(card.facts).toContainEqual({
+      label: "Gameplay effect",
+      value: "None",
+    });
+    expect(card.tips.join(" ")).toContain("cannot be harvested");
   });
 });
 

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   FORMATION_SPACING,
   type FormationMember,
+  formationCenter,
   formationRankWidth,
   MAX_RANK_WIDTH,
   planFormation,
@@ -84,6 +85,13 @@ describe("planFormation", () => {
     );
     expect(slots.center?.x).toBeGreaterThan(slots.top?.x ?? 0);
     expect(slots.center?.x).toBeGreaterThan(slots.bottom?.x ?? 0);
+    const points = Object.values(slots);
+    expect(
+      points.reduce((total, point) => total + point.x, 0) / points.length,
+    ).toBeCloseTo(10, 6);
+    expect(
+      points.reduce((total, point) => total + point.y, 0) / points.length,
+    ).toBeCloseTo(0, 6);
   });
 
   test("keeps units in their left-to-right order so paths do not cross", () => {
@@ -108,6 +116,22 @@ describe("planFormation", () => {
     expect(planFormation(members, { x: 8, y: 8 })).toEqual(
       planFormation([...members].reverse(), { x: 8, y: 8 }),
     );
+  });
+});
+
+describe("formationCenter", () => {
+  test("keeps a regrouping order centered on the current footprint", () => {
+    expect(
+      formationCenter([
+        member("a", "warden", 2, 4),
+        member("b", "hunter", 8, 10),
+        member("c", "adept", 5, 1),
+      ]),
+    ).toEqual({ x: 5, y: 5 });
+  });
+
+  test("has no anchor for an empty selection", () => {
+    expect(formationCenter([])).toBeNull();
   });
 });
 

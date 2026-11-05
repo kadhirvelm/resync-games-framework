@@ -208,14 +208,18 @@ export function nodeNear<Node extends OrderNode>(
 /**
  * Turns a right-click into commands, the way an RTS reads it. Soldiers attack
  * enemies and move everywhere else. Villagers gather a node, build or repair
- * a Hold building, and move on open ground; they ignore enemies.
- * @param input - Selection, what was under the cursor, and the ground point
+ * a Hold building, and move on open ground; they ignore enemies. With Shift
+ * held, moves are queued behind the units' current legs.
+ * @param input - Selection, what was under the cursor, the ground point, and
+ *   whether Shift queues the move
  * @returns Commands to enqueue, empty when nothing selected can act
  */
 export function ordersForRightClick(input: {
   buildings: readonly OrderBuilding[];
   ground: MapPoint;
   nodes: readonly OrderNode[];
+  /** Shift-click: queue moves as waypoints instead of replacing orders. */
+  queue?: boolean;
   selectedIds: readonly string[];
   targetBuildingId: string | null;
   targetUnitId: string | null;
@@ -238,11 +242,13 @@ export function ordersForRightClick(input: {
     return [{ targetId: enemyId, type: "order_attack", unitIds: soldierIds }];
   }
   const villagerOrder = villagerTarget(input, villagerIds);
+  const queue = input.queue === true ? { queue: true } : {};
   if (villagerOrder === null) {
     return [
       {
         type: "order_move",
         unitIds: actors.map((unit) => unit.id),
+        ...queue,
         ...groundPoint(input.ground),
       },
     ];
@@ -250,7 +256,12 @@ export function ordersForRightClick(input: {
   if (soldierIds.length === 0) return [villagerOrder];
   return [
     villagerOrder,
-    { type: "order_move", unitIds: soldierIds, ...groundPoint(input.ground) },
+    {
+      type: "order_move",
+      unitIds: soldierIds,
+      ...queue,
+      ...groundPoint(input.ground),
+    },
   ];
 }
 
@@ -347,7 +358,7 @@ export function nextIdleVillager(
 }
 
 /** Most idle villagers drafted when a site is placed with none selected. */
-export const DRAFTED_BUILDERS = 3;
+export const DRAFTED_BUILDERS = 1;
 
 /**
  * Villagers who build a newly placed site: the selected villagers, or up to

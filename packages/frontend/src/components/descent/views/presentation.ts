@@ -1,5 +1,12 @@
 import type { CultivationView, PillPreview } from "../logic/cultivation/types";
-import type { ClassId, RankTitle, ResourceId, SchoolId } from "../logic/types";
+import { type FogOfWarState, isFogOfWarState } from "../logic/fog";
+import type {
+  ClassId,
+  RankTitle,
+  ResourceId,
+  ResourceStockpile,
+  SchoolId,
+} from "../logic/types";
 
 /** Published decoration for one sim unit. The view does not invent these numbers. */
 export interface UnitReadout {
@@ -25,6 +32,11 @@ export interface UnitReadout {
   maxHitPoints?: number;
   name?: string;
   rank?: RankTitle;
+  /**
+   * Where a Hold unit is headed: its current destination, then each
+   * shift-queued leg. Omitted while it stands still.
+   */
+  route?: readonly RouteReadout[];
   /** Horde role: scout, swarm, elite, boss, fodder, ... */
   role?: string;
   school?: SchoolId;
@@ -36,6 +48,14 @@ export interface UnitReadout {
   treasures?: readonly { id: string; name: string }[];
 }
 
+/** One point on a unit's route. */
+export interface RouteReadout {
+  /** Whether the leg is an attack-move. */
+  attack: boolean;
+  x: number;
+  y: number;
+}
+
 /** Published decoration for one sim building. */
 export interface BuildingReadout {
   /** What the building is busy with, e.g. "Training 5 Wardens". */
@@ -45,6 +65,8 @@ export interface BuildingReadout {
   hitPoints?: number;
   maxHitPoints?: number;
   name?: string;
+  /** Crop growth for a harvested producer; ripe crops wait for a villager. */
+  growth?: CropGrowthReadout;
   /** Whether it sits on a Spirit Vein. */
   onVein?: boolean;
   /** Progress of `activity`, 0 to 1. */
@@ -56,6 +78,14 @@ export interface BuildingReadout {
   tier?: string;
   /** Ordered training batches, with the head carrying live progress. */
   trainingQueue?: readonly TrainingQueueReadout[];
+}
+
+/** How far a harvested producer's crop has grown. */
+export interface CropGrowthReadout {
+  /** Growth from 0 to 1. */
+  progress: number;
+  /** Whether it is fully grown and waiting for a harvester. */
+  ripe: boolean;
 }
 
 /** One order shown in a training building's queue. */
@@ -82,6 +112,8 @@ export type FxReadout =
       from: { x: number; y: number };
       id: number;
       kind: "heal" | "melee" | "projectile";
+      /** Distinguishes arrows from cultivation bolts for audio. */
+      sound?: "magic" | "projectile";
       tick: number;
       to: { x: number; y: number };
     }
@@ -96,7 +128,18 @@ export type FxReadout =
     }
   | {
       id: number;
-      kind: "ascend" | "collapse" | "death" | "spawn";
+      kind: "ascend" | "collapse" | "death";
+      /** Distinguishes a destroyed structure from a boss ground impact. */
+      sound?: "building" | "impact";
+      tick: number;
+      x: number;
+      y: number;
+    }
+  | {
+      id: number;
+      kind: "spawn";
+      /** Which kind of unit was born, so each gets its own audio cue. */
+      sound?: "soldier" | "villager";
       tick: number;
       x: number;
       y: number;
@@ -141,6 +184,8 @@ export interface StatsReadout {
 /** A building the build menu may offer. Unlock and hints are already decided. */
 export interface BuildReadout {
   buildingType: string;
+  /** Resource amounts, for icon cost rows. */
+  cost?: Partial<ResourceStockpile>;
   costLabel: string;
   hints: readonly string[];
   job: string;
@@ -155,6 +200,10 @@ export interface TrainReadout {
   allowed: boolean;
   buildingId: string;
   classId: ClassId;
+  /** Resource amounts one order costs, for icon cost rows. */
+  cost?: Partial<ResourceStockpile>;
+  /** Trainees one order produces. */
+  count?: number;
   detail: string;
   /** Food one trainee costs. Used to price a shift-click batch. */
   food?: number;
@@ -164,6 +213,8 @@ export interface TrainReadout {
   reason?: string;
   /** Seconds one order takes. */
   seconds?: number;
+  /** Blocked only by resources or population, which the cost row shows. */
+  shortfall?: boolean;
   /** Water one trainee costs. */
   water?: number;
 }
@@ -222,9 +273,15 @@ export interface RationReadout {
 /** Camp-to-Stronghold progress published by the economy bridge. */
 export interface HoldUpgradeReadout {
   allowed: boolean;
+  /** Resource amounts, for icon cost rows. */
+  cost?: Partial<ResourceStockpile>;
   costLabel: string;
   currentTier: string;
+  /** The running upgrade to `targetTier`, or null when none has started. */
+  inProgress?: { progress: number; secondsLeft: number } | null;
   reason?: string;
+  /** Blocked only by resources, which the cost row shows. */
+  shortfall?: boolean;
   targetTier: string;
 }
 
@@ -318,6 +375,8 @@ export interface DescentPresentation {
   buildOptions?: readonly BuildReadout[];
   buildings?: Readonly<Record<string, BuildingReadout>>;
   calamities?: readonly CalamityReadout[];
+  /** What the Hold has explored and can see now; null shows everything. */
+  fog?: FogOfWarState | null;
   fx?: readonly FxReadout[];
   hellPressure?: number;
   holdUpgrade?: HoldUpgradeReadout | null;
@@ -350,6 +409,7 @@ export interface ReadPresentation {
   buildOptions: readonly BuildReadout[];
   buildings: Readonly<Record<string, BuildingReadout>>;
   calamities: readonly CalamityReadout[];
+  fog: FogOfWarState | null;
   fx: readonly FxReadout[];
   hellPressure: number;
   holdUpgrade: HoldUpgradeReadout | null;
@@ -378,6 +438,7 @@ const CLASS_IDS = [
   "villager",
   "warden",
   "hunter",
+  "rider",
   "raider",
   "breaker",
   "adept",
@@ -530,6 +591,7 @@ export function readPresentation(
       : {},
     buildOptions: readArray<BuildReadout>(ui.buildOptions),
     calamities: readArray<CalamityReadout>(ui.calamities),
+    fog: isFogOfWarState(ui.fog) ? ui.fog : null,
     fx: readArray<FxReadout>(ui.fx),
     hellPressure,
     holdUpgrade:

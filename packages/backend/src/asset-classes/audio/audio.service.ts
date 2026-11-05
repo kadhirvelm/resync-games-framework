@@ -71,9 +71,13 @@ export class AudioService implements OnModuleInit {
     );
     const generationId = requireGenerationId(payload.generationId);
     const input = {
+      cue: payload.cue,
       generationId,
+      loop: payload.loop,
       productNowSessionId: readActiveProductNowSession(),
       prompt,
+      role: payload.role,
+      useLore: payload.useLore,
     };
     if (this.generationQueue) {
       return this.generationQueue.enqueueAndWait("audio", generationId, input);
@@ -93,8 +97,12 @@ export class AudioService implements OnModuleInit {
       );
       if (existing) return existing;
       const { id } = await this.agent.query({
+        cue: input.cue,
         generationId: input.generationId,
+        loop: input.loop,
         prompt: input.prompt,
+        role: input.role,
+        useLore: input.useLore,
       });
       const asset = await readAudioClip(
         AUDIO_STORAGE.rootPath(),
@@ -135,7 +143,11 @@ export class AudioService implements OnModuleInit {
 
 /** Serializable input carried across the asset-generation queue. */
 interface QueuedAudio {
+  cue?: AudioServiceApi["generate"]["payload"]["cue"];
   generationId: string;
+  loop?: boolean;
   productNowSessionId?: string;
   prompt: string;
+  role?: AudioServiceApi["generate"]["payload"]["role"];
+  useLore?: boolean;
 }

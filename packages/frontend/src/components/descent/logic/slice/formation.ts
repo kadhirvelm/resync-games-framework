@@ -29,6 +29,7 @@ const CLASS_TIER: Record<ClassId, number> = {
   breaker: 0,
   hunter: 2,
   raider: 1,
+  rider: 1,
   villager: 4,
   warden: 0,
 };
@@ -50,6 +51,24 @@ export function formationRankWidth(
   if (formation === "column") return Math.min(2, count);
   if (formation === "line") return Math.min(MAX_RANK_WIDTH, count);
   return Math.min(MAX_RANK_WIDTH, Math.ceil(Math.sqrt(count * 2)));
+}
+
+/**
+ * Finds the center of a group so it can change shape without marching away.
+ * @param members - Units whose current footprint should stay centered
+ * @returns The average position, or null for an empty group
+ */
+export function formationCenter(
+  members: readonly FormationMember[],
+): FormationPoint | null {
+  if (members.length === 0) return null;
+  let sumX = 0;
+  let sumY = 0;
+  for (const member of members) {
+    sumX += member.x;
+    sumY += member.y;
+  }
+  return { x: sumX / members.length, y: sumY / members.length };
 }
 
 /**
@@ -111,6 +130,15 @@ export function planFormation(
       };
     });
   });
+  const planned = Object.values(slots);
+  const plannedCenterX =
+    planned.reduce((total, point) => total + point.x, 0) / planned.length;
+  const plannedCenterY =
+    planned.reduce((total, point) => total + point.y, 0) / planned.length;
+  for (const point of planned) {
+    point.x += destination.x - plannedCenterX;
+    point.y += destination.y - plannedCenterY;
+  }
   return slots;
 }
 
@@ -159,14 +187,10 @@ function travelFacing(
   members: readonly FormationMember[],
   destination: FormationPoint,
 ): FormationPoint {
-  let sumX = 0;
-  let sumY = 0;
-  for (const member of members) {
-    sumX += member.x;
-    sumY += member.y;
-  }
-  const dx = destination.x - sumX / members.length;
-  const dy = destination.y - sumY / members.length;
+  const center = formationCenter(members);
+  if (center === null) return DEFAULT_FACING;
+  const dx = destination.x - center.x;
+  const dy = destination.y - center.y;
   const length = Math.hypot(dx, dy);
   if (length < 1e-6) return DEFAULT_FACING;
   return { x: dx / length, y: dy / length };

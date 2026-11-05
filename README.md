@@ -115,6 +115,14 @@ structure roster exists yet:
 bun run assets:descent -- --meshy
 ```
 
+Generate the complete Ashen Gate music, ambience, and effects pack through the
+existing ElevenLabs audio queue. This command is idempotent and requires
+`ELEVENLABS_API_KEY`:
+
+```bash
+bun run assets:descent:audio
+```
+
 Useful commands:
 
 ```bash

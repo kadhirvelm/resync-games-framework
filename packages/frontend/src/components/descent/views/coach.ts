@@ -1,15 +1,11 @@
 import type { OnboardingFlags } from "./presentation";
 
 /** One Ashen Gate coach mark. */
-export type CoachMarkId = "controls" | "pill" | "realm" | "school";
+export type CoachMarkId = "pill" | "realm" | "school";
 
 /** Short copy for a coach mark. These are not modal briefings. */
 export const COACH_MARKS: Record<CoachMarkId, { body: string; title: string }> =
   {
-    controls: {
-      body: "Drag to select. Right-click a glowing resource to gather, or the ground to move.",
-      title: "Controls",
-    },
     pill: {
       body: "Permanent boost. Max 3 toxicity per realm.",
       title: "Body Pill",
@@ -26,7 +22,7 @@ export const COACH_MARKS: Record<CoachMarkId, { body: string; title: string }> =
 
 /**
  * Picks the single Ashen Gate coach mark that should be on screen.
- * Controls, then realm, then pill, then school. Other layers teach nothing here.
+ * Realm, then pill, then school. Other layers teach nothing here.
  * @param input - Flags, dismissals, and which gate the player has open
  * @returns The mark to show, or null
  */
@@ -41,7 +37,6 @@ export function activeCoach(input: {
 }): CoachMarkId | null {
   if (input.layerName !== "Ashen Gate") return null;
   const dismissed = new Set(input.dismissed);
-  if (!dismissed.has("controls")) return "controls";
   if (
     input.flags.realmGate &&
     input.holdUnitPresent &&

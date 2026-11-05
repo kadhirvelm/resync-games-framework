@@ -19,6 +19,24 @@ export {
   EconomySession,
   seedEconomyWorld,
 } from "./economy";
+export {
+  buildingCovering,
+  type FootprintSite,
+  footprintBodyRadius,
+  footprintCells,
+  footprintCovers,
+  footprintDistance,
+  footprintGap,
+  footprintRadius,
+  footprintReach,
+  footprintSide,
+} from "./footprint";
+export {
+  growthFraction,
+  HARVESTERS_PER_BUILDING,
+  harvestDef,
+  isRipe,
+} from "./harvest";
 export { compareIds } from "./ids";
 export type {
   BuildingInit,
@@ -29,6 +47,7 @@ export type {
   EconomyMeta,
   EconomyUnit,
   HoldTier,
+  ProductionJob,
   ResourceNode,
   SpiritVein,
   UnitInit,
@@ -49,6 +68,7 @@ export {
   SOLDIER_POP,
   VILLAGER_POP,
 } from "./pop";
+export { stepProduction } from "./production";
 export {
   addItem,
   canAffordPop,
@@ -79,6 +99,7 @@ export {
 } from "./records";
 export { canAfford, trySpend } from "./stockpile";
 export {
+  type BuildingProductionDef,
   buildingDef,
   coinSinkDef,
   deepWorkDef,
@@ -92,12 +113,16 @@ export {
   marketRates,
   pillRecipe,
   resourceDef,
+  workerSlots,
 } from "./tables";
 export { runEconomyTick } from "./tick";
 export {
+  activeWorkers,
+  assignedWorkers,
   cellOpen,
   cellOpenToAlly,
   constructionHp,
+  constructionProgressPerStep,
   MAX_BUILDERS_PER_SITE,
   recallVillagers,
   releaseVillagers,

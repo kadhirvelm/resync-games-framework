@@ -3,6 +3,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { footprintCovers, footprintSide } from "../logic/economy/footprint";
 import type { SimSpeed } from "../logic/sim/constants";
 import type { Command, FormationId, SimSnapshot } from "../logic/types";
 import { BuildMenu } from "./BuildMenu";
@@ -11,12 +12,14 @@ import {
   buildCardButtons,
   type CardButton,
   type ConfirmIntent,
+  costStock,
   isConfirmIntent,
   primaryUnit,
 } from "./card";
 import { activeCoach, type CoachMarkId } from "./coach";
 import { buildConfirm } from "./confirm";
 import { DescentBabylonViewport } from "./DescentBabylonViewport";
+import { DescentLoadingScreen } from "./DescentLoadingScreen";
 import styles from "./descentView.module.scss";
 import {
   CoachMark,
@@ -31,6 +34,10 @@ import {
   type InspectTarget,
   pruneInspectTarget,
 } from "./inspect";
+import {
+  EMPTY_LOADING_PROGRESS,
+  type LoadingProgress,
+} from "./loadingProgress";
 import type { CameraFocusRequest } from "./MapViewport";
 import type { BuildReadout } from "./presentation";
 import {
@@ -47,25 +54,37 @@ import {
   selectionGroups,
   snapMapCell,
 } from "./selection";
-import { buildShellModel } from "./shellModel";
+import { buildShellModel, type ShellModel } from "./shellModel";
 import {
-  HellPressure,
-  OmenPanel,
+  growingCrops,
   ResourceBar,
+  StrategicStatus,
   TrainingTracker,
 } from "./status";
 import type { ResourceSelectionId } from "./text";
-import { UnitPanel } from "./UnitPanel";
+import { type HoldUpgradeProgress, UnitPanel } from "./UnitPanel";
 import { useHotkeys } from "./useHotkeys";
+
+/** Matches the loading screen's fade-out in `loadingScreen.module.scss`. */
+const LOADING_FADE_MS = 520;
+
+/** Opening load: covered, fading out, then gone. */
+type LoadPhase = "done" | "leaving" | "loading";
 
 /** Props for the Descent desktop shell. */
 export interface DescentViewProps {
+  /** Whether the page is fullscreen. */
+  fullscreen?: boolean;
+  /** Enters or leaves fullscreen. Omit when the browser cannot. */
+  onToggleFullscreen?: () => void;
   /** Clears the slice autosave and starts Ashen Gate from tick zero. */
   onRestart?: () => void;
   /** Asks the sim to pause or resume. The button follows `snapshot.paused`. */
   onSetPaused?: (paused: boolean) => void;
   /** Asks the sim to change how many ticks advance per frame. */
   onSetSpeed?: (speed: SimSpeed) => void;
+  /** Enables or mutes Descent's generated mix. */
+  onSetSoundEnabled?: (enabled: boolean) => void;
   /**
    * Hero Hall revive. The shared command queue has no revive command, so this
    * stays a separate callback.
@@ -75,8 +94,15 @@ export interface DescentViewProps {
   onDismissCoach?: (mark: CoachMarkId) => void;
   /** Player action. The parent enqueues it; this view does not apply it. */
   onCommand?: (command: Command) => void;
+  /**
+   * Fired once when the battlefield's models and paintings have loaded and
+   * the loading screen starts to lift. The parent starts the sim clock here.
+   */
+  onLoaded?: () => void;
   /** Frozen sim snapshot. Panels only read it. */
   snapshot: SimSnapshot;
+  /** Whether the generated mix is audible. */
+  soundEnabled?: boolean;
 }
 
 interface Toast {
@@ -126,6 +152,17 @@ function placementStatus(
 }
 
 /**
+ * @param model - Shell model
+ * @returns The paid-for Hold upgrade that is under way, or null
+ */
+function runningHoldUpgrade(model: ShellModel): HoldUpgradeProgress | null {
+  const upgrade = model.holdUpgrade;
+  const running = upgrade?.inProgress ?? null;
+  if (upgrade === null || running === null) return null;
+  return { ...running, targetTier: upgrade.targetTier };
+}
+
+/**
  * Adds the active formation to a grouped movement order.
  * @param command - Command emitted by the battlefield input adapter
  * @param formation - Player-selected military formation
@@ -146,13 +183,18 @@ function applyFormation(command: Command, formation: FormationId): Command {
  * @returns The shell
  */
 export function DescentView({
+  fullscreen = false,
   onCommand,
   onDismissCoach,
+  onLoaded,
   onRevive,
   onRestart,
   onSetPaused,
   onSetSpeed,
+  onSetSoundEnabled,
+  onToggleFullscreen,
   snapshot,
+  soundEnabled = true,
 }: DescentViewProps) {
   const model = useMemo(() => buildShellModel(snapshot), [snapshot]);
   const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION);
@@ -173,8 +215,37 @@ export function DescentView({
   const [cursor, setCursor] = useState<MapPoint | null>(null);
   const [dismissed, setDismissed] = useState<CoachMarkId[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [loadProgress, setLoadProgress] = useState<LoadingProgress>(
+    EMPTY_LOADING_PROGRESS,
+  );
+  const [loadPhase, setLoadPhase] = useState<LoadPhase>("loading");
+  const villagerWasSelected = useRef(false);
+  const onLoadedRef = useRef(onLoaded);
+  onLoadedRef.current = onLoaded;
+  /** Lifts the loading screen once, whether loading finished or was skipped. */
+  const revealBattlefield = () =>
+    setLoadPhase((phase) => (phase === "loading" ? "leaving" : phase));
+
+  useEffect(() => {
+    if (loadPhase !== "leaving") return;
+    onLoadedRef.current?.();
+    const timer = setTimeout(() => setLoadPhase("done"), LOADING_FADE_MS);
+    return () => clearTimeout(timer);
+  }, [loadPhase]);
   const pruned = pruneSelection(selection, model);
   if (pruned !== selection) setSelection(pruned);
+  const hasSelectedVillager = model.units.some(
+    (unit) =>
+      unit.classId === "villager" &&
+      unit.factionId === "hold" &&
+      selection.unitIds.includes(unit.id),
+  );
+  useEffect(() => {
+    const lostVillagerSelection =
+      villagerWasSelected.current && !hasSelectedVillager;
+    villagerWasSelected.current = hasSelectedVillager;
+    if (lostVillagerSelection) setBuildOpen(false);
+  }, [hasSelectedVillager]);
 
   const seenNotices = useRef(new Set<string>());
   const noticeKey = model.notices
@@ -212,10 +283,16 @@ export function DescentView({
     model.buildOptions.find((option) => option.buildingType === placing) ??
     null;
   const placementCell = cursor === null ? null : snapMapCell(cursor);
+  const placingFootprint = placing === null ? 1 : footprintSide(placing);
   const onVein =
+    placing !== null &&
     placementCell !== null &&
-    model.veins.some(
-      (vein) => vein.x === placementCell.x && vein.y === placementCell.y,
+    model.veins.some((vein) =>
+      footprintCovers(
+        { buildingType: placing, ...placementCell },
+        vein.x,
+        vein.y,
+      ),
     );
   const primary = primaryUnit(model, selection);
   const selectedBuilding =
@@ -330,7 +407,13 @@ export function DescentView({
       return;
     }
     if (next.type === "formation") {
+      if (next.formation === formation) return;
       setFormation(next.formation);
+      onCommand?.({
+        formation: next.formation,
+        type: "set_formation",
+        unitIds: next.unitIds,
+      });
       return;
     }
     if (next.type === "gather_idle") {
@@ -388,6 +471,10 @@ export function DescentView({
   const onHotkey = (action: HotkeyAction) => {
     if (action.type === "pause") {
       onSetPaused?.(!model.paused);
+      return;
+    }
+    if (action.type === "fullscreen") {
+      onToggleFullscreen?.();
       return;
     }
     if (action.type === "camera") {
@@ -474,7 +561,10 @@ export function DescentView({
       type: "train_unit",
     });
   };
-  useHotkeys(onHotkey);
+  useHotkeys((action) => {
+    if (loadPhase === "loading") return;
+    onHotkey(action);
+  });
 
   /**
    * Commits the open confirm step, or explains why it cannot.
@@ -509,20 +599,32 @@ export function DescentView({
     setBuildOpen(false);
   };
 
+  const stock = costStock(model);
+  const holdUpgradeProgress = runningHoldUpgrade(model);
+  const hasActiveTraining =
+    holdUpgradeProgress !== null ||
+    model.buildings.some((building) => building.trainingQueue.length > 0) ||
+    growingCrops(model.buildings).length > 0;
+
   return (
     <div
       className={styles.shell}
+      data-has-training={hasActiveTraining}
       data-paused={model.paused}
       data-testid="descent-view"
     >
       <h1 className={styles.srOnly}>Descent</h1>
       <div className={styles.topHud} data-testid="descent-top-hud">
         <ResourceBar
+          fullscreen={fullscreen}
           model={model}
           onSelectResource={selectResource}
           onSetPaused={onSetPaused}
+          onSetSoundEnabled={onSetSoundEnabled}
           onSetSpeed={onSetSpeed}
+          onToggleFullscreen={onToggleFullscreen}
           selectedResource={selectedResource}
+          soundEnabled={soundEnabled}
         />
       </div>
       <div className={styles.stage}>
@@ -537,6 +639,8 @@ export function DescentView({
           }
           onCursor={setCursor}
           onInspect={inspect}
+          onLoaded={revealBattlefield}
+          onLoadProgress={setLoadProgress}
           onPlace={(point) => {
             if (placing === null) return;
             const cell = snapMapCell(point);
@@ -563,6 +667,7 @@ export function DescentView({
             setRallying(null);
           }}
           placing={placing !== null}
+          placingFootprint={placingFootprint}
           rallyBuildingId={rallyBuildingId}
           selection={selection}
           settingRally={rallying !== null}
@@ -572,13 +677,20 @@ export function DescentView({
               : "Set rally point"
           }
         />
-        <aside className={styles.strategicHud}>
+        <aside
+          aria-label="Strategic status"
+          className={styles.strategicHud}
+          data-has-training={hasActiveTraining}
+        >
           <TrainingTracker
             buildings={model.buildings}
             onSelectBuilding={selectBuilding}
+            upgrade={holdUpgradeProgress}
           />
-          <HellPressure model={model} />
-          <OmenPanel model={model} onGlossary={() => setGlossaryOpen(true)} />
+          <StrategicStatus
+            model={model}
+            onGlossary={() => setGlossaryOpen(true)}
+          />
         </aside>
         {coach === null ? null : (
           <div className={styles.coachDock}>
@@ -593,6 +705,12 @@ export function DescentView({
             />
           </div>
         )}
+        <ToastList
+          onDismiss={(id) =>
+            setToasts((current) => current.filter((toast) => toast.id !== id))
+          }
+          toasts={toasts}
+        />
       </div>
       <div className={styles.bottomHud}>
         <UnitPanel
@@ -611,10 +729,12 @@ export function DescentView({
             setSelection({ buildingId: null, unitIds: [...unitIds] });
           }}
           unit={primary}
+          upgrade={holdUpgradeProgress}
         />
         <CommandCard
           buttons={cardButtons}
           onActivate={activate}
+          stock={stock}
           subject={
             selectionCard.kind === "empty" ? undefined : selectionCard.title
           }
@@ -626,6 +746,7 @@ export function DescentView({
           onClose={() => setBuildOpen(false)}
           onGlossary={() => setGlossaryOpen(true)}
           options={model.buildOptions}
+          stock={stock}
         />
       ) : null}
       {glossaryOpen ? (
@@ -643,12 +764,13 @@ export function DescentView({
           tradeAmount={tradeAmount}
         />
       )}
-      <ToastList
-        onDismiss={(id) =>
-          setToasts((current) => current.filter((toast) => toast.id !== id))
-        }
-        toasts={toasts}
-      />
+      {loadPhase === "done" ? null : (
+        <DescentLoadingScreen
+          leaving={loadPhase === "leaving"}
+          onSkip={revealBattlefield}
+          progress={loadProgress}
+        />
+      )}
       {model.outcome === null ? null : (
         <section className={styles.outcome} role="dialog">
           <h2>{model.outcome.title}</h2>

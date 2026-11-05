@@ -42,10 +42,20 @@ export const BUILDING_TOOLTIPS = {
     lore: "Ashen Gate fire, taught to hold a shape instead of consuming one.",
     name: "Ember Forge",
   },
+  farm: {
+    buildingId: "farm",
+    lore: "Every furrow is measured twice: once in water, and once in mouths that make it to morning.",
+    name: "Farm",
+  },
   fire_ward_wall: {
     buildingId: "fire_ward_wall",
     lore: "Its seals turn an ember vent from a death sentence into a boundary.",
     name: "Fire-Ward Wall",
+  },
+  forest: {
+    buildingId: "forest",
+    lore: "Ash saplings drink from clay channels until the Hold can cut one beam and plant two more.",
+    name: "Managed Forest",
   },
   forward_shrine: {
     buildingId: "forward_shrine",
@@ -92,6 +102,11 @@ export const BUILDING_TOOLTIPS = {
     lore: "A slow spring and a stubborn crop: proof that the Hold can live without taking every flame it finds.",
     name: "Root Cellar",
   },
+  spirit_herb_garden: {
+    buildingId: "spirit_herb_garden",
+    lore: "The luminous beds cannot be hurried. Water, watchfulness, and time are the whole recipe.",
+    name: "Spirit Herb Garden",
+  },
   storehouse: {
     buildingId: "storehouse",
     lore: "The stock ledger begins with supplies and ends with the names of those sent to fetch them.",
@@ -106,6 +121,11 @@ export const BUILDING_TOOLTIPS = {
     buildingId: "ward_tower",
     lore: "A lamp in Hell is also a promise: someone will see the next wave coming.",
     name: "Ward Tower",
+  },
+  well: {
+    buildingId: "well",
+    lore: "The basalt shaft finds a cold seam beneath the ash and asks no tithe for what it raises.",
+    name: "Well",
   },
 } as const satisfies Record<string, BuildingTooltip>;
 

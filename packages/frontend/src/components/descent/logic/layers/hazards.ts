@@ -305,3 +305,81 @@ export function activeVentVolumes(
   if (!layer.hazards.includes("ember_vents")) return [];
   return layer.ventVolumes;
 }
+
+/** `world.meta` key for terrain generated for the current run. */
+export const LAYER_TERRAIN_META_KEY = "layerTerrain";
+
+/** Terrain a layer generated for one run, saved with the world. */
+export interface LayerTerrain {
+  layerId: string;
+  ventVolumes: CircleVolume[];
+}
+
+/** The parts of a sim world the terrain helpers read and write. */
+interface TerrainHolder {
+  layerId: string | null;
+  meta: Record<string, unknown>;
+}
+
+/**
+ * Records a run's generated terrain so hazards, movement, and the renderer
+ * use it instead of the layer table's fixed fallback.
+ * @param world - Sim world
+ * @param terrain - Generated terrain for the current layer
+ */
+export function setLayerTerrain(
+  world: TerrainHolder,
+  terrain: LayerTerrain,
+): void {
+  world.meta[LAYER_TERRAIN_META_KEY] = {
+    layerId: terrain.layerId,
+    ventVolumes: terrain.ventVolumes.map((vent) => ({ ...vent })),
+  } satisfies LayerTerrain;
+}
+
+/**
+ * Vent disks that burn in this world: the run's generated vents when they
+ * belong to the current layer, else the layer table's. Empty when ember
+ * vents are not active.
+ * @param world - Sim world (or any object with its layer id and meta)
+ * @returns Vent volumes in effect
+ */
+export function worldVentVolumes(
+  world: TerrainHolder,
+): readonly CircleVolume[] {
+  if (!hasEmberVents(world.layerId)) return [];
+  const terrain = world.meta[LAYER_TERRAIN_META_KEY];
+  if (!isLayerTerrain(terrain) || terrain.layerId !== world.layerId) {
+    return activeVentVolumes(world.layerId);
+  }
+  return terrain.ventVolumes;
+}
+
+/**
+ * @param layerId - Layer to check
+ * @returns Whether the layer burns with ember vents
+ */
+function hasEmberVents(layerId: string | null): boolean {
+  const layer = LAYER_TABLE.layers.find((entry) => entry.id === layerId);
+  return layer?.hazards.includes("ember_vents") ?? false;
+}
+
+/**
+ * Narrows terrain loaded from a save.
+ * @param value - Candidate meta value
+ * @returns Whether it is well-formed generated terrain
+ */
+function isLayerTerrain(value: unknown): value is LayerTerrain {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<LayerTerrain>;
+  if (typeof candidate.layerId !== "string") return false;
+  if (!Array.isArray(candidate.ventVolumes)) return false;
+  return candidate.ventVolumes.every(
+    (vent: unknown) =>
+      typeof vent === "object" &&
+      vent !== null &&
+      Number.isFinite((vent as CircleVolume).x) &&
+      Number.isFinite((vent as CircleVolume).y) &&
+      Number.isFinite((vent as CircleVolume).radius),
+  );
+}
