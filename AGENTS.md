@@ -3,13 +3,13 @@
 ## Repository
 
 Resync Game Framework is a Bun and TypeScript monorepo. Towers of Coreborn
-(`towers-of-coreborn`) is the cards game that ships in it.
+(`towers-of-coreborn`) and Descent (`descent`) are two example games that ship in it. You can see how the 2D and 3D game development works through them.
 
 - `packages/frontend` — Next.js 16 and React 19 game client
 - `packages/backend` — NestJS API, WebSockets, and asset generation
 - `packages/api` — shared service and WebSocket contracts
 - `packages/database` — Prisma schema and generated client
-- `toc-cli` — local development commands
+- `resync-cli` — local development commands
 
 Use Bun for package management and scripts. Do not use npm, pnpm, yarn, or
 npx.
@@ -17,19 +17,161 @@ npx.
 ## Common commands
 
 ```bash
-bun run dev
+./scripts/bootstrap.sh   # first-time setup
+bun run dev              # start the whole stack
 bun run build
 bun run check
 bun run test
 bun run lint
 
-bun run toc database db:migrate
-bun run toc database db:seed
-bun run toc database db:studio
+bun run resync database db:migrate
+bun run resync database db:seed
+bun run resync database db:studio
 ```
 
 Tests use `bun:test`. Type-check individual packages with `bun run check` from
 that package directory.
+
+## Tools
+
+### Local URLs
+
+`bun run dev` serves everything over HTTPS with mkcert certificates in
+`.certs/`.
+
+| What | Where |
+| --- | --- |
+| Game library | https://localhost:3000 |
+| A game | https://localhost:3000/<gameId> (`towers-of-coreborn`, `descent`, `three-d-sandbox`) |
+| Blueprint Workshop (asset generation) | https://localhost:3000/assets |
+| Backend API and WebSockets | https://localhost:8080 |
+| Backend debugger | `localhost:9229` (Node inspector) |
+
+### Docker Compose tools
+
+`bun run dev` starts these with Postgres (`localhost:5432`) and Redis
+(`localhost:6379`). `docker compose -f docker-compose.yml up -d` starts only
+the containers.
+
+| Tool | URL | Use it to |
+| --- | --- | --- |
+| Gatus | http://localhost:8088 | Check which services are up. Checks live in `gatus/config.yaml`. |
+| OpenObserve | http://localhost:5080 | Search container logs in the `docker` stream. Credentials are `OPENOBSERVE_ROOT_USER_*` in `.env`. |
+| Redis Insight | http://localhost:5540 | Inspect Redis keys (database **local**) and run commands. |
+| Redis Commander | http://localhost:8081 | Browse Redis quickly. |
+| pgweb | http://localhost:2000 | Browse and query Postgres. No sign-in. |
+
+Backend and frontend logs print in the `bun run dev` terminal, not
+OpenObserve. A new Compose service ships logs to OpenObserve only when it has
+the `dev.resync-game-framework.logs: "true"` label.
+
+### The `resync` CLI
+
+`resync-cli/` builds the `resync` command. Run it from anywhere in the
+repository with `bun run resync <command>`. After changing the CLI, rebuild it
+with `bun run --cwd resync-cli build`; `./scripts/reset-cli.sh` reinstalls and
+rebuilds it from scratch.
+
+| Command | What it does |
+| --- | --- |
+| `resync dev` | Checks certificates, starts Docker, syncs `.env`, regenerates the Prisma client, runs migrations, opens the browser, and runs every package's `dev` task through Turbo. `bun run dev` calls this. |
+| `resync dev --reset` | Same, but first removes the Compose containers and volumes. Local data is lost. |
+| `resync dev --network` | Same, but publishes the frontend and backend through ngrok and points `FRONTEND_URL` and `BACKEND_API_URL` at the tunnels. ProductNow OAuth needs this locally. Requires the ngrok CLI with `ngrok config add-authtoken <token>` and a plan with reserved domains; set `NGROK_DOMAIN_SUFFIX`, or `NGROK_FRONTEND_DOMAIN` and `NGROK_BACKEND_DOMAIN`, to choose hostnames. |
+| `resync open` | Opens `FRONTEND_URL` in the browser. |
+| `resync ensure-env` | Adds any missing default variables to `.env` without overwriting existing values. |
+| `resync load-env` | Loads `.env` into the process environment. |
+| `resync database <script>` | Loads `.env` and runs a `packages/database` script, such as `db:migrate`, `db:create-migration`, `db:seed`, `db:studio`, `db:reset`, or `db:validate`. |
+| `resync check-migrations` | Checks that migrations match the Prisma schema (used in CI). |
+| `resync run-tests <frontend\|backend\|all> [args...]` | Resets the `test` database for backend runs, then runs `bun test`. Extra arguments, such as a file path, go to `bun test`. |
+| `resync cd <package>` | Prints the path to `packages/<package>`, `resync-cli`, or `root`. Use it as `cd "$(bun run resync cd backend)"`. |
+
+### Package scripts
+
+| Command | Where | What it does |
+| --- | --- | --- |
+| `bun run worker` | `packages/backend` | Runs a headless asset-generation worker with no HTTP server. |
+| `bun run test:coverage` | `packages/backend` | Backend tests with coverage. |
+| `bun run lint:fix` | any package | Applies Biome (and Stylelint in the frontend) fixes. |
+| `bun run knip` | `packages/frontend` | Finds unused files, exports, and dependencies. |
+| `bun run db:create-migration` | `packages/database` | Creates a migration from schema changes without applying it. |
+
+### Repository scripts
+
+| Command | What it does |
+| --- | --- |
+| `./scripts/bootstrap.sh` | Checks for Bun, Docker, and mkcert, installs dependencies, builds the CLI, writes `.env`, creates certificates, and builds the monorepo. |
+| `./scripts/reset-cli.sh` | Removes `node_modules`, reinstalls, and rebuilds the CLI. |
+| `bun run scripts/verify-three-d.ts` | Smoke-tests the 3D workshop against a local backend with the demo provider. It refuses to run against a non-local backend and makes no paid calls. |
+
+### Generating assets from a coding agent
+
+Do not add game-specific asset-generation scripts. With the backend running,
+submit each asset to `POST /agent/assets/generations`, then poll the returned
+`statusUrl` with GET until `status` is `completed` or `failed`:
+
+```bash
+curl --cacert .certs/localhost.pem \
+  -H 'Content-Type: application/json' \
+  -d '{"assetClass":"static-image","prompt":"A seamless moonlit basalt floor texture, tagged as example-ground"}' \
+  https://localhost:8080/agent/assets/generations
+
+curl --cacert .certs/localhost.pem \
+  https://localhost:8080/agent/assets/generations/<jobId>
+```
+
+The POST returns HTTP 202 with `jobId`, `status`, and `statusUrl`. A caller may
+send a UUID v4 as `generationId`; retrying that id with the same payload is
+idempotent, while reusing it for another request returns 409. Completed jobs
+include the stored asset in `result`; failed jobs include `error`.
+
+Supported `assetClass` values are `audio`, `battle-background`,
+`card-character`, `enemy`, `playable-card`, `sprite-sheet`, `static-image`,
+`three-d-character`, `three-d-environment`, and `three-d-prop`. Every request
+needs `prompt`. Audio also accepts `cue`, `loop`, `role`, and `useLore`. 3D
+also accepts `provider` (`demo`, `design`, or `meshy`), `useLore`, and an
+optional structured `design`. Playable cards require a connected ProductNow
+session; other lore-aware classes use it when available.
+
+To generate a game's roster, inspect its source manifests for canonical names,
+prompt tags, audio cues, and runtime roles. Queue one request per missing asset
+and include those exact identifiers in the prompt or structured 3D design so
+the runtime can find the result. Keep provider concurrency bounded, especially
+for Meshy and ElevenLabs. Do not commit generated GLBs, images, or MP3s.
+
+### Agent tools
+
+Mastra agents in `packages/backend/src/mastra/agents/` call shared tools from
+one catalog. The ids are the `AgentTool` enum in
+`packages/api/src/agents/tools.ts`, and the implementations are registered in
+`packages/backend/src/mastra/shared/resyncGameFrameworkAgentToolRegistry.ts`
+(services in `packages/backend/src/mastra/tools/`).
+
+| Tool id | What it does | Needs | Used by |
+| --- | --- | --- | --- |
+| `generate-image` | Paints one or more images with Gemini or OpenAI GPT Image. It can keep the first image's subject as the reference for the rest. | `GEMINI_CREDENTIALS` or `OPENAI_API_KEY` | battle-background, card-character, card-generator, enemy, sprite-sheet, static-image |
+| `generate-audio` | Renders one sound effect, ambience loop, or instrumental bed. | `ELEVENLABS_API_KEY` | audio |
+| `generate-3d-model` | Compiles a structured low-poly design into a GLB, builds the demo model, or calls Meshy. | `MESHY_API_KEY` for `meshy` only | three-d |
+| `consult-productnow` | Runs a research subagent that answers one lore question from ProductNow. The subagent loads ProductNow's read tools for the browser's OAuth session. | A connected ProductNow session | battle-background, card-character, card-generator, enemy, sprite-sheet, audio (unless lore is off), three-d (when `useLore` is set), dungeon-coordinator |
+| `record-productnow-lore` | Appends one entry to a named document in a game's ProductNow folder, creating the document when it is missing. | A connected ProductNow session | No agent opts in yet |
+
+To give an agent tools, declare an enum on the agent whose values are
+`AgentTool` members and pass that enum to the agent runner, which loads them
+from the registry. To add a tool:
+
+1. Add a member to `AgentTool`, an entry in `AllAgentTools`, and a branch in
+   `AgentTools` in `packages/api/src/agents/tools.ts`.
+2. Add a service in `packages/backend/src/mastra/tools/` with a
+   `createTool()` method and register it in `buildToolRegistry`.
+3. Opt agents in through their tool enums.
+
+A tool that needs per-request context, such as the browser's ProductNow
+session, is built for that query and passed to the runner beside the registry
+tools; it does not go in the shared registry. ProductNow's own MCP tools are
+loaded only inside the `consult-productnow` subagent.
+
+Without a ProductNow connection, card generation is refused, and other agents
+get a tool error when they try to read lore. The **Connect ProductNow** button
+in the Blueprint Workshop starts the OAuth flow.
 
 ## Architecture
 
@@ -43,11 +185,7 @@ that package directory.
 - Asset classes: `packages/backend/src/asset-classes/`
 - AI providers and orchestration: `packages/backend/src/model/` and
   `packages/backend/src/mastra/`
-- Shared Mastra tools: declare them on the `AgentTool` enum in
-  `packages/api/src/agents/tools.ts` and register them in
-  `packages/backend/src/mastra/shared/resyncGameFrameworkAgentToolRegistry.ts`.
-  An agent opts in with its own enum whose values are `AgentTool` members
-  and passes that enum to the agent runner, which loads the tools.
+- Shared Mastra tools: see [Agent tools](#agent-tools).
 - Agents: `packages/backend/src/mastra/agents/<name>/`. Each agent is a Nest
   service with a `query` method. Asset classes call `query`; they do not
   construct Mastra agents themselves. `battle-background` paints battle rooms,
@@ -83,17 +221,9 @@ that package directory.
   through the shared
   `generate-image` tool. The agent's instructions carry the art direction, and the agent passes
   that direction in the tool call. Asset classes do not call image providers
-  themselves. `consult-productnow` is a registry tool that runs a research
-  subagent. That subagent loads ProductNow's read tools for the browser's
-  OAuth session itself, so those MCP tools are not in the shared registry.
-  `record-productnow-lore` appends one entry to a named document in a game's
-  ProductNow folder and creates the document when it is missing. An agent
-  opts into a tool by listing it on its own tool enum.
-  Battle-background, card-character, and card-generator agents opt into
-  `consult-productnow` and must read the Lore document before they paint. A
-  tool that needs per-request context, such as a Lore search for the browser's
-  ProductNow session, is built for that query and passed to the runner with
-  the registry tools. Each query takes a `generationId` and keeps an
+  themselves. Battle-background, card-character, and card-generator agents
+  must read the Lore document through `consult-productnow` before they paint.
+  Each query takes a `generationId` and keeps an
   `AbortController` for that run. `abort` writes the stop to Redis and
   publishes it, so a cancel request can stop a run on another process.
 
@@ -230,13 +360,13 @@ the prompt tags in `data/layers/ashen_gate/environmentArt.ts`. Generated
 scenery (Horde Gate, abyss spires, rim ruins, spirit crystals, boulders) is
 placed by `views/ashenTerrainLayout.ts` and never lands inside the playable
 map. Every surface and scenery role has a procedural stand-in.
-Rebuild the local zero-credit roster and missing textures with
-`bun run assets:descent`; use `--meshy --roles=<comma-separated roles>` for a
-scoped detailed pass and `--concurrency=<n>` to run model jobs in parallel. Do
-not commit runtime-generated GLBs or images.
-Generate Descent's tagged music, ambience, and effects through the audio queue
-with `bun run assets:descent:audio`; it requires ElevenLabs and skips clips whose
-exact manifest prompt already exists. Do not commit the runtime-generated MP3s.
+Generate the local roster, textures, and audio through the agent generation API
+above. Read canonical model names from `data/layers/ashen_gate/threeDAssets.ts`,
+texture tags from `environmentArt.ts`, and audio prompts and cues from
+`audio.ts`; submit only missing assets and keep exact runtime identifiers in
+their prompts. A `design` provider request can include structured low-poly
+parts, while `meshy` spends provider credits and must be explicitly chosen. Do
+not commit runtime-generated GLBs, images, or MP3s.
 
 ### Shared contracts
 
@@ -299,10 +429,14 @@ backend serves its OAuth Client ID Metadata Document at
 per-browser OAuth state encrypted in Postgres. Keep MCP tokens server-side.
 
 Game lore lives in `packages/backend/src/product-now-lore/` and the shared
-`productNowLore` service. Every call names a `gameId`. Towers of Coreborn
-uses the existing Card game thing folder and Lore document; any other game
-gets a subfolder there on first use. Reads and writes stay inside that
-folder. Writes return before ProductNow finishes them, so callers poll
+`productNowLore` service. Every call names a `gameId`. The workspace comes
+from `.env`: `PRODUCTNOW_GAMES_FOLDER_ID` is the folder that holds game lore,
+and `PRODUCTNOW_LORE_DOCUMENT_ID` is the document Towers of Coreborn reads as
+canon. Read them with `readProductNowWorkspace`; never hardcode workspace
+ids. Towers of Coreborn uses the games folder itself, and any other game gets
+a subfolder there on first use. Lore storage refuses to run without the
+folder id. Without the document id, agents look for a document named "Lore".
+Reads and writes stay inside the game's folder. Writes return before ProductNow finishes them, so callers poll
 `getEditStatus`. On the client, `useProductNowLore(gameId)` is the one entry
 point, and `ProductNowProvider` in the root layout holds the connection.
 Socket handlers resolve the same browser session with
@@ -311,7 +445,7 @@ Socket handlers resolve the same browser session with
 ### Database
 
 The schema is `packages/database/prisma/schema.prisma`. Never hand-edit an
-existing migration. Generate migrations through the `toc database` command.
+existing migration. Generate migrations through the `resync database` command.
 
 ## Asset classes
 
@@ -355,7 +489,7 @@ Service callers return `ServiceError` values rather than throwing. Check
 `.github/workflows/ci.yml` runs on pull requests and pushes to `main`. It
 reports three checks: lint (`bun run lint`), type (`bun run check`), and
 tests (`bun run test`). The test job starts Postgres with the credentials in
-`toc-cli/src/constants/database.ts`.
+`resync-cli/src/constants/database.ts`.
 
 - Bind free-text expressions to environment variables before using them in
   shell scripts; never interpolate them directly into `run`.

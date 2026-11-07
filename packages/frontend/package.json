@@ -41,7 +41,7 @@
     "lint": "biome check && stylelint '**/*.{css,scss}'",
     "lint:fix": "biome check --fix && stylelint '**/*.{css,scss}' --fix",
     "start": "next start",
-    "test": "bun run toc run-tests frontend"
+    "test": "bun run resync run-tests frontend"
   },
   "version": "0.1.0"
 }

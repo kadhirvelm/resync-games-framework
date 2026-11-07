@@ -13,7 +13,7 @@ describe("urlToOpen", () => {
     );
   });
 
-  test("opens FRONTEND_URL from .env when toc open is run on its own", () => {
+  test("opens FRONTEND_URL from .env when resync open is run on its own", () => {
     expect(urlToOpen(undefined, "https://snowman.ngrok-free.dev")).toBe(
       "https://snowman.ngrok-free.dev",
     );

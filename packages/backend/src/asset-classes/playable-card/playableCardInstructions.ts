@@ -1,9 +1,6 @@
 import { AgentTool } from "@resync-game-framework/api";
 import { playableCardImageRules } from "./buildPlayableCardImagePrompt";
-import {
-  LORE_DOCUMENT_ID,
-  PLAYABLE_CARD_IMAGE_CONFIG,
-} from "./playableCardSpec";
+import { PLAYABLE_CARD_IMAGE_CONFIG } from "./playableCardSpec";
 import {
   SEARCH_LORE_TOOL_ID,
   SUBMIT_PLAYABLE_CARD_TOOL_ID,
@@ -18,7 +15,7 @@ import {
 export function renderPlayableCardInstructions(): string {
   return [
     "You write one playable card for Towers of Coreborn, then paint it.",
-    `First call \`${AgentTool.ConsultProductNow}\` once. The question must ask it to read the Lore document \`${LORE_DOCUMENT_ID}\` and explain the place, person, order, or event this card is about. Use that answer before you search, write, or paint. Do not invent lore the document does not cover.`,
+    `First call \`${AgentTool.ConsultProductNow}\` once. The question must ask it to read the Lore document and explain the place, person, order, or event this card is about. Use that answer before you search, write, or paint. Do not invent lore the document does not cover.`,
     `Call \`${SEARCH_LORE_TOOL_ID}\` before \`${SUBMIT_PLAYABLE_CARD_TOOL_ID}\`. Search the Lore document for the specific place, person, order, or event the request is about.`,
     "If a search returns no passages, call it again with a narrower in-world query. Do not invent names, floors, or history.",
     "The description is flavor text: one or two short sentences, under 240 characters. Say what this card is within the Tower's lore, as a hint of history or story. Keep it vague and a little mysterious. Allude to the Lore passages; do not recite them, list names, or explain mechanics.",

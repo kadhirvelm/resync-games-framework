@@ -7,6 +7,7 @@ import {
   Optional,
 } from "@nestjs/common";
 import type {
+  ThreeDAsset,
   ThreeDAssetKind,
   ThreeDGenerationPayload,
   ThreeDWorkshopServiceApi,
@@ -233,7 +234,7 @@ export class ThreeDService implements OnModuleInit {
   /** Executes an admitted job and records successful publication. */
   private async executeQueued(
     input: ThreeDWorkshopServiceApi["start"]["payload"],
-  ): Promise<void> {
+  ): Promise<ThreeDAsset> {
     await this.jobs.progress(input.generationId, "Starting worker", 1);
     const asset =
       (await this.assets.find(input.kind, input.generationId)) ??
@@ -246,6 +247,7 @@ export class ThreeDService implements OnModuleInit {
       stage: "Ready",
       state: "complete",
     });
+    return asset;
   }
 
   /** Records the final BullMQ failure after retries are exhausted. */

@@ -16,7 +16,7 @@ echo_yellow "Resetting CLI package to a fresh state..."
 echo_yellow "Removing node_modules..."
 
 rm -rf node_modules/
-rm -rf toc-cli/node_modules/
+rm -rf resync-cli/node_modules/
 
 echo_yellow "Installing dependencies..."
 
@@ -25,9 +25,9 @@ bun install
 
 echo_yellow "Building the CLI package..."
 
-# Go to the toc-cli directory
-cd toc-cli
-# Build the toc-cli package
+# Go to the resync-cli directory
+cd resync-cli
+# Build the resync-cli package
 bun run build
 # Install the dependencies
 bun install

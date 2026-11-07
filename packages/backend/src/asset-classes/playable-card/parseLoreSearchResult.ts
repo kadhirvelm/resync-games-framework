@@ -1,18 +1,23 @@
 import type { PlayableCardLoreSource } from "@resync-game-framework/api";
 import { parseSearchPassages } from "src/product-now-lore/productNowLoreParsers";
-import { LORE_DOCUMENT_ID } from "./playableCardSpec";
 
 const MAX_EXCERPTS = 4;
 
 /**
  * Passages from a ProductNow search that belong to the Lore document.
- * Other documents in the same result are dropped.
+ * When a Lore document id is configured, passages from other documents are
+ * dropped. Without one, every passage the search returned is kept.
  * @param raw - MCP `search` tool result, either the payload or a content envelope
+ * @param loreDocumentId - Configured Lore document, when there is one
  * @returns Up to four Lore excerpts
  */
-export function parseLoreSearchResult(raw: unknown): PlayableCardLoreSource[] {
+export function parseLoreSearchResult(
+  raw: unknown,
+  loreDocumentId?: string,
+): PlayableCardLoreSource[] {
   return parseSearchPassages(raw, {
-    accept: ({ documentId }) => documentId === LORE_DOCUMENT_ID,
+    accept: ({ documentId }) =>
+      loreDocumentId === undefined || documentId === loreDocumentId,
     fallbackTitle: "Lore",
     maxExcerpts: MAX_EXCERPTS,
   });

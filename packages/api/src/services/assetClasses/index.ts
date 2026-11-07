@@ -1,3 +1,4 @@
+export * from "./agentAssetGeneration";
 export * from "./assetClassService";
 export * from "./audio";
 export * from "./battleBackground";

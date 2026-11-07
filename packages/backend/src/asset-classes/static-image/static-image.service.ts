@@ -58,6 +58,27 @@ export class StaticImageService implements OnModuleInit {
   }
 
   /**
+   * Queues an image without holding the HTTP request open.
+   * @param payload - Image prompt and stable generation id
+   * @returns Resolves after BullMQ accepts the job
+   */
+  public async enqueue(
+    payload: StaticImageServiceApi["generate"]["payload"],
+  ): Promise<void> {
+    const input = this.prepareGeneration(payload);
+    if (!this.generationQueue) {
+      throw new InternalServerErrorException(
+        "Asset generation queue is unavailable.",
+      );
+    }
+    await this.generationQueue.enqueue(
+      "static-image",
+      input.generationId,
+      input,
+    );
+  }
+
+  /**
    * Enqueues one natural-language image request.
    * @param payload - Image request and stable generation id
    * @returns Newly stored image
@@ -65,20 +86,32 @@ export class StaticImageService implements OnModuleInit {
   public async generate(
     payload: StaticImageServiceApi["generate"]["payload"],
   ): Promise<StaticImageServiceApi["generate"]["response"]> {
-    const prompt = requireGenerationPrompt(
-      payload.prompt,
-      "Describe the static image to generate.",
-    );
-    const generationId = requireGenerationId(payload.generationId);
-    const input = { generationId, prompt };
+    const input = this.prepareGeneration(payload);
     if (this.generationQueue) {
       return this.generationQueue.enqueueAndWait(
         "static-image",
-        generationId,
+        input.generationId,
         input,
       );
     }
     return this.executeGeneration(input);
+  }
+
+  /**
+   * Validates public input and builds the durable queue payload.
+   * @param payload - Public asset generation payload
+   * @returns Serializable worker input
+   */
+  private prepareGeneration(
+    payload: StaticImageServiceApi["generate"]["payload"],
+  ): QueuedStaticImage {
+    return {
+      generationId: requireGenerationId(payload.generationId),
+      prompt: requireGenerationPrompt(
+        payload.prompt,
+        "Describe the static image to generate.",
+      ),
+    };
   }
 
   /** Executes one idempotent static-image generation. */

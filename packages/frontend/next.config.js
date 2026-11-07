@@ -10,7 +10,7 @@ const PUBLIC_URL = (() => {
   return PUBLIC_URL;
 })();
 
-// `toc dev --network` serves the dev server from an ngrok hostname. Next blocks
+// `resync dev --network` serves the dev server from an ngrok hostname. Next blocks
 // cross-origin requests to dev resources (including the `/_next` HMR websocket)
 // unless that hostname is allowlisted, and a blocked socket leaves the page
 // unhydrated. Wildcards cover every per-developer tunnel, not only the
@@ -81,7 +81,7 @@ if (process.env.NODE_ENV === "development") {
   // fetch calls (e.g. SSR → local backend on https://localhost:8080).
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
-  // Keep APP_BASE_URL aligned with the browser origin. `toc dev` writes
+  // Keep APP_BASE_URL aligned with the browser origin. `resync dev` writes
   // FRONTEND_URL into .env before boot — https://localhost:3000 normally, or
   // the ngrok tunnel under `--network`.
   nextConfig.env = {

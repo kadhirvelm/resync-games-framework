@@ -7,6 +7,10 @@ import {
   OnApplicationShutdown,
   OnModuleInit,
 } from "@nestjs/common";
+import type {
+  AgentAssetGenerationState,
+  AgentAssetGenerationStatus,
+} from "@resync-game-framework/api";
 import {
   type Job,
   Queue,
@@ -244,6 +248,40 @@ export class GenerationQueueService
     ].includes(state);
   }
 
+  /**
+   * Reads a retained job without waiting for it to finish.
+   * @param generationId - Client generation id used as the BullMQ job id
+   * @returns Poll-safe state, result, and error details, or undefined after retention expires
+   */
+  public async getStatus(
+    generationId: string,
+  ): Promise<AgentAssetGenerationStatus | undefined> {
+    const job = await this.requireQueue().getJob(generationId);
+    if (!job) return undefined;
+    const bullMqState = await job.getState();
+    const status = toAgentGenerationState(bullMqState);
+    const response: AgentAssetGenerationStatus = {
+      assetClass: assetClassForJob(job),
+      attemptsMade: job.attemptsMade,
+      createdAt: new Date(job.timestamp).toISOString(),
+      jobId: job.id ?? generationId,
+      status,
+    };
+    if (job.processedOn !== undefined) {
+      response.startedAt = new Date(job.processedOn).toISOString();
+    }
+    if (job.finishedOn !== undefined) {
+      response.finishedAt = new Date(job.finishedOn).toISOString();
+    }
+    if (status === "completed") response.result = job.returnvalue;
+    if (status === "failed") {
+      response.error = restoreError(
+        new Error(job.failedReason || "Asset generation failed."),
+      ).message;
+    }
+    return response;
+  }
+
   /** Adds a job or returns the matching deduplicated record. */
   private async addOrGet<Payload>(
     name: string,
@@ -326,6 +364,41 @@ export class GenerationQueueService
   private queueName(): string {
     return this.configuration.get("ASSET_GENERATION_QUEUE_NAME");
   }
+}
+
+/**
+ * Maps BullMQ's detailed lifecycle to the stable public polling contract.
+ * @param state - State returned by BullMQ
+ * @returns Stable public generation state
+ */
+export function toAgentGenerationState(
+  state: string,
+): AgentAssetGenerationState {
+  if (
+    ["waiting", "delayed", "prioritized", "waiting-children"].includes(state)
+  ) {
+    return "queued";
+  }
+  if (state === "active") return "running";
+  if (state === "completed") return "completed";
+  if (state === "failed") return "failed";
+  return "unknown";
+}
+
+/**
+ * Returns the public asset class, including the category of a 3D job.
+ * @param job - Retained BullMQ generation job
+ * @returns Agent-facing asset-class name
+ */
+function assetClassForJob(job: Job<GenerationQueuePayload>): string {
+  if (job.name !== "three-d") return job.name;
+  const payload = job.data.payload;
+  if (payload === null || typeof payload !== "object") return job.name;
+  const kind = (payload as { kind?: unknown }).kind;
+  if (!["character", "environment", "prop"].includes(String(kind))) {
+    return job.name;
+  }
+  return `three-d-${String(kind)}`;
 }
 
 /** Executes one attempt with an optional distributed-abort timeout. */

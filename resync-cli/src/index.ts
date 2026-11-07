@@ -11,7 +11,7 @@ import { open } from "./actions/open";
 import { runTests } from "./actions/runTests";
 
 const program = new Command()
-  .name("toc")
+  .name("resync")
   .description("Resync Game Framework CLI — useful tasks for the monorepo")
   .version("0.1.0");
 

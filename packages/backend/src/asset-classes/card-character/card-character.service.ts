@@ -65,6 +65,27 @@ export class CardCharacterService implements OnModuleInit {
   }
 
   /**
+   * Queues a portrait set without holding the HTTP request open.
+   * @param payload - Character prompt and stable generation id
+   * @returns Resolves after BullMQ accepts the job
+   */
+  public async enqueue(
+    payload: CardCharacterServiceApi["generate"]["payload"],
+  ): Promise<void> {
+    const input = this.prepareGeneration(payload);
+    if (!this.generationQueue) {
+      throw new InternalServerErrorException(
+        "Asset generation queue is unavailable.",
+      );
+    }
+    await this.generationQueue.enqueue(
+      "card-character",
+      input.generationId,
+      input,
+    );
+  }
+
+  /**
    * Runs the card-character agent and returns the saved set.
    * @param payload - Natural-language description of the character and the id that can stop it
    * @returns The stored set with absolute portrait URLs
@@ -74,24 +95,33 @@ export class CardCharacterService implements OnModuleInit {
   public async generate(
     payload: CardCharacterServiceApi["generate"]["payload"],
   ): Promise<CardCharacterServiceApi["generate"]["response"]> {
-    const prompt = requireGenerationPrompt(
-      payload.prompt,
-      "Describe the character to generate.",
-    );
-    const generationId = requireGenerationId(payload.generationId);
-    const input = {
-      generationId,
-      productNowSessionId: readActiveProductNowSession(),
-      prompt,
-    };
+    const input = this.prepareGeneration(payload);
     if (this.generationQueue) {
       return this.generationQueue.enqueueAndWait(
         "card-character",
-        generationId,
+        input.generationId,
         input,
       );
     }
     return this.executeGeneration(input);
+  }
+
+  /**
+   * Validates public input and captures request-scoped lore access.
+   * @param payload - Public asset generation payload
+   * @returns Serializable worker input
+   */
+  private prepareGeneration(
+    payload: CardCharacterServiceApi["generate"]["payload"],
+  ): QueuedCardCharacter {
+    return {
+      generationId: requireGenerationId(payload.generationId),
+      productNowSessionId: readActiveProductNowSession(),
+      prompt: requireGenerationPrompt(
+        payload.prompt,
+        "Describe the character to generate.",
+      ),
+    };
   }
 
   /** Executes one idempotent portrait-set generation inside a queue worker. */

@@ -69,7 +69,7 @@ async function writeCard(
       kind: "attack",
       loreSources: [
         {
-          documentId: "ff1b04a0-b440-4746-9a1a-cd25fba0c32b",
+          documentId: "lore-document",
           excerpt: "Tamsin Korr bonded a Coreborn on floor 4.",
           title: "Lore",
           url: "https://app.productnow.ai/lore",

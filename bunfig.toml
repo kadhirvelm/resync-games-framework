@@ -1,7 +1,7 @@
 [install]
 # Keep the classic hoisted node_modules layout. The repo's scripts rely on
-# workspace bins (e.g. `toc`, `prisma`) being available from the root
+# workspace bins (e.g. `resync`, `prisma`) being available from the root
 # node_modules/.bin, which Bun's default isolated linker does not provide.
 # Bun skips a workspace bin whose target is not executable, and it does not
-# chmod those targets. toc-cli's build script marks dist/index.js executable.
+# chmod those targets. resync-cli's build script marks dist/index.js executable.
 linker = "hoisted"

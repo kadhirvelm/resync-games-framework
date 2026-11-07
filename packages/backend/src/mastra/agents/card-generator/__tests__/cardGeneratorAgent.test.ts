@@ -5,19 +5,36 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentTool } from "@resync-game-framework/api";
 import sharp from "sharp";
-import { LORE_DOCUMENT_ID } from "src/asset-classes/playable-card/playableCardSpec";
 import { PLAYABLE_CARD_STORAGE } from "src/asset-classes/playable-card/playableCardStorage";
 import {
   SEARCH_LORE_TOOL_ID,
   SUBMIT_PLAYABLE_CARD_TOOL_ID,
 } from "src/asset-classes/playable-card/playableCardTools";
 import { readPlayableCard } from "src/asset-classes/playable-card/readPlayableCards";
+import type { ConfigurationService } from "src/configuration/configuration.service";
 import { MockRedisService } from "src/infra/redis/__tests__/mockRedis.module";
 import type { RedisService } from "src/infra/redis/redis.service";
 import { ProductNowMcpService } from "src/product-now-mcp/product-now-mcp.service";
 import { GenerationAbortCoordinator } from "../../generationAbort.coordinator";
 import { GenerationCancelledException } from "../../generationCancelled";
 import { CardGeneratorAgent } from "../cardGeneratorAgent";
+
+const LORE_DOCUMENT_ID = "configured-lore-document";
+
+/** Configuration values the card generator reads. */
+const CONFIGURATION: Record<string, string> = {
+  PRODUCTNOW_GAMES_FOLDER_ID: "configured-games-folder",
+  PRODUCTNOW_LORE_DOCUMENT_ID: LORE_DOCUMENT_ID,
+};
+
+/**
+ * @returns A configuration stand-in with the ProductNow workspace ids set
+ */
+function configuration(): ConfigurationService {
+  return {
+    get: (key: string) => CONFIGURATION[key] ?? "",
+  } as unknown as ConfigurationService;
+}
 
 const GENERATION_ID = "4f1c0b2e-6a7d-4c8e-9f10-123456789abc";
 
@@ -70,7 +87,7 @@ describe("CardGeneratorAgent", () => {
       expect(input.tools[SUBMIT_PLAYABLE_CARD_TOOL_ID]).toBeDefined();
       expect(input.agentConfig.instructions).toContain("`consult-productnow`");
       expect(input.agentConfig.instructions).toContain(
-        "`ff1b04a0-b440-4746-9a1a-cd25fba0c32b`",
+        "read the Lore document",
       );
       expect(input.agentConfig.instructions).toContain("`generate-image`");
       expect(input.agentConfig.instructions).toContain("Watercolor on paper");
@@ -94,6 +111,7 @@ describe("CardGeneratorAgent", () => {
         agentService(runChatWithTools),
         { callTool } as unknown as ProductNowMcpService,
         idleAbort() as unknown as GenerationAbortCoordinator,
+        configuration(),
       );
       const { cardId } = await agent.query({
         generationId: GENERATION_ID,
@@ -104,7 +122,7 @@ describe("CardGeneratorAgent", () => {
 
       expect(searchArguments).toEqual([
         {
-          folderId: "e12d636b-aaa5-4b8e-b8a9-9a5b3d840dba",
+          folderId: "configured-games-folder",
           query: "Coreborn bond",
           resultType: "documents",
           searchScope: "workspace",
@@ -159,6 +177,7 @@ describe("CardGeneratorAgent", () => {
         agentService(runChatWithTools),
         { callTool } as unknown as ProductNowMcpService,
         idleAbort() as unknown as GenerationAbortCoordinator,
+        configuration(),
       );
       const { cardId } = await agent.query({
         generationId: GENERATION_ID,
@@ -193,6 +212,7 @@ describe("CardGeneratorAgent", () => {
         callTool: mock(async () => loreEnvelope()),
       } as unknown as ProductNowMcpService,
       idleAbort() as unknown as GenerationAbortCoordinator,
+      configuration(),
     );
 
     const error = await agent
@@ -251,6 +271,7 @@ describe("CardGeneratorAgent", () => {
         callTool: mock(async () => loreEnvelope()),
       } as unknown as ProductNowMcpService,
       runs,
+      configuration(),
     );
 
     const pending = agent.query({

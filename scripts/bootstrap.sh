@@ -17,10 +17,10 @@ echo "Installing dependencies..."
 bun install --frozen-lockfile
 
 echo "Building the local CLI..."
-bun run --cwd toc-cli build
+bun run --cwd resync-cli build
 
 echo "Preparing local environment variables..."
-bun run toc ensure-env
+bun run resync ensure-env
 
 echo "Preparing local HTTPS certificates..."
 mkdir -p .certs
