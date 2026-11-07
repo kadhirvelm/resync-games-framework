@@ -27,7 +27,7 @@ export const NGROK_DOMAIN_ENV_VARS: Record<keyof NgrokUrls, string> = {
  * Wildcard domain reserved once in ngrok (e.g. `dev.example.com`, reserved
  * as `*.dev.example.com`). Every developer gets their own
  * `<dev>-<tunnel>.<suffix>` hostnames under it, so any number of people can
- * run `toc dev --network` at the same time.
+ * run `resync dev --network` at the same time.
  */
 export const NGROK_DOMAIN_SUFFIX_ENV_VAR = "NGROK_DOMAIN_SUFFIX";
 
@@ -77,7 +77,7 @@ export function getNgrokDevName(
  * Public hostname for `name`. Precedence: explicit `NGROK_*_DOMAIN`, then
  * `<dev>-<label>.<NGROK_DOMAIN_SUFFIX>`, otherwise
  * `resync-game-framework-<dev>-<label>.ngrok.app`. Shell exports win over `.env`
- * so a one-off `NGROK_FRONTEND_DOMAIN=... toc dev --network` still works.
+ * so a one-off `NGROK_FRONTEND_DOMAIN=... resync dev --network` still works.
  *
  * Every tunnel is always given its own hostname: asking ngrok for a random
  * address (`url: https://`) makes it reuse the account's single dev domain,
@@ -107,7 +107,7 @@ export function getReservedNgrokDomain(
 export const DISTINCT_HOSTNAMES_HELP = [
   "A remote tester's browser loads the frontend from one hostname and calls the API on another, so each process needs its own public hostname.",
   "Custom hostnames are a paid ngrok feature; free accounts only have their single *.ngrok-free.dev dev domain, which ngrok pools every tunnel onto.",
-  "Fix: run `ngrok config add-authtoken <token>` with the team's paid account token. Hostnames default to resync-game-framework-<you>-{frontend,api}.ngrok.app; set NGROK_DOMAIN_SUFFIX or distinct NGROK_FRONTEND_DOMAIN / NGROK_BACKEND_DOMAIN to change them.",
+  "Fix: run `ngrok config add-authtoken <token>` with a paid ngrok account token. Hostnames default to resync-game-framework-<you>-{frontend,api}.ngrok.app; set NGROK_DOMAIN_SUFFIX or distinct NGROK_FRONTEND_DOMAIN / NGROK_BACKEND_DOMAIN to change them.",
 ].join("\n");
 
 /**
@@ -245,7 +245,7 @@ function writeTunnelConfig(
 }
 
 /**
- * Kills any ngrok agent left over from a previous `toc dev --network` session.
+ * Kills any ngrok agent left over from a previous `resync dev --network` session.
  * ngrok accounts are limited to a small number of concurrent agent sessions,
  * so an orphaned agent would make the next start fail.
  */

@@ -28,6 +28,7 @@ import { readPlayableCardImage } from "src/asset-classes/playable-card/readPlaya
 import type { PlayableCardDraft } from "src/asset-classes/playable-card/validatePlayableCardDraft";
 import { encodeGeneratedImageAsWebp } from "src/asset-classes/shared/encodeGeneratedImageAsWebp";
 import { writeAssetDirectoryAtomically } from "src/asset-classes/shared/writeAssetDirectoryAtomically";
+import { ConfigurationService } from "src/configuration/configuration.service";
 import {
   type ResyncGameFrameworkAgentChatResults,
   ResyncGameFrameworkAgentService,
@@ -37,6 +38,10 @@ import {
   deleteImageFiles,
   type GeneratedImage,
 } from "src/mastra/tools/generateImageTool.service";
+import {
+  type ProductNowWorkspace,
+  readProductNowWorkspace,
+} from "src/product-now-lore/productNowWorkspace";
 import { ProductNowMcpService } from "src/product-now-mcp/product-now-mcp.service";
 import { runWithProductNowSession } from "src/product-now-mcp/productNowSessionContext";
 import { GenerationAbortCoordinator } from "../generationAbort.coordinator";
@@ -108,11 +113,16 @@ export interface CardGeneratorResult {
 export class CardGeneratorAgent
   implements QueryableAgent<CardGeneratorInput, CardGeneratorResult>
 {
+  private readonly workspace: ProductNowWorkspace;
+
   public constructor(
     private readonly agents: ResyncGameFrameworkAgentService,
     private readonly productNowMcpService: ProductNowMcpService,
     private readonly generationAbort: GenerationAbortCoordinator,
-  ) {}
+    configurationService: ConfigurationService,
+  ) {
+    this.workspace = readProductNowWorkspace(configurationService);
+  }
 
   /**
    * Stops an in-flight card generation on whichever process is running it.
@@ -148,6 +158,7 @@ export class CardGeneratorAgent
               sessionId: input.sessionId,
               signal,
               state,
+              workspace: this.workspace,
             }),
             prompt: renderCardRequest(input.prompt, input.progression),
           }),

@@ -53,7 +53,7 @@ export function ensureEnvFileInSync() {
     }),
   );
 
-  // Hostname overrides for `toc dev --network`. Kept even though they are not
+  // Hostname overrides for `resync dev --network`. Kept even though they are not
   // default local values, so a developer can pin them in `.env`. Shell exports
   // still win at read time.
   const ngrokSettings: Record<string, string> = {};

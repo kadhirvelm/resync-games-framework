@@ -44,9 +44,7 @@ describe("CardCharacterAgent", () => {
           CardCharacterAgentTool.ConsultProductNow,
         ]);
         expect(input.instructions).toContain("`consult-productnow`");
-        expect(input.instructions).toContain(
-          "`ff1b04a0-b440-4746-9a1a-cd25fba0c32b`",
-        );
+        expect(input.instructions).toContain("read the Lore document");
         expect(input.instructions).toContain("`generate-image`");
         expect(input.instructions).toContain("facing right");
         expect(input.instructions).toContain("Pure white background");

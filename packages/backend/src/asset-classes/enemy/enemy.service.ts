@@ -59,26 +59,56 @@ export class EnemyService implements OnModuleInit {
   }
 
   /**
+   * Queues an enemy without holding the HTTP request open.
+   * @param payload - Creature prompt and stable generation id
+   * @returns Resolves after BullMQ accepts the job
+   */
+  public async enqueue(
+    payload: EnemyServiceApi["generate"]["payload"],
+  ): Promise<void> {
+    const input = this.prepareGeneration(payload);
+    if (!this.generationQueue) {
+      throw new InternalServerErrorException(
+        "Asset generation queue is unavailable.",
+      );
+    }
+    await this.generationQueue.enqueue("enemy", input.generationId, input);
+  }
+
+  /**
    * @param payload - Natural-language creature idea and the id that can stop it
    * @returns Newly stored enemy
    */
   public async generate(
     payload: EnemyServiceApi["generate"]["payload"],
   ): Promise<EnemyServiceApi["generate"]["response"]> {
-    const prompt = requireGenerationPrompt(
-      payload.prompt,
-      "Describe the enemy to generate.",
-    );
-    const generationId = requireGenerationId(payload.generationId);
-    const input = {
-      generationId,
-      productNowSessionId: readActiveProductNowSession(),
-      prompt,
-    };
+    const input = this.prepareGeneration(payload);
     if (this.generationQueue) {
-      return this.generationQueue.enqueueAndWait("enemy", generationId, input);
+      return this.generationQueue.enqueueAndWait(
+        "enemy",
+        input.generationId,
+        input,
+      );
     }
     return this.executeGeneration(input);
+  }
+
+  /**
+   * Validates public input and captures request-scoped lore access.
+   * @param payload - Public asset generation payload
+   * @returns Serializable worker input
+   */
+  private prepareGeneration(
+    payload: EnemyServiceApi["generate"]["payload"],
+  ): QueuedEnemy {
+    return {
+      generationId: requireGenerationId(payload.generationId),
+      productNowSessionId: readActiveProductNowSession(),
+      prompt: requireGenerationPrompt(
+        payload.prompt,
+        "Describe the enemy to generate.",
+      ),
+    };
   }
 
   /** Executes one idempotent enemy generation inside a queue worker. */

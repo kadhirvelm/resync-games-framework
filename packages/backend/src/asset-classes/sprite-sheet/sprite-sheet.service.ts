@@ -59,30 +59,60 @@ export class SpriteSheetService implements OnModuleInit {
   }
 
   /**
+   * Queues a sprite sheet without holding the HTTP request open.
+   * @param payload - Character prompt and stable generation id
+   * @returns Resolves after BullMQ accepts the job
+   */
+  public async enqueue(
+    payload: SpriteSheetServiceApi["generate"]["payload"],
+  ): Promise<void> {
+    const input = this.prepareGeneration(payload);
+    if (!this.generationQueue) {
+      throw new InternalServerErrorException(
+        "Asset generation queue is unavailable.",
+      );
+    }
+    await this.generationQueue.enqueue(
+      "sprite-sheet",
+      input.generationId,
+      input,
+    );
+  }
+
+  /**
    * @param payload - Natural-language character idea and the id that can stop it
    * @returns Newly stored sprite sheet, split into animations
    */
   public async generate(
     payload: SpriteSheetServiceApi["generate"]["payload"],
   ): Promise<SpriteSheetServiceApi["generate"]["response"]> {
-    const prompt = requireGenerationPrompt(
-      payload.prompt,
-      "Describe the character to animate.",
-    );
-    const generationId = requireGenerationId(payload.generationId);
-    const input = {
-      generationId,
-      productNowSessionId: readActiveProductNowSession(),
-      prompt,
-    };
+    const input = this.prepareGeneration(payload);
     if (this.generationQueue) {
       return this.generationQueue.enqueueAndWait(
         "sprite-sheet",
-        generationId,
+        input.generationId,
         input,
       );
     }
     return this.executeGeneration(input);
+  }
+
+  /**
+   * Validates public input and captures request-scoped lore access.
+   * @param payload - Public asset generation payload
+   * @returns Serializable worker input
+   */
+  private prepareGeneration(
+    payload: SpriteSheetServiceApi["generate"]["payload"],
+  ): QueuedSpriteSheet {
+    return {
+      generationId: requireGenerationId(payload.generationId),
+      productNowSessionId: readActiveProductNowSession(),
+      prompt: requireGenerationPrompt(
+        payload.prompt,
+        "Describe the character to animate.",
+      ),
+    };
   }
 
   /** Executes one idempotent sprite generation inside a queue worker. */

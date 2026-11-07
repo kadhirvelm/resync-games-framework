@@ -3,12 +3,12 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
 import {
   PRODUCT_NOW_GAME_ID_PATTERN,
   PRODUCT_NOW_GAME_SPACES,
-  PRODUCT_NOW_GAMES_FOLDER_ID,
   type ProductNowGameSpace,
   type ProductNowLoreDocument,
   type ProductNowLoreEditStatus,
@@ -16,6 +16,7 @@ import {
   type ProductNowLorePassage,
   type ProductNowLoreWriteResult,
 } from "@resync-game-framework/api";
+import { ConfigurationService } from "src/configuration/configuration.service";
 import { ProductNowMcpService } from "src/product-now-mcp/product-now-mcp.service";
 import { readProductNowSessionIdFromCookieHeader } from "src/product-now-mcp/productNowSessionCookie";
 import { readProductNowToolError } from "src/product-now-mcp/productNowToolResult";
@@ -28,6 +29,10 @@ import {
   parseSearchPassages,
   parseWriteResult,
 } from "./productNowLoreParsers";
+import {
+  type ProductNowWorkspace,
+  readProductNowWorkspace,
+} from "./productNowWorkspace";
 
 const MAX_SEARCH_PASSAGES = 8;
 
@@ -65,11 +70,12 @@ export interface RecordLoreEntryInput {
 /**
  * Game-scoped ProductNow lore storage.
  *
- * Every game reads and writes inside its own ProductNow folder. A registered
- * game in `PRODUCT_NOW_GAME_SPACES` may name a fixed folder. Any other game
- * gets a subfolder under the shared games folder, created on first use.
- * Methods take the ProductNow session explicitly so HTTP controllers, socket
- * gateways, and agent tools can all call them.
+ * Every game reads and writes inside its own ProductNow folder, under the
+ * games folder set by `PRODUCTNOW_GAMES_FOLDER_ID`. A registered game in
+ * `PRODUCT_NOW_GAME_SPACES` may use that folder directly. Any other game gets
+ * a subfolder there, created on first use. Methods take the ProductNow
+ * session explicitly so HTTP controllers, socket gateways, and agent tools
+ * can all call them.
  */
 @Injectable()
 export class ProductNowLoreService {
@@ -79,8 +85,14 @@ export class ProductNowLoreService {
   >();
   private readonly entryTails = new Map<string, Promise<void>>();
   private readonly createdEntryDocuments = new Map<string, string>();
+  private readonly workspace: ProductNowWorkspace;
 
-  public constructor(private readonly productNow: ProductNowMcpService) {}
+  public constructor(
+    private readonly productNow: ProductNowMcpService,
+    configurationService: ConfigurationService,
+  ) {
+    this.workspace = readProductNowWorkspace(configurationService);
+  }
 
   /**
    * Resolves the connected ProductNow session for a socket or other
@@ -373,25 +385,30 @@ export class ProductNowLoreService {
    * @param sessionId - Connected ProductNow session
    * @param gameId - Validated game id
    * @param signal - Optional cancellation signal
-   * @returns The registered folder, an existing subfolder, or a new subfolder
+   * @returns The games folder itself, an existing subfolder, or a new subfolder
+   * @throws ServiceUnavailableException when `PRODUCTNOW_GAMES_FOLDER_ID` is not set
    */
   private async lookUpGameFolder(
     sessionId: string,
     gameId: string,
     signal?: AbortSignal,
   ): Promise<ResolvedGameFolder> {
+    const gamesFolderId = this.requireGamesFolderId();
     const registered = PRODUCT_NOW_GAME_SPACES[gameId];
     const folderName = registered?.displayName ?? gameId;
-    const loreDocumentId = registered?.loreDocumentId;
-    if (registered?.folderId !== undefined) {
-      return { folderId: registered.folderId, folderName, loreDocumentId };
+    if (registered?.usesGamesFolder === true) {
+      return {
+        folderId: gamesFolderId,
+        folderName,
+        loreDocumentId: this.workspace.loreDocumentId,
+      };
     }
 
     const parent = parseFolderListing(
       await this.call(
         sessionId,
         "fetch_folder",
-        { folderId: PRODUCT_NOW_GAMES_FOLDER_ID },
+        { folderId: gamesFolderId },
         signal,
       ),
     );
@@ -399,14 +416,14 @@ export class ProductNowLoreService {
       (folder) => folder.name.trim().toLowerCase() === folderName.toLowerCase(),
     );
     if (existing !== undefined) {
-      return { folderId: existing.folderId, folderName, loreDocumentId };
+      return { folderId: existing.folderId, folderName };
     }
 
     const folderId = parseCreatedFolderId(
       await this.call(
         sessionId,
         "create_folder",
-        { name: folderName, parentFolderId: PRODUCT_NOW_GAMES_FOLDER_ID },
+        { name: folderName, parentFolderId: gamesFolderId },
         signal,
       ),
     );
@@ -415,7 +432,21 @@ export class ProductNowLoreService {
         `ProductNow did not return a folder for ${folderName}`,
       );
     }
-    return { folderId, folderName, loreDocumentId };
+    return { folderId, folderName };
+  }
+
+  /**
+   * @returns The configured ProductNow games folder
+   * @throws ServiceUnavailableException when `PRODUCTNOW_GAMES_FOLDER_ID` is not set
+   */
+  private requireGamesFolderId(): string {
+    const { gamesFolderId } = this.workspace;
+    if (gamesFolderId === undefined) {
+      throw new ServiceUnavailableException(
+        "Set PRODUCTNOW_GAMES_FOLDER_ID in .env to the ProductNow folder that holds your game lore.",
+      );
+    }
+    return gamesFolderId;
   }
 
   /**

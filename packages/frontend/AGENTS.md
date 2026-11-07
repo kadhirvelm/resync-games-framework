@@ -7,6 +7,15 @@ the background; call `waitForEdit` before reading the result. Render
 `ProductNowConnection` where a game wants a connect button. Do not call the
 ProductNow endpoints from a component directly.
 
+## Generating game assets
+
+Do not create per-game asset-generation scripts. Read the game's data
+manifests for canonical asset names, prompt tags, roles, and audio cues, then
+use the running backend's `POST /agent/assets/generations` endpoint and poll
+the returned `statusUrl`. The full payload contract and curl examples are in
+the root `AGENTS.md`. Generated GLBs, images, and audio are runtime data and
+must not be committed.
+
 ## Multiplayer game clients
 
 Games use `useMultiplayerRoom` from `src/services/multiplayer`; do not call

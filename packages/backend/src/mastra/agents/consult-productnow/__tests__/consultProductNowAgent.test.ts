@@ -11,7 +11,27 @@ import {
 import {
   CONSULT_PRODUCTNOW_AGENT_NAME,
   ConsultProductNowAgent,
+  renderConsultProductNowInstructions,
 } from "../consultProductNowAgent";
+
+describe("renderConsultProductNowInstructions", () => {
+  test("scopes lore search to the configured folder and Lore document", () => {
+    const instructions = renderConsultProductNowInstructions({
+      gamesFolderId: "games-folder",
+      loreDocumentId: "lore-document",
+    });
+
+    expect(instructions).toContain('folderId "games-folder"');
+    expect(instructions).toContain('The Lore document id is "lore-document".');
+  });
+
+  test("searches the whole workspace for a document named Lore when nothing is configured", () => {
+    const instructions = renderConsultProductNowInstructions({});
+
+    expect(instructions).not.toContain("folderId");
+    expect(instructions).toContain('The canon is the document named "Lore".');
+  });
+});
 
 describe("ConsultProductNowAgent", () => {
   test("loads ProductNow read tools and calls them with the browser session", async () => {

@@ -1,8 +1,4 @@
-import {
-  type PlayableCardKind,
-  PRODUCT_NOW_GAMES_FOLDER_ID,
-  PRODUCT_NOW_TOWER_LORE_DOCUMENT_ID,
-} from "@resync-game-framework/api";
+import type { PlayableCardKind } from "@resync-game-framework/api";
 import type { ImageGenerationConfig } from "src/model/types/modelRequestTypes";
 
 export {
@@ -11,17 +7,6 @@ export {
   PLAYABLE_CARD_CHAIN_KINDS,
   PLAYABLE_CARD_KINDS,
 } from "@resync-game-framework/api";
-
-/**
- * ProductNow document "Lore" in the Card game thing folder.
- * Generation searches this document and ignores other search hits.
- */
-export const LORE_DOCUMENT_ID = PRODUCT_NOW_TOWER_LORE_DOCUMENT_ID;
-
-/**
- * ProductNow folder that holds the Lore document and the Towers of Coreborn design doc.
- */
-export const CARD_GAME_FOLDER_ID = PRODUCT_NOW_GAMES_FOLDER_ID;
 
 /** Portrait ratio the generate-image tool must use for card art. */
 export const PLAYABLE_CARD_IMAGE_CONFIG: ImageGenerationConfig = {

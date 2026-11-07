@@ -30,7 +30,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Build CLI package
-        run: cd toc-cli && bun run build && bun install
+        run: cd resync-cli && bun run build && bun install
 
       - name: Lint
         run: bun run lint
@@ -50,7 +50,7 @@ jobs:
         run: bun install --frozen-lockfile
       
       - name: Build CLI package
-        run: cd toc-cli && bun run build && bun install
+        run: cd resync-cli && bun run build && bun install
 
       - name: Typecheck
         run: bun run check
@@ -59,7 +59,7 @@ jobs:
     name: tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Credentials match toc-cli/src/constants/database.ts.
+    # Credentials match resync-cli/src/constants/database.ts.
     env:
       DATABASE_HOST_URL: postgresql://postgres:test-database@localhost:5432/test?schema=public
     services:
@@ -87,13 +87,13 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Build CLI package
-        run: cd toc-cli && bun run build && bun install
+        run: cd resync-cli && bun run build && bun install
 
       - name: Build packages the tests import
         run: bunx turbo run build --filter=@resync-game-framework/api --filter=@resync-game-framework/database
 
       - name: Prepare environment file
-        run: bun run toc ensure-env
+        run: bun run resync ensure-env
 
       - name: Test
         run: bun run test

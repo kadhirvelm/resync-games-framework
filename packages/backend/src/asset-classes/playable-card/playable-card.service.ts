@@ -59,6 +59,29 @@ export class PlayableCardService implements OnModuleInit {
   }
 
   /**
+   * Queues a lore-backed card without holding the HTTP request open.
+   * @param payload - Card prompt and stable generation id
+   * @param sessionId - Connected ProductNow browser session
+   * @returns Resolves after BullMQ accepts the job
+   */
+  public async enqueue(
+    payload: PlayableCardServiceApi["generate"]["payload"],
+    sessionId: string,
+  ): Promise<void> {
+    const input = this.prepareGeneration(payload, sessionId);
+    if (!this.generationQueue) {
+      throw new InternalServerErrorException(
+        "Asset generation queue is unavailable.",
+      );
+    }
+    await this.generationQueue.enqueue(
+      "playable-card",
+      input.generationId,
+      input,
+    );
+  }
+
+  /**
    * Searches the Lore document, writes a card, and returns the stored asset.
    * @param payload - Natural-language description of the card and the id that can stop it
    * @param sessionId - Browser session that holds the ProductNow connection
@@ -71,20 +94,35 @@ export class PlayableCardService implements OnModuleInit {
     payload: PlayableCardServiceApi["generate"]["payload"],
     sessionId: string,
   ): Promise<PlayableCardServiceApi["generate"]["response"]> {
-    const prompt = requireGenerationPrompt(
-      payload.prompt,
-      "Describe the card to generate.",
-    );
-    const generationId = requireGenerationId(payload.generationId);
-    const input = { generationId, prompt, sessionId };
+    const input = this.prepareGeneration(payload, sessionId);
     if (this.generationQueue) {
       return this.generationQueue.enqueueAndWait(
         "playable-card",
-        generationId,
+        input.generationId,
         input,
       );
     }
     return this.executeGeneration(input);
+  }
+
+  /**
+   * Validates public input and captures the required lore session.
+   * @param payload - Public asset generation payload
+   * @param sessionId - Connected ProductNow browser session
+   * @returns Serializable worker input
+   */
+  private prepareGeneration(
+    payload: PlayableCardServiceApi["generate"]["payload"],
+    sessionId: string,
+  ): QueuedPlayableCard {
+    return {
+      generationId: requireGenerationId(payload.generationId),
+      prompt: requireGenerationPrompt(
+        payload.prompt,
+        "Describe the card to generate.",
+      ),
+      sessionId,
+    };
   }
 
   /** Executes one idempotent playable-card generation inside a queue worker. */

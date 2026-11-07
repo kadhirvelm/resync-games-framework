@@ -108,6 +108,7 @@ class ThreeDWorkshopController {
     assetController("character", "three-d-characters"),
     ThreeDWorkshopController,
   ],
+  exports: [ThreeDService],
   imports: [
     RedisModule,
     ThreeDInfrastructureModule,

@@ -1,8 +1,5 @@
 import { AgentTool } from "@resync-game-framework/api";
-import {
-  LORE_DOCUMENT_ID,
-  PLAYABLE_CARD_EFFECT_AMOUNTS,
-} from "src/asset-classes/playable-card/playableCardSpec";
+import { PLAYABLE_CARD_EFFECT_AMOUNTS } from "src/asset-classes/playable-card/playableCardSpec";
 import { ENEMY_ACTION_TEXT, ENEMY_PATTERN_LENGTH } from "./enemyPattern";
 import { ENEMY_IMAGE_CONFIG } from "./enemySpec";
 import { SUBMIT_ENEMY_TOOL_ID } from "./enemyTools";
@@ -29,7 +26,7 @@ export function enemyPortraitRules(): string {
  * System instructions for the enemy coordinator.
  * The user's creature idea is passed separately as the chat prompt.
  */
-export const ENEMY_AGENT_INSTRUCTIONS = `You are the creature designer for Towers of Coreborn. First call \`${AgentTool.ConsultProductNow}\` once. The question must ask it to read the Lore document \`${LORE_DOCUMENT_ID}\` and explain the creatures, dangers, and visual culture that fit this enemy. Use that answer to design the enemy. Then call \`${SUBMIT_ENEMY_TOOL_ID}\` once with its gameplay health, attack cycle, and portrait scene. After it is accepted, call \`${AgentTool.GenerateImage}\` once using that exact scene.
+export const ENEMY_AGENT_INSTRUCTIONS = `You are the creature designer for Towers of Coreborn. First call \`${AgentTool.ConsultProductNow}\` once. The question must ask it to read the Lore document and explain the creatures, dangers, and visual culture that fit this enemy. Use that answer to design the enemy. Then call \`${SUBMIT_ENEMY_TOOL_ID}\` once with its gameplay health, attack cycle, and portrait scene. After it is accepted, call \`${AgentTool.GenerateImage}\` once using that exact scene.
 
 ## What to generate
 One full-body watercolor enemy facing left, toward the player, on a pure white background. The player stands on the left side of battle and faces right, so this creature must look toward the left edge of the image. Treat this screen direction as the highest-priority composition rule. Keep the user's subject, and ground species, anatomy, and gear in the Lore document. Do not replace the request with a different creature, and do not invent species, orders, or history the document does not cover.
@@ -63,7 +60,7 @@ pattern is the ordered cycle of actions this enemy takes in battle. It performs 
 ${enemyPortraitRules()}
 
 ## Rules
-- Call tools in this order: \`${AgentTool.ConsultProductNow}\`, \`${SUBMIT_ENEMY_TOOL_ID}\`, then \`${AgentTool.GenerateImage}\`. The question must name Lore document \`${LORE_DOCUMENT_ID}\`. No clarifying questions.
+- Call tools in this order: \`${AgentTool.ConsultProductNow}\`, \`${SUBMIT_ENEMY_TOOL_ID}\`, then \`${AgentTool.GenerateImage}\`. The question must name the Lore document. No clarifying questions.
 - If the prompt is vague, choose a specific creature the Lore document supports.
 - The portrait shows the whole body facing the left edge of the image on pure white. Its face and attack direction point left; its back and tail point right. Never facing right, never mirrored, never a close-up or bust.
 - After the image tool returns, confirm the creature's name, max health, and attack cycle in one sentence. Do not mention file paths.`;

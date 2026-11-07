@@ -19,7 +19,7 @@ export const DEFAULT_LOCAL_ENV_VALUES: Record<string, string> = {
   GEMINI_CREDENTIALS: "replace-with-local-credentials",
   // Keep identical to LOCAL_MCP_OAUTH_ENCRYPTION_KEY in the backend configuration service.
   MCP_OAUTH_ENCRYPTION_KEY: "yw13/hsuCffB/07HoMSLPJ4y1CdwEWFxSvqAn1/PlYA=",
-  // Optional detailed-model provider; preserve it when toc rewrites .env.
+  // Optional detailed-model provider; preserve it when resync rewrites .env.
   MESHY_API_KEY: "",
   NODE_ENV: "development",
   OPENAI_API_KEY: "replace-with-local-credentials",
@@ -27,6 +27,10 @@ export const DEFAULT_LOCAL_ENV_VALUES: Record<string, string> = {
   OPENOBSERVE_ROOT_USER_PASSWORD: "LocalOpenObserve1!",
   POSTGRES_PASSWORD: defaultPostgresPassword,
   PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION: "yes",
+  // Optional ProductNow folder that holds each game's lore folder.
+  PRODUCTNOW_GAMES_FOLDER_ID: "",
+  // Optional ProductNow document Towers of Coreborn reads as its canon.
+  PRODUCTNOW_LORE_DOCUMENT_ID: "",
   PUBLIC_ASSETS_ROOT: "",
   PUBLIC_URL: "",
   REDIS_HOST: "localhost",

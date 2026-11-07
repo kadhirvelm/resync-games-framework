@@ -51,8 +51,8 @@
     "lint:fix": "biome check --fix",
     "serve": "bun dist/runtimes/main.js",
     "start": "nest start --entryFile runtimes/main.js",
-    "test": "bun run toc run-tests backend",
-    "test:coverage": "bun run toc run-tests backend -- --coverage",
+    "test": "bun run resync run-tests backend",
+    "test:coverage": "bun run resync run-tests backend -- --coverage",
     "worker": "nest start --entryFile runtimes/generation-worker.js",
     "worker:serve": "bun dist/runtimes/generation-worker.js"
   },

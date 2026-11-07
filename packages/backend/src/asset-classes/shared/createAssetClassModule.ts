@@ -26,6 +26,7 @@ export function createAssetClassModule(options: AssetClassModuleOptions): Type {
 
   @Module({
     controllers: [options.controller],
+    exports: options.providers,
     imports: [ModelModule, MastraModule, ...extraImports],
     providers: options.providers,
   })

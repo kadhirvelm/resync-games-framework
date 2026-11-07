@@ -10,6 +10,23 @@ bun run dev
 
 The backend listens on `https://localhost:8080`.
 
+## Agent asset generation API
+
+Coding agents can queue any asset class without holding a request open:
+
+```bash
+curl --cacert ../../.certs/localhost.pem \
+  -H 'Content-Type: application/json' \
+  -d '{"assetClass":"three-d-prop","prompt":"A low-poly crystal beacon","provider":"design","useLore":false}' \
+  https://localhost:8080/agent/assets/generations
+```
+
+The HTTP 202 response contains a `jobId` and relative `statusUrl`. Poll that
+URL with GET until its `status` is `completed` or `failed`. A completed status
+contains the generated asset in `result`; a failure contains `error`. See the
+root `AGENTS.md` for every asset class, optional payload field, and the workflow
+for generating a game's roster from its source manifests.
+
 ## Logging
 
 The backend writes structured logs with Pino. Development logs are
@@ -37,6 +54,10 @@ Environment:
   this is unset, so ProductNow sessions survive backend restarts. Production
   must set its own key.
 - `PRODUCTNOW_MCP_URL`: defaults to `https://api.productnow-prod.com/mcp`.
+- `PRODUCTNOW_GAMES_FOLDER_ID`: the ProductNow folder that holds game lore.
+  Lore storage refuses to run until it is set.
+- `PRODUCTNOW_LORE_DOCUMENT_ID`: optional canon document for Towers of
+  Coreborn. Without it, agents look for a document named "Lore".
 
 OAuth tokens, PKCE verifiers, and state are stored per browser in Redis,
 encrypted with AES-256-GCM. The browser only holds an opaque HttpOnly session

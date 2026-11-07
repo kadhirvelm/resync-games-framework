@@ -10,9 +10,9 @@ const LOCAL_FRONTEND_URL = "https://localhost:3000";
 
 /**
  * URL the browser should open. Live tunnel URLs win; otherwise `FRONTEND_URL`
- * from the root `.env` (what `toc dev --network` wrote); otherwise localhost.
+ * from the root `.env` (what `resync dev --network` wrote); otherwise localhost.
  *
- * @param ngrokUrls - Tunnels from the current `toc dev --network` process.
+ * @param ngrokUrls - Tunnels from the current `resync dev --network` process.
  * @param configuredFrontendUrl - `FRONTEND_URL` already stored in `.env`.
  * @returns Absolute URL to pass to the OS opener.
  */
@@ -76,8 +76,8 @@ async function checkFrontend(url: string) {
  * Waits for the local frontend to accept connections, then opens it in the
  * default browser. With ngrok URLs, readiness is still checked against
  * localhost (the tunnel edge answers before the app is up) but the public URL
- * is what gets opened and re-printed for sharing. `toc open` on its own reads
- * `FRONTEND_URL` from `.env`, which `toc dev --network` points at the tunnel.
+ * is what gets opened and re-printed for sharing. `resync open` on its own reads
+ * `FRONTEND_URL` from `.env`, which `resync dev --network` points at the tunnel.
  *
  * These are exec instead of execSync because we don't want to block the main thread.
  */

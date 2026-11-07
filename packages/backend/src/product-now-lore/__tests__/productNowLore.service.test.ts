@@ -1,6 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { PRODUCT_NOW_GAMES_FOLDER_ID } from "@resync-game-framework/api";
 import { ProductNowLoreService } from "../product-now-lore.service";
+
+const PRODUCT_NOW_GAMES_FOLDER_ID = "configured-games-folder";
+
+/**
+ * @param gamesFolderId - Value for `PRODUCTNOW_GAMES_FOLDER_ID`
+ * @returns A configuration stand-in with only the games folder set
+ */
+function configuration(gamesFolderId = PRODUCT_NOW_GAMES_FOLDER_ID) {
+  const values: Record<string, string> = {
+    PRODUCTNOW_GAMES_FOLDER_ID: gamesFolderId,
+  };
+  return { get: (key: string) => values[key] ?? "" } as never;
+}
 
 /** One scripted ProductNow tool response. */
 type ToolHandler = (args: Record<string, unknown>) => unknown;
@@ -10,7 +22,10 @@ type ToolHandler = (args: Record<string, unknown>) => unknown;
  * @param handlers - Responses keyed by ProductNow tool name
  * @returns The service and the calls it made
  */
-function createService(handlers: Record<string, ToolHandler>) {
+function createService(
+  handlers: Record<string, ToolHandler>,
+  gamesFolderId = PRODUCT_NOW_GAMES_FOLDER_ID,
+) {
   const calls: { args: Record<string, unknown>; name: string }[] = [];
   const productNow = {
     callTool: async (
@@ -30,7 +45,10 @@ function createService(handlers: Record<string, ToolHandler>) {
   };
   return {
     calls,
-    service: new ProductNowLoreService(productNow as never),
+    service: new ProductNowLoreService(
+      productNow as never,
+      configuration(gamesFolderId),
+    ),
   };
 }
 
@@ -120,7 +138,7 @@ describe("ProductNowLoreService", () => {
             folders: folderCreated
               ? [{ folderId: "tide-folder", name: "tide-cards" }]
               : [],
-            name: "Card game thing",
+            name: "Games",
           };
         }
         return {
@@ -157,6 +175,15 @@ describe("ProductNowLoreService", () => {
     );
   });
 
+  test("asks for PRODUCTNOW_GAMES_FOLDER_ID before calling ProductNow", async () => {
+    const { calls, service } = createService({}, "");
+
+    await expect(
+      service.search("session", "towers-of-coreborn", "first bond"),
+    ).rejects.toThrow("Set PRODUCTNOW_GAMES_FOLDER_ID");
+    expect(calls).toEqual([]);
+  });
+
   test("rejects a game id that is not a slug", async () => {
     const { service } = createService({});
 
@@ -178,7 +205,10 @@ describe("ProductNowLoreService", () => {
     const productNow = {
       resolveConnectedSessionId: async () => undefined,
     };
-    const service = new ProductNowLoreService(productNow as never);
+    const service = new ProductNowLoreService(
+      productNow as never,
+      configuration(),
+    );
 
     await expect(service.requireSession(undefined)).rejects.toThrow(
       "Connect ProductNow first",

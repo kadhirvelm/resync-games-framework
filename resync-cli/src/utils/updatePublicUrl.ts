@@ -26,7 +26,7 @@ function isCliManagedNgrokUrl(
 
 /**
  * A backend URL the developer pointed somewhere other than this machine.
- * Preserved across `toc dev` runs so the frontend can target a remote API.
+ * Preserved across `resync dev` runs so the frontend can target a remote API.
  * CLI-managed ngrok hostnames are not deliberate — they die with the process.
  */
 function isDeliberateBackendUrl(

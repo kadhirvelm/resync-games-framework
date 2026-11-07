@@ -1,16 +1,5 @@
 import type { Service, ServiceDefinition } from "../genericTypes/service";
 
-/**
- * ProductNow folder that holds the Towers of Coreborn design doc and Lore.
- * Games without their own registered folder get a subfolder here.
- */
-export const PRODUCT_NOW_GAMES_FOLDER_ID =
-  "e12d636b-aaa5-4b8e-b8a9-9a5b3d840dba";
-
-/** ProductNow document "Lore", the canon for Towers of Coreborn. */
-export const PRODUCT_NOW_TOWER_LORE_DOCUMENT_ID =
-  "ff1b04a0-b440-4746-9a1a-cd25fba0c32b";
-
 /** Lowercase slug a game uses to address its ProductNow lore space. */
 export const PRODUCT_NOW_GAME_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
 
@@ -18,15 +7,18 @@ export const PRODUCT_NOW_GAME_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
 export interface ProductNowGameSpaceDefinition {
   /** Folder name, also used to find or create the folder */
   displayName: string;
-  /** Fixed folder. Without one, the backend finds or creates a subfolder */
-  folderId?: string;
-  /** Canon document a game reads first, when it has one */
-  loreDocumentId?: string;
+  /**
+   * When true, the game files lore directly in the backend's configured
+   * games folder (`PRODUCTNOW_GAMES_FOLDER_ID`) and reads the configured
+   * Lore document (`PRODUCTNOW_LORE_DOCUMENT_ID`) as its canon. Otherwise
+   * the backend finds or creates a subfolder named `displayName`.
+   */
+  usesGamesFolder?: boolean;
 }
 
 /**
  * Registered game spaces. Any other valid game id gets a subfolder named
- * after the id under {@link PRODUCT_NOW_GAMES_FOLDER_ID}.
+ * after the id under the backend's configured games folder.
  */
 export const PRODUCT_NOW_GAME_SPACES: Readonly<
   Record<string, ProductNowGameSpaceDefinition>
@@ -34,8 +26,7 @@ export const PRODUCT_NOW_GAME_SPACES: Readonly<
   "three-d-sandbox": { displayName: "3D Sandbox" },
   "towers-of-coreborn": {
     displayName: "Towers of Coreborn",
-    folderId: PRODUCT_NOW_GAMES_FOLDER_ID,
-    loreDocumentId: PRODUCT_NOW_TOWER_LORE_DOCUMENT_ID,
+    usesGamesFolder: true,
   },
 };
 

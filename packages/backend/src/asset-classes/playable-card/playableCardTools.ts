@@ -5,11 +5,11 @@ import {
   type PlayableCardLoreSource,
 } from "@resync-game-framework/api";
 import { throwIfAborted } from "src/mastra/agents/generationCancelled";
+import type { ProductNowWorkspace } from "src/product-now-lore/productNowWorkspace";
 import { ProductNowMcpService } from "src/product-now-mcp/product-now-mcp.service";
 import { z } from "zod";
 import { type CardProgression, strongerCardError } from "./cardProgression";
 import { parseLoreSearchResult } from "./parseLoreSearchResult";
-import { CARD_GAME_FOLDER_ID } from "./playableCardSpec";
 import {
   type PlayableCardDraft,
   validatePlayableCardDraft,
@@ -98,7 +98,7 @@ const submitOutputSchema = z.object({
  * Lore search and card submission for one card-generator run.
  * These close over the browser's ProductNow session, so they are built per query
  * and passed beside the shared generate-image tool.
- * @param params - Session, the state the tools fill in, and the signal that stops the run
+ * @param params - Session, configured ProductNow workspace, the state the tools fill in, and the signal that stops the run
  * @returns Mastra tools keyed by the id the model calls
  */
 export function createPlayableCardResearchTools(params: {
@@ -107,6 +107,7 @@ export function createPlayableCardResearchTools(params: {
   sessionId: string;
   signal: AbortSignal;
   state: PlayableCardResearchState;
+  workspace: ProductNowWorkspace;
 }) {
   return {
     [SEARCH_LORE_TOOL_ID]: createTool({
@@ -133,7 +134,7 @@ export function createPlayableCardResearchTools(params: {
 /**
  * Searches ProductNow and keeps only Lore-document passages.
  * @param input - The model's search query
- * @param params - Session, collected passages, and the abort signal
+ * @param params - Session, configured workspace, collected passages, and the abort signal
  * @returns Text the model should read next
  */
 async function searchLore(
@@ -143,6 +144,7 @@ async function searchLore(
     sessionId: string;
     signal: AbortSignal;
     state: PlayableCardResearchState;
+    workspace: ProductNowWorkspace;
   },
 ): Promise<{ message: string }> {
   throwIfAborted(params.signal);
@@ -155,7 +157,9 @@ async function searchLore(
     params.sessionId,
     "search",
     {
-      folderId: CARD_GAME_FOLDER_ID,
+      ...(params.workspace.gamesFolderId === undefined
+        ? {}
+        : { folderId: params.workspace.gamesFolderId }),
       query,
       resultType: "documents",
       searchScope: "workspace",
@@ -163,7 +167,7 @@ async function searchLore(
     params.signal,
   );
   throwIfAborted(params.signal);
-  const hits = parseLoreSearchResult(raw);
+  const hits = parseLoreSearchResult(raw, params.workspace.loreDocumentId);
   for (const hit of hits) {
     const alreadyKept = params.state.loreSources.some(
       (source) => source.excerpt === hit.excerpt,

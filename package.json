@@ -16,14 +16,12 @@
   "packageManager": "bun@1.4.2",
   "private": true,
   "scripts": {
-    "assets:descent": "bun run scripts/generate-descent-assets.ts",
-    "assets:descent:audio": "bun run scripts/generate-descent-audio.ts",
     "build": "turbo run build",
     "check": "turbo run check",
     "ci": "turbo run ci",
-    "dev": "bun install && bun run toc dev",
+    "dev": "bun install && bun run resync dev",
     "lint": "turbo run lint",
-    "test": "bun run toc run-tests all"
+    "test": "bun run resync run-tests all"
   },
   "trustedDependencies": [
     "@prisma/engines",
@@ -31,7 +29,7 @@
     "prisma"
   ],
   "workspaces": [
-    "toc-cli",
+    "resync-cli",
     "packages/*"
   ]
 }

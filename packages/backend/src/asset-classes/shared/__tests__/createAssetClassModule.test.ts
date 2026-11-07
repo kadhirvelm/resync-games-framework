@@ -12,10 +12,12 @@ describe("createAssetClassModule", () => {
 
   class ExampleController {}
 
+  class ExampleService {}
+
   const assetClassModule = createAssetClassModule({
     controller: ExampleController,
     extraImports: [ExtraModule],
-    providers: [class ExampleService {}],
+    providers: [ExampleService],
   });
 
   test("imports the model and agent modules plus any extras", () => {
@@ -25,6 +27,9 @@ describe("createAssetClassModule", () => {
     expect(
       Reflect.getMetadata(MODULE_METADATA.CONTROLLERS, assetClassModule),
     ).toEqual([ExampleController]);
+    expect(
+      Reflect.getMetadata(MODULE_METADATA.EXPORTS, assetClassModule),
+    ).toEqual([ExampleService]);
     expect(assetClassModule.name).toBe("ExampleModule");
   });
 });

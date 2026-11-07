@@ -9,13 +9,13 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { AgentTool, type ProductNowMcpTool } from "@resync-game-framework/api";
-import {
-  CARD_GAME_FOLDER_ID,
-  LORE_DOCUMENT_ID,
-} from "src/asset-classes/playable-card/playableCardSpec";
 import { ConfigurationService } from "src/configuration/configuration.service";
 import { ResyncGameFrameworkAgent } from "src/mastra/shared/resyncGameFrameworkAgent";
 import { resolveModelConfig } from "src/mastra/shared/resyncGameFrameworkAgentModels";
+import {
+  type ProductNowWorkspace,
+  readProductNowWorkspace,
+} from "src/product-now-lore/productNowWorkspace";
 import { ProductNowMcpService } from "src/product-now-mcp/product-now-mcp.service";
 import { readProductNowSessionForTool } from "src/product-now-mcp/productNowSessionContext";
 import { z } from "zod";
@@ -88,7 +88,9 @@ export class ConsultProductNowAgent {
       description:
         "Research one question about the Spire, the Reach, or other lore in ProductNow. Answer from the documents those tools return. If ProductNow is not connected, say so.",
       id: "consult-productnow-agent",
-      instructions: renderConsultProductNowInstructions(),
+      instructions: renderConsultProductNowInstructions(
+        readProductNowWorkspace(configurationService),
+      ),
       maxSteps: MAX_CONSULT_PRODUCTNOW_STEPS,
       model: resolveModelConfig(
         [{ model: CONSULT_PRODUCTNOW_MODEL }],
@@ -223,16 +225,36 @@ export class ConsultProductNowAgent {
 /**
  * Instructions for the ProductNow research subagent.
  * Flavor and room layout have to come from ProductNow, not from memory.
+ * @param workspace - Configured games folder and Lore document, when set
  * @returns System instructions for one research run
  */
-function renderConsultProductNowInstructions(): string {
+export function renderConsultProductNowInstructions(
+  workspace: ProductNowWorkspace,
+): string {
   return [
     "You answer one question about Towers of Coreborn: the Spire, the Reach, its floors, people, orders, and history.",
     "Use the ProductNow tools. Search before you answer. You may search and fetch several times.",
-    `For lore, search with folderId "${CARD_GAME_FOLDER_ID}", searchScope "workspace", and resultType "documents". The Lore document id is "${LORE_DOCUMENT_ID}". Fetch that document when the excerpts are not enough.`,
+    renderLoreSearchInstruction(workspace),
     "Answer in your final message. Use names, floors, and events the tools returned.",
     "If nothing matches, say that the documents do not cover it. Do not invent floors, names, or history.",
   ].join("\n");
+}
+
+/**
+ * Tells the research subagent where the Lore lives.
+ * @param workspace - Configured games folder and Lore document, when set
+ * @returns One instruction line scoped to whichever ids are configured
+ */
+function renderLoreSearchInstruction(workspace: ProductNowWorkspace): string {
+  const folderScope =
+    workspace.gamesFolderId === undefined
+      ? ""
+      : `folderId "${workspace.gamesFolderId}", `;
+  const loreDocument =
+    workspace.loreDocumentId === undefined
+      ? 'The canon is the document named "Lore".'
+      : `The Lore document id is "${workspace.loreDocumentId}".`;
+  return `For lore, search with ${folderScope}searchScope "workspace", and resultType "documents". ${loreDocument} Fetch that document when the excerpts are not enough.`;
 }
 
 /**

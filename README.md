@@ -1,135 +1,191 @@
 # Resync Game Framework
 
-A framework for building games from a living creative workspace.
+A framework for exploring game concepts. Start by writing down what you want, then let coding agents lose to bring it to life.
 
-The idea is to write a world's lore, environments, characters, tone, and
-other creative direction as living documents, then load that world into a
-playable game. Towers of Coreborn (`towers-of-coreborn`) is the cards game
-in this repository: a deck-building roguelike.
+I've been building random web games for a decade or something. Wanted to bring all those lessons and techniques I've learned over the years into one repo so I can try lots of game concepts out in the most token efficient way possible. Open sourcing it in case anyone else finds it fun!
 
-Rather than treating a game's setting as a pile of static files, those
-documents act as the source of truth for the world. The game can then turn
-that material into encounters, cards, characters, art, and other playable
-content.
+The framework gives agents the tools they need to put web games together. It supports 2D games and 3D games, complete with all the asset generation pipelines. It also includes all the tools needed to support persistent backends, database storage, websockets for multiplayer, and registration to hook up MCP to any external system.
 
-## Status
+**Disclosure: this is a prototyping framework, not a way to publish games.** Use it to try out game concepts quickly, play them, and share them with friends. This is designed exclusively for local development. There are no accounts, no access control, and no production hosting setup, and the example games are rough prototypes rather than finished products. If a concept works, take what you learned and build the real game elsewhere.
 
-This is an early work in progress. The content pipeline, asset generation, and
-game itself are still being explored.
+## My development flow
 
-## Project structure
+1. **Write the world.** My game concept specs live in [ProductNow](https://app.productnow.ai). You can always use markdown here in the repo instead, I just prefer a proper doc editor, especially if I'm trying to collaborate with someone else.
+2. **Pull the specs down** Then I hook up my coding harness to it via MCP and let it lose to implement. Theoretically you could hook a game up to it at runtime, though still exploring what's possible with that. Maybe fun for a living lore repository that you can contribute to easily?
+2. **Generate assets.** The **Blueprint Workshop** (`/assets`) lists every asset type: battle rooms, character portraits, enemies, sprite sheets, cards, icons and textures, audio, 3D models, and whole dungeon packages. Each type runs a dedicated agent. The agent reads the lore, then calls shared tools that paint images, render audio, or build 3D models. Should be easily extensible for your needs.
+3. **Play.** Each game loads the generated assets. When an asset is missing, it uses a built-in stand-in, so every game is playable before anything is generated.
 
-This is a Bun and TypeScript monorepo:
+Generation runs on a job queue, so you can refresh the page or cancel a run without losing track of it. Agents have all the instructions they need to trigger the generation while you're running the framework.
 
-- `packages/frontend` — Next.js frontend and game client
-- `packages/backend` — NestJS API and generation services
-- `packages/api` — shared API types and service contracts
-- `packages/database` — Prisma schema and database package
-- `toc-cli` — local development tooling
+## Setup
 
-## Game experiences
-
-The home route is an experience selector rather than a single game entry
-point. Each registered experience is loaded only after it is selected:
-
-- **Towers of Coreborn** keeps the existing two-dimensional climb, local saves,
-  and Phaser battle renderer unchanged.
-- **3D Sandbox** is an isolated, client-only Babylon.js prototype with its own
-  disposable engine and scene. It loads validated generated/imported GLBs from
-  the Blueprint Workshop and keeps stand-ins for unavailable models.
-- **Descent** mounts the deterministic Ashen Gate vertical slice: gather, build,
-  train Wardens, cultivate one Sworn, survive Cinderjaw, and finish on a slice
-  victory screen. Its Babylon.js RTS battlefield uses the shared generated 3D
-  assets and remains playable with procedural stand-ins. It saves the active
-  run in browser local storage. Later layers, heroes, Calamities, and
-  Tribulation are not mounted yet.
-
-Experience metadata and lazy entry components live in
-`packages/frontend/src/components/game-experiences/`. Shared 3D sandbox code
-lives in `packages/frontend/src/components/babylonGame/`; Descent keeps its RTS
-adapter beside its own views. Selecting or returning from one experience never
-mounts Phaser and Babylon in the same scene.
-
-## Local development
-
-For the 3D authoring and playable-prototype workflow, see
-[Building 3D games in the Blueprint Workshop](docs/3d-workshop.md). Start with
-**Try a complete demo** under the workshop's **3D models** entry. That demo
-makes no model calls.
-
-### Credentials
-
-`./scripts/bootstrap.sh` writes these into `.env`. The backend will not start
-until the required ones are present. The bootstrap placeholders are enough to
-boot; a generation that calls a provider fails until that value is a real
-credential.
-
-| Variable | Required | Used for |
-| --- | --- | --- |
-| `ANTHROPIC_API_KEY` | Yes | Claude text and agent fallbacks |
-| `OPENAI_API_KEY` | Yes | OpenAI text and image generation |
-| `GEMINI_CREDENTIALS` | Yes | Google service-account JSON for Vertex AI. Gemini agents and image generation read it. |
-| `ELEVENLABS_API_KEY` | No | Sound effects, room ambience, and instrumental music. Leave it empty to skip audio generation. |
-| `MESHY_API_KEY` | No | Textured 3D props and environments. Low-poly generation uses the credentials above. |
-
-`MCP_OAUTH_ENCRYPTION_KEY` encrypts ProductNow tokens. It is not a vendor key.
-Local development has a default; production must set its own 32 random bytes,
-base64-encoded.
-
-Prerequisites:
+### Prerequisites
 
 - [Bun](https://bun.sh/)
 - [Docker](https://www.docker.com/)
 - [mkcert](https://github.com/FiloSottile/mkcert)
+- [ngrok](https://ngrok.com/download) (optional, paid plan): needed to connect an external MCP server such as ProductNow, or to share your games with friends. See [Connecting external MCP servers](#connecting-external-mcp-servers) and [Sharing games with friends](#sharing-games-with-friends).
 
-Run the initial setup:
+### Quickstart
+
+Run the initial setup, then start the stack:
 
 ```bash
 ./scripts/bootstrap.sh
-```
-
-Then start the development environment:
-
-```bash
 bun run dev
 ```
 
-Generate the local, deterministic Ashen Gate GLB roster after the backend is
-running. This uses the built-in structured-design compiler and no paid model
-provider credits:
+- `./scripts/bootstrap.sh` installs dependencies, builds the local CLI, initializes `.env` with local defaults, sets up local HTTPS certificates, and builds the monorepo packages.
+- `bun run dev` starts Postgres, Redis, and observability tools in Docker, applies database migrations, and serves the frontend at https://localhost:3000 and backend API at https://localhost:8080.
+
+### API Keys and Configuration
+
+**You do not need any real API keys just to explore or play the games.** All games include built-in fallback assets and procedural logic, and `./scripts/bootstrap.sh` populates `.env` with placeholder credentials so the backend boots cleanly out-of-the-box.
+
+However, once you want to generate new assets (in the Blueprint Workshop at `/assets` or via CLI scripts), you will need to add valid API keys to your `.env` file.
+
+#### Summary of API Keys
+
+| Variable | Required? | Provider / Service | What It Powers |
+| --- | --- | --- | --- |
+| `ANTHROPIC_API_KEY` | **Required** (for asset generation) | [Anthropic Claude](https://console.anthropic.com/) | Powers Mastra agent reasoning, planning, and multi-step pipeline orchestration. |
+| `OPENAI_API_KEY` | **Required** (for asset generation) | [OpenAI](https://platform.openai.com/) | Used for text tasks and image generation (character portraits, rooms, sprite sheets, enemies, and icons). |
+| `GEMINI_CREDENTIALS` | **Required** (for asset generation) | [Google Cloud Vertex AI](https://cloud.google.com/vertex-ai) | Service-account JSON string or path to credentials file; powers Gemini agents and Vertex AI image painting. |
+| `ELEVENLABS_API_KEY` | **Optional** | [ElevenLabs](https://elevenlabs.io/) | AI-generated sound effects, ambient room loops, and instrumental music beds. If omitted, audio generation is skipped and games use built-in synthesized sound cues. |
+| `MESHY_API_KEY` | **Optional** | [Meshy](https://www.meshy.ai/) | High-detail textured 3D models and character rigging/animation. If omitted, 3D generation uses the built-in zero-credit procedural low-poly compiler. |
+
+#### Other Configuration Keys
+
+- `MCP_OAUTH_ENCRYPTION_KEY`: A 32-byte base64-encoded secret used to encrypt ProductNow OAuth tokens at rest in Postgres. `./scripts/bootstrap.sh` automatically supplies a local development default; production deployments should set a unique secret.
+- **ProductNow Connection (Optional)**: Connect your lore documents via the **Connect ProductNow** button in the Blueprint Workshop. This requires ngrok (see [Connecting external MCP servers](#connecting-external-mcp-servers)).
+- `PRODUCTNOW_GAMES_FOLDER_ID`: The ProductNow folder that holds your game lore. Each game files its lore in a subfolder here, created on first use; Towers of Coreborn uses this folder directly. Lore storage is unavailable until this is set.
+- `PRODUCTNOW_LORE_DOCUMENT_ID` (optional): The document Towers of Coreborn treats as its canon. Without it, agents search for a document named "Lore".
+
+
+
+------------------------ AGENTS FOCUSED README ------------------------
+
+### Connecting external MCP servers
+
+You need ngrok to connect the framework to any external MCP server, such as
+ProductNow for your lore. Without one, everything else runs locally as usual.
+
+Why: an external MCP server signs the backend in with OAuth. During that
+flow, the server fetches the backend's OAuth client document and redirects
+back to it, so the backend must be reachable at a public HTTPS URL with a
+certificate the server trusts. The local `https://localhost` certificates
+from mkcert are trusted only by your own machine. ngrok gives the frontend
+and backend public HTTPS URLs with valid certificates, which is what the
+OAuth flow needs.
+
+To set it up:
+
+1. Install the [ngrok CLI](https://ngrok.com/download) and sign in:
+
+   ```bash
+   ngrok config add-authtoken <token>
+   ```
+
+   The frontend and backend each need their own hostname, which requires a
+   paid ngrok plan. A free account has only one dev domain and cannot give
+   each its own hostname. By default the hostnames are
+   `resync-game-framework-<you>-frontend.ngrok.app` and
+   `resync-game-framework-<you>-api.ngrok.app`. To choose your own, set
+   `NGROK_DOMAIN_SUFFIX`, or `NGROK_FRONTEND_DOMAIN` and
+   `NGROK_BACKEND_DOMAIN`, in `.env`.
+2. Start the stack with tunnels instead of `bun run dev`:
+
+   ```bash
+   bun run resync dev --network
+   ```
+
+   This points `FRONTEND_URL` and `BACKEND_API_URL` at the tunnels, prints
+   the public URLs, and closes the tunnels when you stop it. The apps still
+   run on localhost.
+3. Open the printed frontend URL. In the Blueprint Workshop, click **Connect
+   ProductNow** and approve access.
+
+Once connected, agents read your lore before they generate. Card generation
+needs a connection. 3D and audio generation can run without lore. See
+[packages/backend/README.md](packages/backend/README.md) for the OAuth
+details.
+
+### Sharing games with friends
+
+The same ngrok setup lets you run the games on your laptop and share them
+with friends, with no hosting. Start the stack with `bun run resync dev
+--network` and send your friends the printed frontend URL. They can play in
+their own browsers. A game built on the framework's multiplayer rooms can
+put you all in the same game.
+
+- The games run only while your laptop is on and the command is running.
+  Stopping it closes the tunnels and the link stops working.
+- Anyone with the link can use everything you can, including the Blueprint
+  Workshop, which spends your API credits. Share the link only with people
+  you trust.
+
+### Try the 3D studio
+
+Open the Blueprint Workshop, choose **3D models**, and click **Try complete
+demo**. It builds a small world with no model-provider calls. Then open
+**3D Sandbox** from the game library to explore it.
+
+## The example games
+
+The games in this repository are small examples of what the framework can
+do. Many more are on the way.
+
+- **Towers of Coreborn** (`/towers-of-coreborn`): a deck-building roguelike.
+  You climb a tower with a party of Coreborn and fight turn-based card
+  battles. Its rooms, portraits, enemies, cards, animated sprites, and music
+  can all be generated from the lore.
+- **Descent** (`/descent`): a real-time strategy and base-building game. You
+  build a Hold, cultivate its defenders, and dig layer by layer into Hell. The first layer, the Ashen Gate, is playable and ends with the Cinderjaw boss.
+- **3D Sandbox** (`/three-d-sandbox`): a prototype that loads worlds built in
+  the Blueprint Workshop's 3D studio.
+
+For writing about how these games are designed and built, see
+[kadhirvelm.dev/blog](https://kadhirvelm.dev/blog).
+
+### Generate assets from an agent
+
+With the backend running, coding agents can queue any image, card, sprite,
+audio clip, or 3D model through one non-blocking endpoint:
 
 ```bash
-bun run assets:descent
+curl --cacert .certs/localhost.pem \
+  -H 'Content-Type: application/json' \
+  -d '{"assetClass":"static-image","prompt":"A seamless moonlit basalt floor texture"}' \
+  https://localhost:8080/agent/assets/generations
 ```
 
-The generator defaults to `https://localhost:8080`. When the backend is on a
-different local port, pass its URL as the first argument, for example
-`bun run assets:descent -- https://localhost:8083`.
+The response includes a `jobId` and `statusUrl`. Poll the status URL with GET;
+when `status` is `completed`, `result` contains the stored asset. The coding
+agent guide in [AGENTS.md](AGENTS.md) documents every asset class and explains
+how to generate a game's roster from its source manifests. Generated models,
+images, and audio stay local and are not committed.
 
-To replace the four high-visibility Ashen Gate structures with detailed Meshy
-models, configure `MESHY_API_KEY` and opt in explicitly. This keeps the default
-command zero-credit and uses approximately 120 Meshy credits when no polished
-structure roster exists yet:
+## Developing
 
 ```bash
-bun run assets:descent -- --meshy
+bun run build   # build every package
+bun run check   # type-check
+bun run lint    # Biome and Stylelint
+bun run test    # backend and frontend tests (resets the local test database)
 ```
 
-Generate the complete Ashen Gate music, ambience, and effects pack through the
-existing ElevenLabs audio queue. This command is idempotent and requires
-`ELEVENLABS_API_KEY`:
+The repository is a Bun and TypeScript monorepo:
 
-```bash
-bun run assets:descent:audio
-```
+- `packages/frontend`: Next.js game client and Blueprint Workshop
+- `packages/backend`: NestJS API, WebSockets, agents, and the generation queue
+- `packages/api`: contracts shared by the frontend and backend
+- `packages/database`: Prisma schema and client
+- `resync-cli`: the `resync` command for local development
+- `docs/descent`: Descent's design documents
 
-Useful commands:
-
-```bash
-bun run build
-bun run test
-bun run lint
-```
+[AGENTS.md](AGENTS.md) is the full development guide. It covers the
+architecture, every local command and tool, the agent tool catalog, and code
+standards, and coding agents read it automatically.
 
 ## Local tools
 
@@ -151,10 +207,10 @@ docker compose -f docker-compose.yml up -d
 ### Gatus
 
 A health dashboard that checks every service every 15 seconds. The **data**
-and **observability** groups should be green as soon as Docker is up. The
-**application** group (backend and frontend) turns green once
-`bun run dev` has finished starting. The buttons at the top link to the other
-tools. Checks are defined in `gatus/config.yaml`.
+and **observability** groups turn green once Docker is up. The
+**application** group (backend and frontend) turns green once `bun run dev`
+has finished starting. The buttons at the top link to the other tools.
+Checks are defined in `gatus/config.yaml`.
 
 ### OpenObserve
 
@@ -173,21 +229,19 @@ ORDER BY _timestamp DESC
 
 Container names include `postgres`, `pgweb`, `redis`, `redis_commander`,
 `redis_insight`, and `gatus`. A `vector` container ships the logs (configured
-in `vector/vector.yaml`); to include a new Compose service, give it the
-`dev.resync-game-framework.logs: "true"` label. The backend and frontend run on the
-host, so their logs stay in the `bun run dev` terminal.
+in `vector/vector.yaml`). To include a new Compose service, give it the
+`dev.resync-game-framework.logs: "true"` label. The backend and frontend run on
+the host, so their logs stay in the `bun run dev` terminal.
 
 ### Redis Insight
 
-Open the database named **local**, which is preconfigured to point at the
-Compose Redis. Use **Browser** to inspect keys and **Workbench** to run Redis
-commands.
+Open the database named **local**, which already points at the Compose Redis.
+Use **Browser** to inspect keys and **Workbench** to run Redis commands.
 
 ### pgweb
 
-Open [http://localhost:2000](http://localhost:2000). pgweb connects directly to
-the Compose PostgreSQL database; no separate sign-in or connection setup is
-required.
+Open http://localhost:2000. pgweb connects directly to the Compose Postgres
+database, with no sign-in or connection setup.
 
 ## License
 

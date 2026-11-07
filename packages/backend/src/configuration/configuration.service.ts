@@ -3,7 +3,7 @@ import { Injectable } from "@nestjs/common";
 /**
  * Local ProductNow session key used when `MCP_OAUTH_ENCRYPTION_KEY` is unset.
  * Keep this value identical to `MCP_OAUTH_ENCRYPTION_KEY` in
- * `toc-cli/src/constants/defaultEnv.ts`.
+ * `resync-cli/src/constants/defaultEnv.ts`.
  */
 const LOCAL_MCP_OAUTH_ENCRYPTION_KEY =
   "yw13/hsuCffB/07HoMSLPJ4y1CdwEWFxSvqAn1/PlYA=";
@@ -26,6 +26,10 @@ export interface Configuration {
   NODE_ENV: "production" | "development";
   MCP_OAUTH_ENCRYPTION_KEY: string;
   PRODUCTNOW_MCP_URL: string;
+  /** ProductNow folder holding each game's lore folder; empty when unset */
+  PRODUCTNOW_GAMES_FOLDER_ID: string;
+  /** ProductNow document Towers of Coreborn reads as canon; empty when unset */
+  PRODUCTNOW_LORE_DOCUMENT_ID: string;
   GEMINI_CREDENTIALS: string;
   ANTHROPIC_API_KEY: string;
   OPENAI_API_KEY: string;
@@ -107,6 +111,10 @@ export class ConfigurationService {
       MESHY_API_KEY: process.env.MESHY_API_KEY?.trim() ?? "",
       NODE_ENV: process.env.NODE_ENV as "production" | "development",
       OPENAI_API_KEY: openAiApiKey,
+      PRODUCTNOW_GAMES_FOLDER_ID:
+        process.env.PRODUCTNOW_GAMES_FOLDER_ID?.trim() ?? "",
+      PRODUCTNOW_LORE_DOCUMENT_ID:
+        process.env.PRODUCTNOW_LORE_DOCUMENT_ID?.trim() ?? "",
       PRODUCTNOW_MCP_URL: productNowMcpUrl,
       REDIS_HOST: process.env.REDIS_HOST?.trim() || "localhost",
       REDIS_PORT: readPositiveInteger("REDIS_PORT", 6379),

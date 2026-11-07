@@ -319,7 +319,7 @@ export async function dev(
   session.child.on("exit", (code, signal) => {
     if (ngrokStopRequested) return;
     logColorMessage(
-      `ngrok exited unexpectedly (${signal ?? code}); the public URLs are no longer reachable. Restart \`toc dev --network\` to re-establish them.`,
+      `ngrok exited unexpectedly (${signal ?? code}); the public URLs are no longer reachable. Restart \`resync dev --network\` to re-establish them.`,
       "red",
     );
   });

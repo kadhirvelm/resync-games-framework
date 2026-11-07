@@ -34,9 +34,7 @@ describe("BattleBackgroundAgent", () => {
         expect(input.tools).toBe(BattleBackgroundAgentTool);
         expect(input.toolId).toBe(BattleBackgroundAgentTool.GenerateImage);
         expect(input.instructions).toContain("`consult-productnow`");
-        expect(input.instructions).toContain(
-          "`ff1b04a0-b440-4746-9a1a-cd25fba0c32b`",
-        );
+        expect(input.instructions).toContain("read the Lore document");
         expect(input.instructions).toContain("`generate-image`");
         expect(input.maxSteps).toBe(4);
         expect(input.supportingToolIds).toEqual([

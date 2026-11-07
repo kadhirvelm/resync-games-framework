@@ -59,30 +59,60 @@ export class AudioService implements OnModuleInit {
   }
 
   /**
+   * Queues audio without holding the HTTP request open.
+   * @param payload - Sound prompt, optional cue constraints, and stable id
+   * @returns Resolves after BullMQ accepts the job
+   */
+  public async enqueue(
+    payload: AudioServiceApi["generate"]["payload"],
+  ): Promise<void> {
+    const input = this.prepareGeneration(payload);
+    if (!this.generationQueue) {
+      throw new InternalServerErrorException(
+        "Asset generation queue is unavailable.",
+      );
+    }
+    await this.generationQueue.enqueue("audio", input.generationId, input);
+  }
+
+  /**
    * @param payload - Natural-language sound idea and the id that can stop it
    * @returns Newly stored clip
    */
   public async generate(
     payload: AudioServiceApi["generate"]["payload"],
   ): Promise<AudioServiceApi["generate"]["response"]> {
-    const prompt = requireGenerationPrompt(
-      payload.prompt,
-      "Describe the sound to generate.",
-    );
-    const generationId = requireGenerationId(payload.generationId);
-    const input = {
+    const input = this.prepareGeneration(payload);
+    if (this.generationQueue) {
+      return this.generationQueue.enqueueAndWait(
+        "audio",
+        input.generationId,
+        input,
+      );
+    }
+    return this.executeGeneration(input);
+  }
+
+  /**
+   * Validates public input and captures request-scoped lore access.
+   * @param payload - Public audio generation payload
+   * @returns Serializable worker input
+   */
+  private prepareGeneration(
+    payload: AudioServiceApi["generate"]["payload"],
+  ): QueuedAudio {
+    return {
       cue: payload.cue,
-      generationId,
+      generationId: requireGenerationId(payload.generationId),
       loop: payload.loop,
       productNowSessionId: readActiveProductNowSession(),
-      prompt,
+      prompt: requireGenerationPrompt(
+        payload.prompt,
+        "Describe the sound to generate.",
+      ),
       role: payload.role,
       useLore: payload.useLore,
     };
-    if (this.generationQueue) {
-      return this.generationQueue.enqueueAndWait("audio", generationId, input);
-    }
-    return this.executeGeneration(input);
   }
 
   /** Executes one idempotent audio generation inside a queue worker. */
