@@ -1,6 +1,14 @@
 import Redis from "ioredis";
 import { logColorMessage } from "./logColorMessage";
 
+/**
+ * Waits for the development Redis server to accept commands.
+ * @param host - Redis hostname to probe
+ * @param port - Redis port to probe
+ * @param maxRetries - Maximum connection attempts before failing
+ * @param retryDelayMs - Delay between failed attempts
+ * @returns Resolves after a successful Redis ping
+ */
 export async function checkRedisConnection(
   host: string = "localhost",
   port: number = 6379,
@@ -15,6 +23,10 @@ export async function checkRedisConnection(
     retryStrategy: () => null, // We'll handle retries manually
   });
 
+  // `connect()` rejects and emits `error`. The retry loop handles the rejection;
+  // this listener prevents ioredis from printing its fallback unhandled-event log.
+  redis.on("error", () => undefined);
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       await redis.connect();
@@ -24,7 +36,7 @@ export async function checkRedisConnection(
       return;
     } catch (_error) {
       if (attempt === maxRetries) {
-        await redis.quit();
+        redis.disconnect();
         throw new Error(
           `Failed to connect to Redis after ${maxRetries} attempts. ` +
             `Make sure Redis is running on ${host}:${port}`,
