@@ -34,7 +34,7 @@ function AudioList({
   return (
     <Flex direction="column" gap="3" width="100%">
       <Flex className={styles.sectionHeader}>
-        <span className={styles.sectionTitle}>Audio</span>
+        <span className={styles.sectionTitle}>Library</span>
         {clips.length > 0 && (
           <span className={styles.assetCount}>{clips.length}</span>
         )}
@@ -53,7 +53,8 @@ function AudioList({
           <Flex className={styles.emptyState}>
             <span>No audio yet</span>
             <span className={styles.emptyStateHint}>
-              describe a room tone, an attack, a stinger, or an instrumental bed
+              Describe a room tone, an attack, a stinger, or an instrumental
+              bed.
             </span>
           </Flex>
         )}

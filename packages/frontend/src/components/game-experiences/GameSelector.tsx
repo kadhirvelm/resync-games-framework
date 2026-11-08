@@ -1,102 +1,96 @@
 import Link from "next/link";
-import type { CSSProperties } from "react";
 import { ProductNowConnection } from "@/components/productNow/ProductNowConnection";
+import { GameCard } from "./GameCard";
 import { gameExperiencePath } from "./gameExperiencePaths";
-import styles from "./gameExperiences.module.scss";
 import type {
   GameExperienceDefinition,
   GameExperienceId,
 } from "./gameExperienceTypes";
+import styles from "./gameLibrary.module.scss";
+import { SurpriseMeButton } from "./SurpriseMeButton";
 
 type GameSelectorProps = {
   experiences: readonly GameExperienceDefinition[];
   resumeExperienceIds: ReadonlySet<GameExperienceId>;
 };
 
-type ArtworkStyle = CSSProperties & {
-  "--experience-accent": string;
-  "--experience-glow": string;
-};
-
 /**
- * Top-level library of independently mounted game experiments.
+ * The home-route game library: a clear "pick one" list of every game, with
+ * shortcuts back into games that have saved progress.
  * @param experiences - Registered games to show
  * @param resumeExperienceIds - Games with resumable local data
- * @returns A responsive experience-card selector
+ * @returns The library page
  */
 export const GameSelector = ({
   experiences,
   resumeExperienceIds,
-}: GameSelectorProps) => (
-  <main className={styles.selector}>
-    <div aria-hidden="true" className={styles.selectorGlow} />
-    <header className={styles.selectorHeader}>
-      <p className={styles.eyebrow}>Resync games experiments</p>
-      <h1>Choose your path</h1>
-      <p>
-        Each experience has its own runtime and rules. Return here whenever you
-        want to step into another world.
-      </p>
-      <div className={styles.selectorConnection}>
-        <ProductNowConnection placement="inline" />
+}: GameSelectorProps) => {
+  const resumable = experiences.filter((experience) =>
+    resumeExperienceIds.has(experience.id),
+  );
+
+  return (
+    <main className={styles.library}>
+      <div aria-hidden="true" className={styles.backdrop}>
+        <span className={styles.blobOne} />
+        <span className={styles.blobTwo} />
+        <span className={styles.blobThree} />
       </div>
-    </header>
 
-    <div className={styles.experienceGrid}>
-      {experiences.map((experience) => {
-        const canResume = resumeExperienceIds.has(experience.id);
-        const actionLabel = canResume
-          ? `Continue ${experience.name}`
-          : experience.launchLabel;
-        const artworkStyle: ArtworkStyle = {
-          "--experience-accent": experience.artwork.accent,
-          "--experience-glow": experience.artwork.glow,
-        };
+      <header className={styles.topBar}>
+        <span className={styles.brand}>
+          <span aria-hidden="true" className={styles.brandMark}>
+            R
+          </span>
+          Resync <strong>Arcade</strong>
+        </span>
+        <ProductNowConnection placement="inline" />
+      </header>
 
-        return (
-          <article className={styles.experienceCard} key={experience.id}>
-            <div
-              aria-label={experience.artwork.label}
-              className={styles.experienceArtwork}
-              role="img"
-              style={artworkStyle}
+      <section className={styles.hero}>
+        <p className={styles.eyebrow}>
+          Game library · {experiences.length} games
+        </p>
+        <h1>
+          Pick a game <span className={styles.heroAccent}>to play</span>
+        </h1>
+        <p className={styles.heroCopy}>
+          Every card below is a game. Click one to jump in. The{" "}
+          <em>All games</em> button brings you back here any time.
+        </p>
+        <SurpriseMeButton
+          ids={experiences.map((experience) => experience.id)}
+        />
+      </section>
+
+      {resumable.length > 0 ? (
+        <nav aria-label="Continue playing" className={styles.resumeRow}>
+          <span className={styles.resumeLabel}>
+            Continue where you left off
+          </span>
+          {resumable.map((experience) => (
+            <Link
+              className={styles.resumeChip}
+              href={gameExperiencePath(experience.id)}
+              key={experience.id}
             >
-              <span aria-hidden="true" className={styles.artworkOrbit} />
-              <span aria-hidden="true" className={styles.artworkMonogram}>
-                {experience.artwork.monogram}
-              </span>
-              <span aria-hidden="true" className={styles.artworkHorizon} />
-            </div>
+              <span aria-hidden="true" className={styles.resumeDot} />
+              {experience.name}
+            </Link>
+          ))}
+        </nav>
+      ) : null}
 
-            <div className={styles.cardBody}>
-              <div className={styles.cardHeading}>
-                <h2>{experience.name}</h2>
-                <span className={styles.status}>{experience.status}</span>
-              </div>
-              <p>{experience.description}</p>
-              <ul aria-label={`${experience.name} capabilities`}>
-                <li>
-                  {experience.capabilities.localSaves
-                    ? "Local saves"
-                    : "Session play"}
-                </li>
-                <li>
-                  {experience.capabilities.generatedAssets
-                    ? "Generated worlds"
-                    : "Curated prototype"}
-                </li>
-              </ul>
-              <Link
-                className={styles.launchLink}
-                href={gameExperiencePath(experience.id)}
-              >
-                {actionLabel}
-                <span aria-hidden="true">→</span>
-              </Link>
-            </div>
-          </article>
-        );
-      })}
-    </div>
-  </main>
-);
+      <ul aria-label="Games" className={styles.grid}>
+        {experiences.map((experience, index) => (
+          <GameCard
+            canResume={resumeExperienceIds.has(experience.id)}
+            experience={experience}
+            index={index}
+            key={experience.id}
+          />
+        ))}
+      </ul>
+    </main>
+  );
+};

@@ -32,6 +32,8 @@ export interface UseMultiplayerRoomOptions<State> {
 
 /** State and commands returned to a multiplayer game component. */
 export interface UseMultiplayerRoomResult<State> {
+  /** Shared socket client used by authoritative game-specific commands. */
+  client: MultiplayerRoomClient<State>;
   /** Creates and joins a new room. */
   createRoom: () => Promise<MultiplayerCommandResult<State>>;
   /** Latest connection or command error, cleared by the next command. */
@@ -233,6 +235,7 @@ export function useMultiplayerRoom<State>(
   );
 
   return {
+    client,
     createRoom,
     error,
     isHost: room?.hostPlayerId === options.player.id,

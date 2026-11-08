@@ -52,7 +52,7 @@ export function PlayableCardList({
   return (
     <Flex direction="column" gap="3" width="100%">
       <Flex className={styles.sectionHeader}>
-        <span className={styles.sectionTitle}>Playable cards</span>
+        <span className={styles.sectionTitle}>Library</span>
         {cards.length > 0 && (
           <span className={styles.assetCount}>{cards.length}</span>
         )}
@@ -69,7 +69,7 @@ export function PlayableCardList({
         <Flex className={styles.emptyState}>
           <span>No playable cards yet</span>
           <span className={styles.emptyStateHint}>
-            describe a card and we'll pull its text from the Lore document
+            Describe a card and we'll pull its text from the Lore document.
           </span>
         </Flex>
       )}

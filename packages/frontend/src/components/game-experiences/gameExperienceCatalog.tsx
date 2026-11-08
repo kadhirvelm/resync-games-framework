@@ -50,6 +50,14 @@ const DescentGameExperience = dynamic(
   { loading: ExperienceLoading, ssr: false },
 );
 
+const CrosswordCryptExperience = dynamic(
+  () =>
+    import("../crossword-crypt/CrosswordCryptExperience").then(
+      (module) => module.CrosswordCryptExperience,
+    ),
+  { loading: ExperienceLoading, ssr: false },
+);
+
 /** Every game available from the home-route selector. */
 export const gameExperienceCatalog = [
   {
@@ -63,9 +71,11 @@ export const gameExperienceCatalog = [
     description:
       "Climb a shifting tower with a party of Coreborn in the original card-battling roguelike.",
     entry: TowerGameExperience,
+    genre: "Card roguelike",
     id: "towers-of-coreborn",
     launchLabel: "Enter the tower",
     name: "Towers of Coreborn",
+    players: "Solo",
     status: "Playable",
   },
   {
@@ -79,9 +89,11 @@ export const gameExperienceCatalog = [
     description:
       "Build a 3D world in the Blueprint Workshop, explore its arena, and awaken its aether beacons.",
     entry: ThreeDSandboxGame,
+    genre: "3D sandbox",
     id: "three-d-sandbox",
     launchLabel: "Launch sandbox",
     name: "3D Sandbox",
+    players: "Solo",
     status: "Prototype",
   },
   {
@@ -95,10 +107,30 @@ export const gameExperienceCatalog = [
     description:
       "Build a Hold, cultivate its defenders, and dig layer by layer into Hell.",
     entry: DescentGameExperience,
+    genre: "Base-building strategy",
     id: "descent",
     launchLabel: "Begin the descent",
     name: "Descent",
+    players: "Solo",
     status: "Playable",
+  },
+  {
+    artwork: {
+      accent: "#d69b42",
+      glow: "#ffcf70",
+      label: "A round stone door lit by five warm torches",
+      monogram: "門",
+    },
+    capabilities: { generatedAssets: true, localSaves: true },
+    description:
+      "Escape a family crypt by speaking private clues, assembling passwords, and keeping the shared torches lit.",
+    entry: CrosswordCryptExperience,
+    genre: "Co-op puzzle room",
+    id: "crossword-crypt",
+    launchLabel: "Enter the crypt",
+    name: "Crossword Crypt",
+    players: "Multiplayer",
+    status: "Prototype",
   },
 ] as const satisfies readonly GameExperienceDefinition[];
 

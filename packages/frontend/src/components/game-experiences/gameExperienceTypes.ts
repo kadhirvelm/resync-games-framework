@@ -4,7 +4,11 @@ import type { ComponentType } from "react";
 export type GameExperienceId =
   | "descent"
   | "three-d-sandbox"
-  | "towers-of-coreborn";
+  | "towers-of-coreborn"
+  | "crossword-crypt";
+
+/** Whether a game is played alone or with other people online. */
+export type GameExperiencePlayers = "Multiplayer" | "Solo";
 
 /** Product maturity shown on an experience card. */
 export type GameExperienceStatus = "Playable" | "Prototype";
@@ -35,9 +39,12 @@ export interface GameExperienceDefinition {
   capabilities: GameExperienceCapabilities;
   description: string;
   entry: ComponentType<GameExperienceEntryProps>;
+  /** Short kind-of-game label shown on the library card. */
+  genre: string;
   id: GameExperienceId;
   launchLabel: string;
   name: string;
+  players: GameExperiencePlayers;
   status: GameExperienceStatus;
 }
 

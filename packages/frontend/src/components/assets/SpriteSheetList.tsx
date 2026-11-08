@@ -52,7 +52,7 @@ export function SpriteSheetList({
   return (
     <Flex direction="column" gap="3" width="100%">
       <Flex className={styles.sectionHeader}>
-        <span className={styles.sectionTitle}>Sprite sheets</span>
+        <span className={styles.sectionTitle}>Library</span>
         {hasSheets && (
           <span className={styles.assetCount}>{spriteSheets.length}</span>
         )}
@@ -69,7 +69,7 @@ export function SpriteSheetList({
         <Flex className={styles.emptyState}>
           <span>No sprite sheets yet</span>
           <span className={styles.emptyStateHint}>
-            describe a character to animate its idle, attack, defend, and hurt
+            Describe a character to animate its idle, attack, defend, and hurt.
           </span>
         </Flex>
       )}

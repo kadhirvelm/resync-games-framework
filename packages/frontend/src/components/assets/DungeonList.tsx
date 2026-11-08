@@ -66,7 +66,7 @@ export function DungeonList({
   return (
     <Flex direction="column" gap="3" width="100%">
       <Flex className={styles.sectionHeader}>
-        <span className={styles.sectionTitle}>Dungeons</span>
+        <span className={styles.sectionTitle}>Library</span>
         {dungeons.length > 0 && (
           <span className={styles.assetCount}>{dungeons.length}</span>
         )}
@@ -83,8 +83,8 @@ export function DungeonList({
         <Flex className={styles.emptyState}>
           <span>No dungeons yet</span>
           <span className={styles.emptyStateHint}>
-            describe a place to lay out its rooms, characters, cards, and
-            enemies
+            Describe a place to lay out its rooms, characters, cards, and
+            enemies.
           </span>
         </Flex>
       )}

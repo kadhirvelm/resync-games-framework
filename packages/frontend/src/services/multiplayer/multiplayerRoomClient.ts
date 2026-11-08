@@ -147,6 +147,55 @@ export class MultiplayerRoomClient<State> {
   }
 
   /**
+   * Subscribes to one game-specific event on the room's existing socket.
+   * @param event - Stable server event name
+   * @param listener - Typed private-event receiver
+   * @returns A function that removes the listener
+   */
+  public onGameEvent<Payload>(
+    event: string,
+    listener: (payload: Payload) => void,
+  ): () => void {
+    const socket = this.socket as unknown as {
+      on: (name: string, receive: (payload: Payload) => void) => void;
+      off: (name: string, receive: (payload: Payload) => void) => void;
+    };
+    socket.on(event, listener);
+    return () => socket.off(event, listener);
+  }
+
+  /**
+   * Sends one acknowledged game-specific command over the membership socket.
+   * @param event - Stable client command name
+   * @param payload - JSON-safe command payload
+   * @returns Typed acknowledgement or a bounded timeout failure
+   */
+  public sendGameCommand<Result>(
+    event: string,
+    payload: unknown,
+  ): Promise<Result> {
+    return new Promise((resolve) => {
+      const commandSocket = this.socket.timeout(
+        COMMAND_TIMEOUT_MS,
+      ) as unknown as {
+        emitWithAck: (name: string, value: unknown) => Promise<Result>;
+      };
+      void commandSocket
+        .emitWithAck(event, payload)
+        .then(resolve)
+        .catch(() => {
+          resolve({
+            error: {
+              code: "TIMEOUT",
+              message: "The game server did not respond in time.",
+            },
+            ok: false,
+          } as Result);
+        });
+    });
+  }
+
+  /**
    * Creates a room and joins it as host.
    * @param payload - Game, player, capacity, and initial state
    * @returns Acknowledgement containing the created room

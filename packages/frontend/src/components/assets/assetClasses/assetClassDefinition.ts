@@ -29,7 +29,14 @@ export const ASSET_MEDIUM_LABELS: Record<AssetMedium, string> = {
   both: "Both",
 };
 
-/** Text for the generate dialog's prompt form. */
+/** Sidebar section titles, written for someone scanning for a generator. */
+export const ASSET_MEDIUM_SECTION_TITLES: Record<AssetMedium, string> = {
+  "2d": "2D art",
+  "3d": "3D models",
+  both: "Any game",
+};
+
+/** Text for a generator's prompt box. */
 export interface AssetClassFormCopy {
   hint?: string;
   placeholder: string;

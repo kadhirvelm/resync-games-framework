@@ -29,6 +29,24 @@ interface StoredGameRoom extends Omit<GameRoomState, "players"> {
   players: StoredGameRoomPlayer[];
 }
 
+/** A room member plus the private socket id used for targeted delivery. */
+export interface GameRoomServerMember extends GameRoomPlayer {
+  socketId: string;
+}
+
+/** Result accepted from a game-specific authoritative mutation. */
+export type GameRoomServerDecision<T> =
+  | { gameState: GameRoomValue; ok: true; value: T }
+  | { code: GameRoomErrorCode; message: string; ok: false };
+
+/** Authoritative mutation result plus the sockets present at commit time. */
+export interface GameRoomServerResult<T> {
+  members?: GameRoomServerMember[];
+  playerId?: string;
+  result: GameRoomCommandResult;
+  value?: T;
+}
+
 interface ValidatedCreateRoom {
   gameId: string;
   initialState: GameRoomValue;
@@ -46,7 +64,7 @@ interface ValidationFailure {
   ok: false;
 }
 
-type ValidationResult<T> = ValidationSuccess<T> | ValidationFailure;
+export type ValidationResult<T> = ValidationSuccess<T> | ValidationFailure;
 
 /**
  * Stores authoritative multiplayer room snapshots and socket memberships in
@@ -343,6 +361,12 @@ export class GameRoomStore {
             "Join the room before updating its game state.",
           );
         }
+        if (room.gameId === "crossword-crypt") {
+          return failure(
+            "INVALID_REQUEST",
+            "Crossword Crypt state can only be changed through its authoritative commands.",
+          );
+        }
         if (room.revision !== expectedRevision) {
           return failure(
             "REVISION_CONFLICT",
@@ -356,6 +380,102 @@ export class GameRoomStore {
         await this.saveRoom(room);
         await this.addSocketMembership(socketId, roomId);
         return success(toPublicRoom(room));
+      },
+    );
+  }
+
+  /**
+   * Runs a game-specific server mutation under the same room lock used by the
+   * generic membership framework.
+   * @param requestedRoomId - Human-entered room code
+   * @param gameId - Game expected to own the room
+   * @param socketId - Calling member's socket
+   * @param apply - Validates and returns the next public game state
+   * @returns Generic acknowledgement and private member delivery metadata
+   */
+  public async mutateServerRoom<T>(
+    requestedRoomId: unknown,
+    gameId: string,
+    socketId: string,
+    apply: (
+      room: GameRoomState,
+      playerId: string,
+      members: readonly GameRoomServerMember[],
+    ) => Promise<GameRoomServerDecision<T>>,
+  ): Promise<GameRoomServerResult<T>> {
+    const roomId = normalizeRoomId(requestedRoomId);
+    if (!roomId) {
+      return { result: failure("INVALID_REQUEST", "The room id is invalid.") };
+    }
+
+    return this.redisService.withLock(
+      [roomLockKey(roomId)],
+      ROOM_LOCK_DURATION_MS,
+      async () => {
+        const room = await this.readStoredRoom(roomId);
+        if (!room) {
+          return {
+            result: failure(
+              "ROOM_NOT_FOUND",
+              "That multiplayer room was not found.",
+            ),
+          };
+        }
+        if (room.gameId !== gameId) {
+          return {
+            result: failure(
+              "GAME_MISMATCH",
+              "That room belongs to a different game.",
+            ),
+          };
+        }
+        const caller = room.players.find(
+          (player) => player.socketId === socketId,
+        );
+        if (!caller) {
+          return {
+            result: failure(
+              "NOT_A_MEMBER",
+              "Join the room before sending game commands.",
+            ),
+          };
+        }
+
+        const members = room.players.map((player) => ({ ...player }));
+        const decision = await apply(toPublicRoom(room), caller.id, members);
+        if (!decision.ok) {
+          return {
+            members,
+            playerId: caller.id,
+            result: failure(
+              decision.code,
+              decision.message,
+              toPublicRoom(room),
+            ),
+          };
+        }
+        const validated = validateGameState(decision.gameState);
+        if (!validated.ok) {
+          return {
+            members,
+            playerId: caller.id,
+            result: failure(
+              "INVALID_REQUEST",
+              validated.error,
+              toPublicRoom(room),
+            ),
+          };
+        }
+
+        room.gameState = validated.value;
+        touchRoom(room);
+        await this.saveRoom(room);
+        return {
+          members,
+          playerId: caller.id,
+          result: success(toPublicRoom(room)),
+          value: decision.value,
+        };
       },
     );
   }
@@ -539,7 +659,7 @@ function validateCreateRoomPayload(
  * @param player - Untrusted player id and display name
  * @returns Normalized player or a validation message
  */
-function validatePlayer(
+export function validatePlayer(
   player: GameRoomPlayerInput,
 ): ValidationResult<GameRoomPlayerInput> {
   const id = typeof player?.id === "string" ? player.id.trim() : "";

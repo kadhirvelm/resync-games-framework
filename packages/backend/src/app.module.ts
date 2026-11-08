@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { AssetClassesModule } from "./asset-classes/asset-classes.module";
 import { ConfigurationModule } from "./configuration/configuration.module";
+import { CrosswordCryptModule } from "./crossword-crypt/crossword-crypt.module";
 import { DungeonModule } from "./dungeon/dungeon.module";
 import { GameRoomModule } from "./game-room/game-room.module";
 import { GenerationQueueModule } from "./generation-queue/generationQueue.module";
@@ -26,6 +27,7 @@ export const SharedModules = [
     PlayerModule,
     ProductNowLoreModule,
     ProductNowMcpModule,
+    CrosswordCryptModule,
     ...SharedModules,
   ],
   providers: [AllExceptionsFilter],

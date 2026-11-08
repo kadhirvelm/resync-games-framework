@@ -1,0 +1,631 @@
+@use "../tower/theme" as *;
+
+/* Home-route game library: a dark arcade shelf where every game brings its own color. */
+
+$bg: #0c1120;
+$surface: #151c30;
+$surface-high: #1d2640;
+$text: #f4f1ea;
+$text-soft: #aab2c8;
+$line: rgba(#fff, 0.1);
+$sans: var(--font-descent), var(--font-inter), system-ui, sans-serif;
+$pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+.library {
+  background: $bg;
+  color: $text;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  font-family: $sans;
+  isolation: isolate;
+  min-height: 100vh;
+  overflow: hidden;
+  padding: 0 32px 96px;
+  position: relative;
+  width: 100%;
+}
+
+/* Soft colored lights drifting behind everything, over a faint dot grid. */
+.backdrop {
+  background-image: radial-gradient(rgba(#fff, 0.07) 1px, transparent 1px);
+  background-size: 26px 26px;
+  inset: 0;
+  mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
+  pointer-events: none;
+  position: absolute;
+  z-index: -1;
+}
+
+%blob {
+  animation: drift 18s ease-in-out infinite alternate;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.45;
+  position: absolute;
+}
+
+.blobOne {
+  @extend %blob;
+
+  background: #e8618c;
+  height: 420px;
+  left: -120px;
+  top: -140px;
+  width: 420px;
+}
+
+.blobTwo {
+  @extend %blob;
+
+  animation-delay: -6s;
+  background: #73b7ff;
+  height: 380px;
+  right: -100px;
+  top: 60px;
+  width: 380px;
+}
+
+.blobThree {
+  @extend %blob;
+
+  animation-delay: -12s;
+  background: #f2b544;
+  height: 300px;
+  left: 40%;
+  opacity: 0.25;
+  top: 340px;
+  width: 300px;
+}
+
+.topBar {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin: 0 auto;
+  max-width: 1120px;
+  padding: 22px 0;
+  width: 100%;
+}
+
+.brand {
+  align-items: center;
+  color: $text-soft;
+  display: flex;
+  font-size: 15px;
+  font-weight: 600;
+  gap: 10px;
+
+  strong {
+    color: $text;
+    font-weight: 800;
+  }
+}
+
+.brandMark {
+  align-items: center;
+  background: linear-gradient(135deg, #e8618c, #f2b544);
+  border-radius: 9px;
+  box-shadow: 0 6px 18px rgba(#e8618c, 0.4);
+  color: $bg;
+  display: flex;
+  font-weight: 800;
+  height: 30px;
+  justify-content: center;
+  transform: rotate(-6deg);
+  width: 30px;
+}
+
+.hero {
+  @include rise;
+
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  margin: 40px auto 0;
+  max-width: 760px;
+  text-align: center;
+
+  h1 {
+    font-size: clamp(44px, 8vw, 84px);
+    font-weight: 800;
+    letter-spacing: -0.045em;
+    line-height: 0.98;
+    margin: 14px 0 18px;
+    text-wrap: balance;
+  }
+}
+
+.eyebrow {
+  background: rgba(#fff, 0.06);
+  border: 1px solid $line;
+  border-radius: 999px;
+  color: $text-soft;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  margin: 0;
+  padding: 7px 14px;
+  text-transform: uppercase;
+}
+
+.heroAccent {
+  background: linear-gradient(100deg, #ff8fb1, #ffd166 50%, #8fd3ff);
+  background-clip: text;
+  color: transparent;
+  white-space: nowrap;
+}
+
+.heroCopy {
+  color: $text-soft;
+  font-size: 18px;
+  line-height: 1.6;
+  margin: 0 0 26px;
+  max-width: 560px;
+
+  em {
+    color: $text;
+    font-style: normal;
+    font-weight: 700;
+  }
+}
+
+.surprise {
+  align-items: center;
+  background: $text;
+  border: 0;
+  border-radius: 999px;
+  box-shadow:
+    0 0 0 4px rgba(#fff, 0.08),
+    0 12px 30px rgba(#000, 0.35);
+  color: $bg;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  gap: 10px;
+  padding: 13px 22px 13px 18px;
+  transition: transform 220ms $pop;
+
+  &:hover:not(:disabled) {
+    transform: translateY(-2px) rotate(-1.5deg);
+
+    .die {
+      transform: rotate(90deg);
+    }
+  }
+
+  &:focus-visible {
+    outline: 3px solid #ffd166;
+    outline-offset: 4px;
+  }
+
+  &[data-rolling] .die {
+    animation: roll 650ms cubic-bezier(0.2, 0.8, 0.3, 1);
+  }
+}
+
+.die {
+  transition: transform 300ms $pop;
+}
+
+.resumeRow {
+  @include rise;
+
+  align-items: center;
+  animation-delay: 120ms;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin: 34px auto 0;
+  max-width: 1120px;
+}
+
+.resumeLabel {
+  color: $text-soft;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.resumeChip {
+  align-items: center;
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: 999px;
+  color: $text;
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 700;
+  gap: 8px;
+  padding: 8px 14px;
+  text-decoration: none;
+  transition:
+    background 160ms ease,
+    transform 160ms ease;
+
+  &:hover {
+    background: $surface-high;
+    transform: translateY(-2px);
+  }
+
+  &:focus-visible {
+    outline: 3px solid #ffd166;
+    outline-offset: 3px;
+  }
+}
+
+.resumeDot {
+  animation: pulse 1.6s ease-in-out infinite;
+  background: #6ee7a8;
+  border-radius: 50%;
+  box-shadow: 0 0 10px #6ee7a8;
+  height: 8px;
+  width: 8px;
+}
+
+.grid {
+  display: grid;
+  gap: 26px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  list-style: none;
+  margin: 52px auto 0;
+  max-width: 1120px;
+  padding: 0;
+  width: 100%;
+}
+
+/* A card is one big link: the title's link stretches over the whole card. */
+.card {
+  @include rise(22px, 600ms);
+
+  animation-delay: calc(180ms + var(--i, 0) * 90ms);
+  animation-fill-mode: backwards;
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: 24px;
+  box-shadow: 0 18px 50px rgba(#000, 0.35);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+  transition:
+    border-color 220ms ease,
+    box-shadow 260ms ease,
+    transform 320ms $pop;
+
+  &:hover,
+  &:focus-within {
+    border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+    box-shadow:
+      0 26px 60px rgba(#000, 0.45),
+      0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
+      0 18px 70px color-mix(in srgb, var(--accent) 35%, transparent);
+    transform: translateY(-8px) rotate(-0.6deg);
+
+    .tile {
+      animation: bounce 700ms $pop;
+      transform: rotate(-8deg) scale(1.08);
+    }
+
+    .art {
+      filter: saturate(1.2) brightness(1.08);
+    }
+
+    .cta {
+      background: var(--accent);
+      color: $bg;
+    }
+
+    .ctaArrow {
+      transform: translateX(5px);
+    }
+
+    [class*="sparkle"] {
+      opacity: 1;
+    }
+  }
+
+  &:nth-child(even):hover,
+  &:nth-child(even):focus-within {
+    transform: translateY(-8px) rotate(0.6deg);
+  }
+}
+
+.art {
+  align-items: center;
+  background:
+    radial-gradient(circle at 50% 55%, color-mix(in srgb, var(--glow) 45%, transparent), transparent 42%),
+    linear-gradient(140deg, color-mix(in srgb, var(--accent) 85%, #000) 0%, color-mix(in srgb, var(--accent) 45%, $bg) 60%, $bg 100%);
+  display: flex;
+  height: 220px;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+  transition: filter 260ms ease;
+}
+
+.artStripes {
+  background: repeating-linear-gradient(-45deg, rgba(#fff, 0.06) 0 2px, transparent 2px 18px);
+  inset: 0;
+  position: absolute;
+}
+
+.number {
+  color: rgba(#fff, 0.85);
+  font-size: 13px;
+  font-weight: 800;
+  left: 18px;
+  letter-spacing: 0.12em;
+  position: absolute;
+  top: 16px;
+}
+
+.tile {
+  align-items: center;
+  background: linear-gradient(160deg, #fff, color-mix(in srgb, var(--glow) 35%, #fff));
+  border-radius: 26px;
+  box-shadow:
+    0 6px 0 color-mix(in srgb, var(--accent) 60%, #000),
+    0 22px 40px rgba(#000, 0.4);
+  color: color-mix(in srgb, var(--accent) 70%, #000);
+  display: flex;
+  font-family: $display;
+  font-size: 58px;
+  font-weight: 700;
+  height: 112px;
+  justify-content: center;
+  position: relative;
+  transform: rotate(-4deg);
+  transition: transform 320ms $pop;
+  width: 112px;
+  z-index: 1;
+}
+
+%sparkle {
+  background: var(--glow);
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+  opacity: 0.55;
+  position: absolute;
+  transition: opacity 220ms ease;
+}
+
+.sparkleA {
+  @extend %sparkle;
+
+  animation: twinkle 2.4s ease-in-out infinite;
+  height: 22px;
+  left: 24%;
+  top: 22%;
+  width: 22px;
+}
+
+.sparkleB {
+  @extend %sparkle;
+
+  animation: twinkle 3s ease-in-out -1s infinite;
+  height: 14px;
+  right: 22%;
+  top: 30%;
+  width: 14px;
+}
+
+.sparkleC {
+  @extend %sparkle;
+
+  animation: twinkle 2.7s ease-in-out -2s infinite;
+  bottom: 22%;
+  height: 16px;
+  right: 30%;
+  width: 16px;
+}
+
+.savedBadge {
+  background: #6ee7a8;
+  border-radius: 999px;
+  color: $bg;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 5px 10px;
+  position: absolute;
+  right: 16px;
+  text-transform: uppercase;
+  top: 14px;
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: 22px 26px 26px;
+
+  h2 {
+    font-size: 30px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+    margin: 14px 0 10px;
+  }
+
+  > p {
+    color: $text-soft;
+    flex: 1;
+    font-size: 15.5px;
+    line-height: 1.55;
+    margin: 0 0 22px;
+  }
+}
+
+.cardLink {
+  color: inherit;
+  text-decoration: none;
+
+  &::after {
+    content: "";
+    inset: 0;
+    position: absolute;
+    z-index: 2;
+  }
+
+  &:focus-visible {
+    outline: none;
+  }
+}
+
+.card:has(.cardLink:focus-visible) {
+  outline: 3px solid #ffd166;
+  outline-offset: 4px;
+}
+
+.meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  align-items: center;
+  background: rgba(#fff, 0.06);
+  border: 1px solid $line;
+  border-radius: 999px;
+  color: $text;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 6px;
+  padding: 5px 10px;
+}
+
+.status {
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  margin-left: auto;
+  padding: 5px 9px;
+  text-transform: uppercase;
+
+  &[data-status="Playable"] {
+    background: rgba(#6ee7a8, 0.14);
+    color: #6ee7a8;
+  }
+
+  &[data-status="Prototype"] {
+    background: rgba(#ffd166, 0.14);
+    color: #ffd166;
+  }
+}
+
+.cta {
+  align-items: center;
+  align-self: flex-start;
+  background: rgba(#fff, 0.08);
+  border-radius: 999px;
+  color: $text;
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 800;
+  gap: 10px;
+  padding: 11px 18px;
+  transition:
+    background 200ms ease,
+    color 200ms ease;
+}
+
+.ctaArrow {
+  transition: transform 260ms $pop;
+}
+
+@keyframes drift {
+  to {
+    transform: translate(60px, 40px) scale(1.15);
+  }
+}
+
+@keyframes bounce {
+  0% {
+    transform: rotate(-4deg) scale(1);
+  }
+
+  40% {
+    transform: rotate(-12deg) scale(1.16) translateY(-8px);
+  }
+
+  100% {
+    transform: rotate(-8deg) scale(1.08);
+  }
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    transform: scale(0.6) rotate(0deg);
+  }
+
+  50% {
+    transform: scale(1.1) rotate(45deg);
+  }
+}
+
+@keyframes roll {
+  to {
+    transform: rotate(720deg) scale(1.2);
+  }
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@media (width <= 760px) {
+  .library {
+    padding: 0 16px 64px;
+  }
+
+  .topBar {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .hero {
+    margin-top: 20px;
+  }
+
+  .heroCopy {
+    font-size: 16px;
+  }
+
+  .grid {
+    gap: 20px;
+    grid-template-columns: minmax(0, 1fr);
+    margin-top: 36px;
+  }
+
+  .art {
+    height: 180px;
+  }
+
+  .body {
+    padding: 18px 20px 22px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .library *,
+  .library *::before,
+  .library *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .card:hover,
+  .card:focus-within {
+    transform: none;
+  }
+}

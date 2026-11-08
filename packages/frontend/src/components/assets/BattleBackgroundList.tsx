@@ -36,7 +36,7 @@ export function BattleBackgroundList({
   return (
     <Flex direction="column" gap="3" width="100%">
       <Flex className={styles.sectionHeader}>
-        <span className={styles.sectionTitle}>Battle backgrounds</span>
+        <span className={styles.sectionTitle}>Library</span>
         {backgrounds.length > 0 && (
           <span className={styles.assetCount}>{backgrounds.length}</span>
         )}
@@ -55,7 +55,7 @@ export function BattleBackgroundList({
           <Flex className={styles.emptyState}>
             <span>No battle backgrounds yet</span>
             <span className={styles.emptyStateHint}>
-              describe a tower room to paint its battle backdrop
+              Describe a tower room to paint its battle backdrop.
             </span>
           </Flex>
         )}

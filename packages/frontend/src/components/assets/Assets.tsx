@@ -1,27 +1,34 @@
 "use client";
 
-import { Compass, PanelLeft } from "lucide-react";
+import { ArrowLeft, Compass, PanelLeft } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { ProductNowConnection } from "@/components/productNow/ProductNowConnection";
-import { Dialog, Flex } from "@/lib/radix";
+import { Dialog } from "@/lib/radix";
 import { type AssetClassJobCounts, AssetClassNav } from "./AssetClassNav";
 import styles from "./Assets.module.scss";
-import type { AssetClassDefinition } from "./assetClasses/assetClassDefinition";
 import { ASSET_CLASSES } from "./assetClasses/assetClassRegistry";
 import { assetClassEyebrow } from "./assetClasses/groupAssetClasses";
-import { GenerateAssetForm } from "./GenerateAssetForm";
+import { PromptComposer } from "./PromptComposer";
 import { useAssetGenerationJobs } from "./useAssetGenerationJobs";
+import { hrefWithGenerator, readGeneratorFromSearch } from "./workshopLocation";
+
+const ASSET_CLASS_IDS = ASSET_CLASSES.map((assetClass) => assetClass.id);
 
 /**
- * Blueprint workshop. A sidebar splits every registered asset class into 2D,
- * 3D, and Both, then by category, and can be filtered by name. The active
- * class gets a content header, its own
- * generate dialog (unless it manages its own generation controls), and its
- * gallery.
+ * Blueprint Workshop. A sidebar lists every generator under 2D art, 3D
+ * models, and sound for any game. The chosen generator shows a prompt box
+ * (unless it brings its own controls) above its library of saved results.
+ * The choice is kept in the address, so a refresh or a shared link opens
+ * the same generator.
+ * @returns The workshop page
  */
 export function Assets() {
-  const [activeClassId, setActiveClassId] = useState(ASSET_CLASSES[0]?.id);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [activeClassId, setActiveClassId] = useState(
+    () =>
+      readGeneratorFromSearch(window.location.search, ASSET_CLASS_IDS) ??
+      ASSET_CLASS_IDS[0],
+  );
   const [isNavDialogOpen, setIsNavDialogOpen] = useState(false);
   const {
     associateDungeonSlot,
@@ -48,61 +55,70 @@ export function Assets() {
   const { Gallery, Icon } = activeClass;
   const jobCounts = buildJobCounts(getJobsForClass);
 
+  /**
+   * Shows a generator and records it in the address.
+   * @param assetClassId - Generator to show
+   */
   const handleSelectClass = (assetClassId: string) => {
     setActiveClassId(assetClassId);
-    setIsDialogOpen(false);
     setIsNavDialogOpen(false);
-  };
-
-  const handleGenerate = (prompt: string) => {
-    startJob(activeClass, prompt);
-    setIsDialogOpen(false);
+    window.history.replaceState(
+      null,
+      "",
+      hrefWithGenerator(window.location.href, assetClassId),
+    );
+    window.scrollTo({ top: 0 });
   };
 
   return (
-    <Flex className={styles.pageWrapper} direction="column">
-      <Flex className={styles.brandRow}>
-        <Flex align="center" className={styles.brandLockup} gap="3">
+    <div className={styles.pageWrapper}>
+      <header className={styles.topBar}>
+        <div className={styles.topBarStart}>
+          <Link className={styles.backLink} href="/">
+            <ArrowLeft aria-hidden="true" size={15} />
+            All games
+          </Link>
+          <span aria-hidden="true" className={styles.topBarDivider} />
           <span aria-hidden="true" className={styles.brandMark}>
-            <Compass size={18} />
+            <Compass size={17} />
           </span>
-          <Flex className={styles.titleGroup} direction="column">
+          <div className={styles.titleGroup}>
             <span className={styles.pageTitle}>Blueprint Workshop</span>
             <span className={styles.pageSubtitle}>
-              Pick a generator, describe what you want, and keep the result.
+              Generate art, models, and sound for your games
             </span>
-          </Flex>
-        </Flex>
-        <button
-          className={styles.mobileNavTrigger}
-          onClick={() => setIsNavDialogOpen(true)}
-          type="button"
-        >
-          <PanelLeft size={15} />
-          {activeClass.tabLabel}
-        </button>
-      </Flex>
+          </div>
+        </div>
+        <div className={styles.topBarActions}>
+          <button
+            className={styles.mobileNavTrigger}
+            onClick={() => setIsNavDialogOpen(true)}
+            type="button"
+          >
+            <PanelLeft aria-hidden="true" size={15} />
+            {activeClass.tabLabel}
+          </button>
+          <ProductNowConnection placement="inline" />
+        </div>
+      </header>
 
       <div className={styles.workshopLayout}>
-        <aside className={styles.sidebar}>
+        <aside aria-label="Generators" className={styles.sidebar}>
           <AssetClassNav
             activeClassId={activeClass.id}
             jobCounts={jobCounts}
             onSelect={handleSelectClass}
           />
-          <div className={styles.sidebarFooter}>
-            <ProductNowConnection placement="inline" />
-          </div>
         </aside>
 
-        <section className={styles.mainColumn}>
-          <header className={styles.contentHeader}>
-            <div
-              className={styles.contentIdentity}
-              data-category={activeClass.category}
-            >
+        <main className={styles.mainColumn}>
+          <section
+            className={styles.contentHeader}
+            data-category={activeClass.category}
+          >
+            <div className={styles.contentIdentity}>
               <span aria-hidden="true" className={styles.contentIcon}>
-                <Icon size={20} />
+                <Icon size={22} />
               </span>
               <div className={styles.contentHeading}>
                 <span className={styles.contentEyebrow}>
@@ -114,28 +130,16 @@ export function Assets() {
                 </p>
               </div>
             </div>
-
             {activeClass.customGeneration ? null : (
-              <Dialog
-                content={
-                  <GenerateAssetForm
-                    copy={activeClass.form}
-                    onSubmit={handleGenerate}
-                  />
-                }
-                description={activeClass.dialogDescription}
-                isOpen={isDialogOpen}
-                onToggleOpen={setIsDialogOpen}
-                title={activeClass.dialogTitle}
-                trigger={
-                  <button className={styles.generateButton} type="button">
-                    {getGenerateButtonLabel(activeClass, runningCount)}
-                  </button>
-                }
-                width="480px"
+              <PromptComposer
+                copy={activeClass.form}
+                id={`prompt-${activeClass.id}`}
+                key={activeClass.id}
+                onSubmit={(prompt) => startJob(activeClass, prompt)}
+                runningCount={runningCount}
               />
             )}
-          </header>
+          </section>
 
           <Gallery
             key={activeClass.id}
@@ -149,7 +153,7 @@ export function Assets() {
             results={getResultsForClass(activeClass.id)}
             slotJobs={getDungeonSlotJobs()}
           />
-        </section>
+        </main>
       </div>
 
       <Dialog
@@ -165,7 +169,7 @@ export function Assets() {
         title="Choose a generator"
         width="340px"
       />
-    </Flex>
+    </div>
   );
 }
 
@@ -187,19 +191,4 @@ function buildJobCounts(
     };
   }
   return counts;
-}
-
-/**
- * @param assetClass - Active asset class
- * @param runningCount - Jobs still running for that class
- * @returns Label for the generate button
- */
-function getGenerateButtonLabel(
-  assetClass: AssetClassDefinition,
-  runningCount: number,
-): string {
-  if (runningCount > 0) {
-    return `+ Generate (${runningCount} running)`;
-  }
-  return assetClass.generateButtonLabel;
 }
