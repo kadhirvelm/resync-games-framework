@@ -3,7 +3,8 @@
 ## Repository
 
 Resync Game Framework is a Bun and TypeScript monorepo. Towers of Coreborn
-(`towers-of-coreborn`) and Descent (`descent`) are two example games that ship in it. You can see how the 2D and 3D game development works through them.
+(`towers-of-coreborn`) and Descent (`descent`) are two example games that ship in it,
+and Crossword Crypt (`crossword-crypt`) is a multiplayer prototype. You can see how the 2D and 3D game development works through them.
 
 - `packages/frontend` — Next.js 16 and React 19 game client
 - `packages/backend` — NestJS API, WebSockets, and asset generation
@@ -42,7 +43,7 @@ that package directory.
 | What | Where |
 | --- | --- |
 | Game library | https://localhost:3000 |
-| A game | https://localhost:3000/<gameId> (`towers-of-coreborn`, `descent`, `three-d-sandbox`) |
+| A game | https://localhost:3000/<gameId> (`towers-of-coreborn`, `descent`, `three-d-sandbox`, `crossword-crypt`) |
 | Blueprint Workshop (asset generation) | https://localhost:3000/assets |
 | Backend API and WebSockets | https://localhost:8080 |
 | Backend debugger | `localhost:9229` (Node inspector) |
@@ -413,6 +414,13 @@ To add simple multiplayer to a game:
 
 The copy-ready client example is in
 `packages/frontend/src/services/multiplayer/README.md`.
+
+Crossword Crypt lives in `components/crossword-crypt/`. Its seeded deal and run
+rules are pure and shared through the API package so the server can enforce
+them. `useMultiplayerRoom` owns room codes and presence, while game-specific
+commands mutate the Redis-locked public snapshot. Answer keys and every private
+slice remain server-owned and are delivered only to the assigned player's
+socket; never put them in `gameState`.
 
 For game-specific commands or server-authoritative competitive rules, add the
 event and acknowledgement to the shared API definition, handle it on a Nest

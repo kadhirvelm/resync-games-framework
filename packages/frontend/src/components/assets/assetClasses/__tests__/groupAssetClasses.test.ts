@@ -93,9 +93,12 @@ describe("assetClassMatchesQuery", () => {
 });
 
 describe("assetClassEyebrow", () => {
-  test("prefixes the section unless the category already names it", () => {
-    expect(assetClassEyebrow(character)).toBe("2D · Characters");
-    expect(assetClassEyebrow(audio)).toBe("Both · Sound");
+  test("prefixes the sidebar section unless one already names the other", () => {
+    expect(assetClassEyebrow(character)).toBe("2D art · Characters");
+    expect(assetClassEyebrow(audio)).toBe("Any game · Sound");
     expect(assetClassEyebrow(models)).toBe("3D models");
+    expect(assetClassEyebrow({ ...models, category: "Models" })).toBe(
+      "3D models",
+    );
   });
 });

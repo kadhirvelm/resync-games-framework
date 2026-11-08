@@ -1,5 +1,6 @@
 import {
   ASSET_MEDIUM_LABELS,
+  ASSET_MEDIUM_SECTION_TITLES,
   ASSET_MEDIUMS,
   type AssetMedium,
 } from "./assetClassDefinition";
@@ -73,17 +74,23 @@ export function assetClassMatchesQuery(
 }
 
 /**
- * Eyebrow above a generator's title. Skips repeating the section name when
- * the category already starts with it, so "3D models" stays "3D models".
+ * Eyebrow above a generator's title: the sidebar section, then the category.
+ * When one already contains the other ("3D models" and "Models"), only the
+ * longer one is shown.
  * @param assetClass - Generator on screen
- * @returns Section and category, such as "2D · Characters"
+ * @returns Section and category, such as "2D art · Characters"
  */
 export function assetClassEyebrow(assetClass: GroupableAssetClass): string {
-  const mediumLabel = ASSET_MEDIUM_LABELS[assetClass.medium];
-  if (assetClass.category.toLowerCase().startsWith(mediumLabel.toLowerCase())) {
+  const sectionTitle = ASSET_MEDIUM_SECTION_TITLES[assetClass.medium];
+  const category = assetClass.category.toLowerCase();
+  const section = sectionTitle.toLowerCase();
+  if (category.includes(section)) {
     return assetClass.category;
   }
-  return `${mediumLabel} · ${assetClass.category}`;
+  if (section.includes(category)) {
+    return sectionTitle;
+  }
+  return `${sectionTitle} · ${assetClass.category}`;
 }
 
 /**

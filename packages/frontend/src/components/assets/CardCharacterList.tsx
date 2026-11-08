@@ -44,7 +44,7 @@ export function CardCharacterList({
   return (
     <Flex direction="column" gap="3" width="100%">
       <Flex className={styles.sectionHeader}>
-        <span className={styles.sectionTitle}>Card characters</span>
+        <span className={styles.sectionTitle}>Library</span>
         {sets.length > 0 && (
           <span className={styles.assetCount}>{sets.length}</span>
         )}
@@ -61,7 +61,7 @@ export function CardCharacterList({
         <Flex className={styles.emptyState}>
           <span>No card characters yet</span>
           <span className={styles.emptyStateHint}>
-            describe a character to generate four power levels
+            Describe a character to generate four power levels.
           </span>
         </Flex>
       )}

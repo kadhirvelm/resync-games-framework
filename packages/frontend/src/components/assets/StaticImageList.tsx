@@ -137,7 +137,7 @@ export function StaticImageList({
   return (
     <Flex direction="column" gap="3" width="100%">
       <Flex className={styles.sectionHeader}>
-        <span className={styles.sectionTitle}>Static images</span>
+        <span className={styles.sectionTitle}>Library</span>
         {images.length > 0 && (
           <span className={styles.assetCount}>{images.length}</span>
         )}
@@ -154,7 +154,7 @@ export function StaticImageList({
         <Flex className={styles.emptyState}>
           <span>No static images yet</span>
           <span className={styles.emptyStateHint}>
-            describe an icon, cutout, illustration, texture, or backdrop
+            Describe an icon, cutout, illustration, texture, or backdrop.
           </span>
         </Flex>
       )}

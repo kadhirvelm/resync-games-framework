@@ -49,5 +49,5 @@ export const STATIC_IMAGE_ASSET_CLASS: AssetClassDefinition = {
   id: "static-images",
   medium: "2d",
   subtitle: "icons, cutouts, textures, and illustrations",
-  tabLabel: "Static Images",
+  tabLabel: "Static images",
 };

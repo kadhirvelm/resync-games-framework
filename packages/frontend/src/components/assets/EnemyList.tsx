@@ -45,7 +45,7 @@ export function EnemyList({
   return (
     <Flex direction="column" gap="3" width="100%">
       <Flex className={styles.sectionHeader}>
-        <span className={styles.sectionTitle}>Enemies</span>
+        <span className={styles.sectionTitle}>Library</span>
         {enemies.length > 0 && (
           <span className={styles.assetCount}>{enemies.length}</span>
         )}
@@ -62,7 +62,7 @@ export function EnemyList({
         <Flex className={styles.emptyState}>
           <span>No enemies yet</span>
           <span className={styles.emptyStateHint}>
-            describe a creature to paint it facing the player
+            Describe a creature to paint it facing the player.
           </span>
         </Flex>
       )}

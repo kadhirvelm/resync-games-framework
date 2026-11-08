@@ -13,6 +13,7 @@ describe("game experience paths", () => {
     );
     expect(gameExperiencePath("descent")).toBe("/descent");
     expect(gameExperiencePath("three-d-sandbox")).toBe("/three-d-sandbox");
+    expect(gameExperiencePath("crossword-crypt")).toBe("/crossword-crypt");
     expect(isGameExperienceId("assets")).toBe(false);
   });
 

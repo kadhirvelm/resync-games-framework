@@ -5,6 +5,7 @@ export const GAME_EXPERIENCE_IDS = [
   "descent",
   "three-d-sandbox",
   "towers-of-coreborn",
+  "crossword-crypt",
 ] as const satisfies readonly GameExperienceId[];
 
 /** Query keys a game may keep when an old library link is redirected. */

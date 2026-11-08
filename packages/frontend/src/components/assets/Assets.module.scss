@@ -2,78 +2,186 @@
 
 // ── Blueprint palette ──────────────────────────────────────────────────────
 $blueprint-base: #021433;
-$blueprint-line-major: rgb(120 176 255 / 16%);
-$blueprint-line-minor: rgb(120 176 255 / 6%);
+$blueprint-line-major: rgb(120 176 255 / 14%);
+$blueprint-line-minor: rgb(120 176 255 / 5%);
 $blueprint-muted: rgb(168 198 236 / 78%);
-$blueprint-border: rgb(126 176 240 / 24%);
+$blueprint-border: rgb(126 176 240 / 22%);
 $blueprint-ink: #241806;
 $workshop-gold: #f0b429;
 $workshop-gold-deep: #d99a12;
+$surface: rgb(5 24 58 / 82%);
+$surface-raised: rgb(9 33 74 / 92%);
+$text-soft: rgb(214 228 248 / 84%);
+$paper: #f6f2e8;
+$ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 
-// ── Blueprint grid background ──────────────────────────────────────────────
+// Gallery cards are dark tiles; their text classes read these. The same text
+// classes inside the white detail dialogs fall back to dark ink.
+@mixin dark-tile {
+  --card-ink: #{vars.$white};
+  --card-ink-soft: #{$text-soft};
+  --card-ink-muted: #{$blueprint-muted};
+
+  background: $surface;
+  border: 1px solid $blueprint-border;
+  border-radius: 16px;
+  box-shadow: 0 14px 34px rgb(0 8 28 / 30%);
+  cursor: pointer;
+  font: inherit;
+  overflow: hidden;
+  text-align: left;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.25s $ease-pop;
+
+  &:hover {
+    border-color: rgb(240 180 41 / 60%);
+    box-shadow:
+      0 18px 40px rgb(0 8 28 / 42%),
+      0 0 0 1px rgb(240 180 41 / 25%);
+    transform: translateY(-3px);
+  }
+
+  &:focus-visible {
+    outline: 2px solid $workshop-gold;
+    outline-offset: 3px;
+  }
+}
+
+// ── Page ───────────────────────────────────────────────────────────────────
 .pageWrapper {
   --scrollbar-thumb: rgb(168 198 236 / 36%);
   --scrollbar-thumb-hover: rgb(198 220 248 / 62%);
 
+  background-attachment: fixed;
   background-color: $blueprint-base;
   background-image:
-    radial-gradient(ellipse 70% 42% at 12% -8%, rgb(88 150 255 / 28%), transparent 58%),
-    radial-gradient(ellipse 36% 28% at 100% 0%, rgb(240 180 41 / 14%), transparent 52%),
+    radial-gradient(ellipse 70% 42% at 12% -8%, rgb(88 150 255 / 26%), transparent 58%),
+    radial-gradient(ellipse 36% 28% at 100% 0%, rgb(240 180 41 / 12%), transparent 52%),
     linear-gradient($blueprint-line-major 1px, transparent 1px),
     linear-gradient(90deg, $blueprint-line-major 1px, transparent 1px),
     linear-gradient($blueprint-line-minor 1px, transparent 1px),
     linear-gradient(90deg, $blueprint-line-minor 1px, transparent 1px);
   background-size: auto, auto, 80px 80px, 80px 80px, 20px 20px, 20px 20px;
-  gap: 22px;
+  box-sizing: border-box;
+  color: vars.$white;
+  display: flex;
+  flex-direction: column;
   min-height: 100dvh;
-  padding: 24px 28px 40px;
+  padding: 0 28px 48px;
   width: 100%;
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
 }
 
-// ── Brand row ──────────────────────────────────────────────────────────────
-.brandRow {
+// ── Top bar ────────────────────────────────────────────────────────────────
+.topBar {
   align-items: center;
+  backdrop-filter: blur(14px);
+  background: rgb(2 20 51 / 78%);
+  border-bottom: 1px solid $blueprint-border;
+  display: flex;
   gap: 16px;
   justify-content: space-between;
-  width: 100%;
+  margin: 0 -28px 24px;
+  padding: 12px 28px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
 
-.brandLockup {
+.topBarStart {
+  align-items: center;
+  display: flex;
+  gap: 12px;
   min-width: 0;
+}
+
+.topBarActions {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: 10px;
+
+  // The shared ProductNow button is styled for light pages.
+  button {
+    background: rgb(255 255 255 / 8%) !important;
+    box-shadow: inset 0 0 0 1px rgb(168 198 236 / 40%) !important;
+    color: #e8f1ff !important;
+  }
+}
+
+.backLink {
+  align-items: center;
+  border-radius: 999px;
+  color: $text-soft;
+  display: inline-flex;
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  gap: 6px;
+  padding: 7px 12px 7px 9px;
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background: rgb(255 255 255 / 8%);
+    color: vars.$white;
+  }
+
+  &:focus-visible {
+    outline: 2px solid $workshop-gold;
+    outline-offset: 2px;
+  }
+}
+
+.topBarDivider {
+  background: $blueprint-border;
+  flex-shrink: 0;
+  height: 24px;
+  width: 1px;
 }
 
 .brandMark {
   align-items: center;
   background: linear-gradient(160deg, #ffe7a8, $workshop-gold 55%, $workshop-gold-deep);
-  border-radius: 12px;
-  box-shadow: 0 8px 18px rgb(240 180 41 / 22%);
+  border-radius: 10px;
+  box-shadow: 0 6px 16px rgb(240 180 41 / 24%);
   color: $blueprint-ink;
   display: inline-flex;
   flex-shrink: 0;
-  height: 40px;
+  height: 34px;
   justify-content: center;
-  width: 40px;
+  width: 34px;
 }
 
 .titleGroup {
-  gap: 2px;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
 }
 
 .pageTitle {
-  color: vars.$white;
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
 }
 
 .pageSubtitle {
   color: $blueprint-muted;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-// ── Mobile nav trigger (hidden on wide screens) ─────────────────────────────
 .mobileNavTrigger {
   align-items: center;
   background: rgb(4 22 52 / 82%);
@@ -94,54 +202,50 @@ $workshop-gold-deep: #d99a12;
   }
 }
 
-// ── Workshop layout: sidebar + main column ──────────────────────────────────
+// ── Layout ─────────────────────────────────────────────────────────────────
 .workshopLayout {
   align-items: flex-start;
   display: grid;
   gap: 24px;
-  grid-template-columns: 252px minmax(0, 1fr);
+  grid-template-columns: 236px minmax(0, 1fr);
+  margin: 0 auto;
+  max-width: 1480px;
   width: 100%;
 }
 
 .sidebar {
+  --nav-ink: #{vars.$white};
+  --nav-ink-soft: rgb(214 228 248 / 86%);
+  --nav-ink-muted: #{$blueprint-muted};
+  --nav-hover: rgb(255 255 255 / 6%);
+  --nav-field: rgb(255 255 255 / 5%);
+  --nav-line: #{$blueprint-border};
+
   background: rgb(3 18 46 / 78%);
   border: 1px solid $blueprint-border;
   border-radius: 16px;
   box-shadow: 0 18px 40px rgb(0 8 28 / 28%);
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-height: calc(100dvh - 112px);
-  padding: 12px;
+  max-height: calc(100dvh - 96px);
+  padding: 10px;
   position: sticky;
-  top: 20px;
+  top: 80px;
   width: 100%;
-}
-
-.sidebarFooter {
-  border-top: 1px solid $blueprint-border;
-  flex-shrink: 0;
-  padding-top: 12px;
-
-  button {
-    background: rgb(255 255 255 / 8%) !important;
-    box-shadow: inset 0 0 0 1px rgb(168 198 236 / 40%) !important;
-    color: #e8f1ff !important;
-    justify-content: center;
-    width: 100%;
-  }
 }
 
 .mainColumn {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 22px;
   min-width: 0;
   width: 100%;
 }
 
-// ── Sidebar / mobile nav ─────────────────────────────────────────────────────
+// ── Sidebar / mobile nav ───────────────────────────────────────────────────
 .navPanel {
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   min-height: 0;
   overflow: hidden;
@@ -149,33 +253,34 @@ $workshop-gold-deep: #d99a12;
 
 .navSearchField {
   align-items: center;
-  background: rgb(255 255 255 / 6%);
-  border: 1px solid $blueprint-border;
+  background: var(--nav-field, #f3f6fb);
+  border: 1px solid var(--nav-line, #d5deea);
   border-radius: 10px;
-  color: $blueprint-muted;
+  color: var(--nav-ink-muted, #5b6b84);
   display: flex;
   flex-shrink: 0;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 7px 10px;
 
   &:focus-within {
     border-color: rgb(240 180 41 / 70%);
-    color: vars.$white;
+    color: var(--nav-ink, #14213a);
   }
 }
 
 .navSearchInput {
   background: transparent;
   border: 0;
-  color: vars.$white;
+  color: var(--nav-ink, #14213a);
   flex: 1;
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   min-width: 0;
   outline: none;
 
   &::placeholder {
-    color: rgb(120 170 230 / 45%);
+    color: var(--nav-ink-muted, #7b8aa3);
+    opacity: 0.75;
   }
 }
 
@@ -184,60 +289,61 @@ $workshop-gold-deep: #d99a12;
   flex-direction: column;
   gap: 14px;
   overflow-y: auto;
-  padding-right: 2px;
+  padding: 2px 2px 2px 0;
 }
 
 .navSection {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-
-  & + & {
-    border-top: 1px solid $blueprint-border;
-    padding-top: 12px;
-  }
+  gap: 1px;
 }
 
 .navSectionLabel {
-  color: vars.$white;
-  font-size: 12px;
+  align-items: center;
+  color: var(--section-accent);
+  display: flex;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.14em;
-  padding: 2px 8px 0;
+  gap: 8px;
+  letter-spacing: 0.12em;
+  padding: 4px 8px 6px;
   text-transform: uppercase;
+
+  &::after {
+    background: linear-gradient(90deg, color-mix(in srgb, var(--section-accent) 40%, transparent), transparent);
+    content: "";
+    flex: 1;
+    height: 1px;
+  }
 }
 
-.navSection[data-medium="2d"] .navSectionLabel {
-  color: #f0b429;
+.navSection[data-medium="2d"] {
+  --section-accent: #f0b429;
 }
 
-.navSection[data-medium="3d"] .navSectionLabel {
-  color: #7ddec8;
+// Outside the dark sidebar (the mobile dialog), icons and labels need ink.
+.navPanel:not(.sidebar .navPanel) {
+  .navSectionLabel {
+    color: color-mix(in srgb, var(--section-accent) 60%, #14213a);
+  }
+
+  .navItemIcon {
+    color: color-mix(in srgb, var(--nav-accent, #7ec8ff) 55%, #14213a);
+  }
 }
 
-.navSection[data-medium="both"] .navSectionLabel {
-  color: #f3c6a0;
+.navSection[data-medium="3d"] {
+  --section-accent: #7ddec8;
+}
+
+.navSection[data-medium="both"] {
+  --section-accent: #f3c6a0;
 }
 
 .navEmpty {
-  color: $blueprint-muted;
+  color: var(--nav-ink-muted, #5b6b84);
   font-size: 12px;
-  padding: 8px 2px;
-}
-
-.navGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.navGroupLabel {
-  color: rgb(186 210 240 / 62%);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  padding: 8px 8px 4px;
-  text-transform: uppercase;
+  padding: 8px 4px;
 }
 
 .navItem {
@@ -245,32 +351,47 @@ $workshop-gold-deep: #d99a12;
   background: transparent;
   border: 0;
   border-radius: 10px;
-  color: rgb(214 228 248 / 88%);
+  color: var(--nav-ink-soft, #2a3a55);
   cursor: pointer;
   display: flex;
   font: inherit;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
   gap: 10px;
-  padding: 6px;
+  padding: 5px 8px 5px 5px;
+  position: relative;
   text-align: left;
   transition: background 0.15s ease, color 0.15s ease;
   width: 100%;
 
   &:hover {
-    background: rgb(255 255 255 / 6%);
-    color: vars.$white;
+    background: var(--nav-hover, #eef2f8);
+    color: var(--nav-ink, #14213a);
+
+    .navItemIcon {
+      transform: scale(1.08) rotate(-4deg);
+    }
   }
 
   &:focus-visible {
     outline: 2px solid $workshop-gold;
-    outline-offset: 2px;
+    outline-offset: 1px;
   }
 
   &.navItemActive {
-    background: rgb(255 255 255 / 10%);
-    box-shadow: inset 3px 0 0 var(--nav-accent, #{$workshop-gold});
-    color: vars.$white;
+    background: color-mix(in srgb, var(--nav-accent, #{$workshop-gold}) 16%, transparent);
+    color: var(--nav-ink, #14213a);
+
+    &::before {
+      background: var(--nav-accent, #{$workshop-gold});
+      border-radius: 0 3px 3px 0;
+      bottom: 8px;
+      content: "";
+      left: -10px;
+      position: absolute;
+      top: 8px;
+      width: 3px;
+    }
   }
 }
 
@@ -281,41 +402,47 @@ $workshop-gold-deep: #d99a12;
   flex-shrink: 0;
   height: 28px;
   justify-content: center;
+  transition: transform 0.25s $ease-pop;
   width: 28px;
 }
 
 .navItem[data-category="Dungeons"],
-.contentIdentity[data-category="Dungeons"] {
+.contentHeader[data-category="Dungeons"] {
   --nav-accent: #f0b429;
 }
 
-.navItem[data-category="3D models"],
-.contentIdentity[data-category="3D models"] {
+.navItem[data-category="Models"],
+.contentHeader[data-category="Models"] {
   --nav-accent: #7ddec8;
 }
 
 .navItem[data-category="Characters"],
-.contentIdentity[data-category="Characters"] {
+.contentHeader[data-category="Characters"] {
   --nav-accent: #c4b5fd;
 }
 
 .navItem[data-category="Environments"],
-.contentIdentity[data-category="Environments"] {
+.contentHeader[data-category="Environments"] {
   --nav-accent: #7ec8ff;
 }
 
 .navItem[data-category="Cards"],
-.contentIdentity[data-category="Cards"] {
+.contentHeader[data-category="Cards"] {
   --nav-accent: #f3a0c8;
 }
 
 .navItem[data-category="Sprites"],
-.contentIdentity[data-category="Sprites"] {
+.contentHeader[data-category="Sprites"] {
   --nav-accent: #c6e87a;
 }
 
+.navItem[data-category="Images"],
+.contentHeader[data-category="Images"] {
+  --nav-accent: #8fd3ff;
+}
+
 .navItem[data-category="Sound"],
-.contentIdentity[data-category="Sound"] {
+.contentHeader[data-category="Sound"] {
   --nav-accent: #f3c6a0;
 }
 
@@ -344,12 +471,12 @@ $workshop-gold-deep: #d99a12;
   border-radius: 999px;
   display: inline-flex;
   flex-shrink: 0;
-  font-family: monospace;
   font-size: 10px;
-  height: 16px;
+  font-weight: 700;
+  height: 18px;
   justify-content: center;
-  min-width: 16px;
-  padding: 0 5px;
+  min-width: 18px;
+  padding: 0 6px;
 }
 
 .navBadgeRunning {
@@ -363,37 +490,36 @@ $workshop-gold-deep: #d99a12;
   color: vars.$white;
 }
 
-// ── Content header ───────────────────────────────────────────────────────────
+// ── Generator panel: identity + prompt box ─────────────────────────────────
 .contentHeader {
-  align-items: center;
-  background: rgb(3 18 46 / 72%);
+  background:
+    radial-gradient(ellipse 60% 120% at 0% 0%, color-mix(in srgb, var(--nav-accent, #7ec8ff) 14%, transparent), transparent 60%),
+    rgb(3 18 46 / 80%);
   border: 1px solid $blueprint-border;
-  border-radius: 16px;
-  box-shadow: 0 18px 40px rgb(0 8 28 / 22%);
+  border-radius: 18px;
+  box-shadow: 0 18px 40px rgb(0 8 28 / 24%);
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 18px;
-  justify-content: space-between;
-  padding: 18px 18px 18px 16px;
+  padding: 20px;
   width: 100%;
 }
 
 .contentIdentity {
   align-items: flex-start;
   display: flex;
-  flex: 1 1 360px;
   gap: 14px;
   min-width: 0;
 }
 
 .contentIcon {
   align-items: center;
-  border-radius: 12px;
+  border-radius: 14px;
   display: inline-flex;
   flex-shrink: 0;
-  height: 44px;
+  height: 48px;
   justify-content: center;
-  width: 44px;
+  width: 48px;
 }
 
 .contentHeading {
@@ -414,7 +540,7 @@ $workshop-gold-deep: #d99a12;
 
 .contentTitle {
   color: vars.$white;
-  font-size: 26px;
+  font-size: 28px;
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.1;
@@ -422,28 +548,132 @@ $workshop-gold-deep: #d99a12;
 }
 
 .contentDescription {
-  color: rgb(214 228 248 / 82%);
+  color: $text-soft;
   font-size: 14px;
   line-height: 1.5;
   margin: 2px 0 0;
-  max-width: 62ch;
+  max-width: 68ch;
+}
+
+.composer {
+  background: rgb(0 10 32 / 55%);
+  border: 1px solid $blueprint-border;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 12px 10px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+  &:focus-within {
+    border-color: rgb(240 180 41 / 65%);
+    box-shadow: 0 0 0 3px rgb(240 180 41 / 14%);
+  }
+}
+
+.composerLabel {
+  color: $blueprint-muted;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0 2px;
+}
+
+.composerInput {
+  background: transparent;
+  border: 0;
+  color: vars.$white;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+  min-height: 72px;
+  outline: none;
+  padding: 2px;
+  resize: vertical;
+  width: 100%;
+
+  &::placeholder {
+    color: rgb(150 185 230 / 50%);
+  }
+}
+
+.composerFooter {
+  align-items: center;
+  border-top: 1px solid rgb(126 176 240 / 12%);
+  display: flex;
+  gap: 12px;
+  padding-top: 10px;
+}
+
+.composerHint,
+.composerStarted,
+.composerRunning {
+  flex: 1;
+  font-size: 12px;
+  line-height: 1.4;
+  min-width: 0;
+}
+
+.composerHint {
+  color: $blueprint-muted;
+}
+
+.composerStarted {
+  color: #8ee6b6;
+  font-weight: 600;
+}
+
+.composerRunning {
+  align-items: center;
+  color: #ffe7a8;
+  display: flex;
+  font-weight: 600;
+  gap: 8px;
+}
+
+.composerRunningDot {
+  animation: nav-badge-pulse 1.4s ease-in-out infinite;
+  background: $workshop-gold;
+  border-radius: 50%;
+  box-shadow: 0 0 10px $workshop-gold;
+  height: 8px;
+  width: 8px;
+}
+
+.composerShortcut {
+  color: rgb(150 185 230 / 55%);
+  flex-shrink: 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
 }
 
 .generateButton {
+  align-items: center;
   background: linear-gradient(180deg, #ffe7a8 0%, $workshop-gold 58%, $workshop-gold-deep 100%);
   border: 0;
-  border-radius: 12px;
-  box-shadow: 0 10px 22px rgb(240 180 41 / 28%);
+  border-radius: 11px;
+  box-shadow: 0 8px 20px rgb(240 180 41 / 24%);
   color: $blueprint-ink;
   cursor: pointer;
+  display: inline-flex;
   flex-shrink: 0;
   font: inherit;
   font-size: 14px;
   font-weight: 700;
-  padding: 12px 18px;
+  gap: 8px;
+  padding: 10px 16px;
+  transition: filter 0.15s ease, transform 0.2s $ease-pop;
 
-  &:hover {
-    filter: brightness(1.05);
+  &:hover:not(:disabled) {
+    filter: brightness(1.06);
+    transform: translateY(-1px);
+  }
+
+  &:disabled {
+    box-shadow: none;
+    cursor: not-allowed;
+    filter: grayscale(0.6);
+    opacity: 0.45;
   }
 
   &:focus-visible {
@@ -454,20 +684,21 @@ $workshop-gold-deep: #d99a12;
 
 @media (width <= 880px) {
   .pageWrapper {
-    padding: 16px;
+    padding: 0 16px 32px;
   }
 
-  .brandRow {
-    flex-wrap: wrap;
-    row-gap: 10px;
+  .topBar {
+    margin: 0 -16px 16px;
+    padding: 10px 16px;
   }
 
-  .brandLockup {
-    flex: 1 1 100%;
-    min-width: 0;
-  }
-
+  .topBarDivider,
+  .brandMark,
   .pageSubtitle {
+    display: none;
+  }
+
+  .topBarActions > :not(.mobileNavTrigger) {
     display: none;
   }
 
@@ -484,31 +715,63 @@ $workshop-gold-deep: #d99a12;
   }
 
   .contentHeader {
-    padding: 14px;
+    padding: 16px;
   }
 
   .contentTitle {
-    font-size: 22px;
+    font-size: 23px;
+  }
+
+  .composerShortcut {
+    display: none;
+  }
+
+  .composerFooter {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .composerFooter .generateButton {
+    justify-content: center;
+  }
+
+  .topBarStart {
+    flex: 1;
+  }
+
+  .pageTitle {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
-// ── Section ────────────────────────────────────────────────────────────────
+// ── Library ────────────────────────────────────────────────────────────────
 .sectionHeader {
   align-items: center;
   gap: 10px;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
+
+  &::after {
+    background: linear-gradient(90deg, $blueprint-border, transparent);
+    content: "";
+    flex: 1;
+    height: 1px;
+  }
 }
 
 .sectionTitle {
-  color: rgb(214 228 248 / 72%);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  color: $blueprint-muted;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .assetCount {
-  background: rgb(240 180 41 / 16%);
-  border: 1px solid rgb(240 180 41 / 40%);
+  background: rgb(240 180 41 / 14%);
+  border: 1px solid rgb(240 180 41 / 36%);
   border-radius: 999px;
   color: #ffe7a8;
   font-size: 11px;
@@ -519,15 +782,15 @@ $workshop-gold-deep: #d99a12;
 // ── Empty / status states ──────────────────────────────────────────────────
 .emptyState {
   align-items: center;
-  background: rgb(255 255 255 / 4%);
-  border: 1px dashed rgb(240 180 41 / 45%);
+  background: rgb(255 255 255 / 3%);
+  border: 1px dashed rgb(126 176 240 / 35%);
   border-radius: 16px;
   color: vars.$white;
   flex-direction: column;
   font-size: 16px;
   font-weight: 600;
   gap: 6px;
-  padding: 48px 24px;
+  padding: 44px 24px;
   text-align: center;
 }
 
@@ -535,12 +798,11 @@ $workshop-gold-deep: #d99a12;
   color: $blueprint-muted;
   font-size: 13px;
   font-weight: 500;
-  max-width: 42ch;
+  max-width: 46ch;
 }
 
 .loadingText {
   color: rgb(160 210 255 / 90%);
-  font-family: monospace;
   font-size: 13px;
 }
 
@@ -585,7 +847,6 @@ $workshop-gold-deep: #d99a12;
   }
 }
 
-// ── Asset list loading spinner ─────────────────────────────────────────────
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -600,7 +861,7 @@ $workshop-gold-deep: #d99a12;
   width: 14px;
 }
 
-// ── Pending generation cards ───────────────────────────────────────────────
+// ── Pending generation tiles ───────────────────────────────────────────────
 @keyframes pending-pulse {
   0%, 100% {
     border-color: rgb(80 160 255 / 40%);
@@ -613,86 +874,98 @@ $workshop-gold-deep: #d99a12;
   }
 }
 
+@keyframes pending-shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+
 .pendingCard {
   align-items: center;
   animation: pending-pulse 2s ease-in-out infinite;
-  background: rgb(0 18 50 / 88%);
+  background:
+    linear-gradient(110deg, transparent 30%, rgb(120 176 255 / 10%) 50%, transparent 70%) 0 0 / 200% 100%,
+    $surface;
   border: 1px solid rgb(80 160 255 / 45%);
-  border-radius: 12px;
-  box-sizing: border-box;
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-height: 200px;
-  padding: 20px 14px 16px;
+  justify-content: center;
+  min-height: 220px;
+  padding: 22px 16px 16px;
   width: 100%;
+
+  &:not(.pendingCardFailed) {
+    animation:
+      pending-pulse 2s ease-in-out infinite,
+      pending-shimmer 2.4s linear infinite;
+  }
 }
 
 .pendingCard.pendingCardFailed {
   animation: none;
+  background: rgb(60 10 24 / 55%);
   border-color: rgb(255 80 80 / 55%);
 }
 
 .pendingSpinner {
   animation: spin 1s linear infinite;
-  border: 2px solid rgb(80 160 255 / 20%);
+  border: 3px solid rgb(80 160 255 / 18%);
   border-radius: 50%;
-  border-top-color: rgb(100 180 255 / 90%);
+  border-top-color: $workshop-gold;
   flex-shrink: 0;
-  height: 28px;
-  margin-top: 16px;
-  width: 28px;
+  height: 30px;
+  width: 30px;
 }
 
 .pendingStatusLabel {
-  color: rgb(100 180 255 / 90%);
-  font-family: monospace;
-  font-size: 10px;
+  color: #ffe7a8;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 
   .pendingCardFailed & {
-    color: rgb(255 110 110 / 90%);
+    color: rgb(255 120 120 / 95%);
   }
 }
 
 .pendingPrompt {
   -webkit-box-orient: vertical;
-  color: rgb(214 228 248 / 82%);
+  color: $text-soft;
   display: -webkit-box;
   font-size: 13px;
-  -webkit-line-clamp: 4;
-  line-clamp: 4;
-  line-height: 1.4;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  line-height: 1.45;
+  max-width: 40ch;
   overflow: hidden;
   text-align: center;
 
   .pendingCardFailed & {
-    color: rgb(200 150 150 / 60%);
+    color: rgb(230 180 180 / 75%);
   }
 }
 
-.pendingErrorMsg {
-  color: rgb(255 130 130 / 85%);
-  font-size: 11px;
-  line-height: 1.4;
-  text-align: center;
+.pendingStop,
+.pendingDismiss {
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 4px;
+  padding: 6px 16px;
+  transition: border-color 0.15s ease, color 0.15s ease;
 }
 
 .pendingStop {
-  background: transparent;
-  border: 1px solid rgb(80 160 255 / 45%);
-  border-radius: 6px;
-  color: rgb(160 210 255 / 90%);
-  cursor: pointer;
-  font-size: 11px;
-  margin-top: auto;
-  padding: 5px 14px;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  border: 1px solid rgb(126 176 240 / 45%);
+  color: rgb(190 220 255 / 92%);
 
   &:hover:not(:disabled) {
-    border-color: rgb(80 160 255 / 85%);
+    border-color: rgb(126 176 240 / 85%);
     color: vars.$white;
   }
 
@@ -703,46 +976,26 @@ $workshop-gold-deep: #d99a12;
 }
 
 .pendingDismiss {
-  background: transparent;
-  border: 1px solid rgb(255 80 80 / 35%);
-  border-radius: 6px;
-  color: rgb(255 130 130 / 80%);
-  cursor: pointer;
-  font-size: 11px;
-  margin-top: auto;
-  padding: 5px 14px;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  border: 1px solid rgb(255 80 80 / 40%);
+  color: rgb(255 150 150 / 90%);
 
   &:hover {
     border-color: rgb(255 80 80 / 75%);
-    color: rgb(255 160 160);
+    color: rgb(255 180 180);
   }
 }
 
-// ── Generate dialog ────────────────────────────────────────────────────────
-.dialogForm {
-  flex-direction: column;
-  gap: 14px;
-  padding-top: 12px;
+@media (prefers-reduced-motion: reduce) {
+  .pageWrapper *,
+  .pageWrapper *::before,
+  .pageWrapper *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
-.dialogLabel {
-  color: vars.$gray;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.dialogActions {
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-.dialogHint {
-  color: vars.$gray;
-  font-size: 12px;
-  line-height: 1.4;
-}
-
+// ── Gallery cards ──────────────────────────────────────────────────────────
 .cardSetList {
   display: flex;
   flex-direction: column;
@@ -751,37 +1004,37 @@ $workshop-gold-deep: #d99a12;
 }
 
 .cardSet {
+  @include dark-tile;
+
   align-items: stretch;
-  background: vars.$white;
-  border: 1px solid vars.$border-color;
-  border-radius: 12px;
-  cursor: pointer;
   display: flex;
   flex-direction: column;
-  font: inherit;
-  gap: 8px;
-  padding: 14px;
-  text-align: left;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  gap: 10px;
+  padding: 16px;
   width: 100%;
-
-  &:hover {
-    border-color: vars.$blue-medium;
-    box-shadow: 0 12px 28px rgb(8 24 64 / 16%);
-    transform: translateY(-2px);
-  }
 }
 
 .cardSetPrompt {
-  color: vars.$font;
-  font-size: 14px;
-  font-weight: 600;
+  -webkit-box-orient: vertical;
+  color: var(--card-ink, #{vars.$font});
+  display: -webkit-box;
+  font-size: 15px;
+  font-weight: 700;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  line-height: 1.4;
+  overflow: hidden;
 }
 
 .cardSetTheme {
-  color: vars.$gray-hover;
+  -webkit-box-orient: vertical;
+  color: var(--card-ink-muted, #{vars.$gray-hover});
+  display: -webkit-box;
   font-size: 12px;
-  line-height: 1.4;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  line-height: 1.45;
+  overflow: hidden;
 }
 
 .cardLevelRow {
@@ -799,8 +1052,8 @@ $workshop-gold-deep: #d99a12;
 }
 
 .cardPortraitFrame {
-  background: $blueprint-base;
-  border-radius: 8px;
+  background: $paper;
+  border-radius: 10px;
   overflow: hidden;
 }
 
@@ -812,7 +1065,7 @@ $workshop-gold-deep: #d99a12;
 }
 
 .cardLevelIndex {
-  color: vars.$gray;
+  color: var(--card-ink-muted, #{vars.$gray});
   font-family: monospace;
   font-size: 10px;
   letter-spacing: 0.08em;
@@ -820,13 +1073,13 @@ $workshop-gold-deep: #d99a12;
 }
 
 .cardLevelTitle {
-  color: vars.$font;
+  color: var(--card-ink, #{vars.$font});
   font-size: 12px;
   font-weight: 600;
 }
 
 .cardLevelDescription {
-  color: vars.$gray-hover;
+  color: var(--card-ink-soft, #{vars.$gray-hover});
   font-size: 12px;
   line-height: 1.4;
 }
@@ -837,30 +1090,18 @@ $workshop-gold-deep: #d99a12;
 
 .backgroundGrid {
   display: grid;
-  gap: 16px;
+  gap: 18px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   width: 100%;
 }
 
 .backgroundCard {
-  background: vars.$white;
-  border: 1px solid vars.$border-color;
-  border-radius: 12px;
-  cursor: pointer;
+  @include dark-tile;
+
   display: flex;
   flex-direction: column;
-  font: inherit;
   gap: 8px;
-  overflow: hidden;
   padding: 0 0 14px;
-  text-align: left;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
-
-  &:hover {
-    border-color: vars.$blue-medium;
-    box-shadow: 0 12px 28px rgb(8 24 64 / 16%);
-    transform: translateY(-2px);
-  }
 }
 
 .backgroundImage {
@@ -871,7 +1112,7 @@ $workshop-gold-deep: #d99a12;
 }
 
 .backgroundTitle {
-  color: vars.$font;
+  color: var(--card-ink, #{vars.$font});
   font-size: 14px;
   font-weight: 600;
   padding: 0 14px;
@@ -879,7 +1120,7 @@ $workshop-gold-deep: #d99a12;
 
 .backgroundDescription {
   -webkit-box-orient: vertical;
-  color: vars.$gray-hover;
+  color: var(--card-ink-soft, #{vars.$gray-hover});
   display: -webkit-box;
   font-size: 12px;
   -webkit-line-clamp: 3;
@@ -897,30 +1138,18 @@ $workshop-gold-deep: #d99a12;
 
 .playableCardGrid {
   display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   width: 100%;
 }
 
 .playableCard {
+  @include dark-tile;
+
   align-items: stretch;
-  background: vars.$white;
-  border: 1px solid vars.$border-color;
-  border-radius: 16px;
-  cursor: pointer;
   display: flex;
   flex-direction: column;
-  font: inherit;
-  overflow: hidden;
   padding: 0;
-  text-align: left;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
-
-  &:hover {
-    border-color: vars.$blue-medium;
-    box-shadow: 0 12px 28px rgb(8 24 64 / 16%);
-    transform: translateY(-2px);
-  }
 }
 
 .playableCardArt {
@@ -946,20 +1175,20 @@ $workshop-gold-deep: #d99a12;
 }
 
 .playableCardName {
-  color: vars.$font;
+  color: var(--card-ink, #{vars.$font});
   font-size: 15px;
   font-weight: 700;
 }
 
 .playableCardCost {
-  color: vars.$gray;
+  color: var(--card-ink-muted, #{vars.$gray});
   flex-shrink: 0;
   font-family: monospace;
   font-size: 11px;
 }
 
 .playableCardKind {
-  color: vars.$gray;
+  color: var(--card-ink-muted, #{vars.$gray});
   font-family: monospace;
   font-size: 10px;
   letter-spacing: 0.08em;
@@ -967,14 +1196,14 @@ $workshop-gold-deep: #d99a12;
 }
 
 .playableCardEffect {
-  color: vars.$surface-text;
+  color: var(--card-ink, #{vars.$surface-text});
   font-size: 13px;
   line-height: 1.35;
   margin: 0;
 }
 
 .playableCardDescription {
-  color: vars.$gray-hover;
+  color: var(--card-ink-soft, #{vars.$gray-hover});
   font-size: 12px;
   font-style: italic;
   line-height: 1.4;
@@ -995,28 +1224,16 @@ $workshop-gold-deep: #d99a12;
 }
 
 .enemyCard {
-  background: vars.$white;
-  border: 1px solid vars.$border-color;
-  border-radius: 16px;
-  cursor: pointer;
+  @include dark-tile;
+
   display: flex;
   flex-direction: column;
-  font: inherit;
   gap: 8px;
-  overflow: hidden;
   padding: 0 0 14px;
-  text-align: left;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
-
-  &:hover {
-    border-color: vars.$blue-medium;
-    box-shadow: 0 12px 28px rgb(8 24 64 / 16%);
-    transform: translateY(-2px);
-  }
 }
 
 .enemyPattern {
-  color: vars.$gray-hover;
+  color: var(--card-ink-soft, #{vars.$gray-hover});
   font-family: monospace;
   font-size: 11px;
   letter-spacing: 0.02em;
@@ -1025,7 +1242,7 @@ $workshop-gold-deep: #d99a12;
 }
 
 .enemyPatternList {
-  color: vars.$gray;
+  color: var(--card-ink-muted, #{vars.$gray});
   display: flex;
   flex-direction: column;
   font-size: 13px;
@@ -1037,7 +1254,7 @@ $workshop-gold-deep: #d99a12;
 
 .enemyDescription {
   -webkit-box-orient: vertical;
-  color: vars.$gray-hover;
+  color: var(--card-ink-soft, #{vars.$gray-hover});
   display: -webkit-box;
   font-size: 12px;
   -webkit-line-clamp: 3;
@@ -1057,8 +1274,8 @@ $workshop-gold-deep: #d99a12;
 
 .enemyGrid {
   display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   width: 100%;
 }
 
@@ -1071,7 +1288,7 @@ $workshop-gold-deep: #d99a12;
 }
 
 .enemyHealth {
-  color: vars.$gray;
+  color: var(--card-ink-muted, #{vars.$gray});
   flex-shrink: 0;
   font-family: monospace;
   font-size: 11px;
@@ -1079,44 +1296,32 @@ $workshop-gold-deep: #d99a12;
 
 .enemyPortrait {
   aspect-ratio: 3 / 4;
-  background: $blueprint-base;
+  background: $paper;
   display: block;
   object-fit: contain;
   width: 100%;
 }
 
 .enemyTitle {
-  color: vars.$font;
+  color: var(--card-ink, #{vars.$font});
   font-size: 15px;
   font-weight: 700;
 }
 
 .staticImageGrid {
   display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   width: 100%;
 }
 
 .staticImageCard {
-  background: vars.$white;
-  border: 1px solid vars.$border-color;
-  border-radius: 16px;
-  cursor: pointer;
+  @include dark-tile;
+
   display: flex;
   flex-direction: column;
-  font: inherit;
   gap: 8px;
-  overflow: hidden;
   padding: 0 0 14px;
-  text-align: left;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
-
-  &:hover {
-    border-color: vars.$blue-medium;
-    box-shadow: 0 12px 28px rgb(8 24 64 / 16%);
-    transform: translateY(-2px);
-  }
 }
 
 .staticImagePreview {
@@ -1143,13 +1348,13 @@ $workshop-gold-deep: #d99a12;
 }
 
 .staticImageTitle {
-  color: vars.$font;
+  color: var(--card-ink, #{vars.$font});
   font-size: 15px;
   font-weight: 700;
 }
 
 .staticImageRatio {
-  color: vars.$gray;
+  color: var(--card-ink-muted, #{vars.$gray});
   flex-shrink: 0;
   font-family: monospace;
   font-size: 11px;
@@ -1157,7 +1362,7 @@ $workshop-gold-deep: #d99a12;
 
 .staticImageDescription {
   -webkit-box-orient: vertical;
-  color: vars.$gray-hover;
+  color: var(--card-ink-soft, #{vars.$gray-hover});
   display: -webkit-box;
   font-size: 12px;
   -webkit-line-clamp: 3;
@@ -1289,8 +1494,25 @@ $workshop-gold-deep: #d99a12;
 }
 
 .promptSlotAudio {
+  color-scheme: dark;
   display: block;
   width: 100%;
+}
+
+article.backgroundCard {
+  cursor: default;
+  padding: 14px 0;
+
+  &:hover {
+    border-color: $blueprint-border;
+    box-shadow: 0 14px 34px rgb(0 8 28 / 30%);
+    transform: none;
+  }
+
+  .promptSlotAudio {
+    margin-top: 4px;
+    padding: 0 14px;
+  }
 }
 
 .promptSlotSubtitle {
@@ -1407,18 +1629,18 @@ $workshop-gold-deep: #d99a12;
 }
 
 .attachTitle {
-  color: vars.$font;
+  color: var(--card-ink, #{vars.$font});
   font-size: 14px;
   font-weight: 600;
 }
 
 .attachSubtitle {
-  color: vars.$gray-hover;
+  color: var(--card-ink-soft, #{vars.$gray-hover});
   font-size: 12px;
 }
 
 .playableCardLore {
-  color: vars.$gray;
+  color: var(--card-ink-muted, #{vars.$gray});
   display: flex;
   flex-direction: column;
   font-size: 12px;
@@ -1457,34 +1679,22 @@ $workshop-gold-deep: #d99a12;
 
 .spriteSheetGrid {
   display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   width: 100%;
 }
 
 .spriteSheetCard {
-  background: vars.$white;
-  border: 1px solid vars.$border-color;
-  border-radius: 16px;
-  cursor: pointer;
+  @include dark-tile;
+
   display: flex;
   flex-direction: column;
-  font: inherit;
   gap: 8px;
-  overflow: hidden;
   padding: 0 0 14px;
-  text-align: left;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 
   .spriteSheetHeader,
   > .spriteSheetMeta {
     padding: 0 14px;
-  }
-
-  &:hover {
-    border-color: vars.$blue-medium;
-    box-shadow: 0 12px 28px rgb(8 24 64 / 16%);
-    transform: translateY(-2px);
   }
 }
 
@@ -1526,13 +1736,13 @@ $workshop-gold-deep: #d99a12;
 }
 
 .spriteSheetTitle {
-  color: vars.$font;
+  color: var(--card-ink, #{vars.$font});
   font-size: 15px;
   font-weight: 700;
 }
 
 .spriteSheetMeta {
-  color: vars.$gray;
+  color: var(--card-ink-muted, #{vars.$gray});
   flex-shrink: 0;
   font-family: monospace;
   font-size: 11px;
@@ -1549,7 +1759,7 @@ $workshop-gold-deep: #d99a12;
   background: transparent;
   border: 1px solid vars.$border-color;
   border-radius: 8px;
-  color: vars.$gray-hover;
+  color: var(--card-ink-soft, #{vars.$gray-hover});
   cursor: pointer;
   font: inherit;
   font-size: 12px;
@@ -1562,7 +1772,7 @@ $workshop-gold-deep: #d99a12;
 
 .spriteAnimationGrid {
   display: grid;
-  gap: 16px;
+  gap: 18px;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
 }
 
@@ -1583,7 +1793,7 @@ $workshop-gold-deep: #d99a12;
 }
 
 .spriteAnimationDescription {
-  color: vars.$gray-hover;
+  color: var(--card-ink-soft, #{vars.$gray-hover});
   font-size: 12px;
   line-height: 1.4;
 }
