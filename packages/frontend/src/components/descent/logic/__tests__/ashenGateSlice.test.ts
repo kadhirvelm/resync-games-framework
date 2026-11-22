@@ -303,7 +303,6 @@ const SQUAD_SIZE = 5;
  * @param classId - Class to train
  */
 function trainSquad(sim: DescentSim, barracksId: string, classId: ClassId) {
-  const before = holdCount(sim, classId);
   for (let ordered = 0; ordered < SQUAD_SIZE; ordered += 1) {
     stepUntil(
       sim,
@@ -322,7 +321,9 @@ function trainSquad(sim: DescentSim, barracksId: string, classId: ClassId) {
   }
   stepUntil(
     sim,
-    () => holdCount(sim, classId) >= before + SQUAD_SIZE,
+    () =>
+      (ui(sim.snapshot()).buildings?.[barracksId]?.trainingQueue?.length ??
+        0) === 0,
     `${classId} squad`,
     90,
   );
@@ -471,15 +472,52 @@ describe("Ashen Gate vertical slice", () => {
     expect(birthSounds(sim)).toEqual(["villager"]);
   });
 
+  /**
+   * Advances the Hold tier to `tier` via the save round-trip for isolated tests
+   * that exercise higher-tier buildings or unit classes without simulating the
+   * full gathering loop.
+   * @param sim - Running sim
+   * @param tier - Desired Hold tier
+   */
+  function setHoldTier(
+    sim: DescentSim,
+    tier: "Camp" | "Outpost" | "Stronghold" | "Citadel",
+  ) {
+    const save = JSON.parse(sim.serialize()) as {
+      state?: { meta?: { economy?: { tier?: string } } };
+    };
+    if (save.state?.meta?.economy !== undefined) {
+      save.state.meta.economy.tier = tier;
+    }
+    sim.load(JSON.stringify(save));
+    sim.step(1);
+  }
+
   test("Barracks train one soldier per order and reserve its population", () => {
     const sim = createAshenGateSim({ seed: 2 });
     putVillagersToWork(sim);
     place(sim, "barracks", 6, 3);
     const barracksId = completed(sim, "barracks");
-    const options = ui(sim.snapshot()).trainOptions?.filter(
+    const campOptions = ui(sim.snapshot()).trainOptions?.filter(
       (option) => option.buildingId === barracksId,
     );
-    expect(options?.map((option) => option.classId)).toEqual([
+    expect(campOptions?.map((option) => option.classId)).toEqual(["warden"]);
+
+    setHoldTier(sim, "Outpost");
+    const outpostOptions = ui(sim.snapshot()).trainOptions?.filter(
+      (option) => option.buildingId === barracksId,
+    );
+    expect(outpostOptions?.map((option) => option.classId)).toEqual([
+      "warden",
+      "hunter",
+      "rider",
+    ]);
+
+    setHoldTier(sim, "Citadel");
+    const citadelOptions = ui(sim.snapshot()).trainOptions?.filter(
+      (option) => option.buildingId === barracksId,
+    );
+    expect(citadelOptions?.map((option) => option.classId)).toEqual([
       "warden",
       "hunter",
       "rider",
@@ -542,10 +580,11 @@ describe("Ashen Gate vertical slice", () => {
     sim.enqueue({
       buildingId: barracksId,
       classId: "warden",
+      count: 2,
       type: "train_unit",
     });
     sim.step(1);
-    stepUntil(sim, () => holdCount(sim, "warden") === 2, "second warden", 30);
+    stepUntil(sim, () => holdCount(sim, "warden") === 2, "two wardens", 60);
 
     const before = sim
       .snapshot()
@@ -666,6 +705,7 @@ describe("Ashen Gate vertical slice", () => {
     putVillagersToWork(sim);
     place(sim, "barracks", 6, 3);
     const barracksId = completed(sim, "barracks");
+    setHoldTier(sim, "Outpost");
     const before = sim.snapshot().resources;
     const popBefore = ui(sim.snapshot()).pop?.used ?? 0;
     for (const classId of ["warden", "hunter"] as const) {
@@ -707,6 +747,7 @@ describe("Ashen Gate vertical slice", () => {
     putVillagersToWork(sim);
     place(sim, "barracks", 6, 3);
     const barracksId = completed(sim, "barracks");
+    setHoldTier(sim, "Outpost");
     for (const classId of ["warden", "hunter"] as const) {
       sim.enqueue({ buildingId: barracksId, classId, type: "train_unit" });
     }
@@ -725,10 +766,54 @@ describe("Ashen Gate vertical slice", () => {
       "hunter after cancel",
       30,
     );
-    expect(holdCount(sim, "warden")).toBe(1);
+    expect(holdCount(sim, "warden")).toBe(0);
+    expect(holdCount(sim, "cultivator")).toBe(1);
   });
 
-  test("the starting Warden alone clears the scout wave", () => {
+  test("starts with a first-level Cultivator and trains more at a Cultivator Sanctum", () => {
+    const sim = createAshenGateSim({ seed: 11 });
+    const starting = sim
+      .snapshot()
+      .units.find((unit) => unit.id === "ashen-captain");
+    expect(starting?.classId).toBe("cultivator");
+    expect(ui(sim.snapshot()).units?.["ashen-captain"]?.rank).toBe("Ashborn");
+
+    putVillagersToWork(sim);
+    setHoldTier(sim, "Stronghold");
+    place(sim, "cultivator_sanctum", 6, 3);
+    const sanctumId = completed(sim, "cultivator_sanctum");
+    const options = ui(sim.snapshot()).trainOptions?.filter(
+      (option) => option.buildingId === sanctumId,
+    );
+    expect(options?.map((option) => option.classId)).toEqual([
+      "cultivator",
+      "sword_sage",
+      "formation_master",
+    ]);
+
+    sim.enqueue({
+      buildingId: sanctumId,
+      classId: "cultivator",
+      type: "train_unit",
+    });
+    stepUntil(
+      sim,
+      () => holdCount(sim, "cultivator") === 2,
+      "second cultivator",
+      30,
+    );
+    const trained = sim
+      .snapshot()
+      .units.find(
+        (unit) => unit.classId === "cultivator" && unit.id !== "ashen-captain",
+      );
+    expect(trained).toBeDefined();
+    if (trained !== undefined) {
+      expect(ui(sim.snapshot()).units?.[trained.id]?.rank).toBe("Ashborn");
+    }
+  });
+
+  test("the starting Cultivator alone clears the scout wave", () => {
     const sim = createAshenGateSim({ seed: 5 });
     putVillagersToWork(sim);
     stepUntil(
@@ -829,11 +914,42 @@ describe("Ashen Gate vertical slice", () => {
       putVillagersToWork(sim);
 
       place(sim, "barracks", 6, 3);
+      const barracksId = completed(sim, "barracks");
+      trainSquad(sim, barracksId, "warden");
+
+      sim.enqueue({ type: "upgrade_hold" });
+      stepUntil(
+        sim,
+        () => ui(sim.snapshot()).holdUpgrade?.currentTier === "Outpost",
+        "Outpost upgrade",
+        30,
+      );
+
+      // Gather wood and stone for an Outpost Omen Tower and Ward Tower.
+      const workers = villagerIds(sim);
+      sim.enqueue({
+        nodeId: "ashen-wood-near",
+        type: "assign_gather",
+        unitIds: workers.slice(0, 1),
+      });
+      sim.enqueue({
+        nodeId: "ashen-stone-near",
+        type: "assign_gather",
+        unitIds: workers.slice(1),
+      });
+      stepUntil(
+        sim,
+        () =>
+          (sim.snapshot().resources.wood ?? 0) >= 40 &&
+          (sim.snapshot().resources.stone ?? 0) >= 70,
+        "Outpost wood and stone",
+        150,
+      );
+      putVillagersToWork(sim);
+
       place(sim, "omen_tower", 9, -3);
       place(sim, "ward_tower", 12, 0);
-      const barracksId = completed(sim, "barracks");
       completed(sim, "omen_tower");
-      trainSquad(sim, barracksId, "warden");
       trainSquad(sim, barracksId, "hunter");
       stepUntil(
         sim,
@@ -844,9 +960,9 @@ describe("Ashen Gate vertical slice", () => {
         200,
       );
 
-      for (const classId of ["warden", "hunter", "adept", "warden"] as const) {
+      for (const classId of ["hunter", "hunter", "hunter", "warden"] as const) {
         trainSquad(sim, barracksId, classId);
-        place(sim, "housing", 2 + holdCount(sim, "warden"), 8);
+        place(sim, "housing", 2 + holdCount(sim, "hunter"), 8);
       }
 
       const save = sim.serialize();

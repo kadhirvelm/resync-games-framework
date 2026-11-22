@@ -2,7 +2,7 @@
  * Constructors and lookups for the records stored on the sim world.
  */
 
-import { worldVentVolumes } from "../layers/hazards";
+import { worldTerrainObstacles, worldVentVolumes } from "../layers/hazards";
 import type { SimWorldState } from "../sim/world";
 import {
   type BuildingState,
@@ -26,7 +26,12 @@ import type {
 import { emptyStockpile } from "./stockpile";
 import { buildingDef } from "./tables";
 
-const HOLD_TIERS: readonly HoldTier[] = ["Camp", "Stronghold", "Citadel"];
+const HOLD_TIERS: readonly HoldTier[] = [
+  "Camp",
+  "Outpost",
+  "Stronghold",
+  "Citadel",
+];
 
 /** Meta objects already checked, so per-call hosts skip the deep scan. */
 const NORMALIZED = new WeakSet<object>();
@@ -112,6 +117,7 @@ export function economyHost(
     buildings: world.buildings,
     economy,
     getLayerId: () => world.layerId,
+    getTerrainObstacles: () => worldTerrainObstacles(world),
     getVentVolumes: () => worldVentVolumes(world),
     map: world.map,
     resources: world.resources,

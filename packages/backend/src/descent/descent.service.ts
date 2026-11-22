@@ -1,10 +1,12 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { Injectable, type OnModuleDestroy } from "@nestjs/common";
 import {
+  DESCENT_CAMPAIGN_MISSIONS,
   DESCENT_GAME_ID,
   DESCENT_MAX_PLAYERS,
   type DescentAckResult,
   type DescentCommandPayload,
+  type DescentReportOutcomePayload,
   type DescentRoomPlayer,
   type DescentRoomState,
   type DescentSetPausedPayload,
@@ -17,9 +19,11 @@ import {
   descentPlayerColor,
   type GameRoomCommandResult,
   type GameRoomValue,
+  isDescentMapId,
 } from "@resync-game-framework/api";
 import { GameRoomStore } from "src/game-room/game-room.store";
 import { RedisService } from "src/infra/redis/redis.service";
+import { resolveDescentStart } from "./descent.campaign";
 import { isDescentWireCommand } from "./descent.commands";
 import {
   DESCENT_OWNER_RENEW_MS,
@@ -113,6 +117,16 @@ export class DescentService implements OnModuleDestroy {
     payload: DescentStartMatchPayload,
     socketId: string,
   ): Promise<GameRoomCommandResult> {
+    if (payload?.mapId !== undefined && !isDescentMapId(payload.mapId)) {
+      return {
+        error: {
+          code: "INVALID_REQUEST",
+          message: "Unsupported Descent map selection.",
+        },
+        ok: false,
+      };
+    }
+
     const mutation = await this.gameRoomStore.mutateServerRoom(
       payload?.roomId,
       DESCENT_GAME_ID,
@@ -136,6 +150,14 @@ export class DescentService implements OnModuleDestroy {
           };
         }
 
+        const selection = resolveDescentStart(
+          room.gameState as unknown as DescentRoomState,
+          payload,
+        );
+        if (typeof selection === "string") {
+          return { code: "INVALID_REQUEST", message: selection, ok: false };
+        }
+
         const roster: DescentRoomPlayer[] = room.players.map(
           (player, index) => ({
             color: descentPlayerColor(index),
@@ -148,7 +170,7 @@ export class DescentService implements OnModuleDestroy {
         const matchId = randomUUID();
         const seed = randomBytes(4).readUInt32BE(0);
         const nextState: DescentRoomState = {
-          mapId: "ashen_crucible",
+          ...selection,
           matchId,
           phase: "playing",
           roster,
@@ -183,6 +205,96 @@ export class DescentService implements OnModuleDestroy {
       await this.matchStore.create(match);
       this.startLocalClock(match);
     }
+    return mutation.result;
+  }
+
+  /**
+   * Records an immutable outcome under the room lock for a locked participant.
+   * Unanimous victory is peer attestation, not server simulation or anti-cheat.
+   * @param payload - Current campaign match and reported terminal outcome
+   * @param socketId - Reporting member's socket
+   * @returns Updated room-scoped progress or an error
+   */
+  public async reportOutcome(
+    payload: DescentReportOutcomePayload,
+    socketId: string,
+  ): Promise<GameRoomCommandResult> {
+    if (payload?.outcome !== "victory" && payload?.outcome !== "defeat") {
+      return {
+        error: {
+          code: "INVALID_REQUEST",
+          message: "A valid outcome is required.",
+        },
+        ok: false,
+      };
+    }
+    const mutation = await this.gameRoomStore.mutateServerRoom(
+      payload.roomId,
+      DESCENT_GAME_ID,
+      socketId,
+      async (room, playerId) => {
+        const state = room.gameState as unknown as DescentRoomState;
+        const campaign = state.campaign;
+        if (!campaign || !state.matchId || state.matchId !== payload.matchId) {
+          return {
+            code: "INVALID_REQUEST",
+            message: "No matching campaign match.",
+            ok: false,
+          };
+        }
+        if (!state.roster.some((player) => player.id === playerId)) {
+          return {
+            code: "INVALID_REQUEST",
+            message: "Only locked participants can report outcomes.",
+            ok: false,
+          };
+        }
+        const previous = Object.keys(campaign.outcomes).includes(playerId)
+          ? campaign.outcomes[playerId]
+          : undefined;
+        if (previous && previous !== payload.outcome) {
+          return {
+            code: "INVALID_REQUEST",
+            message: "Outcome reports cannot be changed.",
+            ok: false,
+          };
+        }
+        const outcomes = { ...campaign.outcomes, [playerId]: payload.outcome };
+        const nextCampaign = { ...campaign, outcomes };
+        const defeated = state.roster.some(
+          (player) => outcomes[player.id] === "defeat",
+        );
+        const victorious = state.roster.every(
+          (player) => outcomes[player.id] === "victory",
+        );
+        if (defeated) nextCampaign.status = "defeat";
+        if (victorious) {
+          const mission = DESCENT_CAMPAIGN_MISSIONS[campaign.missionIndex];
+          if (!mission) {
+            return {
+              code: "INVALID_REQUEST",
+              message: "Unknown campaign mission.",
+              ok: false,
+            };
+          }
+          nextCampaign.status =
+            campaign.missionIndex === DESCENT_CAMPAIGN_MISSIONS.length - 1
+              ? "completed"
+              : "victory";
+          nextCampaign.completedMissionIds = [
+            ...new Set([...campaign.completedMissionIds, mission.id]),
+          ];
+        }
+        return {
+          gameState: {
+            ...state,
+            campaign: nextCampaign,
+          } as unknown as GameRoomValue,
+          ok: true,
+          value: null,
+        };
+      },
+    );
     return mutation.result;
   }
 

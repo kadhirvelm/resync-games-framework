@@ -330,3 +330,72 @@
   font-size: 0.88rem;
   font-style: italic;
 }
+
+.modeSection {
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+}
+
+.modeGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.modeCard,
+.modeCardActive {
+  background: rgb(14 10 8 / 78%);
+  border: 1px solid rgb(232 191 106 / 24%);
+  border-radius: 10px;
+  color: #f3e6cf;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  text-align: left;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    box-shadow 140ms ease;
+
+  &:hover {
+    border-color: rgb(232 191 106 / 55%);
+  }
+}
+
+.modeCardActive {
+  background: rgb(42 27 16 / 90%);
+  border-color: #e8bf6a;
+  box-shadow: 0 0 0 1px rgb(232 191 106 / 35%);
+}
+
+.modeCardHeader {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.modeBadge {
+  background: rgb(232 191 106 / 14%);
+  border: 1px solid rgb(232 191 106 / 32%);
+  border-radius: 999px;
+  color: #f3d28b;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+}
+
+.modeDescription {
+  color: #cbbba3;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  margin: 0;
+}

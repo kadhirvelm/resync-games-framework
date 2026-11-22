@@ -7,6 +7,7 @@ import {
   gaitMotion,
   MAX_STEP_INTERVAL_MS,
   motionBlend,
+  selectCharacterLoopClip,
   smoothAngle,
   stepProgress,
   unitMotionPhase,
@@ -33,6 +34,66 @@ describe("descent presentation motion", () => {
     expect(animationClipMatches("walk", "walk")).toBe(true);
     expect(animationClipMatches("warden-1-walk", "walk")).toBe(true);
     expect(animationClipMatches("warden-1-idle", "walk")).toBe(false);
+    expect(animationClipMatches("villager-1-work", "work")).toBe(true);
+  });
+
+  test("selects work for stationary working villagers and falls back cleanly", () => {
+    expect(
+      selectCharacterLoopClip({
+        activity: "Gathering Wood",
+        hasWorkClip: true,
+        locomoting: false,
+        role: "villager",
+      }),
+    ).toBe("work");
+    expect(
+      selectCharacterLoopClip({
+        activity: "Building Camp",
+        hasWorkClip: true,
+        locomoting: true,
+        role: "villager",
+      }),
+    ).toBe("walk");
+    expect(
+      selectCharacterLoopClip({
+        activity: "Idle",
+        hasWorkClip: true,
+        locomoting: false,
+        role: "villager",
+      }),
+    ).toBe("idle");
+    expect(
+      selectCharacterLoopClip({
+        activity: "Gathering Wood",
+        hasWorkClip: false,
+        locomoting: false,
+        role: "villager",
+      }),
+    ).toBe("idle");
+    expect(
+      selectCharacterLoopClip({
+        activity: "Gathering Wood",
+        hasWorkClip: true,
+        locomoting: false,
+        role: "warden",
+      }),
+    ).toBe("idle");
+    expect(
+      selectCharacterLoopClip({
+        hasRunClip: true,
+        hasWorkClip: false,
+        locomoting: true,
+        role: "rider",
+      }),
+    ).toBe("run");
+    expect(
+      selectCharacterLoopClip({
+        hasRunClip: false,
+        hasWorkClip: false,
+        locomoting: true,
+        role: "rider",
+      }),
+    ).toBe("walk");
   });
 
   test("desynchronizes units and gives locomotion a stronger cadence", () => {

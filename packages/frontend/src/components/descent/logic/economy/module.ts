@@ -24,6 +24,7 @@ import { economyHost } from "./records";
 import { runEconomyTick } from "./tick";
 import {
   orderVillagersBuild,
+  orderVillagersBuildAcrossSites,
   orderVillagersGather,
   recallVillagers,
   releaseVillagers,
@@ -145,6 +146,10 @@ export function createEconomyModule(
         command.actorId,
       );
       if (builders.length === 0) return;
+      if (command.queue === true) {
+        orderVillagersBuildAcrossSites(economy, builders, id);
+        return;
+      }
       orderVillagersBuild(economy, builders, id);
     },
     recall_villagers(command, context) {

@@ -1,0 +1,8 @@
+<svg fill="none" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <title>Spirit Gathering Array</title>
+  <rect fill="#101c22" height="64" rx="12" width="64"/>
+  <circle cx="32" cy="34" fill="#0f766e" fill-opacity="0.25" r="20" stroke="#2dd4bf" stroke-width="2"/>
+  <polygon fill="none" points="32,16 48,34 32,52 16,34" stroke="#5eead4" stroke-width="1.6"/>
+  <path d="M32 10L36 26L32 30L28 26L32 10Z" fill="#99f6e4"/>
+  <circle cx="32" cy="34" fill="#2dd4bf" r="5" stroke="#ccfbf1" stroke-width="1.5"/>
+</svg>

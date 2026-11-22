@@ -328,3 +328,39 @@ export function createAshenGatePreview(): SimSnapshot {
     ],
   };
 }
+
+/** The existing cyan used when placement validity has not been computed. */
+export const PLACEMENT_NEUTRAL_TINT = "#7fd1df";
+/** Placement ghost tint for a legal building site. */
+export const PLACEMENT_VALID_TINT = "#68d391";
+/** Placement ghost tint for a blocked building site. */
+export const PLACEMENT_INVALID_TINT = "#ef6a5b";
+
+/**
+ * Chooses the placement ghost color without requiring a Babylon dependency.
+ * Undefined and null both retain the neutral preview until validation arrives.
+ * @param valid - Whether the pointed-at site accepts the building, if known
+ * @returns Green for valid, red for invalid, or the existing neutral cyan
+ */
+export function placementPreviewTint(
+  valid: boolean | null | undefined,
+): string {
+  if (valid === true) return PLACEMENT_VALID_TINT;
+  if (valid === false) return PLACEMENT_INVALID_TINT;
+  return PLACEMENT_NEUTRAL_TINT;
+}
+
+/** Vertical scale at the first visible construction stage. */
+export const MIN_CONSTRUCTION_SCALE = 0.15;
+
+/**
+ * Maps construction progress to a grounded vertical rise. The footprint never
+ * changes, and invalid/out-of-range input clamps to the nearest safe stage.
+ * @param progress - Published construction progress from zero to one
+ * @returns Vertical scale from 0.15 through 1
+ */
+export function buildProgressScale(progress: number): number {
+  if (!Number.isFinite(progress)) return MIN_CONSTRUCTION_SCALE;
+  const clamped = Math.max(0, Math.min(1, progress));
+  return MIN_CONSTRUCTION_SCALE + (1 - MIN_CONSTRUCTION_SCALE) * clamped;
+}

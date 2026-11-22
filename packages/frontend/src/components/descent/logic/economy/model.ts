@@ -16,7 +16,7 @@ import type {
 } from "../types";
 
 /** Hold ladder. A higher tier satisfies every lower building gate. */
-export type HoldTier = "Camp" | "Stronghold" | "Citadel";
+export type HoldTier = "Camp" | "Outpost" | "Stronghold" | "Citadel";
 
 /** Who a unit's population weight belongs to. */
 export type PopKind = "villager" | "soldier" | "hero" | "calamity";
@@ -79,6 +79,8 @@ export interface EconomyUnit extends UnitState {
   task: VillagerTask | null;
   /** Producer the player sent this villager to work or harvest; it returns there after each load and after shelter. */
   workplaceId?: string | null;
+  /** Whether this builder keeps taking sites from a shift-placement batch. */
+  queuedBuild?: boolean;
   /** Nodes and buildings this villager could not path to, skipped until `untilTick`. */
   unreachable?: UnreachableTarget[];
 }
@@ -192,6 +194,8 @@ export interface EconomyHost {
   readonly economy: EconomyMeta;
   /** @returns The current layer id, or null before the first descent. */
   getLayerId(): string | null;
+  /** @returns Static impassable terrain disks on the current map, if any. */
+  getTerrainObstacles?: () => readonly CircleVolume[];
   /** @returns Vent disks that burn in this world; empty when none are active. */
   getVentVolumes(): readonly CircleVolume[];
   readonly map: MapBounds;

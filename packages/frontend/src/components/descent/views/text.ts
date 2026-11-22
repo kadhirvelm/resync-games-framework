@@ -9,9 +9,12 @@ import type { ClassId, ResourceId, SchoolId } from "../logic/types";
 export const CLASS_LABEL: Record<ClassId, string> = {
   adept: "Adept",
   breaker: "Breaker",
+  cultivator: "Sword Cultivator",
+  formation_master: "Formation Master",
   hunter: "Hunter",
   raider: "Raider",
   rider: "Rider",
+  sword_sage: "Flying-Sword Cultivator",
   villager: "Villager",
   warden: "Warden",
 };
@@ -131,6 +134,7 @@ export function resourceSelectionCopy(
 /** Class order used when an Omen lists a mix. */
 export const CLASS_ORDER = [
   "villager",
+  "cultivator",
   "warden",
   "hunter",
   "rider",

@@ -11,7 +11,12 @@ import type {
 
 const SCHOOL_IDS: readonly SchoolId[] = ["ember", "rime", "blood"];
 const COMBAT_CLASS_IDS = ["warden", "hunter", "raider", "breaker", "adept"];
-const HOLD_TIERS: readonly HoldTier[] = ["Camp", "Stronghold", "Citadel"];
+const HOLD_TIERS: readonly HoldTier[] = [
+  "Camp",
+  "Outpost",
+  "Stronghold",
+  "Citadel",
+];
 
 /** Realm ids from lowest to highest; the index is the realm's step count. */
 export const REALM_ORDER: readonly RealmId[] = [

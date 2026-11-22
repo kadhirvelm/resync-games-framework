@@ -1,25 +1,25 @@
-/** Buildings intentionally exposed by the Ashen Gate slice. */
+/** Buildings intentionally exposed by the Ashen Gate slice, ordered by Hold tier. */
 export const ASHEN_GATE_BUILDINGS = [
-  "barracks",
+  // Camp (Tier 1)
   "housing",
-  "ward_tower",
   "storehouse",
   "well",
-  "farm",
-  "forest",
-  "spirit_herb_garden",
-  "hell_market",
-  "mess_hall",
-  "omen_tower",
+  "barracks",
   "wall",
+  // Outpost (Tier 2)
+  "farm",
   "gate",
-  "fire_ward_wall",
-  "root_cellar",
-  "alchemy_furnace",
+  "ward_tower",
+  "omen_tower",
+  "cultivator_sanctum",
+  "spirit_array",
+  // Stronghold (Tier 3)
+  "hell_market",
   "cultivation_hall",
-  "hero_hall",
-  "artifact_forge",
-  "ember_forge",
+  "meditation_pavilion",
+  // Citadel (Tier 4)
+  "spirit_herb_garden",
+  "alchemy_furnace",
 ] as const;
 
 /** Player-facing copy and progression beats for the vertical slice. */
@@ -34,9 +34,9 @@ export const ASHEN_GATE_CONTENT = {
   hordeDamageMultiplier: 0.55,
   objectives: [
     "Gather food, water, wood, and stone.",
-    "Build a Barracks and Omen Tower, then train Wardens.",
+    "Build a Barracks, train Wardens, and upgrade to an Outpost.",
     "Reach the frontier resources behind the Ember vents.",
-    "Raise a Cultivation Hall and make one Sworn.",
+    "Raise a Stronghold and Cultivation Hall to make one Sworn.",
     "Survive the scout, swarm, elite, and Cinderjaw waves.",
   ],
   victory:

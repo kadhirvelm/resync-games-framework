@@ -10,7 +10,7 @@
             {
               "classId": "raider",
               "count": 2,
-              "statScale": 0.45
+              "statScale": 0.42
             }
           ],
           "id": "ashen_scout",
@@ -21,8 +21,13 @@
           "composition": [
             {
               "classId": "raider",
-              "count": 5,
-              "statScale": 0.7
+              "count": 4,
+              "statScale": 0.62
+            },
+            {
+              "classId": "hunter",
+              "count": 1,
+              "statScale": 0.55
             }
           ],
           "id": "ashen_swarm",
@@ -33,7 +38,8 @@
           "composition": [
             {
               "classId": "raider",
-              "count": 3
+              "count": 3,
+              "statScale": 0.85
             }
           ],
           "elite": {
@@ -41,18 +47,20 @@
             "classId": "raider"
           },
           "id": "ashen_elite_summoner",
-          "spawnAtSeconds": 330,
+          "spawnAtSeconds": 345,
           "type": "elite"
         },
         {
           "composition": [
             {
               "classId": "raider",
-              "count": 3
+              "count": 3,
+              "statScale": 0.9
             },
             {
               "classId": "hunter",
-              "count": 2
+              "count": 2,
+              "statScale": 0.85
             }
           ],
           "elite": {
@@ -60,7 +68,7 @@
             "classId": "warden"
           },
           "id": "ashen_elite_armored",
-          "spawnAtSeconds": 450,
+          "spawnAtSeconds": 480,
           "type": "elite"
         },
         {
@@ -68,11 +76,17 @@
           "composition": [
             {
               "classId": "raider",
-              "count": 4
+              "count": 4,
+              "statScale": 0.95
+            },
+            {
+              "classId": "hunter",
+              "count": 1,
+              "statScale": 0.9
             }
           ],
           "id": "ashen_boss",
-          "spawnAtSeconds": 570,
+          "spawnAtSeconds": 615,
           "type": "boss"
         }
       ]

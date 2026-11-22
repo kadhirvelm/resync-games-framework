@@ -1,0 +1,9 @@
+<svg fill="none" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <title>Seclusion Pavilion</title>
+  <rect fill="#1c1917" height="64" rx="12" width="64"/>
+  <path d="M12 28L32 14L52 28H12Z" fill="#d97706" stroke="#fde68a" stroke-width="1.5"/>
+  <path d="M18 36L32 25L46 36H18Z" fill="#b45309" stroke="#fcd34d" stroke-width="1.2"/>
+  <rect fill="#292524" height="16" stroke="#fbbf24" stroke-width="1.5" width="24" x="20" y="36"/>
+  <circle cx="32" cy="44" fill="#34d399" r="4" stroke="#a7f3d0" stroke-width="1.2"/>
+  <path d="M14 54H50" stroke="#fcd34d" stroke-linecap="round" stroke-width="2"/>
+</svg>

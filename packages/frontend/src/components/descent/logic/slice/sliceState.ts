@@ -5,7 +5,7 @@ import type {
 } from "../combat/types";
 import type { CultivationSystemState } from "../cultivation/types";
 import type { SimWorldState } from "../sim/world";
-import type { ClassId, ResourceStockpile } from "../types";
+import type { ClassId, ResourceStockpile, SchoolId } from "../types";
 import { isWaveClockState } from "../waves/clock";
 import type { WaveClockState } from "../waves/types";
 
@@ -14,6 +14,13 @@ export const ASHEN_GATE_SLICE_MODULE_ID = "ashenGateSlice";
 
 /** Sim ticks per economy step: the Hold's economy ticks twice a second. */
 export const ECONOMY_STEP_TICKS = 10;
+
+/**
+ * Sim ticks per villager locomotion sub-step. Villagers walk and work five
+ * times as often as the coarse economy tick, with work progress scaled down
+ * to match, so movement looks smooth without changing real-world rates.
+ */
+export const VILLAGER_STEP_TICKS = 2;
 
 /** Saved-state version. Older saves start a new run instead of loading. */
 export const SLICE_STATE_VERSION = 2;
@@ -72,7 +79,27 @@ export type SliceFx =
       tick: number;
       x: number;
       y: number;
+    }
+  | {
+      id: number;
+      kind: "qi_nova";
+      radius: number;
+      school?: SchoolId;
+      tick: number;
+      x: number;
+      y: number;
     };
+
+/** Per-cultivator Qi pool, cooldown, meditation, and temporary surge state. */
+export interface CultivatorPowerState {
+  cooldownSeconds: number;
+  maxQi: number;
+  meditateEssenceAcc: number;
+  meditateMeritAcc: number;
+  meditating: boolean;
+  qi: number;
+  surgeSeconds: number;
+}
 
 /** One Barracks or Camp training order, queued or in progress. */
 export interface TrainingJob {
@@ -110,18 +137,30 @@ export interface SlicePlayerInfo {
   slotIndex: number;
 }
 
+/** Cumulative resource values credited to one co-op player's live score. */
+export interface PlayerScoreProgress {
+  /** Completed cultivation-breakthrough essence and material costs. */
+  cultivationValue: number;
+  /** Resource cost of enemies destroyed by this player's combatants. */
+  militaryValue: number;
+}
+
 /** JSON-safe integration state stored with the sim save. */
 export interface AshenGateSliceState {
   bossIntroShown: boolean;
   combat: {
     /** Per-body combat records: cooldowns, statuses, and orders survive ticks. */
     bodies: Record<string, CombatUnit>;
+    /** Last known co-op owner by body id, retained after death for attribution. */
+    owners?: Record<string, string>;
     /** Player orders waiting for the combat phase of this tick. */
     pendingOrders: CombatCommand[];
     projectiles: PendingProjectile[];
     tick: number;
   };
   cultivation: CultivationSystemState;
+  /** Per-cultivator active Qi pool, cooldowns, and seclusion meditation state. */
+  cultivatorPowers?: Record<string, CultivatorPowerState>;
   fx: SliceFx[];
   /** Breakthrough injuries, in seconds left. */
   injuries: Record<string, number>;
@@ -133,6 +172,10 @@ export interface AshenGateSliceState {
   outcome: "defeat" | "playing" | "victory";
   /** Co-op roster keyed by player id; omitted in solo play. */
   players?: Record<string, SlicePlayerInfo>;
+  /** Next slot-sorted co-op player for a new or orphaned horde assignment. */
+  nextHordeTargetCursor?: number;
+  /** Cumulative per-player score values; absent in saves before score tracking. */
+  scoreProgress?: Record<string, PlayerScoreProgress>;
   /**
    * Custom destinations for units leaving a Camp or Barracks. A rally on a
    * resource node names it, and trained villagers gather there.
@@ -152,8 +195,15 @@ export interface AshenGateSliceState {
 export function createSliceState(): AshenGateSliceState {
   return {
     bossIntroShown: false,
-    combat: { bodies: {}, pendingOrders: [], projectiles: [], tick: 0 },
+    combat: {
+      bodies: {},
+      owners: {},
+      pendingOrders: [],
+      projectiles: [],
+      tick: 0,
+    },
     cultivation: { groundTreasures: [], inventoryTreasures: [], units: [] },
+    cultivatorPowers: {},
     fx: [],
     injuries: {},
     lastHitTick: {},
@@ -162,6 +212,7 @@ export function createSliceState(): AshenGateSliceState {
     notices: [],
     outcome: "playing",
     rallyPoints: {},
+    scoreProgress: {},
     stats: { kills: 0, lost: 0 },
     training: [],
     version: SLICE_STATE_VERSION,

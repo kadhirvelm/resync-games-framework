@@ -3,6 +3,12 @@ import type { ThreeDAsset, ThreeDAssetKind } from "@resync-game-framework/api";
 /** Stable gameplay-facing roles for generated Ashen Gate models. */
 export type AshenGateAssetRole =
   | "villager"
+  | "cultivator"
+  | "swordSage"
+  | "formationMaster"
+  | "emberCultivator"
+  | "rimeCultivator"
+  | "bloodCultivator"
   | "warden"
   | "hunter"
   | "rider"
@@ -16,16 +22,24 @@ export type AshenGateAssetRole =
   | "hordeAdept"
   | "cinderjaw"
   | "camp"
+  | "outpost"
   | "stronghold"
   | "citadel"
+  | "housing"
+  | "wardTower"
   | "barracks"
+  | "cultivatorSanctum"
   | "cultivationHall"
+  | "spiritArray"
+  | "meditationPavilion"
+  | "alchemyFurnace"
   | "fireWard"
   | "well"
   | "farm"
   | "forest"
   | "market"
   | "spiritHerbGarden"
+  | "emberBolt"
   | "emberVent"
   | "resourceGrove"
   | "resourceOutcrop"
@@ -50,6 +64,32 @@ export interface AshenGateAssetDefinition {
  */
 export const ASHEN_GATE_3D_ASSETS = [
   { kind: "character", name: "Descent Villager", role: "villager" },
+  { kind: "character", name: "Descent Cultivator", role: "cultivator" },
+  {
+    kind: "character",
+    name: "Descent Flying-Sword Cultivator",
+    role: "swordSage",
+  },
+  {
+    kind: "character",
+    name: "Descent Formation Master",
+    role: "formationMaster",
+  },
+  {
+    kind: "character",
+    name: "Descent Ember Sovereign",
+    role: "emberCultivator",
+  },
+  {
+    kind: "character",
+    name: "Descent Rime Sovereign",
+    role: "rimeCultivator",
+  },
+  {
+    kind: "character",
+    name: "Descent Blood Sovereign",
+    role: "bloodCultivator",
+  },
   { kind: "character", name: "Descent Warden", role: "warden" },
   { kind: "character", name: "Descent Hunter", role: "hunter" },
   { kind: "character", name: "Descent Rider", role: "rider" },
@@ -79,13 +119,36 @@ export const ASHEN_GATE_3D_ASSETS = [
   },
   { kind: "character", name: "Descent Cinderjaw", role: "cinderjaw" },
   { kind: "prop", name: "Descent Camp", role: "camp" },
+  { kind: "prop", name: "Descent Outpost", role: "outpost" },
   { kind: "prop", name: "Descent Stronghold", role: "stronghold" },
   { kind: "prop", name: "Descent Citadel", role: "citadel" },
+  { kind: "prop", name: "Descent Housing", role: "housing" },
+  { kind: "prop", name: "Descent Ward Tower", role: "wardTower" },
   { kind: "prop", name: "Descent Barracks", role: "barracks" },
+  {
+    kind: "prop",
+    name: "Descent Cultivator Sanctum",
+    role: "cultivatorSanctum",
+  },
   {
     kind: "prop",
     name: "Descent Cultivation Hall",
     role: "cultivationHall",
+  },
+  {
+    kind: "prop",
+    name: "Descent Spirit Array",
+    role: "spiritArray",
+  },
+  {
+    kind: "prop",
+    name: "Descent Seclusion Pavilion",
+    role: "meditationPavilion",
+  },
+  {
+    kind: "prop",
+    name: "Descent Alchemy Furnace",
+    role: "alchemyFurnace",
   },
   { kind: "prop", name: "Descent Fire Ward", role: "fireWard" },
   { kind: "prop", name: "Descent Well", role: "well" },
@@ -97,6 +160,7 @@ export const ASHEN_GATE_3D_ASSETS = [
     name: "Descent Spirit Herb Garden",
     role: "spiritHerbGarden",
   },
+  { kind: "prop", name: "Descent Ember Bolt", role: "emberBolt" },
   { kind: "prop", name: "Descent Ember Vent", role: "emberVent" },
   {
     kind: "prop",
@@ -169,6 +233,7 @@ export function resolveAshenGateAssets(
  */
 export function assetRoleForUnit(unit: {
   classId: string;
+  cultivation?: { school?: string } | null;
   factionId: "hold" | "horde";
   name: string;
 }): AshenGateAssetRole {
@@ -181,6 +246,22 @@ export function assetRoleForUnit(unit: {
     if (unit.classId === "adept") return "hordeAdept";
     return "raider";
   }
+  const isCultivator =
+    unit.classId === "cultivator" ||
+    unit.classId === "sword_sage" ||
+    unit.classId === "formation_master";
+  if (isCultivator && unit.cultivation?.school === "ember") {
+    return "emberCultivator";
+  }
+  if (isCultivator && unit.cultivation?.school === "rime") {
+    return "rimeCultivator";
+  }
+  if (isCultivator && unit.cultivation?.school === "blood") {
+    return "bloodCultivator";
+  }
+  if (unit.classId === "cultivator") return "cultivator";
+  if (unit.classId === "sword_sage") return "swordSage";
+  if (unit.classId === "formation_master") return "formationMaster";
   if (unit.classId === "hunter") return "hunter";
   if (unit.classId === "rider") return "rider";
   if (unit.classId === "raider") return "holdRaider";
@@ -191,8 +272,8 @@ export function assetRoleForUnit(unit: {
 
 /**
  * Selects the nearest generated structure silhouette for a published building.
- * The Camp grows into the Stronghold model, then the Citadel model, as the
- * Hold climbs tiers.
+ * The Camp grows through Outpost, Stronghold, and Citadel models as the Hold
+ * climbs tiers.
  * @param buildingType - Stable economy building type
  * @param tier - The building's published Hold tier, if any
  * @returns Asset role used for this building
@@ -203,8 +284,15 @@ export function assetRoleForBuilding(
 ): AshenGateAssetRole {
   if (buildingType === "camp" && tier === "Citadel") return "citadel";
   if (buildingType === "camp" && tier === "Stronghold") return "stronghold";
+  if (buildingType === "camp" && tier === "Outpost") return "outpost";
+  if (buildingType === "housing") return "housing";
+  if (buildingType === "ward_tower") return "wardTower";
   if (buildingType === "barracks") return "barracks";
+  if (buildingType === "cultivator_sanctum") return "cultivatorSanctum";
   if (buildingType === "cultivation_hall") return "cultivationHall";
+  if (buildingType === "spirit_array") return "spiritArray";
+  if (buildingType === "meditation_pavilion") return "meditationPavilion";
+  if (buildingType === "alchemy_furnace") return "alchemyFurnace";
   if (buildingType === "well") return "well";
   if (buildingType === "farm") return "farm";
   if (buildingType === "forest") return "forest";

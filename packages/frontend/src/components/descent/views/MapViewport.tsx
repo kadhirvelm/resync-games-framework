@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Command } from "../logic/types";
 import { buildingIconSrc } from "./buildingIcons";
-import { DescentMinimap } from "./DescentMinimap";
+import { DescentMinimap, type MinimapPing } from "./DescentMinimap";
 import styles from "./descentView.module.scss";
 import { FogCanvas } from "./FogCanvas";
 import { type InspectTarget, isInspected } from "./inspect";
@@ -38,10 +38,12 @@ export interface MapViewportProps {
   /** Local player id in multiplayer matches; omitted in solo play. */
   localPlayerId?: string;
   model: ShellModel;
+  /** Expanding under-attack rings drawn on the minimap. */
+  pings?: readonly MinimapPing[];
   onCameraChange: (camera: Camera) => void;
   onCommand: (command: Command) => void;
   onCursor: (point: MapPoint | null) => void;
-  onPlace: (point: MapPoint) => void;
+  onPlace: (point: MapPoint, queue?: boolean) => void;
   /** Inspects a resource node, Spirit Vein, or vent. */
   onInspect: (target: InspectTarget) => void;
   onSetRally: (point: MapPoint) => void;
@@ -51,6 +53,8 @@ export interface MapViewportProps {
     mode: "add" | "replace" | "toggle",
   ) => void;
   placing: boolean;
+  /** Type of the building being placed, so the ghost can tint on bad ground. */
+  placingType?: string | null;
   /** Side, in map cells, of the building being placed; 1 when not placing. */
   placingFootprint: number;
   rallyBuildingId: string | null;
@@ -126,6 +130,7 @@ export function MapViewport({
   onCursor,
   onPlace,
   onInspect,
+  pings,
   onSetRally,
   onSelectBuilding,
   onSelectUnits,
@@ -220,7 +225,7 @@ export function MapViewport({
           return;
         }
         if (placing) {
-          onPlace(point);
+          onPlace(point, event.shiftKey);
           return;
         }
         dragOrigin.current = {
@@ -288,6 +293,21 @@ export function MapViewport({
             }}
           />
         )}
+        {model.terrain.map((feature) => (
+          <span
+            className={styles.terrain}
+            data-terrain-kind={feature.kind}
+            key={feature.id}
+            style={{
+              height: feature.radius * 2 * model.scale,
+              left: (feature.x - feature.radius) * model.scale,
+              top: (feature.y - feature.radius) * model.scale,
+              width: feature.radius * 2 * model.scale,
+            }}
+          >
+            {feature.label ?? ""}
+          </span>
+        ))}
         {model.veins.map((vein) => (
           <span
             className={styles.vein}
@@ -545,6 +565,7 @@ export function MapViewport({
           });
           for (const order of orders) onCommand(order);
         }}
+        pings={pings}
         view={{
           centerX: (camera.x + viewportSize.width / 2) / model.scale,
           centerY: (camera.y + viewportSize.height / 2) / model.scale,

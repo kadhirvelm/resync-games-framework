@@ -325,7 +325,16 @@ sight or deposits, veins, and vents on unexplored ground. Rim and abyss scenery 
 above the flat fog sheet, so `views/sceneryFog.ts` hides each piece until the
 map edge beside it is explored. The mounted slice ends after
 Cinderjaw; later layers, heroes, Calamities, and Tribulation are not live
-runtime content. Browser autosave runs at layer start, every five sim-seconds,
+runtime content. Multiplayer also offers a three-mission Ashen Crucible campaign:
+`DESCENT_CAMPAIGN_MISSIONS` in the API defines the ordered scenarios and wave
+tuning. Each mission starts fresh forces; only mission progress carries over.
+Progress belongs to the Redis room, survives reconnects within the shared room
+lifecycle, and is deleted on final leave; it is not an account-backed campaign
+save. Locked participants report immutable replay outcomes; all must report
+victory to advance, while any defeat permits a host retry. This is cooperative
+peer attestation, not server-verified anti-cheat. Campaign transitions are
+host-only and fenced to the current match id. Browser solo autosave runs at
+layer start, every five sim-seconds,
 and at the terminal outcome. Each building covers an odd square of cells
 (`footprint` in `data/buildings.json`); placement, villager pathing,
 adjacency bonuses, and combat reach all go through `logic/economy/footprint`,
@@ -349,8 +358,10 @@ from `views/loadingProgress.ts` so the screen counts them. Generated
 Ashen Gate models are resolved by canonical names from the existing 3D asset
 services and fall back to procedural meshes. Combat units resolve by faction
 and class so Warden, Hunter, Rider, Raider, Breaker, and Adept keep distinct
-silhouettes. From Stronghold tier the Camp draws the larger `stronghold`
-model, keeping the Camp model until that one has been generated.
+silhouettes. As the Hold climbs tiers (`Camp` → `Outpost` → `Stronghold` →
+`Citadel`), the Camp swaps to each tier's generated model (falling back to the
+previous tier until generated), gradually unlocking buildings and trainable unit
+classes.
 Surface nodes reuse four
 harvestable prop families (grove, tree, outcrop, and well) with resource-color
 cues, while ember vents use one generated hazard prop with a procedural glow.

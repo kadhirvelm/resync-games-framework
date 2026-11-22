@@ -277,9 +277,7 @@ function spawnDueWaves(state: WaveClockState): WaveEvent[] {
   const events: WaveEvent[] = [];
   for (const wave of schedule.waves) {
     if (state.spawnedWaveIds.includes(wave.id)) continue;
-    const spawnTick =
-      state.layerStartedTick + secondsToWaveTicks(wave.spawnAtSeconds);
-    if (spawnTick > state.completedTick) continue;
+    if (ticksUntil(state, wave) > 0) continue;
     events.push(...spawnWave(state, wave.id));
   }
   return events;
@@ -686,6 +684,7 @@ function spawnContext(state: WaveClockState, waveId: string): WaveSpawnContext {
     grade: essenceGrade(state.layerId),
     hellPressure: state.hellPressure,
     layerId: state.layerId,
+    statMultiplier: validSize(state.waveStatScale, 1),
     waveId,
   };
 }
@@ -742,9 +741,10 @@ function nextPreview(state: WaveClockState): {
  * @returns Remaining ticks; zero or negative when due or overdue
  */
 function ticksUntil(state: WaveClockState, wave: WaveDefinition): number {
+  const timeScale = validSize(state.waveTimeScale, 1);
   return (
     state.layerStartedTick +
-    secondsToWaveTicks(wave.spawnAtSeconds) -
+    secondsToWaveTicks(wave.spawnAtSeconds * timeScale) -
     state.completedTick
   );
 }

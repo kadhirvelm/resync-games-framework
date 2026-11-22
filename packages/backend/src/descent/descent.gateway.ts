@@ -4,6 +4,7 @@ import {
   type DescentAckResult,
   type DescentCommandPayload,
   DescentEventsDefinition,
+  type DescentReportOutcomePayload,
   type DescentSetPausedPayload,
   type DescentSetSpeedPayload,
   type DescentStartMatchPayload,
@@ -53,6 +54,31 @@ export class DescentGateway
     @ConnectedSocket() client: TypedSocketClient,
   ): Promise<GameRoomCommandResult> {
     const result = await this.descentService.startMatch(payload, client.id);
+    if (result.ok && result.room && this.isServerReady && this.server) {
+      this.server
+        .to(result.room.id)
+        .emit(
+          RoomEventsDefinition.serverToClient.roomStateChanged,
+          result.room,
+        );
+    }
+    return result;
+  }
+
+  /**
+   * Records a locked participant's peer-attested campaign outcome.
+   * @param payload - Current match and outcome
+   * @param client - Reporting socket
+   * @returns Updated room progress or an error
+   */
+  @getSocketDecorator(
+    DescentEventsDefinition.clientToServer.descentReportOutcome,
+  )
+  public async descentReportOutcome(
+    @MessageBody() payload: DescentReportOutcomePayload,
+    @ConnectedSocket() client: TypedSocketClient,
+  ): Promise<GameRoomCommandResult> {
+    const result = await this.descentService.reportOutcome(payload, client.id);
     if (result.ok && result.room && this.isServerReady && this.server) {
       this.server
         .to(result.room.id)

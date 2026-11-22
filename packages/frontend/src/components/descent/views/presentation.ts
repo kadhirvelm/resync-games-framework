@@ -1,5 +1,7 @@
 import type { CultivationView, PillPreview } from "../logic/cultivation/types";
 import { type FogOfWarState, isFogOfWarState } from "../logic/fog";
+import type { TerrainFeatureKind } from "../logic/layers";
+import type { PlayerScoreBreakdown } from "../logic/scoring";
 import type {
   ClassId,
   RankTitle,
@@ -8,10 +10,22 @@ import type {
   SchoolId,
 } from "../logic/types";
 
+/** Active Qi Art summary published for a selected cultivator. */
+export interface QiArtReadout {
+  cooldownSeconds: number;
+  description: string;
+  name: string;
+  qiCost: number;
+  ready: boolean;
+  school?: SchoolId;
+}
+
 /** Published decoration for one sim unit. The view does not invent these numbers. */
 export interface UnitReadout {
   /** Elite affix on a horde body. */
   affix?: string | null;
+  /** Whether this unit currently satisfies every breakthrough requirement. */
+  breakthroughReady?: boolean;
   calamity?: boolean;
   /** Resource a villager is carrying home. */
   carrying?: ResourceId | null;
@@ -27,9 +41,15 @@ export interface UnitReadout {
   hitPoints?: number;
   /** A villager with no job and no shelter, waiting for orders. */
   idle?: boolean;
+  /** Whether a cultivator stands inside a Spirit Gathering Array aura. */
+  inSpiritArray?: boolean;
   /** Recovering from a failed breakthrough. */
   injured?: boolean;
   maxHitPoints?: number;
+  /** Maximum Qi pool for cultivators. */
+  maxQi?: number;
+  /** Whether a cultivator is currently meditating in seclusion. */
+  meditating?: boolean;
   name?: string;
   /** Assigned co-op ring color in multiplayer matches. */
   ownerColor?: string;
@@ -37,6 +57,10 @@ export interface UnitReadout {
   ownerId?: string;
   /** Owning player display name in multiplayer matches. */
   ownerName?: string;
+  /** Current Qi pool for cultivators. */
+  qi?: number;
+  /** Active Qi Art available to a cultivator. */
+  qiArt?: QiArtReadout;
   rank?: RankTitle;
   /**
    * Where a Hold unit is headed: its current destination, then each
@@ -48,6 +72,8 @@ export interface UnitReadout {
   school?: SchoolId;
   /** This layer's multiplier for the unit's school. */
   schoolModifier?: number;
+  /** Whether a Spirit Surge buff is currently active. */
+  surgeActive?: boolean;
   /** What a villager is doing. */
   task?: string;
   treasureSlots?: number;
@@ -152,6 +178,15 @@ export type FxReadout =
       kind: "spawn";
       /** Which kind of unit was born, so each gets its own audio cue. */
       sound?: "soldier" | "villager";
+      tick: number;
+      x: number;
+      y: number;
+    }
+  | {
+      id: number;
+      kind: "qi_nova";
+      radius: number;
+      school?: SchoolId;
       tick: number;
       x: number;
       y: number;
@@ -295,6 +330,8 @@ export interface HoldUpgradeReadout {
   /** Blocked only by resources, which the cost row shows. */
   shortfall?: boolean;
   targetTier: string;
+  /** Buildings and units newly unlocked by reaching `targetTier`. */
+  unlocks?: string;
 }
 
 /** Terminal result of the currently loaded playable slice. */
@@ -342,6 +379,17 @@ export interface VentReadout {
   y: number;
 }
 
+/** Impassable battlefield terrain landmark (ridge, spire, ruin wall, or fissure). */
+export interface TerrainReadout {
+  height: number;
+  id: string;
+  kind: TerrainFeatureKind;
+  label?: string;
+  radius: number;
+  x: number;
+  y: number;
+}
+
 /** Fixed Spirit Vein. `radius` is the published pickup radius for the cursor hint. */
 export interface VeinReadout {
   id: string;
@@ -366,11 +414,13 @@ export interface OmenReadout {
   etaSeconds: number;
 }
 
-/** One player entry published for multiplayer HUD rosters. */
+/** One player entry and live score published for multiplayer HUD rosters. */
 export interface PlayerRosterReadout {
   color: string;
   id: string;
   name: string;
+  /** Current Age of Empires-inspired score and category breakdown. */
+  score: PlayerScoreBreakdown;
   slotIndex: number;
 }
 
@@ -416,6 +466,7 @@ export interface DescentPresentation {
   revives?: readonly ReviveReadout[];
   stats?: StatsReadout;
   telegraphs?: readonly TelegraphReadout[];
+  terrain?: readonly TerrainReadout[];
   trainOptions?: readonly TrainReadout[];
   treasures?: readonly TreasureReadout[];
   units?: Readonly<Record<string, UnitReadout>>;
@@ -451,6 +502,7 @@ export interface ReadPresentation {
   revives: readonly ReviveReadout[];
   stats: StatsReadout | null;
   telegraphs: readonly TelegraphReadout[];
+  terrain: readonly TerrainReadout[];
   trainOptions: readonly TrainReadout[];
   treasures: readonly TreasureReadout[];
   units: Readonly<Record<string, UnitReadout>>;
@@ -461,6 +513,7 @@ export interface ReadPresentation {
 
 const CLASS_IDS = [
   "villager",
+  "cultivator",
   "warden",
   "hunter",
   "rider",
@@ -486,6 +539,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function readArray<TValue>(value: unknown): readonly TValue[] {
   if (!Array.isArray(value)) return [];
   return value as readonly TValue[];
+}
+
+/**
+ * Reads roster entries from both current and pre-scoring presentations. Older
+ * saves did not publish scores, so they receive a zeroed breakdown until the
+ * next simulation presentation refresh.
+ * @param value - Candidate roster array
+ * @returns Roster entries with a safe score breakdown
+ */
+function readPlayers(value: unknown): readonly PlayerRosterReadout[] {
+  return readArray<PlayerRosterReadout>(value).map((player) => ({
+    ...player,
+    score: player.score ?? {
+      cultivation: 0,
+      economy: 0,
+      military: 0,
+      total: 0,
+    },
+  }));
 }
 
 /**
@@ -643,13 +715,14 @@ export function readPresentation(
         ? null
         : (outcome as unknown as SliceOutcomeReadout),
     pillFeeds: readArray<PillFeedReadout>(ui.pillFeeds),
-    players: readArray<PlayerRosterReadout>(ui.players),
+    players: readPlayers(ui.players),
     pop: readPop(ui.pop) ?? readPop(meta.economy),
     rationOptions,
     rations: parsedRations,
     revives: readArray<ReviveReadout>(ui.revives),
     stats: readObject<StatsReadout>(ui.stats),
     telegraphs: readArray<TelegraphReadout>(ui.telegraphs),
+    terrain: readArray<TerrainReadout>(ui.terrain),
     trainOptions: readArray<TrainReadout>(ui.trainOptions),
     treasures: readArray<TreasureReadout>(ui.treasures),
     units: isRecord(ui.units)

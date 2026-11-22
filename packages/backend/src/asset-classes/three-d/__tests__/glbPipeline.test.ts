@@ -108,6 +108,48 @@ describe("3D GLB pipeline", () => {
     expect(metadata.width).toBe(1024);
     expect(metadata.height).toBe(1024);
   });
+  test("normalizes an extra work clip alongside the base five clips", async () => {
+    const io = new NodeIO();
+    const document = await io.readBinary(
+      await compileThreeDDesign(demoThreeDDesign("character"), "character"),
+    );
+    const root = document.getRoot();
+    const baseIdle = root.listAnimations()[0];
+    if (!baseIdle) throw new Error("Missing idle fixture animation");
+    const extra = document.createAnimation("Heavy_Hammer_Swing");
+    for (const channel of baseIdle.listChannels()) {
+      const sampler = channel.getSampler();
+      const targetNode = channel.getTargetNode();
+      const targetPath = channel.getTargetPath();
+      if (!sampler || !targetNode || !targetPath) continue;
+      const clonedSampler = document
+        .createAnimationSampler()
+        .setInput(sampler.getInput())
+        .setOutput(sampler.getOutput())
+        .setInterpolation(sampler.getInterpolation());
+      extra.addSampler(clonedSampler);
+      extra.addChannel(
+        document
+          .createAnimationChannel()
+          .setSampler(clonedSampler)
+          .setTargetNode(targetNode)
+          .setTargetPath(targetPath),
+      );
+    }
+    const normalized = await normalizeMeshyCharacter(
+      await io.writeBinary(document),
+      ["idle", "walk", "attack", "hit", "death", "work"],
+    );
+    const validation = await validateGlb(normalized, "character");
+    expect(validation.animations.map((clip) => clip.name)).toEqual([
+      "idle",
+      "walk",
+      "attack",
+      "hit",
+      "death",
+      "work",
+    ]);
+  });
   test("enforces a configured lower triangle ceiling", async () => {
     const bytes = await compileThreeDDesign(demoThreeDDesign("prop"), "prop");
     await expect(

@@ -22,7 +22,11 @@
 import type { UnitInit } from "../../../logic/economy";
 import { footprintRadius } from "../../../logic/economy/footprint";
 import type { ResourceNode, SpiritVein } from "../../../logic/economy/model";
-import type { CircleVolume } from "../../../logic/layers";
+import type {
+  CircleVolume,
+  TerrainFeature,
+  TerrainFeatureKind,
+} from "../../../logic/layers";
 import {
   angleBetween,
   clamp,
@@ -79,6 +83,8 @@ const VENT_GAP = { max: 4.5, min: 2.5 } as const;
 const CROSSING_GAP = { max: 7, min: 5 } as const;
 /** Tiles kept between a deposit or vein and a vent's rim. */
 const VENT_CLEARANCE = 2.5;
+/** Tiles kept between a deposit or vein and a terrain obstacle's rim. */
+const OBSTACLE_CLEARANCE = 2.5;
 /** Tiles kept between a deposit and a spirit vein. */
 const VEIN_CLEARANCE = 3;
 /** The horde's arrival block, kept clear: columns from the east edge. */
@@ -99,6 +105,7 @@ interface LayoutFrame {
   camp: MapPoint;
   crossingDistance: number;
   heading: number;
+  obstacles: readonly TerrainFeature[];
   rng: SimRng;
   spawn: MapPoint;
   vents: readonly CircleVolume[];
@@ -135,16 +142,20 @@ export function validateAshenGateMap(map: AshenGateMap): string[] {
   const size = { height: map.height, width: map.width };
   const nodeCells = new Set(map.nodes.map((node) => cellKey(node)));
   if (nodeCells.size !== map.nodes.length) problems.push("deposits overlap");
-  const field = floodDistances(size, camp, (x, y) => {
-    if (nodeCells.has(`${x},${y}`)) return false;
-    if (x === camp.x && y === camp.y) return false;
-    return !insideAnyVent(map.vents, { x, y });
-  });
+  const blocked = buildBlockedMask(map, camp);
+  const field = floodDistances(
+    size,
+    camp,
+    (x, y) => blocked[y * map.width + x] === 0,
+  );
   for (const node of map.nodes) {
     problems.push(...depositProblems(map, node, stepsToBeside(field, node)));
   }
   for (const vein of map.veins) {
     if (insideAnyVent(map.vents, vein)) problems.push(`${vein.id} in a vent`);
+    if (insideAnyObstacle(map.obstacles, vein)) {
+      problems.push(`${vein.id} in terrain`);
+    }
     if (stepsTo(field, vein) < 0) problems.push(`${vein.id} unreachable`);
   }
   const gate = {
@@ -153,6 +164,72 @@ export function validateAshenGateMap(map: AshenGateMap): string[] {
   };
   if (stepsTo(field, gate) < 0) problems.push("horde gate unreachable");
   return problems;
+}
+
+/**
+ * Builds a flat cell mask of impassable tiles for flood-fill reachability.
+ * @param map - Generated map
+ * @param camp - Camp cell
+ * @returns Byte mask where 1 marks a blocked cell
+ */
+function buildBlockedMask(map: AshenGateMap, camp: MapPoint): Uint8Array {
+  const { height, width } = map;
+  const blocked = new Uint8Array(width * height);
+  markBlockedCell(blocked, width, height, camp.x, camp.y);
+  for (const node of map.nodes) {
+    markBlockedCell(blocked, width, height, node.x, node.y);
+  }
+  markBlockedCircles(blocked, width, height, map.obstacles);
+  markBlockedCircles(blocked, width, height, map.vents);
+  return blocked;
+}
+
+/**
+ * Marks a single in-bounds cell as blocked.
+ * @param blocked - Flat cell mask
+ * @param width - Map width
+ * @param height - Map height
+ * @param x - Cell column
+ * @param y - Cell row
+ */
+function markBlockedCell(
+  blocked: Uint8Array,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+): void {
+  if (x < 0 || y < 0 || x >= width || y >= height) return;
+  blocked[y * width + x] = 1;
+}
+
+/**
+ * Marks every cell inside any circle volume (plus 0.05 clearance) as blocked.
+ * @param blocked - Flat cell mask
+ * @param width - Map width
+ * @param height - Map height
+ * @param circles - Obstacles or vents
+ */
+function markBlockedCircles(
+  blocked: Uint8Array,
+  width: number,
+  height: number,
+  circles: readonly { radius: number; x: number; y: number }[],
+): void {
+  for (const circle of circles) {
+    const reach = circle.radius + 0.05;
+    const minX = Math.max(0, Math.floor(circle.x - reach));
+    const maxX = Math.min(width - 1, Math.ceil(circle.x + reach));
+    const minY = Math.max(0, Math.floor(circle.y - reach));
+    const maxY = Math.min(height - 1, Math.ceil(circle.y + reach));
+    for (let y = minY; y <= maxY; y += 1) {
+      for (let x = minX; x <= maxX; x += 1) {
+        if (Math.hypot(x - circle.x, y - circle.y) <= reach) {
+          blocked[y * width + x] = 1;
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -169,6 +246,9 @@ function depositProblems(
   const problems: string[] = [];
   if (!onMap(map, node)) problems.push(`${node.id} off the map`);
   if (insideAnyVent(map.vents, node)) problems.push(`${node.id} in a vent`);
+  if (insideAnyObstacle(map.obstacles, node)) {
+    problems.push(`${node.id} in terrain`);
+  }
   if (steps < 0) problems.push(`${node.id} unreachable`);
   const slot = ASHEN_GATE_NODE_SLOTS.find((entry) => entry.id === node.id);
   if (slot?.band === "near" && steps > MAX_NEAR_STEPS) {
@@ -200,7 +280,22 @@ function layoutAttempt(seed: number, attempt: number): AshenGateMap {
     CROSSING_DISTANCE.max,
   );
   const vents = placeVents(rng, camp, heading, crossingDistance);
-  const frame = { camp, crossingDistance, heading, rng, spawn, vents };
+  const terrainRng = createMapRng(seed, `ashen_gate:terrain:${attempt}`);
+  const { extraChokes, obstacles } = placeTerrainObstacles(
+    terrainRng,
+    camp,
+    spawn,
+    vents,
+  );
+  const frame = {
+    camp,
+    crossingDistance,
+    heading,
+    obstacles,
+    rng,
+    spawn,
+    vents,
+  };
   const veins = placeVeins(frame);
   const nodes = placeNodes(frame, veins);
   return {
@@ -214,9 +309,11 @@ function layoutAttempt(seed: number, attempt: number): AshenGateMap {
         ...insideMap(polarOffset(camp, heading, crossingDistance / 2), 1),
       },
       { id: "vent-choke", label: "Ember crossing", ...crossingPoint(vents) },
+      ...extraChokes,
     ],
     height,
     nodes,
+    obstacles,
     stockpile: { ...ASHEN_GATE_STOCKPILE },
     units: startingUnits(camp, heading),
     veins,
@@ -335,15 +432,20 @@ function lanePoint(frame: LayoutFrame, column: number): MapPoint {
 }
 
 /**
- * Walks a point toward the horde until it clears every vent.
+ * Walks a point toward the horde until it clears every vent and terrain obstacle.
  * @param frame - Layout inputs
  * @param point - Desired point
  * @returns The nearest clear cell along the heading
  */
 function clearOfVents(frame: LayoutFrame, point: MapPoint): MapPoint {
   let cell = insideMap(point, EDGE_MARGIN);
-  for (let step = 0; step < 12 && nearVent(frame.vents, cell); step += 1) {
-    cell = insideMap(polarOffset(cell, frame.heading, 2), EDGE_MARGIN);
+  for (
+    let step = 0;
+    step < 16 &&
+    (nearVent(frame.vents, cell) || nearObstacle(frame.obstacles, cell));
+    step += 1
+  ) {
+    cell = insideMap(polarOffset(cell, frame.heading, 2.5), EDGE_MARGIN);
   }
   return cell;
 }
@@ -593,6 +695,7 @@ function openGround(
   const { height, width } = ASHEN_GATE_MAP_SIZE;
   if (distance(cell, frame.camp) < BUILD_APRON) return false;
   if (nearVent(frame.vents, cell)) return false;
+  if (nearObstacle(frame.obstacles, cell)) return false;
   if (nearestDistance(cell, veins) < VEIN_CLEARANCE) return false;
   const inArrival =
     cell.x >= width - SPAWN_CLEARING_COLUMNS &&
@@ -601,8 +704,9 @@ function openGround(
 }
 
 /**
- * The opening force: the captain a few steps toward the vents, and the
- * villagers in a column behind the Camp, both clear of the Camp's square.
+ * The opening force: a first-level Cultivator a few steps toward the vents,
+ * and the villagers in a column behind the Camp, both clear of the Camp's
+ * square.
  * @param camp - Camp cell
  * @param heading - Direction toward the horde
  * @returns Units to seed
@@ -615,9 +719,9 @@ function startingUnits(camp: MapPoint, heading: number): UnitInit[] {
   );
   return [
     {
-      classId: "warden",
+      classId: "cultivator",
       id: "ashen-captain",
-      maxHp: 140,
+      maxHp: 135,
       popKind: "soldier",
       realmId: "qi_gathering",
       ...insideMap(polarOffset(camp, heading, footprintRadius("camp") + 2), 1),
@@ -663,6 +767,270 @@ function laneDistance(frame: LayoutFrame, cell: MapPoint): number {
  */
 function sideOfLane(frame: LayoutFrame, cell: MapPoint): -1 | 1 {
   return sideOfLine(cell, frame.camp, frame.spawn) === 1 ? 1 : -1;
+}
+
+/**
+ * @param obstacles - Terrain obstacles on the map
+ * @param cell - Point to test
+ * @returns Whether the point is within the clearance ring of any obstacle
+ */
+function nearObstacle(
+  obstacles: readonly TerrainFeature[],
+  cell: MapPoint,
+): boolean {
+  return obstacles.some(
+    (obstacle) =>
+      distance(obstacle, cell) < obstacle.radius + OBSTACLE_CLEARANCE,
+  );
+}
+
+/**
+ * Matches the movement rule: a cell inside any terrain obstacle is impassable.
+ * @param obstacles - Terrain obstacles on the map
+ * @param cell - Cell to test
+ * @returns Whether the cell is blocked by rocky terrain
+ */
+function insideAnyObstacle(
+  obstacles: readonly TerrainFeature[],
+  cell: MapPoint,
+): boolean {
+  return obstacles.some(
+    (obstacle) => distance(obstacle, cell) <= obstacle.radius + 0.05,
+  );
+}
+
+/**
+ * Carves volcanic ridges, ruined bastion walls, obsidian spires, and magma
+ * fissures across the plateau to form tactical choke points and flank passes.
+ * Every piece stays clear of the Camp apron, Ember vents, and spawn clearing.
+ * @param rng - Layout RNG
+ * @param camp - Camp cell
+ * @param spawn - Horde Gate arrival cell
+ * @param vents - Placed Ember vents
+ * @returns Placed terrain obstacles and named choke points
+ */
+function placeTerrainObstacles(
+  rng: SimRng,
+  camp: MapPoint,
+  spawn: MapPoint,
+  vents: readonly CircleVolume[],
+): {
+  extraChokes: { id: string; label: string; x: number; y: number }[];
+  obstacles: TerrainFeature[];
+} {
+  const { height, width } = ASHEN_GATE_MAP_SIZE;
+  const obstacles: TerrainFeature[] = [];
+  const extraChokes: { id: string; label: string; x: number; y: number }[] = [];
+  let serial = 0;
+
+  const canPlace = (x: number, y: number, radius: number): boolean => {
+    if (
+      x < radius + 3 ||
+      x > width - radius - 3 ||
+      y < radius + 3 ||
+      y > height - radius - 3
+    ) {
+      return false;
+    }
+    const point = { x, y };
+    if (distance(point, camp) < BUILD_APRON + radius + 5) return false;
+    if (
+      vents.some((vent) => distance(point, vent) < vent.radius + radius + 3.5)
+    ) {
+      return false;
+    }
+    const inArrival =
+      x + radius >= width - SPAWN_CLEARING_COLUMNS - 2 &&
+      Math.abs(y - height / 2) <= SPAWN_CLEARING_ROWS + radius + 2;
+    return !inArrival;
+  };
+
+  const addFeature = (
+    kind: TerrainFeatureKind,
+    x: number,
+    y: number,
+    radius: number,
+    heightUnits: number,
+    label?: string,
+  ): void => {
+    const rx = Math.round(x * 2) / 2;
+    const ry = Math.round(y * 2) / 2;
+    if (!canPlace(rx, ry, radius)) return;
+    serial += 1;
+    obstacles.push({
+      height: Math.round(heightUnits * 10) / 10,
+      id: `ashen-terrain-${serial}`,
+      kind,
+      ...(label ? { label } : {}),
+      radius: Math.round(radius * 4) / 4,
+      x: rx,
+      y: ry,
+    });
+  };
+
+  const laneYAt = (x: number): number => {
+    const t = clamp((x - camp.x) / (spawn.x - camp.x), 0, 1);
+    return camp.y + (spawn.y - camp.y) * t;
+  };
+
+  // 1. Central Shattered Spine (mid-map ridge with a main ruined pass and a flank pass)
+  const spineBaseX = width * randomBetween(rng, 0.4, 0.47);
+  const spineTilt = randomBetween(rng, -0.14, 0.14);
+  const mainPassY = clamp(
+    laneYAt(spineBaseX) + randomBetween(rng, -10, 10),
+    36,
+    height - 36,
+  );
+  const mainPassHalf = randomBetween(rng, 5.5, 6.8);
+  const flankNorth = mainPassY > height / 2;
+  const flankPassY = flankNorth
+    ? randomBetween(rng, 22, 34)
+    : randomBetween(rng, height - 34, height - 22);
+  const flankPassHalf = randomBetween(rng, 5, 6.2);
+
+  extraChokes.push({
+    id: "spine-choke",
+    label: "Shattered Pass",
+    ...insideMap({ x: spineBaseX, y: mainPassY }, 4),
+  });
+  extraChokes.push({
+    id: "flank-choke",
+    label: "Ashen Defile",
+    ...insideMap(
+      { x: spineBaseX + (flankPassY - height / 2) * spineTilt, y: flankPassY },
+      4,
+    ),
+  });
+
+  // Frame the main pass with ancient ruined bastion walls
+  const mainPassX = spineBaseX + (mainPassY - height / 2) * spineTilt;
+  addFeature(
+    "ruin_wall",
+    mainPassX,
+    mainPassY - mainPassHalf - 3.4,
+    3.5,
+    randomBetween(rng, 4.8, 6.2),
+    "Shattered Bastion",
+  );
+  addFeature(
+    "ruin_wall",
+    mainPassX,
+    mainPassY + mainPassHalf + 3.4,
+    3.5,
+    randomBetween(rng, 4.8, 6.2),
+    "Shattered Bastion",
+  );
+
+  // Fill the rest of the central spine with interlocking basalt ridges & spires
+  for (let y = 10; y <= height - 10; y += 7.4) {
+    if (Math.abs(y - mainPassY) < mainPassHalf + 5.2) continue;
+    if (Math.abs(y - flankPassY) < flankPassHalf + 3.2) continue;
+    const x =
+      spineBaseX + (y - height / 2) * spineTilt + randomBetween(rng, -2.2, 2.2);
+    const nearFlankLip = Math.abs(y - flankPassY) < flankPassHalf + 8;
+    const kind: TerrainFeatureKind = nearFlankLip
+      ? "obsidian_spire"
+      : "basalt_ridge";
+    const radius = nearFlankLip
+      ? randomBetween(rng, 3.2, 4.0)
+      : randomBetween(rng, 4.4, 5.6);
+    const tallness = nearFlankLip
+      ? randomBetween(rng, 6.5, 8.8)
+      : randomBetween(rng, 3.6, 5.8);
+    addFeature(kind, x, y, radius, tallness);
+  }
+
+  // 2. Eastern Magma Canyon & Obsidian Narrows (between spine and Horde Gate)
+  const canyonBaseX = width * randomBetween(rng, 0.67, 0.74);
+  const canyonPassY = clamp(
+    laneYAt(canyonBaseX) + randomBetween(rng, -14, 14),
+    42,
+    height - 42,
+  );
+  const canyonPassHalf = randomBetween(rng, 6.2, 7.6);
+  extraChokes.push({
+    id: "canyon-choke",
+    label: "Obsidian Narrows",
+    ...insideMap({ x: canyonBaseX, y: canyonPassY }, 4),
+  });
+
+  // Two opposing canyon walls (north and south of the narrows), leaving outer bypasses
+  const wallSpecs = [
+    { count: 4, from: canyonPassY - canyonPassHalf - 4, step: -7.5 },
+    { count: 4, from: canyonPassY + canyonPassHalf + 4, step: 7.5 },
+  ];
+  for (const wall of wallSpecs) {
+    for (let idx = 0; idx < wall.count; idx += 1) {
+      const y = wall.from + wall.step * idx;
+      const x =
+        canyonBaseX +
+        (idx % 2 === 0 ? -1.8 : 2.2) +
+        randomBetween(rng, -1.5, 1.5);
+      const isFissure = idx === 1 || idx === 2;
+      const kind: TerrainFeatureKind = isFissure
+        ? "magma_fissure"
+        : idx === 0
+          ? "obsidian_spire"
+          : "basalt_ridge";
+      const radius = isFissure
+        ? randomBetween(rng, 3.8, 4.8)
+        : randomBetween(rng, 4.0, 5.2);
+      const tallness =
+        kind === "obsidian_spire"
+          ? randomBetween(rng, 6.8, 9.0)
+          : kind === "magma_fissure"
+            ? randomBetween(rng, 1.6, 2.4)
+            : randomBetween(rng, 3.8, 5.6);
+      addFeature(kind, x, y, radius, tallness);
+    }
+  }
+
+  // 3. Inner Hold Flanking Buttresses (framing the Ember Crossing valley)
+  const ventXs = vents.map((vent) => vent.x);
+  const ventYs = vents.map((vent) => vent.y);
+  const minVentY = Math.min(...ventYs);
+  const maxVentY = Math.max(...ventYs);
+  const avgVentX =
+    ventXs.reduce((sum, value) => sum + value, 0) / Math.max(1, ventXs.length);
+  const buttressX = avgVentX + randomBetween(rng, 5, 11);
+  addFeature(
+    "basalt_ridge",
+    buttressX,
+    Math.max(12, minVentY - 12),
+    randomBetween(rng, 4.2, 5.2),
+    randomBetween(rng, 4.2, 5.8),
+    "Northern Crag",
+  );
+  addFeature(
+    "basalt_ridge",
+    buttressX + randomBetween(rng, -2, 3),
+    Math.min(height - 12, maxVentY + 12),
+    randomBetween(rng, 4.2, 5.2),
+    randomBetween(rng, 4.2, 5.8),
+    "Southern Crag",
+  );
+
+  // 4. Scattered Rim Outcrops along north/south borders for scenic silhouette
+  const rimColumns = [0.24, 0.56, 0.82];
+  for (const col of rimColumns) {
+    const x = width * col + randomBetween(rng, -6, 6);
+    addFeature(
+      rng.next() < 0.45 ? "obsidian_spire" : "basalt_ridge",
+      x,
+      randomBetween(rng, 8, 13),
+      randomBetween(rng, 3.6, 4.8),
+      randomBetween(rng, 4.8, 7.2),
+    );
+    addFeature(
+      rng.next() < 0.45 ? "obsidian_spire" : "basalt_ridge",
+      x + randomBetween(rng, -5, 5),
+      height - randomBetween(rng, 8, 13),
+      randomBetween(rng, 3.6, 4.8),
+      randomBetween(rng, 4.8, 7.2),
+    );
+  }
+
+  return { extraChokes, obstacles };
 }
 
 /**

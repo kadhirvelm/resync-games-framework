@@ -434,6 +434,24 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   min-width: 4px;
 }
 
+.minimapTerrain {
+  background: rgb(56 48 54 / 85%);
+  border: 1px solid rgb(124 108 116 / 80%);
+  border-radius: 30%;
+  min-height: 4px;
+  min-width: 4px;
+}
+
+.minimapTerrain[data-terrain-kind="magma_fissure"] {
+  background: rgb(214 82 34 / 75%);
+  border-color: #ff9c54;
+}
+
+.minimapTerrain[data-terrain-kind="obsidian_spire"] {
+  background: rgb(42 28 58 / 90%);
+  border-color: #a96de0;
+}
+
 .minimapNode {
   background: #8eb678;
   border: 1px solid #d0e0a9;
@@ -569,6 +587,31 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
 .vent {
   background: rgb(224 122 61 / 35%);
   border: 1px dashed #e07a3d;
+}
+
+.terrain {
+  align-items: center;
+  background: rgb(46 40 45 / 88%);
+  border: 1px solid #7d6d74;
+  border-radius: 34%;
+  box-shadow: inset 0 0 10px rgb(0 0 0 / 60%);
+  color: #cfc4bc;
+  display: flex;
+  font-size: 0.65rem;
+  justify-content: center;
+  pointer-events: none;
+  position: absolute;
+  text-align: center;
+}
+
+.terrain[data-terrain-kind="magma_fissure"] {
+  background: rgb(186 64 26 / 65%);
+  border-color: #ff9148;
+}
+
+.terrain[data-terrain-kind="obsidian_spire"] {
+  background: rgb(36 25 52 / 90%);
+  border-color: #9e65d6;
 }
 
 .vein {
@@ -2341,6 +2384,18 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   }
 }
 
+.coopHud {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  left: 12px;
+  max-width: calc(100% - 24px);
+  position: absolute;
+  top: 10px;
+  z-index: 12;
+}
+
 .coopBar {
   align-items: center;
   backdrop-filter: blur(6px);
@@ -2352,38 +2407,15 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   flex-wrap: wrap;
   font-size: 0.78rem;
   gap: 8px;
-  left: 12px;
+  max-width: 100%;
   padding: 6px 10px;
-  position: absolute;
-  top: 10px;
-  z-index: 12;
+  position: static;
 }
 
 .coopRoomBadge {
   border-right: 1px solid rgb(232 191 106 / 26%);
   letter-spacing: 0.06em;
   padding-right: 8px;
-}
-
-.coopRoster {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.coopPlayerChip {
-  align-items: center;
-  display: inline-flex;
-  gap: 6px;
-}
-
-.coopColorDot {
-  border: 1.5px solid #0b0705;
-  border-radius: 50%;
-  box-shadow: 0 0 6px rgb(0 0 0 / 55%);
-  height: 10px;
-  width: 10px;
 }
 
 .coopLeaveButton {
@@ -2413,4 +2445,5 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   flex-basis: 100%;
   line-height: 1.35;
   max-width: 680px;
+  overflow-wrap: anywhere;
 }

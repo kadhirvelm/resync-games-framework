@@ -26,17 +26,28 @@ export function visibleToHold<TEntry extends FactionPoint>(
 }
 
 /**
- * Keeps map features (deposits, veins, vents) on ground the Hold has seen.
- * @param features - Features with map positions
+ * Keeps map features (deposits, veins, vents, terrain ridges) on ground the
+ * Hold has seen. Wide features reveal as soon as their center or rim is
+ * explored so tall landmarks do not pop in late.
+ * @param features - Features with map positions and optional radii
  * @param fog - Published fog, or null to show everything
  * @returns The features the player has discovered
  */
-export function exploredFeatures<TFeature extends { x: number; y: number }>(
-  features: readonly TFeature[],
-  fog: FogOfWarState | null,
-): TFeature[] {
+export function exploredFeatures<
+  TFeature extends { radius?: number; x: number; y: number },
+>(features: readonly TFeature[], fog: FogOfWarState | null): TFeature[] {
   if (fog === null) return [...features];
-  return features.filter((feature) => isFogExplored(fog, feature));
+  return features.filter((feature) => {
+    if (isFogExplored(fog, feature)) return true;
+    const radius = feature.radius;
+    if (radius === undefined || radius <= 1) return false;
+    return (
+      isFogExplored(fog, { x: feature.x + radius, y: feature.y }) ||
+      isFogExplored(fog, { x: feature.x - radius, y: feature.y }) ||
+      isFogExplored(fog, { x: feature.x, y: feature.y + radius }) ||
+      isFogExplored(fog, { x: feature.x, y: feature.y - radius })
+    );
+  });
 }
 
 /**

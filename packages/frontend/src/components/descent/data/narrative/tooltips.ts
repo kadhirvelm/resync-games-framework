@@ -32,6 +32,11 @@ export const BUILDING_TOOLTIPS = {
     lore: "Ashborn enter carrying ambition. The Sworn and Veterans leave carrying consequences.",
     name: "Cultivation Hall",
   },
+  cultivator_sanctum: {
+    buildingId: "cultivator_sanctum",
+    lore: "A quiet stone pavilion where new disciples draw their first breath of Qi before stepping into the ash.",
+    name: "Cultivator Sanctum",
+  },
   deep_mine: {
     buildingId: "deep_mine",
     lore: "The shaft protects its ore from raiders, not its miners from what knocks below.",
@@ -87,6 +92,11 @@ export const BUILDING_TOOLTIPS = {
     lore: "Four walls, a warm bunk, and a name on the door keep a soldier from becoming a number too soon.",
     name: "Housing",
   },
+  meditation_pavilion: {
+    buildingId: "meditation_pavilion",
+    lore: "Incense smoke settles over basalt flagstones; disciples emerge from seclusion with steadier cores.",
+    name: "Seclusion Pavilion",
+  },
   mess_hall: {
     buildingId: "mess_hall",
     lore: "Rations are readiness, never a tax on the hungry. Every bowl says the Hold expects its people home.",
@@ -101,6 +111,11 @@ export const BUILDING_TOOLTIPS = {
     buildingId: "root_cellar",
     lore: "A slow spring and a stubborn crop: proof that the Hold can live without taking every flame it finds.",
     name: "Root Cellar",
+  },
+  spirit_array: {
+    buildingId: "spirit_array",
+    lore: "Eight carved spirit stones anchor a formation ring, pulling thin Ashen Qi into a wellspring for the Hold.",
+    name: "Spirit Gathering Array",
   },
   spirit_herb_garden: {
     buildingId: "spirit_herb_garden",

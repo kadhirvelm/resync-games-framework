@@ -18,7 +18,7 @@ import {
 } from "../modifiers";
 import { hordeBarkKey, slotPosition } from "../spawn";
 import type { WaveUnit } from "../types";
-import { bodiesIn, boot, kill, stepTo, waveAt } from "./support";
+import { boot, kill, stepTo, waveAt } from "./support";
 
 /**
  * Asserts every body sits inside `[1, width - 2] x [1, height - 2]`.
@@ -93,7 +93,7 @@ describe("overdue waves", () => {
     state.omenTower = true;
     state.completedTick = secondsToWaveTicks(waveAt("ashen_swarm") - 30);
     expect(readOmen(state)).toMatchObject({
-      composition: { raider: bodiesIn("ashen_swarm") },
+      composition: { hunter: 1, raider: 4 },
       etaSeconds: 30,
     });
   });

@@ -14,6 +14,7 @@ import { threeDSandboxHref } from "@/components/game-experiences/gameExperienceP
 import { useClientServiceCallers } from "@/services/clientServiceCallers";
 import { readGlbUpload, threeDAssetCaller } from "@/services/threeDService";
 import { readReducedMotionPreference } from "../../babylonGame/reducedMotionPreference";
+import { ASHEN_GATE_3D_ASSETS } from "../../descent/data/layers/ashen_gate/threeDAssets";
 import { ThreeDModal } from "./ThreeDModal";
 import styles from "./threeDWorkshop.module.scss";
 
@@ -103,6 +104,11 @@ export function ThreeDWorkshop({
   const [preview, setPreview] = useState<ThreeDAsset>();
   const [edit, setEdit] = useState<ThreeDAsset>();
   const [designText, setDesignText] = useState("");
+  const [query, setQuery] = useState("");
+  const [providerFilter, setProviderFilter] = useState("all");
+  const [showRoster, setShowRoster] = useState(true);
+  const [rosterBusyId, setRosterBusyId] = useState("");
+  const [jobStartTimes] = useState(() => new Map<string, number>());
   const mounted = useRef(true);
   const selected =
     prototypes.find((prototype) => prototype.id === selectedId) ??
@@ -113,6 +119,48 @@ export function ThreeDWorkshop({
     if (isWorldWorkshop) return job.prototypeId !== undefined;
     return job.prototypeId === undefined && job.kind === kind;
   });
+
+  const providerOptions = useMemo(() => {
+    const providers = new Set<string>();
+    for (const asset of assets) providers.add(asset.provenance.provider);
+    return [...providers].sort();
+  }, [assets]);
+
+  const filteredAssets = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return visibleAssets.filter((asset) => {
+      if (
+        providerFilter !== "all" &&
+        asset.provenance.provider !== providerFilter
+      )
+        return false;
+      if (needle === "") return true;
+      return (
+        asset.name.toLowerCase().includes(needle) ||
+        asset.prompt.toLowerCase().includes(needle)
+      );
+    });
+  }, [visibleAssets, query, providerFilter]);
+
+  const rosterRows = useMemo(
+    () =>
+      ASHEN_GATE_3D_ASSETS.filter((definition) => definition.kind === kind).map(
+        (definition) => {
+          const match = visibleAssets.find(
+            (asset) => asset.name === definition.name,
+          );
+          return { definition, match };
+        },
+      ),
+    [kind, visibleAssets],
+  );
+  const rosterMissingCount = rosterRows.filter((row) => !row.match).length;
+
+  for (const job of visibleJobs) {
+    if (!jobStartTimes.has(job.generationId)) {
+      jobStartTimes.set(job.generationId, Date.now());
+    }
+  }
 
   /** Refreshes all category assets, packages and server-persisted job progress. */
   const refresh = useCallback(async () => {
@@ -134,6 +182,21 @@ export function ThreeDWorkshop({
     }
     setAssets(collected);
   }, [callers]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const initialPrompt = params.get("prompt");
+    const initialProvider = params.get("provider");
+    if (initialPrompt) setPrompt(initialPrompt);
+    if (
+      initialProvider === "meshy" ||
+      initialProvider === "design" ||
+      initialProvider === "demo"
+    ) {
+      setProvider(initialProvider);
+    }
+  }, []);
+
   useEffect(() => {
     mounted.current = true;
     void refresh().catch((cause) => setError(String(cause)));
@@ -188,6 +251,13 @@ export function ThreeDWorkshop({
     return result.generationId;
   };
 
+  /** Prefills the composer from a saved asset so the next run remixes it. */
+  const remixAsset = (asset: ThreeDAsset) => {
+    setPrompt(asset.prompt);
+    setProvider(asset.provenance.provider as ThreeDProvider);
+    window.scrollTo({ behavior: "smooth", top: 0 });
+  };
+
   /** Builds missing slots sequentially to keep cost and resource use predictable. */
   const buildPackage = async (
     prototype: ThreeDPrototype,
@@ -233,6 +303,7 @@ export function ThreeDWorkshop({
     setPrototypes((current) => [result, ...current]);
     if (demo) await buildPackage(result, "demo");
   };
+
   const previewInput = useMemo(
     () =>
       preview
@@ -581,6 +652,101 @@ export function ThreeDWorkshop({
               )}
             </div>
           ) : null}
+          {!isWorldWorkshop ? (
+            <section className={styles.panel}>
+              <div className={styles.heading}>
+                <h2>Descent roster</h2>
+                <div className={styles.actions}>
+                  <span>
+                    {rosterRows.length - rosterMissingCount}/{rosterRows.length}{" "}
+                    filled
+                  </span>
+                  <button
+                    onClick={() => setShowRoster(!showRoster)}
+                    type="button"
+                  >
+                    {showRoster ? "Hide" : "Show"}
+                  </button>
+                </div>
+              </div>
+              {showRoster ? (
+                <div className={styles.roster}>
+                  {rosterRows.map(({ definition, match }) => {
+                    const runningJob = visibleJobs.find(
+                      (job) =>
+                        job.state === "running" &&
+                        job.prompt.startsWith(definition.name),
+                    );
+                    return (
+                      <div className={styles.rosterRow} key={definition.role}>
+                        <div className={styles.rosterInfo}>
+                          <strong>{definition.name}</strong>
+                          <span className={styles.rosterRole}>
+                            {definition.role}
+                          </span>
+                        </div>
+                        <div className={styles.rosterActions}>
+                          {runningJob ? (
+                            <span className={styles.rosterGenerating}>
+                              {runningJob.stage} ·{" "}
+                              {Math.round(runningJob.progress)}%
+                            </span>
+                          ) : match ? (
+                            <>
+                              <button
+                                onClick={() => setPreview(match)}
+                                type="button"
+                              >
+                                Preview
+                              </button>
+                              <button
+                                onClick={() => remixAsset(match)}
+                                type="button"
+                              >
+                                Remix
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              className={styles.primary}
+                              disabled={
+                                Boolean(busy) ||
+                                rosterBusyId === definition.name
+                              }
+                              onClick={() =>
+                                void perform(
+                                  "Generating roster asset…",
+                                  async () => {
+                                    setRosterBusyId(definition.name);
+                                    try {
+                                      await generate(
+                                        kind,
+                                        `${definition.name}. Stylized dark-fantasy xianxia RTS model for Descent, readable from an isometric camera, crisp silhouette.`,
+                                        undefined,
+                                        undefined,
+                                        provider === "design"
+                                          ? "meshy"
+                                          : provider,
+                                      );
+                                    } finally {
+                                      setRosterBusyId("");
+                                    }
+                                  },
+                                )
+                              }
+                              type="button"
+                            >
+                              Generate
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
           {visibleJobs.length ? (
             <section className={styles.panel}>
               <h2>Generation desk</h2>
@@ -593,6 +759,14 @@ export function ThreeDWorkshop({
                     <p>
                       {job.stage}
                       {job.error ? ` · ${job.error}` : ""}
+                      {job.state === "running"
+                        ? ` · ${Math.round(
+                            (Date.now() -
+                              (jobStartTimes.get(job.generationId) ??
+                                Date.now())) /
+                              1000,
+                          )}s elapsed`
+                        : ""}
                     </p>
                     <progress max={100} value={job.progress} />
                   </div>
@@ -625,10 +799,34 @@ export function ThreeDWorkshop({
             <section className={styles.panel}>
               <div className={styles.heading}>
                 <h2>{kindTitle} library</h2>
-                <span>{visibleAssets.length} assets</span>
+                <span>
+                  {filteredAssets.length}/{visibleAssets.length} assets
+                </span>
+              </div>
+              <div className={styles.libraryFilters}>
+                <input
+                  aria-label="Search saved models"
+                  className={styles.librarySearch}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search names or prompts…"
+                  type="text"
+                  value={query}
+                />
+                <select
+                  aria-label="Filter by provider"
+                  onChange={(event) => setProviderFilter(event.target.value)}
+                  value={providerFilter}
+                >
+                  <option value="all">All providers</option>
+                  {providerOptions.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className={styles.library}>
-                {visibleAssets.map((asset) => (
+                {filteredAssets.map((asset) => (
                   <article className={styles.asset} key={asset.id}>
                     <button
                       className={styles.thumbnailButton}
@@ -663,6 +861,9 @@ export function ThreeDWorkshop({
                       >
                         Try in playground
                       </a>
+                      <button onClick={() => remixAsset(asset)} type="button">
+                        Remix
+                      </button>
                       {asset.design ? (
                         <button
                           onClick={() => {

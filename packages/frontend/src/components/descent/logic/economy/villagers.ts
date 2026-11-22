@@ -65,13 +65,17 @@ export function constructionProgressPerStep(workers: number): number {
 /** Economy steps a villager skips a target it could not reach (10 s at 0.5 s per step). */
 export const UNREACHABLE_COOLDOWN_STEPS = 20;
 
+/** Fraction of a 0.5 s work step one 100 ms locomotion sub-step performs. */
+const LOCOMOTION_WORK_FRACTION = 0.2;
+
 /** How far a villager looks for follow-up work after a node or site is done. */
 export const NEARBY_WORK_RADIUS = 10;
 
 /**
  * How villagers find work. Automatic villagers pick their own jobs. Manual
- * villagers only work what the player ordered, and then pick up nearby
- * follow-up work: another site, or the same resource once a node runs dry.
+ * villagers only work what the player ordered, and then pick up follow-up
+ * work: another site, or the same resource once a node runs dry. Ordinary
+ * builders help nearby; shift-placement builders cross the map to their batch.
  */
 export interface VillagerPolicy {
   manual: boolean;
@@ -214,6 +218,7 @@ export function orderVillagersMove(
     unit.garrisoned = false;
     unit.preferredNodeId = null;
     unit.workplaceId = null;
+    unit.queuedBuild = false;
     unit.task = { kind: "move", x, y };
   }
   return villagers.length;
@@ -233,6 +238,7 @@ export function orderVillagersStop(
   for (const unit of villagers) {
     unit.preferredNodeId = null;
     unit.workplaceId = null;
+    unit.queuedBuild = false;
     unit.task = null;
   }
   return villagers.length;
@@ -257,6 +263,7 @@ export function orderVillagersGather(
   for (const unit of villagers) {
     unit.preferredNodeId = nodeId;
     unit.workplaceId = null;
+    unit.queuedBuild = false;
     unit.garrisoned = false;
     unit.unreachable = (unit.unreachable ?? []).filter(
       (entry) => entry.targetId !== nodeId,
@@ -285,6 +292,7 @@ export function orderVillagersBuild(
   const villagers = selectedVillagers(host, unitIds);
   for (const unit of villagers) {
     unit.garrisoned = false;
+    unit.queuedBuild = false;
     unit.unreachable = (unit.unreachable ?? []).filter(
       (entry) => entry.targetId !== buildingId,
     );
@@ -298,6 +306,118 @@ export function orderVillagersBuild(
     unit.preferredNodeId = null;
   }
   return villagers.length;
+}
+
+/**
+ * Sends shift-placement builders across every unfinished site owned by the
+ * new site's player. Existing commitments by unselected villagers count
+ * toward each site's load; the selected group is then dealt to the least
+ * loaded sites, with distance and id providing deterministic tie-breaks.
+ * @param host - World of buildings and villagers
+ * @param unitIds - Selected units; non-villagers are ignored
+ * @param buildingId - Newly placed construction site
+ * @returns How many villagers joined the construction batch
+ */
+export function orderVillagersBuildAcrossSites(
+  host: EconomyHost,
+  unitIds: readonly string[],
+  buildingId: string,
+): number {
+  const building = findBuilding(host, buildingId);
+  if (!building?.constructing) return 0;
+  const villagers = selectedVillagers(host, unitIds);
+  const selectedIds = new Set(villagers.map((unit) => unit.id));
+  const sites = host.buildings
+    .map(asBuilding)
+    .filter((site) => site.constructing && site.ownerId === building.ownerId);
+  const assigned = new Map(
+    sites.map((site) => [
+      site.id,
+      unselectedBuildersAssigned(host, site.id, selectedIds),
+    ]),
+  );
+  for (const unit of villagers) {
+    const site = leastLoadedSite(unit, sites, assigned);
+    if (!site) continue;
+    unit.queuedBuild = true;
+    assignBuildTask(unit, site);
+    assigned.set(site.id, (assigned.get(site.id) ?? 0) + 1);
+  }
+  return villagers.length;
+}
+
+/**
+ * Gives one villager a fresh construction order and retries a target whose
+ * earlier pathfinding cooldown may still be active.
+ * @param unit - Builder receiving the task
+ * @param site - Construction site to build
+ */
+function assignBuildTask(unit: EconomyUnit, site: EconomyBuilding): void {
+  unit.garrisoned = false;
+  unit.unreachable = (unit.unreachable ?? []).filter(
+    (entry) => entry.targetId !== site.id,
+  );
+  unit.task = { buildingId: site.id, kind: "build" };
+  if (unit.workplaceId === site.id) unit.workplaceId = null;
+}
+
+/**
+ * Counts builders who are not part of the group being redistributed.
+ * @param host - World of villagers
+ * @param buildingId - Site whose existing commitments are counted
+ * @param selectedIds - Builders whose current tasks will be replaced
+ * @returns Builders that should keep counting against the site's capacity
+ */
+function unselectedBuildersAssigned(
+  host: EconomyHost,
+  buildingId: string,
+  selectedIds: ReadonlySet<string>,
+): number {
+  let count = 0;
+  for (const unit of host.units) {
+    if (!isEconomyUnit(unit) || selectedIds.has(unit.id)) continue;
+    if (unit.hp <= 0 || unit.popKind !== "villager") continue;
+    if (unit.task?.kind !== "build" || unit.task.buildingId !== buildingId) {
+      continue;
+    }
+    count += 1;
+  }
+  return count;
+}
+
+/**
+ * Picks the site with the fewest committed builders for one queued builder.
+ * @param unit - Builder being assigned
+ * @param sites - Unfinished sites in this construction batch
+ * @param assigned - Committed builder counts, updated after each assignment
+ * @returns The least loaded site, or null for an empty batch
+ */
+function leastLoadedSite(
+  unit: EconomyUnit,
+  sites: readonly EconomyBuilding[],
+  assigned: ReadonlyMap<string, number>,
+): EconomyBuilding | null {
+  let best: EconomyBuilding | null = null;
+  let bestCount = Number.POSITIVE_INFINITY;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const site of sites) {
+    const count = assigned.get(site.id) ?? 0;
+    const distance = footprintDistance(site, unit);
+    if (count > bestCount) continue;
+    if (count === bestCount && distance > bestDistance) continue;
+    if (
+      count === bestCount &&
+      distance === bestDistance &&
+      best &&
+      compareIds(site.id, best.id) > 0
+    ) {
+      continue;
+    }
+    best = site;
+    bestCount = count;
+    bestDistance = distance;
+  }
+  return best;
 }
 
 /**
@@ -458,6 +578,7 @@ export function recallVillagers(host: EconomyHost, ownerId?: string): void {
     const target = nearestCompleted(host, record);
     if (!target) continue;
     record.garrisoned = false;
+    record.queuedBuild = false;
     record.task = { buildingId: target.id, kind: "garrison" };
   }
 }
@@ -494,6 +615,7 @@ function assignIdle(host: EconomyHost, policy: VillagerPolicy): void {
   for (const unit of idle) {
     pruneUnreachable(host, unit);
     if (policy.manual) {
+      if (resumeQueuedBuild(host, unit)) continue;
       resumeOrderedWork(host, unit);
       continue;
     }
@@ -523,6 +645,31 @@ function resumeOrderedWork(host: EconomyHost, unit: EconomyUnit): void {
     kind: "gather",
     nodeId: node.id,
   };
+}
+
+/**
+ * Keeps a shift-placement builder on its owner's unfinished sites, anywhere
+ * on the map. When none need another builder, the batch ends and the
+ * villager's previous gathering or producer order can resume.
+ * @param host - World of construction sites
+ * @param unit - Idle builder or one whose site just finished
+ * @returns Whether another construction task was assigned
+ */
+function resumeQueuedBuild(host: EconomyHost, unit: EconomyUnit): boolean {
+  if (unit.queuedBuild !== true) return false;
+  const site = nearestMatching(host, unit, (building) => {
+    if (!building.constructing || building.ownerId !== unit.ownerId) {
+      return false;
+    }
+    if (isUnreachable(unit, building.id)) return false;
+    return workersAssigned(host, "build", building.id) < MAX_BUILDERS_PER_SITE;
+  });
+  if (!site) {
+    unit.queuedBuild = false;
+    return false;
+  }
+  unit.task = { buildingId: site.id, kind: "build" };
+  return true;
 }
 
 /**
@@ -661,11 +808,15 @@ function assignOne(host: EconomyHost, unit: EconomyUnit): void {
  * @param host - World the villager acts in
  * @param unit - Villager to advance
  */
-function stepOne(host: EconomyHost, unit: EconomyUnit): void {
+function stepOne(
+  host: EconomyHost,
+  unit: EconomyUnit,
+  locomotion = false,
+): void {
   if (unit.hp <= 0 || unit.popKind !== "villager" || !unit.task) return;
   const task = unit.task;
   if (task.kind === "gather") {
-    stepGather(host, unit, task);
+    stepGather(host, unit, task, locomotion);
     return;
   }
   if (task.kind === "carry") {
@@ -677,7 +828,7 @@ function stepOne(host: EconomyHost, unit: EconomyUnit): void {
     return;
   }
   if (task.kind === "repair") {
-    stepRepair(host, unit, task);
+    stepRepair(host, unit, task, locomotion);
     return;
   }
   if (task.kind === "move") {
@@ -837,6 +988,7 @@ function stepGather(
   host: EconomyHost,
   unit: EconomyUnit,
   task: Extract<VillagerTask, { kind: "gather" }>,
+  locomotion = false,
 ): void {
   const node = host.economy.nodes.find((entry) => entry.id === task.nodeId);
   if (!node || node.remaining <= 0) {
@@ -847,7 +999,9 @@ function stepGather(
     moveToward(host, unit, node);
     return;
   }
-  task.gatherTicksLeft -= 1;
+  // Sub-stepped villagers gather the same total per real second, in smaller
+  // bites, so a full gather still takes `gatherTicks` economy steps.
+  task.gatherTicksLeft -= locomotion ? LOCOMOTION_WORK_FRACTION : 1;
   if (task.gatherTicksLeft > 0) return;
   const capacity = resourceDef(node.resourceId)?.carryAmount ?? 1;
   const amount = Math.min(capacity, node.remaining);
@@ -922,6 +1076,7 @@ function stepRepair(
   host: EconomyHost,
   unit: EconomyUnit,
   task: Extract<VillagerTask, { kind: "repair" }>,
+  locomotion = false,
 ): void {
   const building = findBuilding(host, task.buildingId);
   if (!building?.completed) {
@@ -936,7 +1091,11 @@ function stepRepair(
     moveToward(host, unit, building);
     return;
   }
-  building.hp = Math.min(building.maxHp, building.hp + repairHpPerTick());
+  building.hp = Math.min(
+    building.maxHp,
+    building.hp +
+      repairHpPerTick() * (locomotion ? LOCOMOTION_WORK_FRACTION : 1),
+  );
   if (building.hp < building.maxHp) return;
   unit.task = null;
 }
@@ -1127,6 +1286,12 @@ export function cellOpen(
 ): boolean {
   if (x < 0 || y < 0 || x >= host.map.width || y >= host.map.height)
     return false;
+  const obstacles = host.getTerrainObstacles?.() ?? [];
+  for (const obstacle of obstacles) {
+    const dx = x - obstacle.x;
+    const dy = y - obstacle.y;
+    if (dx * dx + dy * dy <= obstacle.radius * obstacle.radius) return false;
+  }
   const building = buildingCovering(host.buildings, x, y);
   if (!building) return true;
   const def = buildingDef(building.buildingType);
@@ -1207,9 +1372,10 @@ function finishConstruction(
 }
 
 /**
- * Picks a manual builder's next job when its site finishes: work the new
- * producer while it has a free slot, help a nearby site, keep its standing
- * gather order, or work a node near a new drop-off.
+ * Picks a manual builder's next job when its site finishes. Queued builders
+ * take another site in their batch first. Otherwise they work the new producer
+ * while it has a free slot, help a nearby site, keep their standing gather
+ * order, or work a node near a new drop-off.
  * @param host - World of sites and nodes
  * @param unit - Builder whose site just finished
  * @param finished - The completed building
@@ -1219,6 +1385,7 @@ function followUpAfterBuild(
   unit: EconomyUnit,
   finished: EconomyBuilding,
 ): void {
+  if (resumeQueuedBuild(host, unit)) return;
   const job = standingJobAt(finished);
   if (job !== null && hasFreeSlot(host, finished)) {
     unit.task = { buildingId: finished.id, kind: job };

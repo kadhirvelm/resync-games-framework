@@ -53,6 +53,20 @@ export const GLOSSARY = [
     meaning: "Hero revival power",
     term: "Great Soul",
   },
+  {
+    meaning: "Active cultivator technique powered by Qi (press C)",
+    term: "Qi Art",
+  },
+  {
+    meaning:
+      "Meditate in place (press M) to absorb Essence & Merit — 2.5× near Veins or Arrays",
+    term: "Seclusion",
+  },
+  {
+    meaning:
+      "Formation pillar that gathers Essence and doubles nearby Cultivator Qi regen",
+    term: "Spirit Gathering Array",
+  },
 ] as const satisfies readonly GlossaryEntry[];
 
 /** Terms the onboarding acceptance check requires the glossary to define. */

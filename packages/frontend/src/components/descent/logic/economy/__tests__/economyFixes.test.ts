@@ -467,8 +467,9 @@ describe("Descent market and coin sinks", () => {
 });
 
 describe("Descent hold tiers", () => {
-  test("tier upgrades take 10 and 15 seconds at two steps per second", () => {
-    expect(holdTierDef("Stronghold")?.upgradeTicks).toBe(20);
+  test("tier upgrades take 7.5, 11, and 15 seconds at two steps per second", () => {
+    expect(holdTierDef("Outpost")?.upgradeTicks).toBe(15);
+    expect(holdTierDef("Stronghold")?.upgradeTicks).toBe(22);
     expect(holdTierDef("Citadel")?.upgradeTicks).toBe(30);
   });
 });

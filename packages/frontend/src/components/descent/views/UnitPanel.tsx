@@ -117,6 +117,9 @@ export function UnitPanel({
         ) : null}
         {cultivation === null ? null : (
           <div className={styles.bars}>
+            {unit !== null && unit.qi !== null && unit.maxQi !== null ? (
+              <FillBar label="Qi" max={unit.maxQi} value={unit.qi} />
+            ) : null}
             <FillBar
               label="Merit"
               max={cultivation.meritToNext}
@@ -127,6 +130,23 @@ export function UnitPanel({
               max={cultivation.essenceToNext}
               value={cultivation.essence}
             />
+            {unit?.breakthroughReady ? (
+              <p className={styles.summary}>
+                <strong>Breakthrough ready!</strong> Select Breakthrough to
+                ascend.
+              </p>
+            ) : null}
+            {unit?.meditating ? (
+              <p className={styles.summary}>
+                <strong>In Seclusion</strong> — absorbing Essence, Merit, and Qi
+                {unit.inSpiritArray ? " (Spirit Array 2.5×)" : ""}.
+              </p>
+            ) : unit?.inSpiritArray ? (
+              <p className={styles.summary}>
+                <strong>Spirit Array Aura</strong> — 2× Qi regen &amp; +15% Qi
+                Art potency.
+              </p>
+            ) : null}
           </div>
         )}
         {showUpgrade && upgrade !== null ? (

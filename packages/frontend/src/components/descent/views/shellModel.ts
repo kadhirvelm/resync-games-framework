@@ -19,6 +19,7 @@ import {
   type CropGrowthReadout,
   type DescentPresentation,
   type OnboardingFlags,
+  type QiArtReadout,
   type ReadPresentation,
   type RouteReadout,
   readPresentation,
@@ -38,6 +39,8 @@ export interface ShellUnit {
   activity: string | null;
   /** A layer boss, such as Cinderjaw. Drawn larger so it reads as a threat. */
   boss: boolean;
+  /** True when the unit satisfies every requirement to attempt a breakthrough. */
+  breakthroughReady: boolean;
   calamity: boolean;
   /** What a villager is carrying home, or null when empty-handed. */
   carrying: { amount: number; resource: ResourceId } | null;
@@ -49,7 +52,13 @@ export interface ShellUnit {
   id: string;
   /** A villager waiting for orders. */
   idle: boolean;
+  /** Whether a cultivator stands inside a Spirit Gathering Array aura. */
+  inSpiritArray: boolean;
   maxHitPoints: number | null;
+  /** Maximum Qi pool for cultivators, or null for non-cultivators. */
+  maxQi: number | null;
+  /** Whether a cultivator is currently meditating in seclusion. */
+  meditating: boolean;
   name: string;
   /** Assigned co-op ring color in multiplayer matches. */
   ownerColor?: string;
@@ -57,8 +66,14 @@ export interface ShellUnit {
   ownerId?: string;
   /** Owning player display name in multiplayer matches. */
   ownerName?: string;
+  /** Current Qi pool for cultivators, or null for non-cultivators. */
+  qi: number | null;
+  /** Active Qi Art available to a cultivator, or null. */
+  qiArt: QiArtReadout | null;
   /** Where a Hold unit is headed: current destination, then queued legs. */
   route?: readonly RouteReadout[];
+  /** Whether a Spirit Surge combat buff is active. */
+  surgeActive: boolean;
   treasureSlots: number;
   treasures: readonly { id: string; name: string }[];
   x: number;
@@ -193,6 +208,7 @@ function decorateUnit(
   return {
     activity: typeof readout?.task === "string" ? readout.task : null,
     boss: readout?.role === "boss",
+    breakthroughReady: readout?.breakthroughReady === true,
     calamity: readout?.calamity === true,
     carrying: carriedLoad(readout),
     classId: unit.classId,
@@ -203,8 +219,11 @@ function decorateUnit(
       typeof readout?.hitPoints === "number" ? readout.hitPoints : null,
     id: unit.id,
     idle: readout?.idle === true,
+    inSpiritArray: readout?.inSpiritArray === true,
     maxHitPoints:
       typeof readout?.maxHitPoints === "number" ? readout.maxHitPoints : null,
+    maxQi: typeof readout?.maxQi === "number" ? readout.maxQi : null,
+    meditating: readout?.meditating === true,
     name: readout?.name ?? CLASS_LABEL[unit.classId],
     ...(readout?.ownerColor === undefined
       ? {}
@@ -215,7 +234,10 @@ function decorateUnit(
     ...(readout?.ownerName === undefined
       ? {}
       : { ownerName: readout.ownerName }),
+    qi: typeof readout?.qi === "number" ? readout.qi : null,
+    qiArt: readout?.qiArt ?? null,
     route: readRoute(readout?.route),
+    surgeActive: readout?.surgeActive === true,
     treasureSlots: readout?.treasureSlots ?? 0,
     treasures: readout?.treasures ?? [],
     x: unit.x,
@@ -334,6 +356,7 @@ export function buildShellModel(snapshot: SimSnapshot): ShellModel {
     scale: mapDisplayScale(snapshot.map.width),
     speed: snapshot.speed,
     telegraphs: cuesInSight(presentation.telegraphs, fog),
+    terrain: exploredFeatures(presentation.terrain, fog),
     tick: snapshot.tick,
     units: visibleToHold(
       snapshot.units.map((unit) =>

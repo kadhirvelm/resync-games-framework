@@ -184,7 +184,8 @@ export function spawnUnit(
   );
   const power =
     wavePowerMultiplier(context.collectedEssence, context.grade) *
-    hordeStatScale(context.grade);
+    hordeStatScale(context.grade) *
+    (context.statMultiplier ?? 1);
   const faction = factionFor(context.layerId);
   const scale = plan.useBossStats ? 1 : plan.statScale;
   const baseMaxHitPoints = plan.useBossStats

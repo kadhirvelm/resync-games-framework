@@ -12,6 +12,10 @@
  * Code lives in `logic/slice/`; this file wires it into a `SimModule`.
  */
 import {
+  DESCENT_CAMPAIGN_MISSIONS,
+  type DescentMapId,
+} from "@resync-game-framework/api";
+import {
   ASHEN_CRUCIBLE_MAP_SIZE,
   type AshenCruciblePlayer,
   generateAshenCrucibleMap,
@@ -29,6 +33,7 @@ import { createEconomyModule } from "./economy/module";
 import { asBuilding, economyHost, isEconomyUnit } from "./economy/records";
 import { orderVillagersMove, orderVillagersStop } from "./economy/villagers";
 import { setLayerTerrain } from "./layers/hazards";
+import { creditPlayerCultivation } from "./scoring";
 import {
   createDescentSim,
   type DescentSim,
@@ -44,6 +49,12 @@ import {
   REALM_FOR_RANK,
   saveCultivation,
 } from "./slice/sliceCultivation";
+import {
+  advanceCultivatorPowersTick,
+  cancelMeditation,
+  castQiArt,
+  toggleMeditate,
+} from "./slice/sliceCultivatorPowers";
 import { updateFogOfWar } from "./slice/sliceFog";
 import { publishPresentation } from "./slice/slicePresentation";
 import {
@@ -85,8 +96,26 @@ export interface AshenGateSimOptions {
   seed: number;
 }
 
+/** Wave spawn-time multiplier for the co-op tutorial (50% more prep time). */
+export const TUTORIAL_WAVE_TIME_SCALE = 1.5;
+
+/** Horde HP and damage multiplier for the co-op tutorial (65% of normal). */
+export const TUTORIAL_WAVE_STAT_SCALE = 0.65;
+
+/** Extra starting supplies granted in the co-op tutorial so teams can practice freely. */
+export const TUTORIAL_STOCKPILE_BONUS = {
+  essence: 40,
+  food: 100,
+  iron: 30,
+  stone: 80,
+  water: 100,
+  wood: 120,
+} as const;
+
 /** Options for a new 1–4 player co-op Descent simulation on Ashen Crucible. */
 export interface MultiplayerDescentSimOptions {
+  /** Selected multiplayer mode; defaults to `ashen_crucible`. */
+  mapId?: DescentMapId;
   players: readonly AshenCruciblePlayer[];
   seed: number;
 }
@@ -123,6 +152,16 @@ export function createAshenGateSim(options: AshenGateSimOptions): DescentSim {
 export function createMultiplayerDescentSim(
   options: MultiplayerDescentSimOptions,
 ): DescentSim {
+  const isTutorial = options.mapId === "ashen_crucible_tutorial";
+  const campaignMission = DESCENT_CAMPAIGN_MISSIONS.find(
+    (mission) => mission.id === options.mapId,
+  );
+  const waveOptions = isTutorial
+    ? {
+        waveStatScale: TUTORIAL_WAVE_STAT_SCALE,
+        waveTimeScale: TUTORIAL_WAVE_TIME_SCALE,
+      }
+    : campaignMission;
   return createDescentSim({
     layerId: "ashen_gate",
     map: { ...ASHEN_CRUCIBLE_MAP_SIZE },
@@ -131,8 +170,8 @@ export function createMultiplayerDescentSim(
         manualVillagers: true,
         stepEveryTicks: ECONOMY_STEP_TICKS,
       }),
-      createWavesModule(),
-      createSliceModule({ players: options.players }),
+      createWavesModule(undefined, waveOptions),
+      createSliceModule({ players: options.players, tutorial: isTutorial }),
     ],
     seed: options.seed,
   });
@@ -219,6 +258,7 @@ function ownsUnit(
 
 interface SliceModuleConfig {
   players?: readonly AshenCruciblePlayer[];
+  tutorial?: boolean;
 }
 
 /**
@@ -237,6 +277,15 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
           return;
         }
         pushNotice(context.world, "Training cancelled. Cost refunded.", "info");
+      },
+      cast_qi_art(command, context) {
+        const unitIds = authorizedUnitIds(
+          context.world,
+          command.unitIds,
+          command.actorId,
+        );
+        if (unitIds.length === 0) return;
+        castQiArt(context, unitIds);
       },
       choose_school(command, context) {
         if (!ownsUnit(context.world, command.unitId, command.actorId)) return;
@@ -285,6 +334,7 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
           command.actorId,
         );
         if (unitIds.length === 0) return;
+        cancelMeditation(context.world, unitIds);
         clearWaypoints(context.world, unitIds);
         queueOrder(context.world, { ...command, unitIds });
       },
@@ -295,6 +345,7 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
           command.actorId,
         );
         if (unitIds.length === 0) return;
+        cancelMeditation(context.world, unitIds);
         routeMove(context.world, { ...command, unitIds });
       },
       order_move(command, context) {
@@ -304,6 +355,7 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
           command.actorId,
         );
         if (unitIds.length === 0) return;
+        cancelMeditation(context.world, unitIds);
         routeMove(context.world, { ...command, unitIds });
       },
       order_stop(command, context) {
@@ -358,6 +410,17 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
         }
         startBreakthrough(context.world, command.unitId, command.hallId);
       },
+      toggle_meditate(command, context) {
+        const unitIds = authorizedUnitIds(
+          context.world,
+          command.unitIds,
+          command.actorId,
+        );
+        if (unitIds.length === 0) return;
+        clearWaypoints(context.world, unitIds);
+        queueOrder(context.world, { type: "order_stop", unitIds });
+        toggleMeditate(context.world, unitIds);
+      },
       train_unit(command, context) {
         if (!ownsBuilding(context.world, command.buildingId, command.actorId)) {
           return;
@@ -379,13 +442,29 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
           : generateAshenGateMap(world.seed);
       setLayerTerrain(world, {
         layerId: "ashen_gate",
+        obstacles: [...layout.obstacles],
         ventVolumes: [...layout.vents],
       });
+      const stockpile = config.tutorial
+        ? {
+            ...layout.stockpile,
+            essence:
+              (layout.stockpile.essence ?? 0) +
+              TUTORIAL_STOCKPILE_BONUS.essence,
+            food: (layout.stockpile.food ?? 0) + TUTORIAL_STOCKPILE_BONUS.food,
+            iron: (layout.stockpile.iron ?? 0) + TUTORIAL_STOCKPILE_BONUS.iron,
+            stone:
+              (layout.stockpile.stone ?? 0) + TUTORIAL_STOCKPILE_BONUS.stone,
+            water:
+              (layout.stockpile.water ?? 0) + TUTORIAL_STOCKPILE_BONUS.water,
+            wood: (layout.stockpile.wood ?? 0) + TUTORIAL_STOCKPILE_BONUS.wood,
+          }
+        : layout.stockpile;
       seedEconomyWorld(world, {
         buildings: [...layout.buildings],
         layerId: "ashen_gate",
         nodes: [...layout.nodes],
-        stockpile: layout.stockpile,
+        stockpile,
         units: [...layout.units],
         veins: [...layout.veins],
       });
@@ -402,13 +481,12 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
         cultivation.registerUnit({ maxHealth: unit.maxHp, unitId: unit.id });
       }
       saveCultivation(world, cultivation);
-      pushNotice(
-        world,
-        config.players !== undefined && config.players.length > 0
+      const openingNotice = config.tutorial
+        ? "Co-op Tutorial begun — follow the guide on the right to gather, build, and repel the Horde together!"
+        : config.players !== undefined && config.players.length > 0
           ? "Ashen Crucible co-op begun — defend your allied Holds together!"
-          : ASHEN_GATE_CONTENT.briefing,
-        "info",
-      );
+          : ASHEN_GATE_CONTENT.briefing;
+      pushNotice(world, openingNotice, "info");
       updateFogOfWar(world, true);
       publishPresentation(world);
     },
@@ -442,6 +520,7 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
         phase: "cultivation",
         run(context) {
           if (sliceState(context.world).outcome !== "playing") return;
+          advanceCultivatorPowersTick(context.world);
           advanceBreakthroughs(context);
         },
       },
@@ -677,6 +756,9 @@ function advanceBreakthroughs(context: TickContext): void {
       // Full health now; the next combat tick scales both to the new realm.
       unit.hp = unit.maxHp;
       pushFx(world, { kind: "ascend", x: unit.x, y: unit.y });
+    }
+    if (unit?.ownerId !== undefined) {
+      creditPlayerCultivation(world, unit.ownerId, outcome.sourceRank);
     }
     pushNotice(
       world,

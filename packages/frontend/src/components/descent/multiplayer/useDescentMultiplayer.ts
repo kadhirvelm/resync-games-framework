@@ -6,6 +6,7 @@ import {
   DESCENT_MAX_PLAYERS,
   type DescentAckResult,
   DescentEventsDefinition,
+  type DescentMapId,
   type DescentRoomState,
   type DescentSyncResult,
   type DescentTickPayload,
@@ -30,11 +31,22 @@ import type { AshenCruciblePlayer } from "../data/layers/ashen_crucible";
 import type { DescentSim } from "../logic/sim";
 import type { SimSpeed } from "../logic/sim/constants";
 import type { Command, SimSnapshot } from "../logic/types";
+import { readDescentCampaignOutcome } from "./campaignOutcome";
 import {
   applyDescentLockstepBatch,
   createDescentLockstepSession,
   type DescentLockstepSession,
 } from "./lockstep";
+import { syncDescentRoomInUrl } from "./roomLocation";
+
+const AUTO_JOIN_RETRY_LIMIT = 5;
+const AUTO_JOIN_RETRY_DELAY_MS = 300;
+
+/** Optional configuration for Descent multiplayer room lifecycle. */
+export interface UseDescentMultiplayerOptions {
+  /** Room code from the page URL to rejoin automatically once connected. */
+  initialRoomCode?: string | null;
+}
 
 /** React/network lifecycle around one deterministic replay session. */
 interface ActiveDescentSession extends DescentLockstepSession {
@@ -55,13 +67,17 @@ export interface UseDescentMultiplayerResult {
   /** Returns whether leaving succeeded and the session was discarded. */
   leaveRoom: () => Promise<boolean>;
   matchError: string | null;
+  /** Room code currently being rejoined automatically from the page URL. */
+  rejoiningRoomId: string | null;
   room: MultiplayerRoomState<DescentRoomState> | null;
   sendCommand: (command: Command) => void;
   setPaused: (paused: boolean) => void;
   setSpeed: (speed: SimSpeed) => void;
   sim: DescentSim | null;
   snapshot: SimSnapshot | null;
-  startMatch: () => Promise<void>;
+  startMatch: (mapId?: DescentMapId) => Promise<void>;
+  /** Requests a host-owned campaign transition for the current mission. */
+  startCampaignAction: (action: "start" | "retry" | "advance") => Promise<void>;
   status: MultiplayerRoomStatus;
 }
 
@@ -78,9 +94,10 @@ function createActiveSession(
   matchId: string,
   players: readonly AshenCruciblePlayer[],
   seed: number,
+  mapId: DescentMapId,
 ): ActiveDescentSession {
   return {
-    ...createDescentLockstepSession({ matchId, players, seed }),
+    ...createDescentLockstepSession({ mapId, matchId, players, seed }),
     queuedTicks: new Map<number, DescentTickPayload>(),
     roomId,
     synchronizing: true,
@@ -100,6 +117,20 @@ function gameErrorMessage(error: unknown): string {
     if (typeof message === "string") return message;
   }
   return "The multiplayer server could not complete that action.";
+}
+
+/**
+ * Detects the transient fast-refresh race where the previous tab's socket has
+ * not finished disconnecting on the server before the refreshed tab rejoins.
+ * @param code - Room command error code
+ * @param message - Room command error message
+ * @returns Whether retrying the join shortly is safe
+ */
+function isAlreadyConnectedError(code: string, message: string): boolean {
+  return (
+    code === "INVALID_REQUEST" &&
+    message.toLowerCase().includes("already connected")
+  );
 }
 
 /**
@@ -127,10 +158,12 @@ function queueTick(
  * stream locally. Reconnects wait for room rejoin plus a full command-log sync,
  * preventing missed commands from being applied on client-specific ticks.
  * @param player - Stable local player identity
+ * @param options - Optional initial room code from the page URL
  * @returns Room controls, match commands, and live simulation snapshot
  */
 export function useDescentMultiplayer(
   player: GameRoomPlayerInput,
+  options?: UseDescentMultiplayerOptions,
 ): UseDescentMultiplayerResult {
   const initialState = useMemo(() => createInitialDescentRoomState(), []);
   const {
@@ -150,7 +183,13 @@ export function useDescentMultiplayer(
   });
 
   const [matchError, setMatchError] = useState<string | null>(null);
+  const [pendingRoomCode, setPendingRoomCode] = useState<string | null>(
+    () => options?.initialRoomCode ?? null,
+  );
   const [session, setSession] = useState<ActiveDescentSession | null>(null);
+  const pendingRoomCodeRef = useRef(pendingRoomCode);
+  pendingRoomCodeRef.current = pendingRoomCode;
+  const autoJoinInFlightRef = useRef(false);
   const sessionRef = useRef<ActiveDescentSession | null>(null);
   sessionRef.current = session;
   const roomRef = useRef(room);
@@ -161,6 +200,7 @@ export function useDescentMultiplayer(
 
   const gameState = room?.gameState;
   const matchId = gameState?.phase === "playing" ? gameState.matchId : null;
+  const mapId: DescentMapId = gameState?.mapId ?? "ashen_crucible";
   const seed = gameState?.phase === "playing" ? gameState.seed : null;
   const roster = gameState?.phase === "playing" ? gameState.roster : null;
   const isParticipant =
@@ -173,6 +213,69 @@ export function useDescentMultiplayer(
     setSession(next);
   }, []);
 
+  // Keep the active room code in the URL so refreshing returns to this room.
+  useEffect(() => {
+    if (room?.id) {
+      syncDescentRoomInUrl(room.id);
+    }
+  }, [room?.id]);
+
+  // Automatically rejoin a room code present in the URL once connected.
+  useEffect(() => {
+    const targetRoomCode = pendingRoomCode;
+    if (
+      targetRoomCode === null ||
+      room !== null ||
+      status !== "connected" ||
+      autoJoinInFlightRef.current
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+    autoJoinInFlightRef.current = true;
+
+    const attemptJoin = async (attempt: number): Promise<void> => {
+      const result = await rawJoinRoom(targetRoomCode);
+      if (
+        cancelled ||
+        !mountedRef.current ||
+        pendingRoomCodeRef.current !== targetRoomCode
+      ) {
+        autoJoinInFlightRef.current = false;
+        return;
+      }
+
+      if (result.ok) {
+        autoJoinInFlightRef.current = false;
+        setPendingRoomCode(null);
+        return;
+      }
+
+      if (
+        attempt < AUTO_JOIN_RETRY_LIMIT &&
+        isAlreadyConnectedError(result.error.code, result.error.message)
+      ) {
+        retryTimer = globalThis.setTimeout(() => {
+          void attemptJoin(attempt + 1);
+        }, AUTO_JOIN_RETRY_DELAY_MS);
+        return;
+      }
+
+      autoJoinInFlightRef.current = false;
+      setPendingRoomCode(null);
+      syncDescentRoomInUrl(null);
+    };
+
+    void attemptJoin(0);
+    return () => {
+      cancelled = true;
+      autoJoinInFlightRef.current = false;
+      if (retryTimer !== null) globalThis.clearTimeout(retryTimer);
+    };
+  }, [pendingRoomCode, rawJoinRoom, room, status]);
+
   // Create or tear down the deterministic sim when a match begins or ends.
   useEffect(() => {
     const roomId = room?.id;
@@ -182,9 +285,9 @@ export function useDescentMultiplayer(
     }
     if (sessionRef.current?.matchId === matchId) return;
 
-    commitSession(createActiveSession(roomId, matchId, roster, seed));
+    commitSession(createActiveSession(roomId, matchId, roster, seed, mapId));
     setMatchError(null);
-  }, [commitSession, matchId, room?.id, roster, seed]);
+  }, [commitSession, mapId, matchId, room?.id, roster, seed]);
 
   /**
    * Synchronizes one session after match start, reconnect, or a detected gap.
@@ -243,6 +346,7 @@ export function useDescentMultiplayer(
             active.matchId,
             active.players,
             active.seed,
+            active.mapId,
           );
       if (next !== active) next.queuedTicks = active.queuedTicks;
 
@@ -322,14 +426,64 @@ export function useDescentMultiplayer(
   );
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
+  const terminalOutcome = readDescentCampaignOutcome(
+    snapshot,
+    session?.matchId ?? null,
+    matchId,
+  );
+  const reportedOutcome = gameState?.campaign?.outcomes[player.id];
+
+  // Outcomes come from deterministic replay, never a victory button. Retry lost
+  // acknowledgements until room state confirms the report, including reconnects.
+  useEffect(() => {
+    if (
+      !room?.id ||
+      !matchId ||
+      !gameState?.campaign ||
+      !isParticipant ||
+      !terminalOutcome ||
+      reportedOutcome === terminalOutcome ||
+      status !== "joined"
+    )
+      return;
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
+    /** Reports this client's replay outcome and retries transient failures. */
+    const report = async (): Promise<void> => {
+      const result = await client.sendGameCommand<GameRoomCommandResult>(
+        DescentEventsDefinition.clientToServer.descentReportOutcome,
+        { matchId, outcome: terminalOutcome, roomId: room.id },
+      );
+      if (cancelled) return;
+      if (!result.ok) setMatchError(result.error.message);
+      retryTimer = globalThis.setTimeout(() => void report(), 1500);
+    };
+    void report();
+    return () => {
+      cancelled = true;
+      if (retryTimer !== undefined) globalThis.clearTimeout(retryTimer);
+    };
+  }, [
+    client,
+    gameState?.campaign,
+    isParticipant,
+    matchId,
+    reportedOutcome,
+    room?.id,
+    status,
+    terminalOutcome,
+  ]);
+
   const createRoom = useCallback(async () => {
     setMatchError(null);
+    setPendingRoomCode(null);
     await rawCreateRoom();
   }, [rawCreateRoom]);
 
   const joinRoom = useCallback(
     async (roomCode: string) => {
       setMatchError(null);
+      setPendingRoomCode(null);
       await rawJoinRoom(roomCode);
     },
     [rawJoinRoom],
@@ -342,20 +496,49 @@ export function useDescentMultiplayer(
       setMatchError(gameErrorMessage(result.error));
       return false;
     }
+    setPendingRoomCode(null);
+    syncDescentRoomInUrl(null);
     commitSession(null);
     return true;
   }, [commitSession, rawLeaveRoom]);
 
-  const startMatch = useCallback(async () => {
-    const currentRoom = roomRef.current;
-    if (!currentRoom) return;
-    setMatchError(null);
-    const result = await client.sendGameCommand<GameRoomCommandResult>(
-      DescentEventsDefinition.clientToServer.descentStartMatch,
-      { roomId: currentRoom.id },
-    );
-    if (!result.ok) setMatchError(result.error.message);
-  }, [client]);
+  const startMatch = useCallback(
+    async (selectedMapId?: DescentMapId) => {
+      const currentRoom = roomRef.current;
+      if (!currentRoom) return;
+      setMatchError(null);
+      const result = await client.sendGameCommand<GameRoomCommandResult>(
+        DescentEventsDefinition.clientToServer.descentStartMatch,
+        {
+          campaignAction:
+            selectedMapId === "ashen_campaign_1" ? "start" : undefined,
+          mapId: selectedMapId ?? currentRoom.gameState.mapId,
+          roomId: currentRoom.id,
+        },
+      );
+      if (!result.ok) setMatchError(result.error.message);
+    },
+    [client],
+  );
+
+  /** Requests a campaign transition fenced to the latest match identity. */
+  const startCampaignAction = useCallback(
+    async (campaignAction: "start" | "retry" | "advance"): Promise<void> => {
+      const currentRoom = roomRef.current;
+      if (!currentRoom) return;
+      setMatchError(null);
+      const result = await client.sendGameCommand<GameRoomCommandResult>(
+        DescentEventsDefinition.clientToServer.descentStartMatch,
+        {
+          campaignAction,
+          matchId: currentRoom.gameState.matchId,
+          roomId: currentRoom.id,
+        },
+      );
+      if (!result.ok) setMatchError(result.error.message);
+    },
+    [client],
+  );
 
   const sendCommand = useCallback(
     (command: Command) => {
@@ -433,12 +616,14 @@ export function useDescentMultiplayer(
     joinRoom,
     leaveRoom,
     matchError,
+    rejoiningRoomId: room === null ? pendingRoomCode : null,
     room,
     sendCommand,
     setPaused,
     setSpeed,
     sim: session?.sim ?? null,
     snapshot,
+    startCampaignAction,
     startMatch,
     status,
   };

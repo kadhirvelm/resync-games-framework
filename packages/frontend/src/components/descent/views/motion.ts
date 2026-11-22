@@ -29,7 +29,62 @@ export function smoothAngle(
 }
 
 /** Canonical animation clips that can be played by a Descent character. */
-export type CharacterClip = "attack" | "death" | "hit" | "idle" | "walk";
+export type CharacterClip =
+  | "attack"
+  | "death"
+  | "hit"
+  | "idle"
+  | "run"
+  | "walk"
+  | "work";
+
+const VILLAGER_WORK_ACTIVITY_PREFIXES = [
+  "Gathering",
+  "Building",
+  "Repairing",
+  "Working",
+  "Harvesting",
+  "Tending",
+] as const;
+
+/**
+ * @param activity - Published villager task readout, e.g. "Gathering Wood"
+ * @returns Whether the villager is actively performing stationary labor
+ */
+export function isVillagerWorkingActivity(activity?: string): boolean {
+  if (!activity) return false;
+  return VILLAGER_WORK_ACTIVITY_PREFIXES.some((prefix) =>
+    activity.startsWith(prefix),
+  );
+}
+
+/**
+ * Selects the looping character animation clip for the current frame.
+ * Walking (or running for a Rider with a `run` clip) takes priority over
+ * stationary labor; missing optional clips fall back to `walk` or `idle`.
+ * @param input - Unit locomotion, role, activity, and clip availability
+ * @returns The looping clip name to play
+ */
+export function selectCharacterLoopClip(input: {
+  activity?: string;
+  hasRunClip?: boolean;
+  hasWorkClip: boolean;
+  locomoting: boolean;
+  role: string;
+}): "idle" | "run" | "walk" | "work" {
+  if (input.locomoting) {
+    if (input.role === "rider" && input.hasRunClip) return "run";
+    return "walk";
+  }
+  if (
+    input.role === "villager" &&
+    input.hasWorkClip &&
+    isVillagerWorkingActivity(input.activity)
+  ) {
+    return "work";
+  }
+  return "idle";
+}
 
 /**
  * Checks a Babylon animation-group name after a model has been instantiated.
@@ -157,4 +212,194 @@ export function gaitMotion(gait: Gait): { bob: number; lean: number } {
     bob: (Math.sin(gait.phase) + 1) * amplitude,
     lean: Math.sin(gait.phase * 0.5) * leanAmplitude,
   };
+}
+
+/** Stationary villager jobs with distinct procedural presentation. */
+export type VillagerWorkTask = "build" | "food" | "gold" | "stone" | "wood";
+
+/** Presentation-only joint angles and offsets for one work-cycle frame. */
+export interface VillagerWorkPose {
+  /** Small vertical crouch on impact, layered over the gait bob. */
+  bob: number;
+  /** Left arm rotation around its local x-axis, in radians. */
+  leftArmPitch: number;
+  /** Small side-to-side weight shift, layered over the gait lean. */
+  lean: number;
+  /** Right/tool arm rotation around its local x-axis, in radians. */
+  rightArmPitch: number;
+  /** Forward torso rotation around its local x-axis, in radians. */
+  torsoPitch: number;
+}
+
+interface StrikeProfile {
+  leftArmScale: number;
+  rightArmScale: number;
+  supportArmPitch: number;
+  torsoBase: number;
+  torsoStrike: number;
+}
+
+const WORK_CYCLE_MS = 1_000;
+
+const STRIKE_PROFILES: Record<
+  Exclude<VillagerWorkTask, "food">,
+  StrikeProfile
+> = {
+  build: {
+    leftArmScale: 0.12,
+    rightArmScale: 0.82,
+    supportArmPitch: 0.3,
+    torsoBase: 0.1,
+    torsoStrike: 0.12,
+  },
+  gold: {
+    leftArmScale: 0.82,
+    rightArmScale: 1.0,
+    supportArmPitch: 0.08,
+    torsoBase: 0.09,
+    torsoStrike: 0.24,
+  },
+  stone: {
+    leftArmScale: 0.9,
+    rightArmScale: 1.02,
+    supportArmPitch: 0.06,
+    torsoBase: 0.1,
+    torsoStrike: 0.27,
+  },
+  wood: {
+    leftArmScale: 0.86,
+    rightArmScale: 1.12,
+    supportArmPitch: 0.08,
+    torsoBase: 0.08,
+    torsoStrike: 0.22,
+  },
+};
+
+/**
+ * Resolves a published villager activity to its procedural work style.
+ * Coin uses the gold/mining style; iron and essence use the stone style.
+ * @param activity - Published task readout, such as "Gathering Wood"
+ * @returns A work style, or null when the activity is not stationary labor
+ */
+export function villagerWorkTask(activity?: string): VillagerWorkTask | null {
+  if (!isVillagerWorkingActivity(activity)) return null;
+  const normalized = (activity ?? "").toLowerCase();
+  if (
+    normalized.startsWith("building") ||
+    normalized.startsWith("repairing") ||
+    normalized.startsWith("working")
+  ) {
+    return "build";
+  }
+  if (
+    normalized.startsWith("harvesting") ||
+    normalized.startsWith("tending") ||
+    normalized.includes("food") ||
+    normalized.includes("water") ||
+    normalized.includes("herb")
+  ) {
+    return "food";
+  }
+  if (normalized.includes("coin") || normalized.includes("gold")) {
+    return "gold";
+  }
+  if (
+    normalized.includes("essence") ||
+    normalized.includes("stone") ||
+    normalized.includes("iron")
+  ) {
+    return "stone";
+  }
+  return "wood";
+}
+
+/**
+ * Returns a repeatable 0..1 cycle, including for negative presentation times.
+ * @param timeMs - Presentation time in milliseconds
+ * @param phase - Stable per-unit phase offset in radians
+ * @returns Position within the one-second work cycle
+ */
+function workCycle(timeMs: number, phase: number): number {
+  const safeTime = Number.isFinite(timeMs) ? timeMs : 0;
+  const safePhase = Number.isFinite(phase) ? phase : 0;
+  const phaseMs = (safePhase / (Math.PI * 2)) * WORK_CYCLE_MS;
+  const wrapped = (safeTime + phaseMs) % WORK_CYCLE_MS;
+  return ((wrapped + WORK_CYCLE_MS) % WORK_CYCLE_MS) / WORK_CYCLE_MS;
+}
+
+/**
+ * Shapes one blow into anticipation, a fast strike, and a smooth recovery.
+ * @param cycle - Position within the work cycle from zero to one
+ * @returns Normalized arm swing from raised (-1) to impact (1)
+ */
+function strikeCurve(cycle: number): number {
+  if (cycle < 0.45) {
+    const anticipation = cycle / 0.45;
+    return -(anticipation * anticipation * (3 - 2 * anticipation));
+  }
+  if (cycle < 0.62) {
+    const strike = (cycle - 0.45) / 0.17;
+    return -1 + 2 * strike * strike;
+  }
+  const recovery = (cycle - 0.62) / 0.38;
+  const eased = recovery * recovery * (3 - 2 * recovery);
+  return 1 - eased;
+}
+
+/**
+ * Produces a deterministic chop, mine, hammer, or harvest pose on a one-second
+ * rhythm. It has no Babylon or scene dependencies and repeats exactly.
+ * @param timeMs - Presentation time in milliseconds
+ * @param task - Kind of stationary work being performed
+ * @param phase - Optional stable per-unit phase offset in radians
+ * @returns Joint pitches and small body offsets for the current frame
+ */
+export function villagerWorkPose(
+  timeMs: number,
+  task: VillagerWorkTask,
+  phase = 0,
+): VillagerWorkPose {
+  const cycle = workCycle(timeMs, phase);
+  const wave = Math.sin(cycle * Math.PI * 2);
+  if (task === "food") {
+    return {
+      bob: -0.025 - Math.cos(cycle * Math.PI * 2) * 0.008,
+      lean: wave * 0.025,
+      leftArmPitch: -0.42 + wave * 0.38,
+      rightArmPitch: -0.42 - wave * 0.38,
+      torsoPitch: 0.18 + Math.cos(cycle * Math.PI * 2) * 0.045,
+    };
+  }
+  const profile = STRIKE_PROFILES[task];
+  const swing = strikeCurve(cycle);
+  const impact = Math.max(0, swing);
+  return {
+    bob: wave * 0.008 - impact * 0.035,
+    lean: wave * 0.022,
+    leftArmPitch: swing * profile.leftArmScale - profile.supportArmPitch,
+    rightArmPitch: swing * profile.rightArmScale,
+    torsoPitch: profile.torsoBase + impact * profile.torsoStrike,
+  };
+}
+
+/**
+ * Selects the procedural labor fallback only for a stationary villager whose
+ * generated model has no authored work clip.
+ * @param input - Current unit state, presentation time, and clip availability
+ * @returns A work pose, or null when normal clip/locomotion handling should win
+ */
+export function proceduralWorkPose(input: {
+  activity?: string;
+  hasWorkClip: boolean;
+  locomoting: boolean;
+  phase?: number;
+  role: string;
+  timeMs: number;
+}): VillagerWorkPose | null {
+  if (input.role !== "villager" || input.locomoting || input.hasWorkClip) {
+    return null;
+  }
+  const task = villagerWorkTask(input.activity);
+  if (task === null) return null;
+  return villagerWorkPose(input.timeMs, task, input.phase);
 }

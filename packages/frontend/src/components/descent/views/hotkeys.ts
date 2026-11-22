@@ -1,12 +1,24 @@
+import type { ControlGroupSlot } from "./controlGroups";
+
+/** A control-group assignment, extension, or recall keyboard action. */
+export interface ControlGroupHotkeyAction {
+  mode: "add" | "recall" | "save";
+  slot: ControlGroupSlot;
+  type: "controlGroup";
+}
+
 /** Keyboard actions the desktop shell handles. */
 export type HotkeyAction =
   | { type: "build" }
   | { type: "camera"; x: number; y: number }
+  | ControlGroupHotkeyAction
   | { type: "close" }
   | { type: "fullscreen" }
   | { type: "hotkeys" }
   | { type: "idle" }
+  | { type: "meditate" }
   | { type: "pause" }
+  | { type: "qi_art" }
   | { type: "recall" }
   | { type: "release" }
   | { type: "selectCamp" }
@@ -15,14 +27,34 @@ export type HotkeyAction =
 /** The key fields the mapper reads. */
 export interface HotkeyInput {
   altKey: boolean;
+  /** Physical key code, needed for shifted number-row punctuation. */
+  code?: string;
   ctrlKey: boolean;
   key: string;
   metaKey: boolean;
   repeat: boolean;
+  shiftKey?: boolean;
 }
 
 /** Camera step in screen pixels. */
 export const CAMERA_STEP = 72;
+
+/**
+ * Resolves a number-row or numeric key to a control-group slot.
+ * @param key - Keyboard event key, which may be shifted punctuation
+ * @param code - Physical keyboard code, when supplied by the browser
+ * @returns Slots 1 through 9, or null for every other key
+ */
+function controlGroupSlotFromKey(
+  key: string,
+  code: string | undefined,
+): ControlGroupSlot | null {
+  if (/^[1-9]$/.test(key)) return Number(key) as ControlGroupSlot;
+  if (code !== undefined && /^Digit[1-9]$/.test(code)) {
+    return Number(code.slice(-1)) as ControlGroupSlot;
+  }
+  return null;
+}
 
 /**
  * Maps a key to a shell action.
@@ -30,6 +62,24 @@ export const CAMERA_STEP = 72;
  * @returns The action, or null when the shell ignores the key
  */
 export function hotkeyFromInput(input: HotkeyInput): HotkeyAction | null {
+  const groupSlot = controlGroupSlotFromKey(input.key, input.code);
+  if (groupSlot !== null) {
+    if (
+      input.altKey ||
+      input.metaKey ||
+      input.repeat ||
+      (input.ctrlKey && input.shiftKey === true)
+    ) {
+      return null;
+    }
+    if (input.ctrlKey) {
+      return { mode: "save", slot: groupSlot, type: "controlGroup" };
+    }
+    if (input.shiftKey === true) {
+      return { mode: "add", slot: groupSlot, type: "controlGroup" };
+    }
+    return { mode: "recall", slot: groupSlot, type: "controlGroup" };
+  }
   if (input.altKey || input.ctrlKey || input.metaKey) return null;
   const key = input.key.length === 1 ? input.key.toLowerCase() : input.key;
   if (key === "ArrowLeft" || key === "a") {
@@ -46,6 +96,8 @@ export function hotkeyFromInput(input: HotkeyInput): HotkeyAction | null {
   }
   if (input.repeat) return null;
   if (key === "b") return { type: "build" };
+  if (key === "c") return { type: "qi_art" };
+  if (key === "m") return { type: "meditate" };
   if (key === "t") return { type: "train" };
   if (key === "r") return { type: "recall" };
   if (key === "g") return { type: "release" };
@@ -63,10 +115,16 @@ export const HOTKEY_ROWS = [
   { action: "Select", key: "Click / drag" },
   { action: "Select all of a type on screen", key: "Double-click" },
   { action: "Add to selection", key: "Shift+click" },
+  { action: "Save control group", key: "Ctrl+1–9" },
+  { action: "Add selection to control group", key: "Shift+1–9" },
+  { action: "Recall group / double-tap to center", key: "1–9" },
   { action: "Move / gather / build / attack", key: "Right-click" },
   { action: "Queue a waypoint", key: "Shift+right-click" },
   { action: "Send / queue from the minimap", key: "Right-click / Shift+click" },
   { action: "Build menu", key: "B" },
+  { action: "Place multiple buildings", key: "Shift+click" },
+  { action: "Unleash Cultivator Qi Art", key: "C" },
+  { action: "Toggle Cultivator Meditation", key: "M" },
   { action: "Build category", key: "Q W / A S" },
   { action: "Building (key on its button)", key: "Q W E / A S D / Z X C" },
   { action: "Back to categories", key: "Backspace" },

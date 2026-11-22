@@ -129,7 +129,17 @@ describe("Ashen Gate 3D asset routing", () => {
         name: "Villager",
       }),
     ).toBe("villager");
+    expect(
+      assetRoleForUnit({
+        classId: "cultivator",
+        factionId: "hold",
+        name: "Cultivator",
+      }),
+    ).toBe("cultivator");
     expect(assetRoleForBuilding("barracks")).toBe("barracks");
+    expect(assetRoleForBuilding("cultivator_sanctum")).toBe(
+      "cultivatorSanctum",
+    );
     expect(assetRoleForBuilding("fire_ward_wall")).toBe("fireWard");
     expect(assetRoleForBuilding("well")).toBe("well");
     expect(assetRoleForBuilding("farm")).toBe("farm");
@@ -147,11 +157,14 @@ describe("Ashen Gate 3D asset routing", () => {
     expect(isCharacterAssetRole("basaltBoulders")).toBe(false);
   });
 
-  test("the Camp is drawn as the Stronghold, then the Citadel", () => {
+  test("the Camp grows through Outpost, Stronghold, and Citadel, and Housing and Ward Tower use their own meshes", () => {
     expect(assetRoleForBuilding("camp")).toBe("camp");
     expect(assetRoleForBuilding("camp", "Camp")).toBe("camp");
+    expect(assetRoleForBuilding("camp", "Outpost")).toBe("outpost");
     expect(assetRoleForBuilding("camp", "Stronghold")).toBe("stronghold");
     expect(assetRoleForBuilding("camp", "Citadel")).toBe("citadel");
+    expect(assetRoleForBuilding("housing", "Camp")).toBe("housing");
+    expect(assetRoleForBuilding("ward_tower", "Outpost")).toBe("wardTower");
     expect(assetRoleForBuilding("barracks", "Stronghold")).toBe("barracks");
   });
 });

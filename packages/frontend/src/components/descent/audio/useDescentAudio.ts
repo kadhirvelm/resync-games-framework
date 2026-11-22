@@ -9,6 +9,7 @@ import { buildShellModel, type ShellModel } from "../views/shellModel";
 import {
   audioIdForFx,
   audioIdForNotice,
+  audioIdForUnitAcknowledgement,
   musicIdForEncounter,
   resolveDescentAudioCatalog,
 } from "./descentAudioCatalog";
@@ -20,6 +21,7 @@ import {
   stopDescentAudio,
   unlockDescentAudio,
 } from "./descentAudioEngine";
+import { subscribeDescentUnitAcknowledgement } from "./descentCommandAck";
 
 /** Inputs that keep generated audio synchronized with one Descent session. */
 export interface UseDescentAudioInput {
@@ -121,6 +123,14 @@ export function useDescentAudio(input: UseDescentAudioInput): void {
     }
     previousBuildings.current = nextBuildings;
   }, [input.active, model.buildings, model.fx, model.notices]);
+
+  useEffect(() => {
+    if (!input.active) return;
+    return subscribeDescentUnitAcknowledgement((acknowledgement) => {
+      unlockDescentAudio();
+      playDescentAudio(audioIdForUnitAcknowledgement(acknowledgement));
+    });
+  }, [input.active]);
 
   useEffect(() => {
     if (!input.active) return;

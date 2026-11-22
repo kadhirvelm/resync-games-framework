@@ -56,6 +56,22 @@ export function ModelViewport({
   useEffect(() => {
     if (state) handle.current?.update(state);
   }, [state]);
+
+  const characterClips = Array.from(
+    new Set(
+      input.entities
+        .filter((entity) => entity.kind === "character")
+        .flatMap(
+          (entity) =>
+            entity.model?.validation.animations.map((clip) => clip.name) ?? [],
+        ),
+    ),
+  );
+  const animationOptions =
+    characterClips.length > 0
+      ? characterClips
+      : ["idle", "walk", "attack", "hit", "death"];
+
   return (
     <div className={styles.modelViewport}>
       <canvas
@@ -108,7 +124,7 @@ export function ModelViewport({
           <select
             onChange={(event) => handle.current?.animate(event.target.value)}
           >
-            {["idle", "walk", "attack", "hit", "death"].map((clip) => (
+            {animationOptions.map((clip) => (
               <option key={clip}>{clip}</option>
             ))}
           </select>

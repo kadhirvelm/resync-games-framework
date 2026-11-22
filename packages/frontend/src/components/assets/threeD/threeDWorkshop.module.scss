@@ -379,3 +379,66 @@ $blueprint-accent: rgb(80 160 255 / 85%);
     grid-template-columns: 1fr;
   }
 }
+
+// ── Roster, search/filter, and remix ────────────────────────────────────────
+.roster {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rosterRow {
+  align-items: center;
+  border-bottom: 1px solid $blueprint-border;
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+
+.rosterInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  strong {
+    font-size: 13px;
+  }
+}
+
+.rosterRole {
+  color: rgb(140 190 255 / 65%);
+  font-family: monospace;
+  font-size: 11px;
+}
+
+.rosterActions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.rosterGenerating {
+  color: #ffe7a8;
+  font-size: 12px;
+}
+
+.libraryFilters {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 18px;
+
+  input,
+  select {
+    background: rgb(0 14 40 / 80%);
+    border: 1px solid $blueprint-border;
+    border-radius: 8px;
+    color: vars.$white;
+    font: inherit;
+    font-size: 13px;
+    padding: 8px 12px;
+  }
+
+  .librarySearch {
+    flex: 1;
+  }
+}

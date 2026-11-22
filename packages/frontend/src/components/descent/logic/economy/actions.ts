@@ -15,6 +15,7 @@ import {
 import type {
   EconomyBuilding,
   EconomyHost,
+  HoldTier,
   Point,
   ResourceNode,
   SpiritVein,
@@ -71,6 +72,9 @@ export function placeBuilding(
   const cells = footprintCells(site);
   if (!cells.every((cell) => inBounds(host, cell.x, cell.y))) {
     return `${def.name} does not fit on the map there.`;
+  }
+  if (blockedByTerrain(host, cells)) {
+    return "That ground is blocked by rocky terrain.";
   }
   if (occupied(host, site)) return "That ground is already taken.";
   if (!trySpend(host, def.cost)) {
@@ -244,6 +248,14 @@ export function upgradeHold(host: EconomyHost): boolean {
   return true;
 }
 
+/** Max HP of the Hold (`camp`) at each tier. */
+const HOLD_TIER_MAX_HP: Readonly<Record<HoldTier, number>> = {
+  Camp: 400,
+  Citadel: 1300,
+  Outpost: 600,
+  Stronghold: 900,
+};
+
 /**
  * Finishes a tier upgrade that was started on an earlier tick.
  * @param host - World whose tier may advance
@@ -256,6 +268,15 @@ export function advanceUpgrade(host: EconomyHost): void {
   if (upgrade.ticksLeft > 0) return;
   host.economy.tier = upgrade.target;
   host.economy.upgrade = null;
+  const nextMaxHp = HOLD_TIER_MAX_HP[upgrade.target];
+  for (const building of host.buildings) {
+    const record = asBuilding(building);
+    if (record.buildingType !== "camp") continue;
+    const hpGain = Math.max(0, nextMaxHp - record.maxHp);
+    record.tier = upgrade.target;
+    record.maxHp = nextMaxHp;
+    record.hp = Math.min(nextMaxHp, record.hp + hpGain);
+  }
 }
 
 /**
@@ -355,6 +376,25 @@ function costPhrase(cost: Partial<ResourceStockpile>): string {
  */
 function inBounds(host: EconomyHost, x: number, y: number): boolean {
   return x >= 0 && y >= 0 && x < host.map.width && y < host.map.height;
+}
+
+/**
+ * Reports whether any cell of a building footprint sits inside an impassable
+ * terrain obstacle.
+ * @param host - World of terrain obstacles
+ * @param cells - Cells covered by the proposed building
+ * @returns True when rocky terrain blocks placement
+ */
+function blockedByTerrain(host: EconomyHost, cells: readonly Point[]): boolean {
+  const obstacles = host.getTerrainObstacles?.() ?? [];
+  if (obstacles.length === 0) return false;
+  return cells.some((cell) =>
+    obstacles.some((obstacle) => {
+      const dx = cell.x - obstacle.x;
+      const dy = cell.y - obstacle.y;
+      return dx * dx + dy * dy <= obstacle.radius * obstacle.radius;
+    }),
+  );
 }
 
 /**

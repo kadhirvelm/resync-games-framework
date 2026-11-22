@@ -164,7 +164,12 @@ interface RawBuilding extends Partial<BuildingDef> {
   tier: HoldTier;
 }
 
-const HOLD_TIERS: readonly HoldTier[] = ["Camp", "Stronghold", "Citadel"];
+const HOLD_TIERS: readonly HoldTier[] = [
+  "Camp",
+  "Outpost",
+  "Stronghold",
+  "Citadel",
+];
 
 const resourceFile = asRecord(rawResources, "resources.json");
 const buildingFile = asRecord(rawBuildings, "buildings.json");

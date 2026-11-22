@@ -11,7 +11,11 @@ import { ASSET_CLASSES } from "./assetClasses/assetClassRegistry";
 import { assetClassEyebrow } from "./assetClasses/groupAssetClasses";
 import { PromptComposer } from "./PromptComposer";
 import { useAssetGenerationJobs } from "./useAssetGenerationJobs";
-import { hrefWithGenerator, readGeneratorFromSearch } from "./workshopLocation";
+import {
+  hrefWithGenerator,
+  readGeneratorFromSearch,
+  readPromptFromSearch,
+} from "./workshopLocation";
 
 const ASSET_CLASS_IDS = ASSET_CLASSES.map((assetClass) => assetClass.id);
 
@@ -28,6 +32,9 @@ export function Assets() {
     () =>
       readGeneratorFromSearch(window.location.search, ASSET_CLASS_IDS) ??
       ASSET_CLASS_IDS[0],
+  );
+  const [initialPrompt] = useState(
+    () => readPromptFromSearch(window.location.search) ?? "",
   );
   const [isNavDialogOpen, setIsNavDialogOpen] = useState(false);
   const {
@@ -134,6 +141,7 @@ export function Assets() {
               <PromptComposer
                 copy={activeClass.form}
                 id={`prompt-${activeClass.id}`}
+                initialPrompt={initialPrompt}
                 key={activeClass.id}
                 onSubmit={(prompt) => startJob(activeClass, prompt)}
                 runningCount={runningCount}

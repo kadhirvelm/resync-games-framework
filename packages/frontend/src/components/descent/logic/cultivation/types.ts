@@ -14,7 +14,7 @@ export type RankTitle = (typeof RANK_TITLES)[number];
 export type SchoolId = "ember" | "rime" | "blood";
 
 /** Hold tier used by the Cultivation Hall gate. */
-export type HallTier = "Camp" | "Stronghold" | "Citadel";
+export type HallTier = "Camp" | "Outpost" | "Stronghold" | "Citadel";
 
 /** Resource ids the cultivation chunk can ask the economy stockpile to spend. */
 export type CultivationResourceId =

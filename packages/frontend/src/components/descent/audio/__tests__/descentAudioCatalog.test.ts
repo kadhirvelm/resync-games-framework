@@ -4,9 +4,11 @@ import {
   ASHEN_GATE_AUDIO,
   ashenGateAudioPrompt,
 } from "../../data/layers/ashen_gate/audio";
+import type { ClassId } from "../../logic/types";
 import {
   audioIdForFx,
   audioIdForNotice,
+  audioIdForUnitAcknowledgement,
   musicIdForEncounter,
   resolveDescentAudioCatalog,
 } from "../descentAudioCatalog";
@@ -80,10 +82,77 @@ describe("Descent audio catalog", () => {
     expect(birth("soldier")).toBe("soldier-born");
   });
 
-  test("has no click cue for issuing commands", () => {
+  test("declares select and command responses for every unit class", () => {
+    const classIds = [
+      "villager",
+      "cultivator",
+      "sword_sage",
+      "formation_master",
+      "warden",
+      "hunter",
+      "rider",
+      "raider",
+      "breaker",
+      "adept",
+    ] as const satisfies readonly ClassId[];
+    const clipIds = ASHEN_GATE_AUDIO.map((spec) => spec.id as string);
+    for (const classId of classIds) {
+      const select = audioIdForUnitAcknowledgement({ classId, kind: "select" });
+      const command = audioIdForUnitAcknowledgement({
+        classId,
+        kind: "command",
+      });
+      expect(select).toBe(`${classId}-select`);
+      expect(command).toBe(`${classId}-command`);
+      expect(clipIds).toContain(select);
+      expect(clipIds).toContain(command);
+    }
+  });
+
+  test("degrades to silence when generated responses are not installed", () => {
+    const catalog = resolveDescentAudioCatalog([]);
     expect(
-      ASHEN_GATE_AUDIO.map((spec) => spec.id as string).includes("command"),
-    ).toBe(false);
+      catalog[
+        audioIdForUnitAcknowledgement({
+          classId: "warden",
+          kind: "command",
+        })
+      ],
+    ).toBeUndefined();
+  });
+
+  test("separates boss taunts from rejected-action warnings", () => {
+    expect(
+      audioIdForNotice({
+        id: 1,
+        text: "Cinderjaw: “Hold-folk take the ember.”",
+        tone: "warn",
+      }),
+    ).toBe("boss-taunt");
+    expect(
+      audioIdForNotice({
+        id: 2,
+        text: "Cinderjaw roars — the vents spit imps!",
+        tone: "warn",
+      }),
+    ).toBe("boss-taunt");
+    expect(
+      audioIdForNotice({ id: 3, text: "Boss still lives", tone: "warn" }),
+    ).toBe("denied");
+    expect(
+      audioIdForNotice({
+        id: 4,
+        text: "Marshal Orrec Vane: “Hold colors forward.”",
+        tone: "warn",
+      }),
+    ).toBe("denied");
+    expect(
+      audioIdForNotice({
+        id: 5,
+        text: "Cinderjaw falls. The gate opens; the mouths behind it do not cheer.",
+        tone: "good",
+      }),
+    ).toBeNull();
   });
 
   test("scores calm, combat, boss, and denied states", () => {

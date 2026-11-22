@@ -5,6 +5,7 @@
 import {
   DESCENT_MAX_PLAYERS,
   DESCENT_PLAYER_COLOR_NAMES,
+  type DescentMapId,
   type DescentRoomState,
   descentPlayerColor,
   type GameRoomPlayerInput,
@@ -14,10 +15,13 @@ import type {
   MultiplayerRoomState,
   MultiplayerRoomStatus,
 } from "@/services/multiplayer";
+import { DescentCampaignBriefing } from "./campaign/DescentCampaign";
 import styles from "./DescentLobby.module.scss";
 
 /** Props for the Descent co-op room creation, join, and waiting lobby screen. */
 export interface DescentLobbyProps {
+  /** Initial mission mode selected for the host. */
+  defaultMapId?: DescentMapId;
   error: string | null;
   isHost: boolean;
   onBack: () => void;
@@ -25,20 +29,52 @@ export interface DescentLobbyProps {
   onJoinRoom: (roomCode: string) => Promise<void>;
   onLeaveRoom: () => Promise<boolean>;
   onPlayerNameChange: (name: string) => void;
-  onStartMatch: () => Promise<void>;
+  onStartMatch: (mapId: DescentMapId) => Promise<void>;
   player: GameRoomPlayerInput;
+  /** Room code currently being rejoined automatically from the page URL. */
+  rejoiningRoomId?: string | null;
   room: MultiplayerRoomState<DescentRoomState> | null;
   status: MultiplayerRoomStatus;
 }
 
+const MODE_OPTIONS: readonly {
+  badge: string;
+  description: string;
+  id: DescentMapId;
+  title: string;
+}[] = [
+  {
+    badge: "3 missions · Increasing intensity",
+    description:
+      "Fight three Ashen Crucible sieges together, starting with fresh forces each mission. Progress belongs to this room.",
+    id: "ashen_campaign_1",
+    title: "Co-op Campaign",
+  },
+  {
+    badge: "Recommended for new players",
+    description:
+      "7-step live co-op guide, extra starting supplies, slower & gentler waves. Learn gathering, building, training, towers, and cultivation together.",
+    id: "ashen_crucible_tutorial",
+    title: "Co-op Tutorial (Guided)",
+  },
+  {
+    badge: "Full siege",
+    description:
+      "Standard 1–4 player Ashen Crucible defense against all 5 waves and Cinderjaw at full intensity.",
+    id: "ashen_crucible",
+    title: "Ashen Crucible (Standard)",
+  },
+];
+
 /**
  * Co-op multiplayer lobby for Descent: host a room, join by room code,
- * preview the 1–4 player Ashen Crucible roster with assigned ring colors,
- * and launch the match.
+ * choose Campaign, Tutorial, or Standard Ashen Crucible, preview the
+ * 1–4 player roster with assigned ring colors, and launch the match.
  * @param props - Room state, player identity, and lobby callbacks
  * @returns The co-op lobby screen
  */
 export function DescentLobby({
+  defaultMapId = "ashen_crucible",
   error,
   isHost,
   onBack,
@@ -48,13 +84,41 @@ export function DescentLobby({
   onPlayerNameChange,
   onStartMatch,
   player,
+  rejoiningRoomId = null,
   room,
   status,
 }: DescentLobbyProps) {
   const [nameDraft, setNameDraft] = useState(player.name);
   const [roomCode, setRoomCode] = useState("");
+  const [selectedMapId, setSelectedMapId] =
+    useState<DescentMapId>(defaultMapId);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const selectedMode = MODE_OPTIONS.find(
+    (option) => option.id === selectedMapId,
+  );
+
+  /** Serializes lobby actions and shows failures without an unhandled rejection.
+   * @param action - Room operation to await
+   * @returns Completion after busy state clears
+   */
+  const runAction = async (action: () => Promise<unknown>) => {
+    if (busy) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      await action();
+    } catch (cause) {
+      setActionError(
+        cause instanceof Error
+          ? cause.message
+          : "Unable to update the room. Please try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const commitName = () => {
     const trimmed = nameDraft.trim() || "Commander";
@@ -64,12 +128,7 @@ export function DescentLobby({
 
   const handleHost = async () => {
     commitName();
-    setBusy(true);
-    try {
-      await onCreateRoom();
-    } finally {
-      setBusy(false);
-    }
+    await runAction(onCreateRoom);
   };
 
   const handleJoin = async (event: React.FormEvent) => {
@@ -77,12 +136,7 @@ export function DescentLobby({
     const cleaned = roomCode.trim().toUpperCase();
     if (!cleaned) return;
     commitName();
-    setBusy(true);
-    try {
-      await onJoinRoom(cleaned);
-    } finally {
-      setBusy(false);
-    }
+    await runAction(() => onJoinRoom(cleaned));
   };
 
   const handleCopy = async () => {
@@ -97,12 +151,7 @@ export function DescentLobby({
   };
 
   const handleStart = async () => {
-    setBusy(true);
-    try {
-      await onStartMatch();
-    } finally {
-      setBusy(false);
-    }
+    await runAction(() => onStartMatch(selectedMapId));
   };
 
   const slots = Array.from({ length: DESCENT_MAX_PLAYERS }, (_, index) => ({
@@ -133,13 +182,41 @@ export function DescentLobby({
           battlefield.
         </p>
 
-        {error === null ? null : (
+        {actionError === null ? null : (
+          <p className={styles.errorBanner} role="alert">
+            {actionError}
+          </p>
+        )}
+        {room === null && defaultMapId === "ashen_campaign_1" ? (
+          <DescentCampaignBriefing />
+        ) : null}
+        {error === null || rejoiningRoomId !== null ? null : (
           <p className={styles.errorBanner} role="alert">
             {error}
           </p>
         )}
 
-        {room === null ? (
+        {room === null && rejoiningRoomId !== null ? (
+          <div className={styles.entryGrid} data-testid="descent-rejoining">
+            <section className={styles.card}>
+              <h2>Rejoining room {rejoiningRoomId}…</h2>
+              <p>
+                Reconnecting to your co-op squad and syncing the match state.
+              </p>
+            </section>
+            <div className={styles.footerRow}>
+              <button
+                className={styles.linkButton}
+                onClick={onBack}
+                type="button"
+              >
+                ← Back to Descent title
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {room === null && rejoiningRoomId === null ? (
           <div className={styles.entryGrid}>
             <div className={styles.fieldGroup}>
               <label className={styles.label} htmlFor="descent-player-name">
@@ -217,7 +294,9 @@ export function DescentLobby({
               </button>
             </div>
           </div>
-        ) : (
+        ) : null}
+
+        {room !== null ? (
           <div className={styles.waitingRoom}>
             <div className={styles.roomBanner}>
               <div>
@@ -231,7 +310,9 @@ export function DescentLobby({
               </div>
               <div className={styles.roomMeta}>
                 <span className={styles.mapTag}>
-                  Map: Ashen Crucible (288×216 Co-op)
+                  {isHost
+                    ? selectedMode?.title
+                    : "Host selects the mission mode"}
                 </span>
                 <button
                   className={styles.secondaryButton}
@@ -242,6 +323,51 @@ export function DescentLobby({
                 </button>
               </div>
             </div>
+
+            {isHost ? (
+              <fieldset className={styles.modeSection}>
+                <legend className={styles.label}>Mission Mode</legend>
+                <div className={styles.modeGrid}>
+                  {MODE_OPTIONS.map((option) => {
+                    const active = selectedMapId === option.id;
+                    return (
+                      <button
+                        aria-pressed={active}
+                        className={
+                          active ? styles.modeCardActive : styles.modeCard
+                        }
+                        data-testid={`descent-mode-${option.id}`}
+                        disabled={busy}
+                        key={option.id}
+                        onClick={() => setSelectedMapId(option.id)}
+                        type="button"
+                      >
+                        <div className={styles.modeCardHeader}>
+                          <strong>{option.title}</strong>
+                          <span className={styles.modeBadge}>
+                            {option.badge}
+                          </span>
+                        </div>
+                        <p className={styles.modeDescription}>
+                          {option.description}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            ) : null}
+
+            {isHost && selectedMapId === "ashen_campaign_1" ? (
+              <DescentCampaignBriefing />
+            ) : null}
+            {!isHost ? (
+              <p className={styles.waitingNote}>
+                The host selects the mode. Campaign missions use fresh forces;
+                progress stays in this room and is deleted when the final player
+                leaves.
+              </p>
+            ) : null}
 
             <div className={styles.rosterSection}>
               <div className={styles.rosterHeader}>
@@ -289,7 +415,8 @@ export function DescentLobby({
             <div className={styles.footerRow}>
               <button
                 className={styles.linkButton}
-                onClick={() => void onLeaveRoom()}
+                disabled={busy}
+                onClick={() => void runAction(onLeaveRoom)}
                 type="button"
               >
                 Leave Room
@@ -301,7 +428,9 @@ export function DescentLobby({
                   onClick={() => void handleStart()}
                   type="button"
                 >
-                  {busy ? "Launching…" : "Start Co-op Match"}
+                  {busy
+                    ? "Launching…"
+                    : `Start ${selectedMode?.title ?? "Co-op Match"}`}
                 </button>
               ) : (
                 <span className={styles.waitingNote}>
@@ -310,7 +439,7 @@ export function DescentLobby({
               )}
             </div>
           </div>
-        )}
+        ) : null}
       </div>
     </main>
   );

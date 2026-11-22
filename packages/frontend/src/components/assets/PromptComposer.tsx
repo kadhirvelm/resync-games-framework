@@ -15,6 +15,8 @@ interface PromptComposerProps {
   id: string;
   /** Starts a generation with the trimmed prompt. */
   onSubmit: (prompt: string) => void;
+  /** Prefilled brief from a roster or remix link. */
+  initialPrompt?: string;
   /** Generations of this kind still running. */
   runningCount: number;
 }
@@ -30,9 +32,10 @@ export function PromptComposer({
   copy,
   id,
   onSubmit,
+  initialPrompt = "",
   runningCount,
 }: PromptComposerProps) {
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState(initialPrompt);
   const [justStarted, setJustStarted] = useState(false);
   const trimmedPrompt = prompt.trim();
 
