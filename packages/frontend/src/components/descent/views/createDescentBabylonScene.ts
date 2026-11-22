@@ -92,6 +92,7 @@ import {
   UNIT_MARKER_RING,
   unitMarkerDiameter,
   unitOutlineWidth,
+  unitOwnerRingColor,
 } from "./unitContrast";
 import { isTypingTarget } from "./useHotkeys";
 
@@ -283,15 +284,17 @@ function material(
 }
 
 /**
- * Paints a soft dark disc and a faction ring into one foot marker.
+ * Paints a soft dark disc and a faction or player-color ring into one foot marker.
  * @param context - Marker texture context
  * @param size - Texture size in pixels
- * @param ring - Faction ring color
+ * @param ring - Faction or player ring color
+ * @param prominent - Draw a bolder ring for multiplayer player colors
  */
 function paintUnitMarker(
   context: CanvasRenderingContext2D,
   size: number,
   ring: string,
+  prominent = false,
 ): void {
   const center = size / 2;
   context.clearRect(0, 0, size, size);
@@ -308,29 +311,31 @@ function paintUnitMarker(
   shadow.addColorStop(1, "rgba(7, 5, 4, 0)");
   context.fillStyle = shadow;
   context.fillRect(0, 0, size, size);
-  context.strokeStyle = "rgba(8, 6, 5, 0.9)";
-  context.lineWidth = size * 0.058;
+  context.strokeStyle = "rgba(8, 6, 5, 0.92)";
+  context.lineWidth = size * (prominent ? 0.092 : 0.058);
   context.beginPath();
   context.arc(center, center, size * 0.4, 0, Math.PI * 2);
   context.stroke();
   context.strokeStyle = ring;
-  context.lineWidth = size * 0.032;
+  context.lineWidth = size * (prominent ? 0.058 : 0.032);
   context.beginPath();
   context.arc(center, center, size * 0.4, 0, Math.PI * 2);
   context.stroke();
 }
 
 /**
- * Creates the shared unlit foot marker for one faction.
+ * Creates the shared unlit foot marker for one faction or player color.
  * @param scene - Battlefield that owns the material
  * @param name - Unique material name
- * @param ring - Faction ring color
+ * @param ring - Faction or player ring color
+ * @param prominent - Draw a bolder ring for multiplayer player colors
  * @returns A transparent ground material
  */
 function createUnitMarkerMaterial(
   scene: Scene,
   name: string,
   ring: string,
+  prominent = false,
 ): StandardMaterial {
   const size = 128;
   const texture = new DynamicTexture(
@@ -340,7 +345,7 @@ function createUnitMarkerMaterial(
     false,
   );
   const context = texture.getContext() as unknown as CanvasRenderingContext2D;
-  paintUnitMarker(context, size, ring);
+  paintUnitMarker(context, size, ring, prominent);
   texture.hasAlpha = true;
   texture.update();
   const result = new StandardMaterial(name, scene);
@@ -646,6 +651,47 @@ export function createDescentBabylonScene(
       "horde-foot-marker",
       UNIT_MARKER_RING.horde,
     );
+    const playerMarkerMaterials = new Map<string, StandardMaterial>();
+    /** Returns a cached colored foot-marker material for one co-op player. */
+    const markerMaterialFor = (
+      factionId: "hold" | "horde",
+      ownerColor: string | undefined,
+    ): StandardMaterial => {
+      if (factionId !== "hold") return hordeMarkerMaterial;
+      if (ownerColor === undefined) return holdMarkerMaterial;
+      let cached = playerMarkerMaterials.get(ownerColor);
+      if (cached === undefined) {
+        cached = createUnitMarkerMaterial(
+          scene,
+          `player-foot-marker-${ownerColor}`,
+          unitOwnerRingColor(factionId, ownerColor),
+          true,
+        );
+        playerMarkerMaterials.set(ownerColor, cached);
+      }
+      return cached;
+    };
+    const playerSelectionMaterials = new Map<string, StandardMaterial>();
+    /** Returns an owner-colored selection material for co-op Hold units. */
+    const selectionMaterialFor = (
+      factionId: "hold" | "horde",
+      ownerColor: string | undefined,
+    ): StandardMaterial => {
+      if (factionId !== "hold" || ownerColor === undefined) {
+        return selectedMaterial;
+      }
+      let cached = playerSelectionMaterials.get(ownerColor);
+      if (cached === undefined) {
+        cached = material(
+          scene,
+          `player-selection-${ownerColor}`,
+          unitOwnerRingColor(factionId, ownerColor),
+          true,
+        );
+        playerSelectionMaterials.set(ownerColor, cached);
+      }
+      return cached;
+    };
     const healthMaterial = material(scene, "health", "#67c977", true);
     const veinMaterial = material(scene, "spirit-vein", "#36a9c4", true);
     veinMaterial.alpha = 0.34;
@@ -1437,10 +1483,25 @@ export function createDescentBabylonScene(
       if (marker !== null) {
         marker.parent = root;
         marker.position.y = 0.01;
-        marker.material =
-          factionId === "hold" ? holdMarkerMaterial : hordeMarkerMaterial;
+        marker.material = markerMaterialFor(factionId, entity.ownerColor);
         marker.isPickable = false;
         glow.addExcludedMesh(marker);
+      }
+      if (kind === "unit" && factionId === "hold" && entity.ownerColor) {
+        const ownerRing = CreateTorus(
+          `owner-marker-${entity.id}`,
+          {
+            diameter: markerDiameter,
+            tessellation: 32,
+            thickness: 0.06,
+          },
+          scene,
+        );
+        ownerRing.parent = root;
+        ownerRing.position.y = 0.018;
+        ownerRing.material = selectionMaterialFor(factionId, entity.ownerColor);
+        ownerRing.isPickable = false;
+        glow.addExcludedMesh(ownerRing);
       }
       const ring = CreateTorus(
         `selection-${entity.id}`,
@@ -1453,7 +1514,7 @@ export function createDescentBabylonScene(
       );
       ring.parent = root;
       ring.position.y = kind === "unit" ? 0.022 : 0.025;
-      ring.material = selectedMaterial;
+      ring.material = selectionMaterialFor(factionId, entity.ownerColor);
       ring.isPickable = false;
       ring.setEnabled(false);
       const health = CreateBox(

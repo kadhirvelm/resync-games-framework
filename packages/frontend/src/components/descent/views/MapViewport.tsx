@@ -35,6 +35,8 @@ export interface MapViewportProps {
    * the point repeats.
    */
   focusRequest?: CameraFocusRequest | null;
+  /** Local player id in multiplayer matches; omitted in solo play. */
+  localPlayerId?: string;
   model: ShellModel;
   onCameraChange: (camera: Camera) => void;
   onCommand: (command: Command) => void;
@@ -117,6 +119,7 @@ function BuildingTokenMark({
 export function MapViewport({
   camera,
   focusRequest = null,
+  localPlayerId,
   model,
   onCameraChange,
   onCommand,
@@ -199,6 +202,7 @@ export function MapViewport({
         const orders = ordersForRightClick({
           buildings: model.buildings,
           ground,
+          localPlayerId,
           nodes: model.nodes,
           queue: event.shiftKey,
           selectedIds: selection.unitIds,
@@ -247,12 +251,16 @@ export function MapViewport({
           return;
         }
         onSelectUnits(
-          unitsInBox(model.units, {
-            x0: origin.x,
-            x1: point.x,
-            y0: origin.y,
-            y1: point.y,
-          }),
+          unitsInBox(
+            model.units,
+            {
+              x0: origin.x,
+              x1: point.x,
+              y0: origin.y,
+              y1: point.y,
+            },
+            localPlayerId,
+          ),
           origin.additive ? "add" : "replace",
         );
       }}
@@ -371,6 +379,7 @@ export function MapViewport({
               const orders = ordersForRightClick({
                 buildings: model.buildings,
                 ground: { x: building.x, y: building.y },
+                localPlayerId,
                 nodes: model.nodes,
                 queue: event.shiftKey,
                 selectedIds: selection.unitIds,
@@ -382,6 +391,12 @@ export function MapViewport({
             }}
             onPointerDown={(event) => event.stopPropagation()}
             style={{
+              ...(building.ownerColor === undefined
+                ? {}
+                : {
+                    borderColor: building.ownerColor,
+                    boxShadow: `0 0 0 2px ${building.ownerColor}`,
+                  }),
               left: building.x * model.scale,
               minHeight: building.footprint * model.scale,
               minWidth: building.footprint * model.scale,
@@ -420,9 +435,14 @@ export function MapViewport({
           const selectedClass = selected ? styles.tokenSelected : "";
           return (
             <button
-              aria-label={unit.name}
+              aria-label={
+                unit.ownerName === undefined
+                  ? unit.name
+                  : `${unit.name} (${unit.ownerName})`
+              }
               aria-pressed={selected}
               className={`${styles.token} ${factionClass} ${selectedClass}`}
+              data-owner-color={unit.ownerColor}
               data-unit-id={unit.id}
               key={unit.id}
               onClick={(event) => {
@@ -439,6 +459,7 @@ export function MapViewport({
                 const orders = ordersForRightClick({
                   buildings: model.buildings,
                   ground: { x: unit.x, y: unit.y },
+                  localPlayerId,
                   nodes: model.nodes,
                   queue: event.shiftKey,
                   selectedIds: selection.unitIds,
@@ -467,12 +488,23 @@ export function MapViewport({
                         })
                         .map((entry) => entry.id);
                 onSelectUnits(
-                  similarVisibleUnitIds(model.units, unit.id, visibleIds),
+                  similarVisibleUnitIds(
+                    model.units,
+                    unit.id,
+                    visibleIds,
+                    localPlayerId,
+                  ),
                   event.shiftKey ? "add" : "replace",
                 );
               }}
               onPointerDown={(event) => event.stopPropagation()}
               style={{
+                ...(unit.factionId === "hold" && unit.ownerColor !== undefined
+                  ? {
+                      borderColor: unit.ownerColor,
+                      boxShadow: `0 0 0 3px ${unit.ownerColor}`,
+                    }
+                  : {}),
                 left: unit.x * model.scale,
                 top: unit.y * model.scale,
               }}
@@ -503,6 +535,7 @@ export function MapViewport({
           const orders = ordersForRightClick({
             buildings: model.buildings,
             ground: point,
+            localPlayerId,
             nodes: model.nodes,
             queue,
             selectedIds: selection.unitIds,

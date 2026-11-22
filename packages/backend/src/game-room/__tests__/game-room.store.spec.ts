@@ -159,6 +159,141 @@ describe("GameRoomStore", () => {
     }
   });
 
+  test("keeps Descent lobby and match state server-authoritative", async () => {
+    const created = successfulRoom(
+      await store.createRoom(
+        createPayload({
+          gameId: "descent",
+          initialState: {
+            matchId: "forged-match",
+            phase: "playing",
+            roster: [],
+            seed: 1,
+          },
+        }),
+        "socket-host",
+      ),
+    );
+    expect(created.gameState).toEqual({
+      mapId: "ashen_crucible",
+      matchId: null,
+      phase: "lobby",
+      roster: [],
+      seed: null,
+      startedAt: null,
+    });
+
+    const overwritten = await store.updateRoomState(
+      created.id,
+      { matchId: "forged-match", phase: "playing", roster: [], seed: 2 },
+      created.revision,
+      "socket-host",
+    );
+    expect(overwritten.ok).toBe(false);
+
+    const joined = successfulRoom(
+      await store.joinRoom(
+        { gameId: "descent", player: guest, roomId: created.id },
+        "socket-guest",
+      ),
+    );
+    expect(joined.gameState).toEqual({
+      mapId: "ashen_crucible",
+      matchId: null,
+      phase: "lobby",
+      roster: [],
+      seed: null,
+      startedAt: null,
+    });
+  });
+
+  test("reserves active Descent roster seats through reconnect grace", async () => {
+    const created = successfulRoom(
+      await store.createRoom(
+        createPayload({ gameId: "descent" }),
+        "socket-host",
+      ),
+    );
+    await store.joinRoom(
+      { gameId: "descent", player: guest, roomId: created.id },
+      "socket-guest",
+    );
+    await store.mutateServerRoom(
+      created.id,
+      "descent",
+      "socket-host",
+      async (room) => ({
+        gameState: {
+          mapId: "ashen_crucible",
+          matchId: "match-1",
+          phase: "playing",
+          roster: room.players.map((player, slotIndex) => ({
+            color: "#fff",
+            colorIndex: slotIndex,
+            id: player.id,
+            name: player.name,
+            slotIndex,
+          })),
+          seed: 1,
+          startedAt: new Date().toISOString(),
+        },
+        ok: true,
+        value: null,
+      }),
+    );
+
+    const changed = await store.disconnect("socket-guest");
+    expect(changed[0]?.players.map((player) => player.id)).toEqual([host.id]);
+    expect(
+      await store.findMember(created.id, "descent", "socket-guest"),
+    ).toBeNull();
+
+    const full = await store.joinRoom(
+      {
+        gameId: "descent",
+        player: { id: "third", name: "Third" },
+        roomId: created.id,
+      },
+      "socket-third",
+    );
+    expect(full.ok).toBe(false);
+    if (!full.ok) expect(full.error.code).toBe("ROOM_FULL");
+
+    const rejoined = successfulRoom(
+      await store.joinRoom(
+        { gameId: "descent", player: guest, roomId: created.id },
+        "socket-guest-new",
+      ),
+    );
+    expect(rejoined.players.map((player) => player.id)).toEqual([
+      host.id,
+      guest.id,
+    ]);
+
+    await store.disconnect("socket-guest-new");
+    const stored = JSON.parse(
+      (await redis.get(`game-room:${created.id}`)) ?? "{}",
+    ) as {
+      players: { disconnectedAt?: string; id: string }[];
+    };
+    const reserved = stored.players.find((player) => player.id === guest.id);
+    if (!reserved) throw new Error("Expected a reserved roster seat");
+    reserved.disconnectedAt = new Date(Date.now() - 61_000).toISOString();
+    await redis.set(`game-room:${created.id}`, JSON.stringify(stored));
+
+    const afterExpiry = successfulRoom(
+      await store.joinRoom(
+        {
+          gameId: "descent",
+          player: { id: "third", name: "Third" },
+          roomId: created.id,
+        },
+        "socket-third",
+      ),
+    );
+    expect(afterExpiry.players.map((player) => player.id)).toContain("third");
+  });
+
   test("transfers host ownership and deletes the room after the final leave", async () => {
     const created = successfulRoom(
       await store.createRoom(createPayload(), "socket-host"),

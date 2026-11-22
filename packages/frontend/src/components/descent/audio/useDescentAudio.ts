@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useClientServiceCallers } from "@/services/clientServiceCallers";
 import type { DescentSim } from "../logic/sim";
 import type { SimSnapshot } from "../logic/types";
-import { buildShellModel } from "../views/shellModel";
+import { buildShellModel, type ShellModel } from "../views/shellModel";
 import {
   audioIdForFx,
   audioIdForNotice,
@@ -25,6 +25,8 @@ import {
 export interface UseDescentAudioInput {
   active: boolean;
   enabled: boolean;
+  /** Optional view model already derived by the battlefield. */
+  model?: ShellModel;
   sim: DescentSim;
   snapshot: SimSnapshot;
 }
@@ -37,8 +39,8 @@ export interface UseDescentAudioInput {
 export function useDescentAudio(input: UseDescentAudioInput): void {
   const { clientServiceCallers } = useClientServiceCallers();
   const model = useMemo(
-    () => buildShellModel(input.snapshot),
-    [input.snapshot],
+    () => input.model ?? buildShellModel(input.snapshot),
+    [input.model, input.snapshot],
   );
   const seenFx = useRef(new Set<number>());
   const seenNotices = useRef(new Set<number>());

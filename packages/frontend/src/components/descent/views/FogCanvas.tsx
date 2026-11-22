@@ -22,11 +22,12 @@ export interface FogCanvasProps {
 export function FogCanvas({ className, fog, style }: FogCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  const { cells, height, width } = fog;
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null) return;
-    paintFogShade(canvas, fogShadeGrid(fog));
-  }, [fog]);
+    paintFogShade(canvas, fogShadeGrid({ cells, height, width }));
+  }, [cells, height, width]);
 
   return (
     <canvas

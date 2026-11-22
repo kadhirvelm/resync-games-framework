@@ -63,26 +63,63 @@ export function createEconomyModule(
    * @returns A host whose clock counts economy steps
    */
   const host = (world: SimWorldState) => economyHost(world, every);
+  const ownedUnitIds = (
+    world: SimWorldState,
+    unitIds: readonly string[],
+    actorId: string | undefined,
+  ): string[] => {
+    if (actorId === undefined) return [...unitIds];
+    return unitIds.filter((unitId) => {
+      const unit = world.units.find((entry) => entry.id === unitId);
+      return unit !== undefined && unit.ownerId === actorId;
+    });
+  };
+  const ownsBuilding = (
+    world: SimWorldState,
+    buildingId: string,
+    actorId: string | undefined,
+  ): boolean => {
+    if (actorId === undefined) return true;
+    return world.buildings.some(
+      (building) => building.id === buildingId && building.ownerId === actorId,
+    );
+  };
   const commands: CommandHandlerMap = {
     assign_build(command, context) {
-      orderVillagersBuild(
-        host(context.world),
+      const unitIds = ownedUnitIds(
+        context.world,
         command.unitIds,
-        command.buildingId,
+        command.actorId,
       );
+      if (unitIds.length === 0) return;
+      orderVillagersBuild(host(context.world), unitIds, command.buildingId);
     },
     assign_gather(command, context) {
-      orderVillagersGather(
-        host(context.world),
+      const unitIds = ownedUnitIds(
+        context.world,
         command.unitIds,
-        command.nodeId,
+        command.actorId,
       );
+      if (unitIds.length === 0) return;
+      orderVillagersGather(host(context.world), unitIds, command.nodeId);
     },
     brew_pill(command, context) {
+      if (!ownsBuilding(context.world, command.furnaceId, command.actorId)) {
+        return;
+      }
       startBrew(host(context.world), command.furnaceId, command.pillId);
     },
     issue_rations(command, context) {
-      issueRations(host(context.world), command.messHallId, command.unitIds);
+      if (!ownsBuilding(context.world, command.messHallId, command.actorId)) {
+        return;
+      }
+      const unitIds = ownedUnitIds(
+        context.world,
+        command.unitIds,
+        command.actorId,
+      );
+      if (unitIds.length === 0) return;
+      issueRations(host(context.world), command.messHallId, unitIds);
     },
     market_trade(command, context) {
       trade(host(context.world), command.sell, command.buy, command.amount);
@@ -90,16 +127,31 @@ export function createEconomyModule(
     place_building(command, context) {
       const economy = host(context.world);
       const id = context.nextEntityId("building");
-      const rejection = placeBuilding(economy, command, id);
+      const rejection = placeBuilding(
+        economy,
+        {
+          buildingType: command.buildingType,
+          ownerId: command.actorId,
+          x: command.x,
+          y: command.y,
+        },
+        id,
+      );
       economy.economy.rejection = rejection;
       if (rejection !== null || command.builderIds === undefined) return;
-      orderVillagersBuild(economy, command.builderIds, id);
+      const builders = ownedUnitIds(
+        context.world,
+        command.builderIds,
+        command.actorId,
+      );
+      if (builders.length === 0) return;
+      orderVillagersBuild(economy, builders, id);
     },
-    recall_villagers(_command, context) {
-      recallVillagers(host(context.world));
+    recall_villagers(command, context) {
+      recallVillagers(host(context.world), command.actorId);
     },
-    release_villagers(_command, context) {
-      releaseVillagers(host(context.world));
+    release_villagers(command, context) {
+      releaseVillagers(host(context.world), command.actorId);
     },
     upgrade_hold(_command, context) {
       upgradeHold(host(context.world));

@@ -304,6 +304,33 @@ describe("target acquisition", () => {
     expect(simulation.getUnit("guard")?.position).toEqual({ x: 0, y: 0 });
   });
 
+  test("breaks equal-distance ties by id regardless of insertion order", () => {
+    const acquire = (ids: readonly string[]) => {
+      const simulation = new CombatSimulation({
+        units: [
+          unit("attacker", "warden", "hold"),
+          ...ids.map((id) =>
+            unit(id, "warden", "horde", {
+              damage: 0,
+              position: { x: 5, y: 0 },
+            }),
+          ),
+        ],
+      });
+      simulation.enqueueCommand(
+        { type: "order_attack_move", unitIds: ["attacker"], x: 10, y: 0 },
+        "player",
+      );
+      simulation.advanceTick();
+      return simulation.getUnit("attacker")?.order;
+    };
+
+    const first = acquire(["z-first", "a-second"]);
+    const reversed = acquire(["a-second", "z-first"]);
+    expect(first).toMatchObject({ targetId: "a-second" });
+    expect(reversed).toEqual(first);
+  });
+
   test("attack-move falls back to enemy buildings, never friendly ones", () => {
     const simulation = new CombatSimulation({
       buildings: [
@@ -407,5 +434,22 @@ describe("event buffer", () => {
     ]);
     simulation.advanceTick();
     expect(simulation.drainEvents()).toEqual([]);
+  });
+});
+
+describe("state export", () => {
+  test("takeState transfers state without cloning or retaining entities", () => {
+    const simulation = new CombatSimulation({
+      buildings: [building("wall", "horde")],
+      units: [
+        unit("a", "warden", "hold"),
+        unit("b", "warden", "horde", { position: { x: 1, y: 0 } }),
+      ],
+    });
+    const expected = simulation.exportState();
+
+    expect(simulation.takeState()).toEqual(expected);
+    expect(simulation.exportState().units).toEqual([]);
+    expect(simulation.exportState().buildings).toEqual([]);
   });
 });

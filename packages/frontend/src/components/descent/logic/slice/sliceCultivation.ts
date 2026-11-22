@@ -119,16 +119,19 @@ export function layerSchoolModifier(
 }
 
 /**
- * The completed Cultivation Hall, if the Hold has one.
+ * The completed Cultivation Hall, optionally restricted to one player.
  * @param world - Sim world
+ * @param ownerId - Multiplayer owner to match; omitted for the whole Hold
  * @returns The hall record, or null
  */
 export function completedHall(
   world: SimWorldState,
+  ownerId?: string,
 ): ReturnType<typeof asBuilding> | null {
   for (const building of world.buildings) {
     const record = asBuilding(building);
     if (record.buildingType !== "cultivation_hall") continue;
+    if (ownerId !== undefined && record.ownerId !== ownerId) continue;
     if (record.completed) return record;
   }
   return null;

@@ -83,6 +83,8 @@ export function publishPresentation(world: SimWorldState): void {
   const waves = waveState(world);
   const host = economyHost(world, ECONOMY_STEP_TICKS);
   const cultivation = openCultivation(world);
+  const gatherers = gathererCounts(world.units);
+  const rationOptions = rationReadouts(world);
   world.meta.ui = {
     boss: bossReadout(waves),
     bossGateCleared: waves.bossGateCleared,
@@ -98,7 +100,7 @@ export function publishPresentation(world: SimWorldState): void {
     nodes: host.economy.nodes
       .filter((node) => node.remaining > 0)
       .map((node) => ({
-        gatherers: gatherersAt(world.units, node.id),
+        gatherers: gatherers.get(node.id) ?? 0,
         id: node.id,
         label: `${resourceName(node.resourceId)} ${Math.ceil(node.remaining)}`,
         remaining: Math.ceil(node.remaining),
@@ -112,8 +114,12 @@ export function publishPresentation(world: SimWorldState): void {
     onboarding: onboarding(state),
     outcome: outcomeReadout(state.outcome),
     pillFeeds: pillFeeds(world, cultivation),
+    players: Object.values(state.players ?? {}).sort(
+      (left, right) => left.slotIndex - right.slotIndex,
+    ),
     pop: { cap: getPopCap(host), used: getPopUsed(host) },
-    rations: rationReadout(world),
+    rationOptions,
+    rations: rationOptions[0] ?? null,
     revives: [],
     stats: {
       elapsedSeconds: Math.floor(world.tick / TICKS_PER_SECOND),
@@ -135,18 +141,21 @@ export function publishPresentation(world: SimWorldState): void {
 }
 
 /**
- * Counts villagers working one node: gathering there now, or carrying a load
- * home and due back.
+ * Counts villagers working every node in one pass: gathering there now, or
+ * carrying a load home and due back.
  * @param units - Economy units
- * @param nodeId - Node to count
- * @returns How many villagers work the node
+ * @returns Gatherer totals keyed by resource node id
  */
-function gatherersAt(units: SimWorldState["units"], nodeId: string): number {
-  return units.filter((unit) => {
-    if (!isEconomyUnit(unit) || unit.hp <= 0) return false;
-    if (unit.task?.kind === "gather") return unit.task.nodeId === nodeId;
-    return unit.preferredNodeId === nodeId;
-  }).length;
+function gathererCounts(units: SimWorldState["units"]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const unit of units) {
+    if (!isEconomyUnit(unit) || unit.hp <= 0) continue;
+    const nodeId =
+      unit.task?.kind === "gather" ? unit.task.nodeId : unit.preferredNodeId;
+    if (nodeId === null || nodeId === undefined) continue;
+    counts.set(nodeId, (counts.get(nodeId) ?? 0) + 1);
+  }
+  return counts;
 }
 
 /**
@@ -164,12 +173,13 @@ function unitReadouts(
   cultivation: CultivationSystem,
 ): Record<string, UnitReadout> {
   const units: Record<string, UnitReadout> = {};
+  const waveUnits = new Map(waves.units.map((unit) => [unit.id, unit]));
   for (const unit of world.units) {
     if (isEconomyUnit(unit)) {
       units[unit.id] = holdUnitReadout(world, state, unit, cultivation);
       continue;
     }
-    const horde = waves.units.find((entry) => entry.id === unit.id);
+    const horde = waveUnits.get(unit.id);
     if (!horde) continue;
     const boss = horde.bossId ? getBossDefinition(horde.bossId) : null;
     units[unit.id] = {
@@ -202,6 +212,16 @@ function holdUnitReadout(
   cultivation: CultivationSystem,
 ): UnitReadout {
   const fed = unit.modifiers.some((modifier) => modifier.healthBonus > 0);
+  const owner =
+    unit.ownerId !== undefined ? state.players?.[unit.ownerId] : undefined;
+  const ownerFields =
+    unit.ownerId === undefined
+      ? {}
+      : {
+          ownerColor: owner?.color,
+          ownerId: unit.ownerId,
+          ownerName: owner?.name,
+        };
   if (unit.classId === "villager") {
     return {
       carrying: unit.carry?.resourceId ?? null,
@@ -212,6 +232,7 @@ function holdUnitReadout(
       idle: unit.task === null && !unit.garrisoned,
       maxHitPoints: unit.maxHp,
       name: "Villager",
+      ...ownerFields,
       ...routeField(world, unit),
       task: villagerTask(world, unit),
     };
@@ -225,6 +246,7 @@ function holdUnitReadout(
     hitPoints: Math.max(0, Math.round(unit.hp)),
     maxHitPoints: Math.round(unit.maxHp),
     name: definition.name.replace("Hold ", ""),
+    ...ownerFields,
     ...routeField(world, unit),
   };
   if (!cultivation.hasUnit(unit.id)) return readout;
@@ -232,6 +254,7 @@ function holdUnitReadout(
   const view = withHallRequirement(
     world,
     cultivation.getCultivationView(unit.id),
+    unit.ownerId,
   );
   const active = record.activeBreakthrough;
   return {
@@ -266,14 +289,16 @@ function routeField(
  * Adds the "build a Cultivation Hall" gate the cultivation system cannot see.
  * @param world - Sim world
  * @param view - Cultivation view
+ * @param ownerId - Unit owner whose completed Hall satisfies the gate
  * @returns The view with the Hall requirement when missing
  */
 function withHallRequirement(
   world: SimWorldState,
   view: CultivationView,
+  ownerId?: string,
 ): CultivationView {
   if (view.meritToNext === 0) return view;
-  if (completedHall(world) !== null) return view;
+  if (completedHall(world, ownerId) !== null) return view;
   return {
     ...view,
     missingRequirements: [
@@ -359,8 +384,18 @@ function buildingReadouts(
 ): Record<string, BuildingReadout> {
   const buildings: Record<string, BuildingReadout> = {};
   const host = economyHost(world, ECONOMY_STEP_TICKS);
+  const trainingByBuilding = new Map<string, AshenGateSliceState["training"]>();
+  for (const job of state.training) {
+    const queue = trainingByBuilding.get(job.buildingId);
+    if (queue === undefined) trainingByBuilding.set(job.buildingId, [job]);
+    else queue.push(job);
+  }
   for (const building of world.buildings) {
     const record = asBuilding(building);
+    const owner =
+      record.ownerId !== undefined
+        ? state.players?.[record.ownerId]
+        : undefined;
     const readout: BuildingReadout = {
       constructing: record.constructing,
       factionId: "hold",
@@ -368,13 +403,20 @@ function buildingReadouts(
       maxHitPoints: record.maxHp,
       name: buildingName(record.buildingType),
       onVein: record.onSpiritVein,
+      ...(record.ownerId === undefined
+        ? {}
+        : {
+            ownerColor: owner?.color,
+            ownerId: record.ownerId,
+            ownerName: owner?.name,
+          }),
       tier: record.tier,
     };
     if (record.constructing) {
       readout.progress = record.buildTicksDone / Math.max(1, record.buildTicks);
       readout.activity = "Under construction";
     }
-    const queue = state.training.filter((job) => job.buildingId === record.id);
+    const queue = trainingByBuilding.get(record.id) ?? [];
     const head = queue[0];
     const rallyPoint = trainingRallyPoint(world, record.id);
     if (rallyPoint !== null) readout.rallyPoint = rallyPoint;
@@ -595,36 +637,44 @@ function schoolMatchLabel(
 }
 
 /**
- * The Mess Hall's ration action.
+ * Builds one ration action per completed Mess Hall. In multiplayer, each
+ * Hall prices and targets only its owner's soldiers; in solo, owners are
+ * undefined on both sides, preserving the original whole-Hold action.
  * @param world - Sim world
- * @returns Ration readout, or null without a Mess Hall
+ * @returns One correctly scoped readout for every completed Mess Hall
  */
-function rationReadout(world: SimWorldState): RationReadout | null {
-  const hall = world.buildings.find((building) => {
-    const record = asBuilding(building);
-    return record.buildingType === "mess_hall" && record.completed;
-  });
-  if (!hall) return null;
+function rationReadouts(world: SimWorldState): RationReadout[] {
   const ration = buildingDef("mess_hall")?.ration;
-  const unitIds = world.units
-    .filter(
-      (unit) =>
-        isEconomyUnit(unit) && unit.popKind === "soldier" && unit.hp > 0,
-    )
-    .map((unit) => unit.id);
-  const batches = Math.max(1, Math.ceil(unitIds.length / 5));
-  const cost = {
-    food: (ration?.food ?? 10) * batches,
-    water: (ration?.water ?? 10) * batches,
-  };
-  const allowed = unitIds.length > 0 && canAfford(world.resources, cost);
-  return {
-    allowed,
-    detail: `${costLabel(cost)} feeds ${unitIds.length} soldiers: +10% health and regen for the next wave.`,
-    messHallId: hall.id,
-    reason: allowed ? undefined : "Need soldiers and enough food and water",
-    unitIds,
-  };
+  return world.buildings
+    .filter((building) => {
+      const record = asBuilding(building);
+      return record.buildingType === "mess_hall" && record.completed;
+    })
+    .map((hall) => {
+      const ownerId = asBuilding(hall).ownerId;
+      const unitIds = world.units
+        .filter(
+          (unit) =>
+            isEconomyUnit(unit) &&
+            unit.popKind === "soldier" &&
+            unit.hp > 0 &&
+            unit.ownerId === ownerId,
+        )
+        .map((unit) => unit.id);
+      const batches = Math.max(1, Math.ceil(unitIds.length / 5));
+      const cost = {
+        food: (ration?.food ?? 10) * batches,
+        water: (ration?.water ?? 10) * batches,
+      };
+      const allowed = unitIds.length > 0 && canAfford(world.resources, cost);
+      return {
+        allowed,
+        detail: `${costLabel(cost)} feeds ${unitIds.length} soldiers: +10% health and regen for the next wave.`,
+        messHallId: hall.id,
+        reason: allowed ? undefined : "Need soldiers and enough food and water",
+        unitIds,
+      };
+    });
 }
 
 /**

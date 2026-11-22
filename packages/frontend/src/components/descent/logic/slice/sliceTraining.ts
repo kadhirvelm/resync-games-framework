@@ -425,8 +425,12 @@ function spawnBatch(
   const villagerIds: string[] = [];
   for (const cell of cells) {
     const id = context.nextEntityId(job.classId);
+    const ownerField =
+      building.ownerId === undefined ? {} : { ownerId: building.ownerId };
     if (job.classId === "villager") {
-      world.units.push(createUnitRecord({ id, x: cell.x, y: cell.y }));
+      world.units.push(
+        createUnitRecord({ id, ...ownerField, x: cell.x, y: cell.y }),
+      );
       villagerIds.push(id);
       pushFx(world, {
         kind: "spawn",
@@ -443,6 +447,7 @@ function spawnBatch(
         hp: definition.maxHitPoints,
         id,
         maxHp: definition.maxHitPoints,
+        ...ownerField,
         popKind: "soldier",
         realmId: "qi_gathering",
         x: cell.x,

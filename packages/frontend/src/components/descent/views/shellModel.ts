@@ -51,6 +51,12 @@ export interface ShellUnit {
   idle: boolean;
   maxHitPoints: number | null;
   name: string;
+  /** Assigned co-op ring color in multiplayer matches. */
+  ownerColor?: string;
+  /** Owning player id in multiplayer matches. */
+  ownerId?: string;
+  /** Owning player display name in multiplayer matches. */
+  ownerName?: string;
   /** Where a Hold unit is headed: current destination, then queued legs. */
   route?: readonly RouteReadout[];
   treasureSlots: number;
@@ -88,6 +94,12 @@ export interface ShellBuilding {
   id: string;
   maxHitPoints: number | null;
   name: string;
+  /** Assigned co-op ring color in multiplayer matches. */
+  ownerColor?: string;
+  /** Owning player id in multiplayer matches. */
+  ownerId?: string;
+  /** Owning player display name in multiplayer matches. */
+  ownerName?: string;
   rallyPoint: { nodeId?: string; x: number; y: number } | null;
   tier: string | null;
   trainingQueue: readonly TrainingQueueReadout[];
@@ -194,6 +206,15 @@ function decorateUnit(
     maxHitPoints:
       typeof readout?.maxHitPoints === "number" ? readout.maxHitPoints : null,
     name: readout?.name ?? CLASS_LABEL[unit.classId],
+    ...(readout?.ownerColor === undefined
+      ? {}
+      : { ownerColor: readout.ownerColor }),
+    ...(unit.ownerId === undefined && readout?.ownerId === undefined
+      ? {}
+      : { ownerId: unit.ownerId ?? readout?.ownerId }),
+    ...(readout?.ownerName === undefined
+      ? {}
+      : { ownerName: readout.ownerName }),
     route: readRoute(readout?.route),
     treasureSlots: readout?.treasureSlots ?? 0,
     treasures: readout?.treasures ?? [],
@@ -244,6 +265,15 @@ function decorateBuilding(
     id: building.id,
     maxHitPoints,
     name: buildingName(building.buildingType, readout),
+    ...(readout?.ownerColor === undefined
+      ? {}
+      : { ownerColor: readout.ownerColor }),
+    ...(building.ownerId === undefined && readout?.ownerId === undefined
+      ? {}
+      : { ownerId: building.ownerId ?? readout?.ownerId }),
+    ...(readout?.ownerName === undefined
+      ? {}
+      : { ownerName: readout.ownerName }),
     rallyPoint: readout?.rallyPoint ?? null,
     tier: readout?.tier ?? null,
     trainingQueue: readout?.trainingQueue ?? [],

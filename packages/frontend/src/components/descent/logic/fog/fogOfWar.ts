@@ -60,7 +60,7 @@ export function createFogOfWar(bounds: MapBounds): FogOfWarState {
  * to unseen.
  * @param previous - Fog from the last update
  * @param sources - Every sight source the player owns
- * @returns A new fog state; `previous` is not changed
+ * @returns Recomputed fog, reusing `previous` when its cells are unchanged
  */
 export function revealFogOfWar(
   previous: FogOfWarState,
@@ -74,7 +74,9 @@ export function revealFogOfWar(
       code === FOG_CELL.unseen ? FOG_CELL.unseen : FOG_CELL.explored;
   }
   for (const source of sources) stampSight(cells, width, height, source);
-  return { cells: textDecoder.decode(cells), height, width };
+  const nextCells = textDecoder.decode(cells);
+  if (nextCells === previous.cells) return previous;
+  return { cells: nextCells, height, width };
 }
 
 /**

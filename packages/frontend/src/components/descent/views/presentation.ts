@@ -31,6 +31,12 @@ export interface UnitReadout {
   injured?: boolean;
   maxHitPoints?: number;
   name?: string;
+  /** Assigned co-op ring color in multiplayer matches. */
+  ownerColor?: string;
+  /** Owning player id in multiplayer matches. */
+  ownerId?: string;
+  /** Owning player display name in multiplayer matches. */
+  ownerName?: string;
   rank?: RankTitle;
   /**
    * Where a Hold unit is headed: its current destination, then each
@@ -65,6 +71,12 @@ export interface BuildingReadout {
   hitPoints?: number;
   maxHitPoints?: number;
   name?: string;
+  /** Assigned co-op ring color in multiplayer matches. */
+  ownerColor?: string;
+  /** Owning player id in multiplayer matches. */
+  ownerId?: string;
+  /** Owning player display name in multiplayer matches. */
+  ownerName?: string;
   /** Crop growth for a harvested producer; ripe crops wait for a villager. */
   growth?: CropGrowthReadout;
   /** Whether it sits on a Spirit Vein. */
@@ -354,6 +366,14 @@ export interface OmenReadout {
   etaSeconds: number;
 }
 
+/** One player entry published for multiplayer HUD rosters. */
+export interface PlayerRosterReadout {
+  color: string;
+  id: string;
+  name: string;
+  slotIndex: number;
+}
+
 /** Which Ashen Gate coach marks are still pending. */
 export interface OnboardingFlags {
   pill: boolean;
@@ -388,8 +408,11 @@ export interface DescentPresentation {
   outcome?: SliceOutcomeReadout | null;
   onboarding?: OnboardingFlags;
   pillFeeds?: readonly PillFeedReadout[];
+  players?: readonly PlayerRosterReadout[];
   pop?: { cap: number; used: number };
   rations?: RationReadout | null;
+  /** Per-Mess-Hall actions, scoped to each building owner's soldiers. */
+  rationOptions?: readonly RationReadout[];
   revives?: readonly ReviveReadout[];
   stats?: StatsReadout;
   telegraphs?: readonly TelegraphReadout[];
@@ -421,8 +444,10 @@ export interface ReadPresentation {
   outcome: SliceOutcomeReadout | null;
   onboarding: OnboardingFlags | null;
   pillFeeds: readonly PillFeedReadout[];
+  players: readonly PlayerRosterReadout[];
   pop: { cap: number; used: number } | null;
   rations: RationReadout | null;
+  rationOptions: readonly RationReadout[];
   revives: readonly ReviveReadout[];
   stats: StatsReadout | null;
   telegraphs: readonly TelegraphReadout[];
@@ -580,6 +605,15 @@ export function readPresentation(
     bossGateCleared = layers.bossGateCleared;
   }
   const rations = ui.rations;
+  const parsedRations =
+    rations === null || !isRecord(rations)
+      ? null
+      : (rations as unknown as RationReadout);
+  const publishedRationOptions = readArray<RationReadout>(ui.rationOptions);
+  const rationOptions =
+    publishedRationOptions.length > 0 || parsedRations === null
+      ? publishedRationOptions
+      : [parsedRations];
   const holdUpgrade = ui.holdUpgrade;
   const outcome = ui.outcome;
   return {
@@ -609,11 +643,10 @@ export function readPresentation(
         ? null
         : (outcome as unknown as SliceOutcomeReadout),
     pillFeeds: readArray<PillFeedReadout>(ui.pillFeeds),
+    players: readArray<PlayerRosterReadout>(ui.players),
     pop: readPop(ui.pop) ?? readPop(meta.economy),
-    rations:
-      rations === null || !isRecord(rations)
-        ? null
-        : (rations as unknown as RationReadout),
+    rationOptions,
+    rations: parsedRations,
     revives: readArray<ReviveReadout>(ui.revives),
     stats: readObject<StatsReadout>(ui.stats),
     telegraphs: readArray<TelegraphReadout>(ui.telegraphs),

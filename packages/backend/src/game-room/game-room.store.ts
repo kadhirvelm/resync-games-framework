@@ -1,14 +1,16 @@
 import { randomInt } from "node:crypto";
 import { Injectable } from "@nestjs/common";
-import type {
-  CreateGameRoomPayload,
-  GameRoomCommandResult,
-  GameRoomErrorCode,
-  GameRoomPlayer,
-  GameRoomPlayerInput,
-  GameRoomState,
-  GameRoomValue,
-  JoinGameRoomPayload,
+import {
+  type CreateGameRoomPayload,
+  createInitialDescentRoomState,
+  DESCENT_GAME_ID,
+  type GameRoomCommandResult,
+  type GameRoomErrorCode,
+  type GameRoomPlayer,
+  type GameRoomPlayerInput,
+  type GameRoomState,
+  type GameRoomValue,
+  type JoinGameRoomPayload,
 } from "@resync-game-framework/api";
 import { RedisService } from "../infra/redis/redis.service";
 
@@ -22,6 +24,8 @@ const RECONNECT_GRACE_SECONDS = 60;
 const ROOM_LOCK_DURATION_MS = 5_000;
 
 interface StoredGameRoomPlayer extends GameRoomPlayer {
+  /** Set while an active-match roster seat is reserved for reconnect. */
+  disconnectedAt?: string;
   socketId: string;
 }
 
@@ -188,8 +192,10 @@ export class GameRoomStore {
           );
         }
 
+        pruneExpiredDisconnectedPlayers(room);
         const socketPlayer = room.players.find(
-          (candidate) => candidate.socketId === socketId,
+          (candidate) =>
+            candidate.socketId === socketId && isConnectedRoomPlayer(candidate),
         );
         if (socketPlayer && socketPlayer.id !== player.value.id) {
           return failure(
@@ -198,11 +204,15 @@ export class GameRoomStore {
           );
         }
 
-        const roomWasEmpty = room.players.length === 0;
+        const roomWasEmpty = !room.players.some(isConnectedRoomPlayer);
         const existingPlayer = room.players.find(
           (candidate) => candidate.id === player.value.id,
         );
-        if (existingPlayer && existingPlayer.socketId !== socketId) {
+        if (
+          existingPlayer &&
+          existingPlayer.socketId !== socketId &&
+          isConnectedRoomPlayer(existingPlayer)
+        ) {
           return failure(
             "INVALID_REQUEST",
             "That player is already connected to this room.",
@@ -216,6 +226,7 @@ export class GameRoomStore {
           const previousSocketId = existingPlayer.socketId;
           existingPlayer.name = player.value.name;
           existingPlayer.socketId = socketId;
+          delete existingPlayer.disconnectedAt;
           await this.removeSocketMembership(previousSocketId, roomId);
         } else {
           room.players.push({
@@ -280,8 +291,10 @@ export class GameRoomStore {
           );
         }
 
+        pruneExpiredDisconnectedPlayers(room);
         const playerIndex = room.players.findIndex(
-          (candidate) => candidate.socketId === socketId,
+          (candidate) =>
+            candidate.socketId === socketId && isConnectedRoomPlayer(candidate),
         );
         if (playerIndex < 0) {
           return failure(
@@ -290,9 +303,25 @@ export class GameRoomStore {
           );
         }
 
-        const [leavingPlayer] = room.players.splice(playerIndex, 1);
+        const leavingPlayer = room.players[playerIndex];
+        if (!leavingPlayer) {
+          return failure(
+            "NOT_A_MEMBER",
+            "This connection is not a member of that room.",
+          );
+        }
+        const reserveRosterSeat =
+          preserveEmptyRoom &&
+          isActiveDescentRosterPlayer(room, leavingPlayer.id);
+        if (reserveRosterSeat) {
+          leavingPlayer.disconnectedAt = new Date().toISOString();
+        } else {
+          room.players.splice(playerIndex, 1);
+        }
+
         await this.removeSocketMembership(socketId, roomId);
-        if (room.players.length === 0) {
+        const hasConnectedPlayers = room.players.some(isConnectedRoomPlayer);
+        if (!hasConnectedPlayers) {
           if (!preserveEmptyRoom) {
             await this.redisService.del(roomStorageKey(roomId));
             return success(null);
@@ -303,8 +332,9 @@ export class GameRoomStore {
           return success(toPublicRoom(room));
         }
 
-        if (leavingPlayer?.id === room.hostPlayerId) {
-          room.hostPlayerId = room.players[0]?.id ?? room.hostPlayerId;
+        if (leavingPlayer.id === room.hostPlayerId) {
+          room.hostPlayerId =
+            room.players.find(isConnectedRoomPlayer)?.id ?? room.hostPlayerId;
         }
         touchRoom(room);
         await this.saveRoom(room);
@@ -355,7 +385,12 @@ export class GameRoomStore {
             "That multiplayer room was not found.",
           );
         }
-        if (!room.players.some((player) => player.socketId === socketId)) {
+        if (
+          !room.players.some(
+            (player) =>
+              player.socketId === socketId && isConnectedRoomPlayer(player),
+          )
+        ) {
           return failure(
             "NOT_A_MEMBER",
             "Join the room before updating its game state.",
@@ -365,6 +400,12 @@ export class GameRoomStore {
           return failure(
             "INVALID_REQUEST",
             "Crossword Crypt state can only be changed through its authoritative commands.",
+          );
+        }
+        if (room.gameId === DESCENT_GAME_ID) {
+          return failure(
+            "INVALID_REQUEST",
+            "Descent state can only be changed through its authoritative commands.",
           );
         }
         if (room.revision !== expectedRevision) {
@@ -430,7 +471,8 @@ export class GameRoomStore {
           };
         }
         const caller = room.players.find(
-          (player) => player.socketId === socketId,
+          (player) =>
+            player.socketId === socketId && isConnectedRoomPlayer(player),
         );
         if (!caller) {
           return {
@@ -478,6 +520,52 @@ export class GameRoomStore {
         };
       },
     );
+  }
+
+  /**
+   * Looks up the connected member for a socket without acquiring a write lock.
+   * Used by high-frequency real-time gateways to authorize commands.
+   * @param requestedRoomId - Human-entered room code
+   * @param gameId - Game expected to own the room
+   * @param socketId - Calling member's socket
+   * @returns Normalized room id and member record, or `null` when not a member
+   */
+  public async findMember(
+    requestedRoomId: unknown,
+    gameId: string,
+    socketId: string,
+  ): Promise<{ member: GameRoomServerMember; roomId: string } | null> {
+    const roomId = normalizeRoomId(requestedRoomId);
+    if (!roomId) {
+      return null;
+    }
+    const room = await this.readStoredRoom(roomId);
+    if (!room || room.gameId !== gameId) {
+      return null;
+    }
+    const member = room.players.find(
+      (player) => player.socketId === socketId && isConnectedRoomPlayer(player),
+    );
+    if (!member) {
+      return null;
+    }
+    return { member: { ...member }, roomId };
+  }
+
+  /**
+   * Checks whether a game room currently has any connected members.
+   * @param requestedRoomId - Human-entered room code
+   * @param gameId - Game expected to own the room
+   * @returns `false` for missing, empty, or mismatched rooms
+   */
+  public async hasConnectedMembers(
+    requestedRoomId: unknown,
+    gameId: string,
+  ): Promise<boolean> {
+    const roomId = normalizeRoomId(requestedRoomId);
+    if (!roomId) return false;
+    const room = await this.readStoredRoom(roomId);
+    return room?.gameId === gameId && room.players.some(isConnectedRoomPlayer);
   }
 
   /**
@@ -596,8 +684,61 @@ function failure(
 function toPublicRoom(room: StoredGameRoom): GameRoomState {
   return {
     ...room,
-    players: room.players.map(({ socketId: _socketId, ...player }) => player),
+    players: room.players
+      .filter(isConnectedRoomPlayer)
+      .map(
+        ({ disconnectedAt: _disconnectedAt, socketId: _socketId, ...player }) =>
+          player,
+      ),
   };
+}
+
+/**
+ * Checks whether a stored member currently has a live socket.
+ * @param player - Stored room member
+ * @returns `false` while a roster seat is reserved for reconnect
+ */
+function isConnectedRoomPlayer(player: StoredGameRoomPlayer): boolean {
+  return player.disconnectedAt === undefined;
+}
+
+/**
+ * Checks whether a player id belongs to the active Descent match roster.
+ * @param room - Stored room and game-owned state
+ * @param playerId - Identity whose seat may be reserved
+ * @returns Whether disconnect should retain the seat for reconnect
+ */
+function isActiveDescentRosterPlayer(
+  room: StoredGameRoom,
+  playerId: string,
+): boolean {
+  if (room.gameId !== DESCENT_GAME_ID) return false;
+  if (typeof room.gameState !== "object" || room.gameState === null) {
+    return false;
+  }
+  const state = room.gameState as { phase?: unknown; roster?: unknown };
+  if (state.phase !== "playing" || !Array.isArray(state.roster)) return false;
+  return state.roster.some(
+    (entry) =>
+      typeof entry === "object" &&
+      entry !== null &&
+      (entry as { id?: unknown }).id === playerId,
+  );
+}
+
+/**
+ * Drops reconnect reservations after the shared grace period. Connected
+ * members and still-reserved roster seats remain untouched.
+ * @param room - Stored room to prune in place
+ */
+function pruneExpiredDisconnectedPlayers(room: StoredGameRoom): void {
+  const now = Date.now();
+  room.players = room.players.filter((player) => {
+    if (player.disconnectedAt === undefined) return true;
+    const disconnectedAt = Date.parse(player.disconnectedAt);
+    if (!Number.isFinite(disconnectedAt)) return false;
+    return now - disconnectedAt < RECONNECT_GRACE_SECONDS * 1_000;
+  });
 }
 
 /**
@@ -647,7 +788,11 @@ function validateCreateRoomPayload(
     ok: true,
     value: {
       gameId,
-      initialState: initialState.value,
+      // Descent matches can only start through the host's authoritative command.
+      initialState:
+        gameId === DESCENT_GAME_ID
+          ? (createInitialDescentRoomState() as unknown as GameRoomValue)
+          : initialState.value,
       maxPlayers,
       player: player.value,
     },

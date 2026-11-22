@@ -7,6 +7,7 @@ import {
   MultiplayerRoomClient,
   type MultiplayerRoomState,
 } from "./multiplayerRoomClient";
+import { shouldApplyGameRoomSnapshot } from "./roomRevision";
 
 /** Connection and room lifecycle visible to multiplayer UI. */
 export type MultiplayerRoomStatus =
@@ -76,6 +77,12 @@ export function useMultiplayerRoom<State>(
 
   const applyResult = useCallback(
     (result: MultiplayerCommandResult<State>): void => {
+      if (
+        result.room &&
+        !shouldApplyGameRoomSnapshot(roomRef.current, result.room)
+      ) {
+        return;
+      }
       if (!result.ok) {
         setError(result.error.message);
         if (result.room) {
@@ -134,6 +141,7 @@ export function useMultiplayerRoom<State>(
       if (joinedRoomIdRef.current && nextRoom.id !== joinedRoomIdRef.current) {
         return;
       }
+      if (!shouldApplyGameRoomSnapshot(roomRef.current, nextRoom)) return;
       roomRef.current = nextRoom;
       joinedRoomIdRef.current = nextRoom.id;
       setRoom(nextRoom);

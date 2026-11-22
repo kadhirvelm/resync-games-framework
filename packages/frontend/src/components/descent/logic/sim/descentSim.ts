@@ -292,12 +292,21 @@ export function createSnapshot(world: SimWorldState): SimSnapshot {
 }
 
 /**
- * Freezes an object graph in place.
+ * Freezes an object graph in place without per-node child-array allocations.
  * @param value - Freshly cloned value
+ * @param seen - Objects already visited, including any shared aliases
  * @returns The same value, frozen
  */
-function deepFreeze<TValue>(value: TValue): TValue {
+function deepFreeze<TValue>(
+  value: TValue,
+  seen = new WeakSet<object>(),
+): TValue {
   if (typeof value !== "object" || value === null) return value;
-  for (const child of Object.values(value)) deepFreeze(child);
+  if (seen.has(value)) return value;
+  seen.add(value);
+  for (const key in value) {
+    if (!Object.prototype.propertyIsEnumerable.call(value, key)) continue;
+    deepFreeze(value[key], seen);
+  }
   return Object.freeze(value);
 }

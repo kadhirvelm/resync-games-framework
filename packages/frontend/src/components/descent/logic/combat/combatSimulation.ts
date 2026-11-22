@@ -244,6 +244,7 @@ export class CombatSimulation {
   private globalVisionMultiplier = 1;
   private healingMultiplier = 1;
   private readonly hurtZones: readonly HurtDisk[];
+  private readonly movementHazards: readonly HurtDisk[];
   private readonly obstacles: readonly HurtDisk[];
   private readonly pendingProjectiles: PendingProjectile[] = [];
   private readonly tickMs: number;
@@ -264,6 +265,7 @@ export class CombatSimulation {
     );
     this.hurtZones = options.hurtZones ?? [];
     this.obstacles = options.obstacles ?? [];
+    this.movementHazards = [...this.hurtZones, ...this.obstacles];
     for (const unit of options.units ?? []) {
       this.units.set(unit.id, structuredClone(unit));
     }
@@ -291,6 +293,26 @@ export class CombatSimulation {
       })),
       tick: this.currentTick,
       units: [...this.units.values()].map((unit) => structuredClone(unit)),
+    };
+  }
+
+  /**
+   * Transfers the simulation's detached internal state to a caller that will
+   * immediately discard the simulation. Unlike `exportState`, this performs
+   * no deep clones; the simulation must not be used afterward.
+   * @returns Complete combat state with transferred ownership
+   */
+  takeState(): CombatSimulationState {
+    const buildings = [...this.buildings.values()];
+    const units = [...this.units.values()];
+    const pendingProjectiles = this.pendingProjectiles.splice(0);
+    this.buildings.clear();
+    this.units.clear();
+    return {
+      buildings,
+      pendingProjectiles,
+      tick: this.currentTick,
+      units,
     };
   }
 
@@ -757,6 +779,13 @@ export class CombatSimulation {
     targetId?: string,
   ): string | undefined {
     const vision = this.getVision(unit.id);
+    if (
+      targetId &&
+      this.units.has(targetId) &&
+      this.isWithinLeash(unit, targetId, vision)
+    ) {
+      return targetId;
+    }
     const nearestUnit = this.findNearestEnemyUnit(unit, vision);
     if (targetId && this.isWithinLeash(unit, targetId, vision)) {
       const keptBuilding = !this.units.has(targetId);
@@ -801,19 +830,28 @@ export class CombatSimulation {
     source: CombatUnit,
     range: number,
   ): string | undefined {
-    return [...this.units.values()]
-      .filter(
-        (candidate) =>
-          candidate.hitPoints > 0 &&
-          candidate.factionId !== source.factionId &&
-          distance(source.position, candidate.position) <= range,
-      )
-      .sort((left, right) => {
-        const distanceDifference =
-          distance(source.position, left.position) -
-          distance(source.position, right.position);
-        return distanceDifference || compareIds(left.id, right.id);
-      })[0]?.id;
+    let nearestId: string | undefined;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    for (const candidate of this.units.values()) {
+      if (
+        candidate.hitPoints <= 0 ||
+        candidate.factionId === source.factionId
+      ) {
+        continue;
+      }
+      const candidateDistance = distance(source.position, candidate.position);
+      if (candidateDistance > range) continue;
+      if (
+        nearestId === undefined ||
+        candidateDistance < nearestDistance ||
+        (candidateDistance === nearestDistance &&
+          compareIds(candidate.id, nearestId) < 0)
+      ) {
+        nearestDistance = candidateDistance;
+        nearestId = candidate.id;
+      }
+    }
+    return nearestId;
   }
 
   /**
@@ -826,21 +864,30 @@ export class CombatSimulation {
     source: CombatUnit,
     range: number,
   ): string | undefined {
-    return [...this.buildings.values()]
-      .filter(
-        (candidate) =>
-          candidate.hitPoints > 0 &&
-          candidate.factionId !== source.factionId &&
-          distance(source.position, candidate.position) -
-            (candidate.bodyRadius ?? 0) <=
-            range,
-      )
-      .sort((left, right) => {
-        const distanceDifference =
-          distance(source.position, left.position) -
-          distance(source.position, right.position);
-        return distanceDifference || compareIds(left.id, right.id);
-      })[0]?.id;
+    let nearestId: string | undefined;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    for (const candidate of this.buildings.values()) {
+      if (
+        candidate.hitPoints <= 0 ||
+        candidate.factionId === source.factionId
+      ) {
+        continue;
+      }
+      const candidateDistance =
+        distance(source.position, candidate.position) -
+        (candidate.bodyRadius ?? 0);
+      if (candidateDistance > range) continue;
+      if (
+        nearestId === undefined ||
+        candidateDistance < nearestDistance ||
+        (candidateDistance === nearestDistance &&
+          compareIds(candidate.id, nearestId) < 0)
+      ) {
+        nearestDistance = candidateDistance;
+        nearestId = candidate.id;
+      }
+    }
+    return nearestId;
   }
 
   /**
@@ -883,21 +930,29 @@ export class CombatSimulation {
    * @returns The ally to heal, if any
    */
   private findMostInjuredAlly(healer: CombatUnit): CombatUnit | undefined {
-    return [...this.units.values()]
-      .filter(
-        (candidate) =>
-          candidate.id !== healer.id &&
-          candidate.hitPoints > 0 &&
-          candidate.factionId === healer.factionId &&
-          candidate.hitPoints < candidate.maxHitPoints * ADEPT_HEAL_THRESHOLD &&
-          distance(healer.position, candidate.position) <= healer.attackRange,
-      )
-      .sort((left, right) => {
-        const shareDifference =
-          left.hitPoints / left.maxHitPoints -
-          right.hitPoints / right.maxHitPoints;
-        return shareDifference || compareIds(left.id, right.id);
-      })[0];
+    let nearestAlly: CombatUnit | undefined;
+    let lowestShare = Number.POSITIVE_INFINITY;
+    for (const candidate of this.units.values()) {
+      if (
+        candidate.id === healer.id ||
+        candidate.hitPoints <= 0 ||
+        candidate.factionId !== healer.factionId ||
+        candidate.hitPoints >= candidate.maxHitPoints * ADEPT_HEAL_THRESHOLD ||
+        distance(healer.position, candidate.position) > healer.attackRange
+      ) {
+        continue;
+      }
+      const share = candidate.hitPoints / candidate.maxHitPoints;
+      if (
+        nearestAlly === undefined ||
+        share < lowestShare ||
+        (share === lowestShare && compareIds(candidate.id, nearestAlly.id) < 0)
+      ) {
+        lowestShare = share;
+        nearestAlly = candidate;
+      }
+    }
+    return nearestAlly;
   }
 
   /**
@@ -927,10 +982,12 @@ export class CombatSimulation {
       x: unit.position.x + (destination.x - unit.position.x) * ratio,
       y: unit.position.y + (destination.y - unit.position.y) * ratio,
     };
-    const next = stepAroundHurt(unit.position, proposed, destination, [
-      ...this.hurtZones,
-      ...this.obstacles,
-    ]);
+    const next = stepAroundHurt(
+      unit.position,
+      proposed,
+      destination,
+      this.movementHazards,
+    );
     if (next.x === destination.x && next.y === destination.y) {
       unit.position = { ...destination };
       return true;
