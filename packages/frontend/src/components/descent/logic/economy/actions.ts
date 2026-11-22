@@ -57,7 +57,7 @@ import { resetWorks } from "./works";
  */
 export function placeBuilding(
   host: EconomyHost,
-  request: { buildingType: string; x: number; y: number },
+  request: { buildingType: string; ownerId?: string; x: number; y: number },
   id: string,
 ): string | null {
   const x = Math.round(request.x);
@@ -76,7 +76,13 @@ export function placeBuilding(
   if (!trySpend(host, def.cost)) {
     return `Need ${costPhrase(def.cost)} to place ${def.name}.`;
   }
-  host.buildings.push(createBuildingRecord({ ...site, id }));
+  host.buildings.push(
+    createBuildingRecord({
+      ...site,
+      id,
+      ...(request.ownerId === undefined ? {} : { ownerId: request.ownerId }),
+    }),
+  );
   clearFootprint(host, site);
   return null;
 }

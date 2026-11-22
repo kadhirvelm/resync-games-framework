@@ -44,6 +44,7 @@ import {
   type Camera,
   EMPTY_SELECTION,
   idleVillagerIds,
+  isLocalPlayerOwned,
   type MapPoint,
   nextIdleVillager,
   nextUnitSelection,
@@ -71,10 +72,30 @@ const LOADING_FADE_MS = 520;
 /** Opening load: covered, fading out, then gone. */
 type LoadPhase = "done" | "leaving" | "loading";
 
+/** Multiplayer HUD metadata shown when playing in a co-op room. */
+export interface DescentMultiplayerBar {
+  /** Latest recoverable or terminal multiplayer error. */
+  error?: string | null;
+  /** Whether the local player joined after the roster was locked. */
+  isSpectator?: boolean;
+  /** Leaves the active room and returns to the Descent menu. */
+  onLeaveRoom: () => void;
+  /** Restarts a failed match; shown only when supplied by the host. */
+  onRestart?: () => void;
+  /** Short joinable room code. */
+  roomId: string;
+}
+
 /** Props for the Descent desktop shell. */
 export interface DescentViewProps {
   /** Whether the page is fullscreen. */
   fullscreen?: boolean;
+  /** Local player id in multiplayer matches; omitted in solo play. */
+  localPlayerId?: string;
+  /** Multiplayer room banner info; omitted in solo play. */
+  multiplayer?: DescentMultiplayerBar;
+  /** Optional model already derived by the parent for shared audio/rendering. */
+  shellModel?: ShellModel;
   /** Enters or leaves fullscreen. Omit when the browser cannot. */
   onToggleFullscreen?: () => void;
   /** Clears the slice autosave and starts Ashen Gate from tick zero. */
@@ -184,6 +205,8 @@ function applyFormation(command: Command, formation: FormationId): Command {
  */
 export function DescentView({
   fullscreen = false,
+  localPlayerId,
+  multiplayer,
   onCommand,
   onDismissCoach,
   onLoaded,
@@ -193,10 +216,14 @@ export function DescentView({
   onSetSpeed,
   onSetSoundEnabled,
   onToggleFullscreen,
+  shellModel,
   snapshot,
   soundEnabled = true,
 }: DescentViewProps) {
-  const model = useMemo(() => buildShellModel(snapshot), [snapshot]);
+  const model = useMemo(
+    () => shellModel ?? buildShellModel(snapshot),
+    [shellModel, snapshot],
+  );
   const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION);
   const [inspected, setInspected] = useState<InspectTarget | null>(null);
   const [focusRequest, setFocusRequest] = useState<CameraFocusRequest | null>(
@@ -238,6 +265,7 @@ export function DescentView({
     (unit) =>
       unit.classId === "villager" &&
       unit.factionId === "hold" &&
+      isLocalPlayerOwned(unit, localPlayerId) &&
       selection.unitIds.includes(unit.id),
   );
   useEffect(() => {
@@ -306,12 +334,14 @@ export function DescentView({
     selection,
     inspectTarget,
     formation,
+    localPlayerId,
   );
   const selectedResource =
     inspectTarget?.kind === "stockpile" ? inspectTarget.resource : null;
   const rallyBuildingId =
     selectedBuilding !== null &&
     !selectedBuilding.constructing &&
+    isLocalPlayerOwned(selectedBuilding, localPlayerId) &&
     (selectedBuilding.buildingType === "camp" ||
       selectedBuilding.buildingType === "barracks")
       ? selectedBuilding.id
@@ -370,7 +400,10 @@ export function DescentView({
    * through idle villagers on repeated presses.
    */
   const selectIdleVillager = () => {
-    const id = nextIdleVillager(idleVillagerIds(model.units), selection);
+    const id = nextIdleVillager(
+      idleVillagerIds(model.units, localPlayerId),
+      selection,
+    );
     const villager = model.units.find((unit) => unit.id === id);
     if (id === null || villager === undefined) {
       pushToast("No idle villagers.");
@@ -417,7 +450,7 @@ export function DescentView({
       return;
     }
     if (next.type === "gather_idle") {
-      const idle = idleVillagerIds(model.units);
+      const idle = idleVillagerIds(model.units, localPlayerId);
       const unitIds = next.count === "one" ? idle.slice(0, 1) : idle;
       if (unitIds.length === 0) {
         pushToast("No idle villagers.");
@@ -534,12 +567,24 @@ export function DescentView({
       return;
     }
     if (action.type === "selectCamp") {
-      const camp = model.buildings.find(
-        (item) => item.buildingType === "camp" && item.factionId === "hold",
-      );
+      const camp =
+        model.buildings.find(
+          (item) =>
+            item.buildingType === "camp" &&
+            item.factionId === "hold" &&
+            isLocalPlayerOwned(item, localPlayerId),
+        ) ??
+        model.buildings.find(
+          (item) => item.buildingType === "camp" && item.factionId === "hold",
+        );
       if (camp !== undefined) {
         setInspected(null);
         setSelection({ buildingId: camp.id, unitIds: [] });
+        focusSequence.current += 1;
+        setFocusRequest({
+          id: focusSequence.current,
+          point: { x: camp.x, y: camp.y },
+        });
       }
       return;
     }
@@ -628,10 +673,61 @@ export function DescentView({
         />
       </div>
       <div className={styles.stage}>
+        {multiplayer !== undefined || model.players.length > 0 ? (
+          <div className={styles.coopBar} data-testid="descent-coop-bar">
+            {multiplayer === undefined ? null : (
+              <span className={styles.coopRoomBadge}>
+                Room <strong>{multiplayer.roomId}</strong>
+              </span>
+            )}
+            <div className={styles.coopRoster}>
+              {model.players.map((player) => (
+                <span className={styles.coopPlayerChip} key={player.id}>
+                  <span
+                    aria-hidden="true"
+                    className={styles.coopColorDot}
+                    style={{ backgroundColor: player.color }}
+                  />
+                  <span>
+                    {player.name}
+                    {player.id === localPlayerId ? " (You)" : ""}
+                  </span>
+                </span>
+              ))}
+            </div>
+            {multiplayer?.isSpectator === true ? (
+              <span className={styles.coopSpectatorBadge}>Spectator</span>
+            ) : null}
+            {multiplayer?.onRestart === undefined ? null : (
+              <button
+                className={styles.coopLeaveButton}
+                onClick={multiplayer.onRestart}
+                type="button"
+              >
+                Restart
+              </button>
+            )}
+            {multiplayer === undefined ? null : (
+              <button
+                className={styles.coopLeaveButton}
+                onClick={multiplayer.onLeaveRoom}
+                type="button"
+              >
+                Leave
+              </button>
+            )}
+            {multiplayer?.error == null ? null : (
+              <span className={styles.coopError} role="alert">
+                {multiplayer.error}
+              </span>
+            )}
+          </div>
+        ) : null}
         <DescentBabylonViewport
           camera={camera}
           focusRequest={focusRequest}
           inspected={inspectTarget}
+          localPlayerId={localPlayerId}
           model={model}
           onCameraChange={setCamera}
           onCommand={(command) =>
@@ -645,7 +741,11 @@ export function DescentView({
             if (placing === null) return;
             const cell = snapMapCell(point);
             onCommand?.({
-              builderIds: placementBuilders(model.units, selection),
+              builderIds: placementBuilders(
+                model.units,
+                selection,
+                localPlayerId,
+              ),
               buildingType: placing,
               type: "place_building",
               x: cell.x,

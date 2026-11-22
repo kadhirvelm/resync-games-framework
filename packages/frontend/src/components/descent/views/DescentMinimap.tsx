@@ -194,6 +194,12 @@ export function DescentMinimap({
           className={`${styles.minimapMarker} ${styles.minimapBuilding}`}
           key={building.id}
           style={{
+            ...(building.ownerColor === undefined
+              ? {}
+              : {
+                  backgroundColor: building.ownerColor,
+                  borderColor: "#0b0705",
+                }),
             left: `${mapPercent(building.x, model.map.width)}%`,
             top: `${mapPercent(building.y, model.map.height)}%`,
           }}
@@ -207,6 +213,9 @@ export function DescentMinimap({
             className={`${styles.minimapMarker} ${styles.minimapUnit} ${factionClass}`}
             key={unit.id}
             style={{
+              ...(unit.factionId === "hold" && unit.ownerColor !== undefined
+                ? { backgroundColor: unit.ownerColor }
+                : {}),
               left: `${mapPercent(unit.x, model.map.width)}%`,
               top: `${mapPercent(unit.y, model.map.height)}%`,
             }}

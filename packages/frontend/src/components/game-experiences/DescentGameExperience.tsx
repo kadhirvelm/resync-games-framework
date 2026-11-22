@@ -2,7 +2,13 @@
 /** @jsxImportSource react */
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { unlockDescentAudio } from "@/components/descent/audio/descentAudioEngine";
 import { useDescentAudio } from "@/components/descent/audio/useDescentAudio";
 import {
@@ -16,11 +22,20 @@ import {
   attachPeriodicAutosave,
   type DescentSim,
   readSaveSlot,
+  type SimSpeed,
   saveSlotKey,
   startSimDriver,
   writeSaveSlot,
 } from "@/components/descent/logic/sim";
+import { DescentLobby } from "@/components/descent/multiplayer/DescentLobby";
+import {
+  buildDescentPlayer,
+  loadOrCreateDescentPlayer,
+  saveDescentPlayer,
+} from "@/components/descent/multiplayer/playerIdentity";
+import { useDescentMultiplayer } from "@/components/descent/multiplayer/useDescentMultiplayer";
 import { DescentView } from "@/components/descent/views";
+import { buildShellModel } from "@/components/descent/views/shellModel";
 import { useFullscreen } from "@/components/descent/views/useFullscreen";
 import styles from "./DescentGameExperience.module.scss";
 import type { GameExperienceEntryProps } from "./gameExperienceTypes";
@@ -36,6 +51,7 @@ interface DescentStartScreenProps {
   hasSavedRun: boolean;
   onContinue: () => void;
   onExit: () => void;
+  onMultiplayer: () => void;
   onNewGame: () => void;
   /** Enters or leaves fullscreen; the button hides without it. */
   onToggleFullscreen?: () => void;
@@ -152,6 +168,7 @@ function DescentStartScreen({
   hasSavedRun,
   onContinue,
   onExit,
+  onMultiplayer,
   onNewGame,
   onToggleFullscreen,
 }: DescentStartScreenProps) {
@@ -196,6 +213,9 @@ function DescentStartScreen({
           >
             <span>{hasSavedRun ? "New game" : "Start"}</span>
           </button>
+          <button onClick={onMultiplayer} type="button">
+            <span>Co-op Multiplayer</span>
+          </button>
         </nav>
 
         <div className={styles.startLinks}>
@@ -221,24 +241,204 @@ function DescentStartScreen({
 }
 
 /**
+ * Active multiplayer match screen: wires audio and the Descent battlefield
+ * once the lockstep simulation has been initialized.
+ * @param props - Live sim, snapshot, room metadata, and command callbacks
+ * @returns Mounted Descent RTS view for co-op play
+ */
+function DescentMultiplayerMatch({
+  fullscreen,
+  isHost,
+  isParticipant,
+  localPlayerId,
+  matchError,
+  matchKey,
+  onCommand,
+  onLeaveRoom,
+  onRestart,
+  onSetPaused,
+  onSetSoundEnabled,
+  onSetSpeed,
+  onToggleFullscreen,
+  roomId,
+  sim,
+  snapshot,
+  soundEnabled,
+}: {
+  fullscreen: boolean;
+  isHost: boolean;
+  isParticipant: boolean;
+  localPlayerId: string;
+  matchError: string | null;
+  matchKey: string;
+  onCommand: (command: Parameters<DescentSim["enqueue"]>[0]) => void;
+  onLeaveRoom: () => void;
+  onRestart: () => void;
+  onSetPaused: (paused: boolean) => void;
+  onSetSoundEnabled: (enabled: boolean) => void;
+  onSetSpeed: (speed: SimSpeed) => void;
+  onToggleFullscreen?: () => void;
+  roomId: string;
+  sim: DescentSim;
+  snapshot: ReturnType<DescentSim["snapshot"]>;
+  soundEnabled: boolean;
+}) {
+  const shellModel = useMemo(() => buildShellModel(snapshot), [snapshot]);
+  useDescentAudio({
+    active: true,
+    enabled: soundEnabled,
+    model: shellModel,
+    sim,
+    snapshot,
+  });
+
+  return (
+    <DescentView
+      fullscreen={fullscreen}
+      key={matchKey}
+      localPlayerId={localPlayerId}
+      multiplayer={{
+        error: matchError,
+        isSpectator: !isParticipant,
+        onLeaveRoom,
+        onRestart:
+          isHost && matchError !== null ? () => void onRestart() : undefined,
+        roomId,
+      }}
+      onCommand={onCommand}
+      onRestart={isHost ? onRestart : undefined}
+      onSetPaused={onSetPaused}
+      onSetSoundEnabled={onSetSoundEnabled}
+      onSetSpeed={onSetSpeed}
+      onToggleFullscreen={onToggleFullscreen}
+      shellModel={shellModel}
+      snapshot={snapshot}
+      soundEnabled={soundEnabled}
+    />
+  );
+}
+
+/**
+ * Dedicated co-op multiplayer view that owns the Socket.IO room lifecycle
+ * and lockstep simulation only while the player is in multiplayer mode.
+ * @param props - Fullscreen/audio controls and callback to return to title
+ * @returns The co-op lobby or live multiplayer Descent battlefield
+ */
+function DescentMultiplayerExperience({
+  fullscreen,
+  onBack,
+  onSetSoundEnabled,
+  onToggleFullscreen,
+  soundEnabled,
+}: {
+  fullscreen: boolean;
+  onBack: () => void;
+  onSetSoundEnabled: (enabled: boolean) => void;
+  onToggleFullscreen?: () => void;
+  soundEnabled: boolean;
+}) {
+  const [player, setPlayer] = useState(loadOrCreateDescentPlayer);
+  const {
+    createRoom,
+    error,
+    isHost,
+    isParticipant,
+    joinRoom,
+    leaveRoom,
+    matchError,
+    room,
+    sendCommand,
+    setPaused,
+    setSpeed,
+    sim,
+    snapshot,
+    startMatch,
+    status,
+  } = useDescentMultiplayer(player);
+
+  const handlePlayerNameChange = (name: string) => {
+    const updated = buildDescentPlayer(name, player);
+    setPlayer(updated);
+    if (typeof window !== "undefined") {
+      saveDescentPlayer(window.localStorage, updated);
+    }
+  };
+
+  if (
+    room === null ||
+    room.gameState.phase !== "playing" ||
+    sim === null ||
+    snapshot === null
+  ) {
+    return (
+      <DescentLobby
+        error={matchError ?? error}
+        isHost={isHost}
+        onBack={async () => {
+          if (await leaveRoom()) onBack();
+        }}
+        onCreateRoom={createRoom}
+        onJoinRoom={joinRoom}
+        onLeaveRoom={leaveRoom}
+        onPlayerNameChange={handlePlayerNameChange}
+        onStartMatch={async () => {
+          unlockDescentAudio();
+          await startMatch();
+        }}
+        player={player}
+        room={room}
+        status={status}
+      />
+    );
+  }
+
+  return (
+    <DescentMultiplayerMatch
+      fullscreen={fullscreen}
+      isHost={isHost}
+      isParticipant={isParticipant}
+      localPlayerId={player.id}
+      matchError={matchError ?? error}
+      matchKey={room.gameState.matchId ?? room.id}
+      onCommand={sendCommand}
+      onLeaveRoom={async () => {
+        if (await leaveRoom()) onBack();
+      }}
+      onRestart={() => void startMatch()}
+      onSetPaused={setPaused}
+      onSetSoundEnabled={onSetSoundEnabled}
+      onSetSpeed={setSpeed}
+      onToggleFullscreen={onToggleFullscreen}
+      roomId={room.id}
+      sim={sim}
+      snapshot={snapshot}
+      soundEnabled={soundEnabled}
+    />
+  );
+}
+
+/**
  * Mounts Descent behind a title screen. Real-time simulation starts only
- * after the player chooses Continue or New Game and the battlefield has
- * finished loading behind its loading screen.
+ * after the player chooses Continue, New Game, or Co-op Multiplayer and the
+ * battlefield has finished loading behind its loading screen.
  * @param props - Navigation supplied by the game library
- * @returns The title screen or mounted Descent RTS
+ * @returns The title screen, co-op lobby, or mounted Descent RTS
  */
 export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [mode, setMode] = useState<"multiplayer" | "solo" | "title">("title");
   const [battlefieldReady, setBattlefieldReady] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const screen = useFullscreen();
   const toggleFullscreen = screen.available ? screen.toggle : undefined;
+  const isSoloPlaying = mode === "solo";
   const { hasSavedRun, restart, runId, sim, snapshot } = useDescentSim(
-    isPlaying && battlefieldReady,
+    isSoloPlaying && battlefieldReady,
   );
+  const shellModel = useMemo(() => buildShellModel(snapshot), [snapshot]);
   useDescentAudio({
-    active: isPlaying,
+    active: isSoloPlaying,
     enabled: soundEnabled,
+    model: shellModel,
     sim,
     snapshot,
   });
@@ -249,20 +449,36 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
     restart();
   };
 
-  if (!isPlaying) {
+  if (mode === "multiplayer") {
+    return (
+      <DescentMultiplayerExperience
+        fullscreen={screen.fullscreen}
+        onBack={() => setMode("title")}
+        onSetSoundEnabled={setSoundEnabled}
+        onToggleFullscreen={toggleFullscreen}
+        soundEnabled={soundEnabled}
+      />
+    );
+  }
+
+  if (!isSoloPlaying) {
     return (
       <DescentStartScreen
         fullscreen={screen.fullscreen}
         hasSavedRun={hasSavedRun}
         onContinue={() => {
           unlockDescentAudio();
-          setIsPlaying(true);
+          setMode("solo");
         }}
         onExit={onExit}
+        onMultiplayer={() => {
+          unlockDescentAudio();
+          setMode("multiplayer");
+        }}
         onNewGame={() => {
           unlockDescentAudio();
           restartRun();
-          setIsPlaying(true);
+          setMode("solo");
         }}
         onToggleFullscreen={toggleFullscreen}
       />
@@ -282,6 +498,7 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
       onSetSoundEnabled={setSoundEnabled}
       onSetSpeed={(speed) => sim.setSpeed(speed)}
       onToggleFullscreen={toggleFullscreen}
+      shellModel={shellModel}
       snapshot={snapshot}
       soundEnabled={soundEnabled}
     />

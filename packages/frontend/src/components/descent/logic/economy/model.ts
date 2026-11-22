@@ -209,6 +209,8 @@ export interface BuildingInit {
   completed?: boolean;
   hp?: number;
   id: string;
+  /** Owning player id in multiplayer matches; omitted in solo play. */
+  ownerId?: string;
   x: number;
   y: number;
 }
@@ -219,6 +221,8 @@ export interface UnitInit {
   hp?: number;
   id: string;
   maxHp?: number;
+  /** Owning player id in multiplayer matches; omitted in solo play. */
+  ownerId?: string;
   popKind?: PopKind;
   realmId?: RealmId | null;
   x: number;

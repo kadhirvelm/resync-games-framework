@@ -119,7 +119,7 @@ export function runCombatTick(context: TickContext): void {
   }
   state.combat.pendingOrders = [];
   const events = simulation.advanceTick();
-  const after = simulation.exportState();
+  const after = simulation.takeState();
   state.combat.projectiles = after.pendingProjectiles;
   state.combat.tick = after.tick;
   const bodies = new Map(after.units.map((unit) => [unit.id, unit]));
@@ -162,9 +162,10 @@ function buildRoster(
     if (record.buildingType !== "ward_tower" || !record.completed) continue;
     roster.push(towerBody(record, saved[TOWER_PREFIX + record.id]));
   }
-  const rally = rallyPoint(world);
   for (const unit of waveState(world).units) {
-    roster.push(hordeBody(world, unit, saved[unit.id], rally));
+    roster.push(
+      hordeBody(world, unit, saved[unit.id], rallyPointFor(world, unit)),
+    );
   }
   return roster;
 }
@@ -329,15 +330,33 @@ function hordeBody(
 }
 
 /**
- * Where the horde marches: the Camp, else the nearest Hold building.
+ * Where a horde unit marches: the nearest standing Camp, else the nearest
+ * Hold building. In co-op matches with multiple Camps, each horde unit
+ * converges on whichever allied Camp is closest to it.
  * @param world - Sim world
+ * @param from - Horde unit position
  * @returns March destination
  */
-function rallyPoint(world: SimWorldState): { x: number; y: number } {
-  const camp = world.buildings.find((entry) => entry.buildingType === "camp");
-  if (camp) return { x: camp.x, y: camp.y };
-  const any = world.buildings[0];
-  if (any) return { x: any.x, y: any.y };
+function rallyPointFor(
+  world: SimWorldState,
+  from: { x: number; y: number },
+): { x: number; y: number } {
+  const camps = world.buildings.filter(
+    (entry) => entry.buildingType === "camp",
+  );
+  const candidates = camps.length > 0 ? camps : world.buildings;
+  let nearest = candidates[0];
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const candidate of candidates) {
+    const dx = candidate.x - from.x;
+    const dy = candidate.y - from.y;
+    const dist = dx * dx + dy * dy;
+    if (dist < bestDistance) {
+      bestDistance = dist;
+      nearest = candidate;
+    }
+  }
+  if (nearest) return { x: nearest.x, y: nearest.y };
   return { x: 0, y: world.map.height / 2 };
 }
 

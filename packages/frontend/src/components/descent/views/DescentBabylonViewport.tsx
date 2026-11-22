@@ -19,6 +19,7 @@ import {
 } from "./loadingProgress";
 import { MapViewport, type MapViewportProps } from "./MapViewport";
 import {
+  isLocalPlayerOwned,
   type MapPoint,
   nodeNear,
   orderMarkerFor,
@@ -137,6 +138,12 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
   const openingAnchor =
     props.model.buildings.find(
       (building) =>
+        building.factionId === "hold" &&
+        building.buildingType === "camp" &&
+        isLocalPlayerOwned(building, props.localPlayerId),
+    ) ??
+    props.model.buildings.find(
+      (building) =>
         building.factionId === "hold" && building.buildingType === "camp",
     ) ??
     props.model.buildings.find((building) => building.factionId === "hold");
@@ -194,6 +201,20 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
         () => undefined,
         setMinimapView,
       );
+      const initialCamp =
+        current.model.buildings.find(
+          (building) =>
+            building.factionId === "hold" &&
+            building.buildingType === "camp" &&
+            isLocalPlayerOwned(building, current.localPlayerId),
+        ) ??
+        current.model.buildings.find(
+          (building) =>
+            building.factionId === "hold" && building.buildingType === "camp",
+        );
+      if (initialCamp !== undefined) {
+        handle.focusCamera({ x: initialCamp.x, y: initialCamp.y });
+      }
       handleRef.current = handle;
       const { assets, textures } = await generated;
       if (!active) return;
@@ -274,6 +295,7 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
         const orders = ordersForRightClick({
           buildings: props.model.buildings,
           ground: picked.point,
+          localPlayerId: props.localPlayerId,
           nodes: props.model.nodes,
           queue: event.shiftKey,
           selectedIds: props.selection.unitIds,
@@ -305,7 +327,12 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
                 top: canvas.top,
               }) ?? []);
         props.onSelectUnits(
-          similarVisibleUnitIds(props.model.units, picked.unitId, visibleIds),
+          similarVisibleUnitIds(
+            props.model.units,
+            picked.unitId,
+            visibleIds,
+            props.localPlayerId,
+          ),
           event.shiftKey ? "add" : "replace",
         );
       }}
@@ -402,13 +429,24 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
           if (!drag.additive) props.onSelectUnits([], "replace");
           return;
         }
-        const ids = handleRef.current?.unitsInScreenBox({
-          bottom: event.clientY,
-          left: drag.startX,
-          right: event.clientX,
-          top: drag.startY,
-        });
-        props.onSelectUnits(ids ?? [], drag.additive ? "add" : "replace");
+        const ids =
+          handleRef.current
+            ?.unitsInScreenBox({
+              bottom: event.clientY,
+              left: drag.startX,
+              right: event.clientX,
+              top: drag.startY,
+            })
+            .filter((unitId) => {
+              const unit = props.model.units.find(
+                (entry) => entry.id === unitId,
+              );
+              return (
+                unit !== undefined &&
+                isLocalPlayerOwned(unit, props.localPlayerId)
+              );
+            }) ?? [];
+        props.onSelectUnits(ids, drag.additive ? "add" : "replace");
       }}
       ref={frameRef}
       role="application"
@@ -426,6 +464,7 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
           const orders = ordersForRightClick({
             buildings: props.model.buildings,
             ground: point,
+            localPlayerId: props.localPlayerId,
             nodes: props.model.nodes,
             queue,
             selectedIds: props.selection.unitIds,

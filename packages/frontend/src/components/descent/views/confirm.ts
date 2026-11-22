@@ -115,7 +115,10 @@ function breakthroughCommit(model: ShellModel, unitId: string): CommitModel {
     })),
   ];
   const hall = model.buildings.find(
-    (building) => building.buildingType === "cultivation_hall",
+    (building) =>
+      building.buildingType === "cultivation_hall" &&
+      !building.constructing &&
+      building.ownerId === unit.ownerId,
   );
   if (cultivation.missingRequirements.length > 0) {
     return blocked(
@@ -346,7 +349,11 @@ export function buildConfirm(
     };
   }
   if (intent.type === "rations") {
-    const rations = model.rations;
+    const rations =
+      model.rationOptions.find(
+        (option) => option.messHallId === intent.messHallId,
+      ) ??
+      (model.rations?.messHallId === intent.messHallId ? model.rations : null);
     if (rations === null) {
       return blocked("Rations", "Rations unavailable.", [], "Issue rations");
     }

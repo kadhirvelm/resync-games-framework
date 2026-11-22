@@ -445,14 +445,16 @@ export function stepConstruction(
 }
 
 /**
- * Sends every villager toward the nearest finished building.
+ * Sends each controllable villager toward the nearest finished building.
  * @param host - World whose villagers are recalled
+ * @param ownerId - Multiplayer owner to limit the recall to; omitted in solo
  */
-export function recallVillagers(host: EconomyHost): void {
+export function recallVillagers(host: EconomyHost, ownerId?: string): void {
   for (const unit of host.units) {
     if (!isEconomyUnit(unit)) continue;
     const record = unit;
     if (record.popKind !== "villager") continue;
+    if (ownerId !== undefined && record.ownerId !== ownerId) continue;
     const target = nearestCompleted(host, record);
     if (!target) continue;
     record.garrisoned = false;
@@ -464,12 +466,14 @@ export function recallVillagers(host: EconomyHost): void {
  * Lets garrisoned villagers take work again, and cancels any recall still
  * walking to shelter.
  * @param host - World whose villagers are released
+ * @param ownerId - Multiplayer owner to limit the release to; omitted in solo
  */
-export function releaseVillagers(host: EconomyHost): void {
+export function releaseVillagers(host: EconomyHost, ownerId?: string): void {
   for (const unit of host.units) {
     if (!isEconomyUnit(unit)) continue;
     const record = unit;
     if (record.popKind !== "villager") continue;
+    if (ownerId !== undefined && record.ownerId !== ownerId) continue;
     record.garrisoned = false;
     if (record.task?.kind === "garrison") record.task = null;
   }

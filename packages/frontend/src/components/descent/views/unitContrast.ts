@@ -11,6 +11,20 @@ export const UNIT_MARKER_RING = {
   horde: "#e0523c",
 } as const;
 
+/**
+ * Resolves the ring color for one unit, preferring its multiplayer owner.
+ * @param factionId - Unit faction
+ * @param ownerColor - Assigned multiplayer player color, when present
+ * @returns Player color or the faction fallback
+ */
+export function unitOwnerRingColor(
+  factionId: "hold" | "horde",
+  ownerColor?: string,
+): string {
+  if (factionId === "horde") return UNIT_MARKER_RING.horde;
+  return ownerColor ?? UNIT_MARKER_RING.hold;
+}
+
 /** Outline thickness in screen pixels at the current zoom. */
 const OUTLINE_PIXELS = 1.6;
 

@@ -59,8 +59,9 @@ export type RankTitle =
 /**
  * Every player action. Input adapters build one of these and pass it to
  * `DescentSim.enqueue`; nothing outside the sim mutates world state.
+ * In multiplayer matches, `actorId` identifies the player who issued it.
  */
-export type Command =
+export type Command = (
   | {
       type: "order_move";
       formation?: FormationId;
@@ -122,7 +123,11 @@ export type Command =
   | { type: "assign_build"; unitIds: string[]; buildingId: string }
   | { type: "release_villagers" }
   | { type: "train_hero"; hallId: string; heroId: string }
-  | { type: "revive_hero"; hallId: string; heroId: string };
+  | { type: "revive_hero"; hallId: string; heroId: string }
+) & {
+  /** Issuing player id in multiplayer matches; omitted in solo play. */
+  actorId?: string;
+};
 
 /** Discriminant of every command. */
 export type CommandType = Command["type"];
@@ -151,6 +156,8 @@ export interface StampedCommand {
 export interface UnitState {
   classId: ClassId;
   id: string;
+  /** Owning player id in multiplayer matches; omitted in solo play. */
+  ownerId?: string;
   x: number;
   y: number;
 }
@@ -162,6 +169,8 @@ export interface UnitState {
 export interface BuildingState {
   buildingType: string;
   id: string;
+  /** Owning player id in multiplayer matches; omitted in solo play. */
+  ownerId?: string;
   x: number;
   y: number;
 }

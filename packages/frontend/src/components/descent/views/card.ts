@@ -6,7 +6,11 @@ import type {
 } from "../logic/types";
 import { type CostLine, type CostStock, costLineFrom } from "./costLine";
 import type { InspectTarget } from "./inspect";
-import { idleVillagerIds, type Selection } from "./selection";
+import {
+  idleVillagerIds,
+  isLocalPlayerOwned,
+  type Selection,
+} from "./selection";
 import type { ShellBuilding, ShellModel, ShellUnit } from "./shellModel";
 import { SCHOOL_LABEL } from "./text";
 import { shiftTrainQuote } from "./trainingQuote";
@@ -22,7 +26,7 @@ export type ConfirmIntent =
   | { type: "breakthrough"; unitId: string }
   | { type: "descend" }
   | { sell?: ResourceId; type: "market" }
-  | { type: "rations" }
+  | { messHallId: string; type: "rations" }
   | { type: "upgrade" };
 
 /** Every command-card button. Only confirm intents open a dialog. */
@@ -480,12 +484,11 @@ function buildingButtons(
   }
   if (
     building.buildingType === "mess_hall" &&
-    model.rations !== null &&
-    model.rations.messHallId === building.id
+    model.rationOptions.some((option) => option.messHallId === building.id)
   ) {
     buttons.push({
       id: "rations",
-      intent: { type: "rations" },
+      intent: { messHallId: building.id, type: "rations" },
       label: "Issue rations",
     });
   }
@@ -545,8 +548,12 @@ function resourceLabel(resource: ResourceId): string {
  * @param nodeId - Inspected node
  * @returns Gather actions
  */
-function nodeButtons(model: ShellModel, nodeId: string): CardButton[] {
-  const idle = idleVillagerIds(model.units).length;
+function nodeButtons(
+  model: ShellModel,
+  nodeId: string,
+  localPlayerId?: string,
+): CardButton[] {
+  const idle = idleVillagerIds(model.units, localPlayerId).length;
   const none = idle === 0;
   return [
     {
@@ -574,8 +581,11 @@ function nodeButtons(model: ShellModel, nodeId: string): CardButton[] {
  * @param model - Shell model
  * @returns Idle villager, controls, and descend
  */
-function generalButtons(model: ShellModel): CardButton[] {
-  const idle = idleVillagerIds(model.units).length;
+function generalButtons(
+  model: ShellModel,
+  localPlayerId?: string,
+): CardButton[] {
+  const idle = idleVillagerIds(model.units, localPlayerId).length;
   return [
     {
       description: "Select the next villager with nothing to do.",
@@ -608,6 +618,7 @@ function generalButtons(model: ShellModel): CardButton[] {
  * @param selection - Current selection
  * @param target - Inspected map feature or stockpile entry, if any
  * @param activeFormation - Formation selected for grouped military movement
+ * @param localPlayerId - Multiplayer owner whose actions should be exposed
  * @returns Buttons in display order
  */
 export function buildCardButtons(
@@ -615,8 +626,11 @@ export function buildCardButtons(
   selection: Selection,
   target: InspectTarget | null = null,
   activeFormation: FormationId = "ranks",
+  localPlayerId?: string,
 ): CardButton[] {
-  if (target?.kind === "node") return nodeButtons(model, target.id);
+  if (target?.kind === "node") {
+    return nodeButtons(model, target.id, localPlayerId);
+  }
   if (target?.kind === "vein") {
     return [
       {
@@ -628,16 +642,35 @@ export function buildCardButtons(
       },
     ];
   }
-  if (target !== null) return generalButtons(model);
+  if (target !== null) return generalButtons(model, localPlayerId);
+
+  const ownedSelection =
+    localPlayerId === undefined
+      ? selection
+      : {
+          ...selection,
+          unitIds: selection.unitIds.filter((unitId) => {
+            const unit = model.units.find((entry) => entry.id === unitId);
+            return (
+              unit !== undefined && isLocalPlayerOwned(unit, localPlayerId)
+            );
+          }),
+        };
   const building = model.buildings.find(
     (item) => item.id === selection.buildingId,
   );
+  if (building !== undefined && !isLocalPlayerOwned(building, localPlayerId)) {
+    return ownedSelection.unitIds.length > 0
+      ? unitButtons(model, ownedSelection, activeFormation)
+      : generalButtons(model, localPlayerId);
+  }
+
   const context =
     building === undefined
-      ? unitButtons(model, selection, activeFormation)
+      ? unitButtons(model, ownedSelection, activeFormation)
       : buildingButtons(model, building);
-  if (selection.unitIds.length > 0 || selection.buildingId !== null) {
+  if (ownedSelection.unitIds.length > 0 || selection.buildingId !== null) {
     return context;
   }
-  return generalButtons(model);
+  return generalButtons(model, localPlayerId);
 }

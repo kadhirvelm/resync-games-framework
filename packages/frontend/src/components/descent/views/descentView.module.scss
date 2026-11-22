@@ -2340,3 +2340,77 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
     transform: translateY(0);
   }
 }
+
+.coopBar {
+  align-items: center;
+  backdrop-filter: blur(6px);
+  background: rgb(16 11 9 / 86%);
+  border: 1px solid rgb(232 191 106 / 38%);
+  border-radius: 6px;
+  color: #f3e6cf;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  gap: 8px;
+  left: 12px;
+  padding: 6px 10px;
+  position: absolute;
+  top: 10px;
+  z-index: 12;
+}
+
+.coopRoomBadge {
+  border-right: 1px solid rgb(232 191 106 / 26%);
+  letter-spacing: 0.06em;
+  padding-right: 8px;
+}
+
+.coopRoster {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.coopPlayerChip {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.coopColorDot {
+  border: 1.5px solid #0b0705;
+  border-radius: 50%;
+  box-shadow: 0 0 6px rgb(0 0 0 / 55%);
+  height: 10px;
+  width: 10px;
+}
+
+.coopLeaveButton {
+  background: rgb(122 44 34 / 45%);
+  border: 1px solid rgb(224 102 78 / 45%);
+  border-radius: 4px;
+  color: #f4d3a1;
+  cursor: pointer;
+  font-size: 0.72rem;
+  padding: 2px 8px;
+
+  &:hover {
+    background: rgb(156 52 38 / 65%);
+  }
+}
+
+.coopSpectatorBadge {
+  border: 1px solid rgb(77 184 255 / 45%);
+  border-radius: 4px;
+  color: #9dd8ff;
+  font-size: 0.72rem;
+  padding: 2px 6px;
+}
+
+.coopError {
+  color: #ffb3a2;
+  flex-basis: 100%;
+  line-height: 1.35;
+  max-width: 680px;
+}

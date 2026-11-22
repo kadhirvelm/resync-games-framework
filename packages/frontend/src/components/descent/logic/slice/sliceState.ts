@@ -102,6 +102,14 @@ export interface QueuedWaypoint {
   y: number;
 }
 
+/** One player in a co-op match, stored on the slice state for presentation. */
+export interface SlicePlayerInfo {
+  color: string;
+  id: string;
+  name: string;
+  slotIndex: number;
+}
+
 /** JSON-safe integration state stored with the sim save. */
 export interface AshenGateSliceState {
   bossIntroShown: boolean;
@@ -123,6 +131,8 @@ export interface AshenGateSliceState {
   nextNoticeId: number;
   notices: SliceNotice[];
   outcome: "defeat" | "playing" | "victory";
+  /** Co-op roster keyed by player id; omitted in solo play. */
+  players?: Record<string, SlicePlayerInfo>;
   /**
    * Custom destinations for units leaving a Camp or Barracks. A rally on a
    * resource node names it, and trained villagers gather there.

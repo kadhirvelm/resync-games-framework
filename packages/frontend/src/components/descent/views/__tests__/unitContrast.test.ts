@@ -4,6 +4,7 @@ import {
   selectionRingDiameter,
   unitMarkerDiameter,
   unitOutlineWidth,
+  unitOwnerRingColor,
 } from "../unitContrast";
 
 describe("descent unit contrast", () => {
@@ -33,5 +34,11 @@ describe("descent unit contrast", () => {
     expect(selectionRingDiameter("cinderjaw")).toBeGreaterThan(
       unitMarkerDiameter("cinderjaw"),
     );
+  });
+
+  test("uses the assigned player color with faction fallbacks", () => {
+    expect(unitOwnerRingColor("hold", "#4db8ff")).toBe("#4db8ff");
+    expect(unitOwnerRingColor("hold")).toBe("#e8bf6a");
+    expect(unitOwnerRingColor("horde", "#4db8ff")).toBe("#e0523c");
   });
 });

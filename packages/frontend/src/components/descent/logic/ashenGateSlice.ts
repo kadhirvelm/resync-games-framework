@@ -12,6 +12,11 @@
  * Code lives in `logic/slice/`; this file wires it into a `SimModule`.
  */
 import {
+  ASHEN_CRUCIBLE_MAP_SIZE,
+  type AshenCruciblePlayer,
+  generateAshenCrucibleMap,
+} from "../data/layers/ashen_crucible";
+import {
   ASHEN_GATE_CONTENT,
   ASHEN_GATE_MAP_SIZE,
   generateAshenGateMap,
@@ -35,7 +40,6 @@ import {
 import { formationCenter, planFormation } from "./slice/formation";
 import { runCombatTick } from "./slice/sliceCombat";
 import {
-  completedHall,
   openCultivation,
   REALM_FOR_RANK,
   saveCultivation,
@@ -81,6 +85,12 @@ export interface AshenGateSimOptions {
   seed: number;
 }
 
+/** Options for a new 1–4 player co-op Descent simulation on Ashen Crucible. */
+export interface MultiplayerDescentSimOptions {
+  players: readonly AshenCruciblePlayer[];
+  seed: number;
+}
+
 /**
  * Creates the Layer 1 composition without changing the empty generic sim.
  * @param options - Deterministic run seed
@@ -103,6 +113,32 @@ export function createAshenGateSim(options: AshenGateSimOptions): DescentSim {
 }
 
 /**
+ * Creates a deterministic 1–4 player co-op Descent simulation on the Ashen
+ * Crucible map. Every player starts with their own Camp, Captain Warden,
+ * Villagers, and color; all players share the Hold faction and fight the
+ * horde together without friendly fire.
+ * @param options - Deterministic match seed and locked co-op roster
+ * @returns A ready multiplayer Descent simulation
+ */
+export function createMultiplayerDescentSim(
+  options: MultiplayerDescentSimOptions,
+): DescentSim {
+  return createDescentSim({
+    layerId: "ashen_gate",
+    map: { ...ASHEN_CRUCIBLE_MAP_SIZE },
+    modules: [
+      createEconomyModule({
+        manualVillagers: true,
+        stepEveryTicks: ECONOMY_STEP_TICKS,
+      }),
+      createWavesModule(),
+      createSliceModule({ players: options.players }),
+    ],
+    seed: options.seed,
+  });
+}
+
+/**
  * Verifies that a loaded generic save belongs to this scenario version.
  * @param snapshot - Loaded sim snapshot
  * @returns Whether the Ashen Gate bridge can continue it
@@ -112,178 +148,319 @@ export function isAshenGateSliceSnapshot(snapshot: SimSnapshot): boolean {
   return isAshenGateSliceState(snapshot.meta[ASHEN_GATE_SLICE_MODULE_ID]);
 }
 
-/** The module that bridges economy, waves, combat, cultivation, and the UI. */
-export const ashenGateSliceModule: SimModule = {
-  commands: {
-    cancel_training(command, context) {
-      if (!cancelTraining(context.world, command.buildingId, command.jobId)) {
-        return;
-      }
-      pushNotice(context.world, "Training cancelled. Cost refunded.", "info");
+/**
+ * Checks whether an actor is allowed to command a unit or building.
+ * Solo commands omit `actorId` and always pass; multiplayer commands must
+ * match the entity's `ownerId`.
+ * @param ownerId - Entity owner id, if any
+ * @param actorId - Issuing player id, if any
+ * @returns Whether the actor controls this entity
+ */
+function canControlEntity(
+  ownerId: string | undefined,
+  actorId: string | undefined,
+): boolean {
+  if (actorId === undefined) return true;
+  return ownerId === actorId;
+}
+
+/**
+ * Filters unit ids to those owned by `actorId` (or all in solo play).
+ * @param world - Sim world
+ * @param unitIds - Candidate unit ids
+ * @param actorId - Issuing player id, if any
+ * @returns Authorized unit ids
+ */
+function authorizedUnitIds(
+  world: SimWorldState,
+  unitIds: readonly string[],
+  actorId: string | undefined,
+): string[] {
+  if (actorId === undefined) return [...unitIds];
+  return unitIds.filter((unitId) => {
+    const unit = world.units.find((entry) => entry.id === unitId);
+    return unit !== undefined && canControlEntity(unit.ownerId, actorId);
+  });
+}
+
+/**
+ * Checks whether `actorId` owns the named building (always true in solo play).
+ * @param world - Sim world
+ * @param buildingId - Candidate building id
+ * @param actorId - Issuing player id, if any
+ * @returns Whether the actor may command this building
+ */
+function ownsBuilding(
+  world: SimWorldState,
+  buildingId: string,
+  actorId: string | undefined,
+): boolean {
+  if (actorId === undefined) return true;
+  const building = world.buildings.find((entry) => entry.id === buildingId);
+  return building !== undefined && canControlEntity(building.ownerId, actorId);
+}
+
+/**
+ * Checks whether `actorId` owns the named unit (always true in solo play).
+ * @param world - Sim world
+ * @param unitId - Candidate unit id
+ * @param actorId - Issuing player id, if any
+ * @returns Whether the actor may command this unit
+ */
+function ownsUnit(
+  world: SimWorldState,
+  unitId: string,
+  actorId: string | undefined,
+): boolean {
+  if (actorId === undefined) return true;
+  const unit = world.units.find((entry) => entry.id === unitId);
+  return unit !== undefined && canControlEntity(unit.ownerId, actorId);
+}
+
+interface SliceModuleConfig {
+  players?: readonly AshenCruciblePlayer[];
+}
+
+/**
+ * Builds the Ashen Gate / Ashen Crucible integration module.
+ * @param config - Optional multiplayer roster; omitted for solo Ashen Gate
+ * @returns Configured `SimModule`
+ */
+function createSliceModule(config: SliceModuleConfig = {}): SimModule {
+  return {
+    commands: {
+      cancel_training(command, context) {
+        if (!ownsBuilding(context.world, command.buildingId, command.actorId)) {
+          return;
+        }
+        if (!cancelTraining(context.world, command.buildingId, command.jobId)) {
+          return;
+        }
+        pushNotice(context.world, "Training cancelled. Cost refunded.", "info");
+      },
+      choose_school(command, context) {
+        if (!ownsUnit(context.world, command.unitId, command.actorId)) return;
+        const cultivation = openCultivation(context.world);
+        if (!cultivation.hasUnit(command.unitId)) return;
+        const result = cultivation.chooseSchool(command.unitId, command.school);
+        saveCultivation(context.world, cultivation);
+        if (!result.ok) {
+          pushNotice(context.world, result.error, "warn");
+          return;
+        }
+        pushNotice(
+          context.world,
+          `${schoolName(command.school)} school locked. ${schoolTagline(command.school)}`,
+          "good",
+        );
+      },
+      descend(_command, context) {
+        if (!waveState(context.world).bossGateCleared) {
+          pushNotice(context.world, "Boss still lives", "warn");
+          return;
+        }
+        const state = sliceState(context.world);
+        state.outcome = "victory";
+        context.world.paused = true;
+        context.emit(ASHEN_GATE_SLICE_MODULE_ID, "slice_completed", {
+          outcome: "victory",
+        });
+      },
+      feed_pill(command, context) {
+        if (!ownsUnit(context.world, command.unitId, command.actorId)) return;
+        const cultivation = openCultivation(context.world);
+        if (!cultivation.hasUnit(command.unitId)) return;
+        const result = cultivation.feedPill(command.unitId, command.pillId);
+        saveCultivation(context.world, cultivation);
+        if (!result.ok) {
+          pushNotice(context.world, result.error, "warn");
+          return;
+        }
+        pushNotice(context.world, "The pill takes hold.", "good");
+      },
+      order_attack(command, context) {
+        const unitIds = authorizedUnitIds(
+          context.world,
+          command.unitIds,
+          command.actorId,
+        );
+        if (unitIds.length === 0) return;
+        clearWaypoints(context.world, unitIds);
+        queueOrder(context.world, { ...command, unitIds });
+      },
+      order_attack_move(command, context) {
+        const unitIds = authorizedUnitIds(
+          context.world,
+          command.unitIds,
+          command.actorId,
+        );
+        if (unitIds.length === 0) return;
+        routeMove(context.world, { ...command, unitIds });
+      },
+      order_move(command, context) {
+        const unitIds = authorizedUnitIds(
+          context.world,
+          command.unitIds,
+          command.actorId,
+        );
+        if (unitIds.length === 0) return;
+        routeMove(context.world, { ...command, unitIds });
+      },
+      order_stop(command, context) {
+        const unitIds = authorizedUnitIds(
+          context.world,
+          command.unitIds,
+          command.actorId,
+        );
+        if (unitIds.length === 0) return;
+        clearWaypoints(context.world, unitIds);
+        orderVillagersStop(
+          economyHost(context.world, ECONOMY_STEP_TICKS),
+          unitIds,
+        );
+        queueOrder(context.world, { ...command, unitIds });
+      },
+      set_formation(command, context) {
+        const unitIds = authorizedUnitIds(
+          context.world,
+          command.unitIds,
+          command.actorId,
+        );
+        if (unitIds.length === 0) return;
+        reformInPlace(context.world, { ...command, unitIds });
+      },
+      set_rally_point(command, context) {
+        if (!ownsBuilding(context.world, command.buildingId, command.actorId)) {
+          return;
+        }
+        const accepted = setTrainingRallyPoint(
+          context.world,
+          command.buildingId,
+          command,
+        );
+        if (!accepted) return;
+        const onNode =
+          command.nodeId !== undefined &&
+          trainingRallyPoint(context.world, command.buildingId)?.nodeId ===
+            command.nodeId;
+        pushNotice(
+          context.world,
+          onNode
+            ? "Rally set on a resource. New villagers will gather there."
+            : "Rally point set.",
+          "info",
+        );
+      },
+      start_breakthrough(command, context) {
+        if (!ownsUnit(context.world, command.unitId, command.actorId)) return;
+        if (!ownsBuilding(context.world, command.hallId, command.actorId)) {
+          return;
+        }
+        startBreakthrough(context.world, command.unitId, command.hallId);
+      },
+      train_unit(command, context) {
+        if (!ownsBuilding(context.world, command.buildingId, command.actorId)) {
+          return;
+        }
+        queueTraining(
+          context,
+          command.buildingId,
+          command.classId,
+          command.count,
+        );
+      },
     },
-    choose_school(command, context) {
-      const cultivation = openCultivation(context.world);
-      if (!cultivation.hasUnit(command.unitId)) return;
-      const result = cultivation.chooseSchool(command.unitId, command.school);
-      saveCultivation(context.world, cultivation);
-      if (!result.ok) {
-        pushNotice(context.world, result.error, "warn");
-        return;
-      }
-      pushNotice(
-        context.world,
-        `${schoolName(command.school)} school locked. ${schoolTagline(command.school)}`,
-        "good",
-      );
-    },
-    descend(_command, context) {
-      if (!waveState(context.world).bossGateCleared) {
-        pushNotice(context.world, "Boss still lives", "warn");
-        return;
-      }
-      const state = sliceState(context.world);
-      state.outcome = "victory";
-      context.world.paused = true;
-      context.emit(ASHEN_GATE_SLICE_MODULE_ID, "slice_completed", {
-        outcome: "victory",
+    id: ASHEN_GATE_SLICE_MODULE_ID,
+    init(world) {
+      // Solo uses Ashen Gate; co-op uses the multi-Camp Ashen Crucible map.
+      const layout =
+        config.players !== undefined && config.players.length > 0
+          ? generateAshenCrucibleMap(world.seed, config.players)
+          : generateAshenGateMap(world.seed);
+      setLayerTerrain(world, {
+        layerId: "ashen_gate",
+        ventVolumes: [...layout.vents],
       });
-    },
-    feed_pill(command, context) {
-      const cultivation = openCultivation(context.world);
-      if (!cultivation.hasUnit(command.unitId)) return;
-      const result = cultivation.feedPill(command.unitId, command.pillId);
-      saveCultivation(context.world, cultivation);
-      if (!result.ok) {
-        pushNotice(context.world, result.error, "warn");
-        return;
+      seedEconomyWorld(world, {
+        buildings: [...layout.buildings],
+        layerId: "ashen_gate",
+        nodes: [...layout.nodes],
+        stockpile: layout.stockpile,
+        units: [...layout.units],
+        veins: [...layout.veins],
+      });
+      const initialSlice = createSliceState();
+      if (config.players !== undefined && config.players.length > 0) {
+        initialSlice.players = Object.fromEntries(
+          config.players.map((player) => [player.id, { ...player }]),
+        );
       }
-      pushNotice(context.world, "The pill takes hold.", "good");
-    },
-    order_attack(command, context) {
-      clearWaypoints(context.world, command.unitIds);
-      queueOrder(context.world, command);
-    },
-    order_attack_move(command, context) {
-      routeMove(context.world, command);
-    },
-    order_move(command, context) {
-      routeMove(context.world, command);
-    },
-    order_stop(command, context) {
-      clearWaypoints(context.world, command.unitIds);
-      orderVillagersStop(
-        economyHost(context.world, ECONOMY_STEP_TICKS),
-        command.unitIds,
-      );
-      queueOrder(context.world, command);
-    },
-    set_formation(command, context) {
-      reformInPlace(context.world, command);
-    },
-    set_rally_point(command, context) {
-      const accepted = setTrainingRallyPoint(
-        context.world,
-        command.buildingId,
-        command,
-      );
-      if (!accepted) return;
-      const onNode =
-        command.nodeId !== undefined &&
-        trainingRallyPoint(context.world, command.buildingId)?.nodeId ===
-          command.nodeId;
+      world.meta[ASHEN_GATE_SLICE_MODULE_ID] = initialSlice;
+      const cultivation = openCultivation(world);
+      for (const unit of world.units) {
+        if (!isEconomyUnit(unit) || unit.popKind !== "soldier") continue;
+        cultivation.registerUnit({ maxHealth: unit.maxHp, unitId: unit.id });
+      }
+      saveCultivation(world, cultivation);
       pushNotice(
-        context.world,
-        onNode
-          ? "Rally set on a resource. New villagers will gather there."
-          : "Rally point set.",
+        world,
+        config.players !== undefined && config.players.length > 0
+          ? "Ashen Crucible co-op begun — defend your allied Holds together!"
+          : ASHEN_GATE_CONTENT.briefing,
         "info",
       );
+      updateFogOfWar(world, true);
+      publishPresentation(world);
     },
-    start_breakthrough(command, context) {
-      startBreakthrough(context.world, command.unitId);
-    },
-    train_unit(command, context) {
-      queueTraining(
-        context,
-        command.buildingId,
-        command.classId,
-        command.count,
-      );
-    },
-  },
-  id: ASHEN_GATE_SLICE_MODULE_ID,
-  init(world) {
-    // The layout comes from the run seed, so each new run spreads the Hold,
-    // vents, and deposits differently while a save always reloads its own.
-    const layout = generateAshenGateMap(world.seed);
-    setLayerTerrain(world, {
-      layerId: "ashen_gate",
-      ventVolumes: [...layout.vents],
-    });
-    seedEconomyWorld(world, {
-      buildings: [...layout.buildings],
-      layerId: "ashen_gate",
-      nodes: [...layout.nodes],
-      stockpile: layout.stockpile,
-      units: [...layout.units],
-      veins: [...layout.veins],
-    });
-    world.meta[ASHEN_GATE_SLICE_MODULE_ID] = createSliceState();
-    const cultivation = openCultivation(world);
-    for (const unit of world.units) {
-      if (!isEconomyUnit(unit) || unit.popKind !== "soldier") continue;
-      cultivation.registerUnit({ maxHealth: unit.maxHp, unitId: unit.id });
-    }
-    saveCultivation(world, cultivation);
-    pushNotice(world, ASHEN_GATE_CONTENT.briefing, "info");
-    updateFogOfWar(world, true);
-    publishPresentation(world);
-  },
-  processors: [
-    {
-      id: "ashen-gate-outcome",
-      phase: "layers",
-      /**
-       * Keeps a finished slice paused so Resume cannot run the Hold
-       * underneath the victory or defeat overlay.
-       * @param context - Tick being processed
-       */
-      run(context) {
-        if (sliceState(context.world).outcome === "playing") return;
-        context.world.paused = true;
+    processors: [
+      {
+        id: "ashen-gate-outcome",
+        phase: "layers",
+        /**
+         * Keeps a finished slice paused so Resume cannot run the Hold
+         * underneath the victory or defeat overlay.
+         * @param context - Tick being processed
+         */
+        run(context) {
+          if (sliceState(context.world).outcome === "playing") return;
+          context.world.paused = true;
+        },
       },
-    },
-    {
-      id: "ashen-gate-combat",
-      phase: "combat",
-      run(context) {
-        if (sliceState(context.world).outcome !== "playing") return;
-        runCombatTick(context);
-        advanceWaypoints(context.world);
-        advanceTraining(context);
-        checkDefeat(context);
+      {
+        id: "ashen-gate-combat",
+        phase: "combat",
+        run(context) {
+          if (sliceState(context.world).outcome !== "playing") return;
+          runCombatTick(context);
+          advanceWaypoints(context.world);
+          advanceTraining(context);
+          checkDefeat(context);
+        },
       },
-    },
-    {
-      id: "ashen-gate-cultivation",
-      phase: "cultivation",
-      run(context) {
-        if (sliceState(context.world).outcome !== "playing") return;
-        advanceBreakthroughs(context);
+      {
+        id: "ashen-gate-cultivation",
+        phase: "cultivation",
+        run(context) {
+          if (sliceState(context.world).outcome !== "playing") return;
+          advanceBreakthroughs(context);
+        },
       },
-    },
-    {
-      id: "ashen-gate-presentation",
-      phase: "waves",
-      run(context) {
-        announceBoss(context.world);
-        pruneTransient(context.world);
-        updateFogOfWar(context.world);
-        publishPresentation(context.world);
+      {
+        id: "ashen-gate-presentation",
+        phase: "waves",
+        run(context) {
+          announceBoss(context.world);
+          pruneTransient(context.world);
+          updateFogOfWar(context.world);
+          publishPresentation(context.world);
+        },
       },
-    },
-  ],
-};
+    ],
+  };
+}
+
+/** The module that bridges economy, waves, combat, cultivation, and the UI. */
+export const ashenGateSliceModule: SimModule = createSliceModule();
 
 /**
  * Repositions a living selection around its current center in a new shape.
@@ -430,12 +607,23 @@ function queueOrder(world: SimWorldState, command: CombatCommand): void {
 }
 
 /**
- * Validates the Hall and starts a breakthrough channel.
+ * Validates the selected Hall and starts a breakthrough channel.
  * @param world - Sim world
  * @param unitId - Cultivator
+ * @param hallId - Completed Cultivation Hall selected for this command
  */
-function startBreakthrough(world: SimWorldState, unitId: string): void {
-  if (completedHall(world) === null) {
+function startBreakthrough(
+  world: SimWorldState,
+  unitId: string,
+  hallId: string,
+): void {
+  const hall = world.buildings.find(
+    (building) =>
+      building.id === hallId &&
+      building.buildingType === "cultivation_hall" &&
+      asBuilding(building).completed,
+  );
+  if (hall === undefined) {
     pushNotice(world, "Build a Cultivation Hall first.", "warn");
     return;
   }

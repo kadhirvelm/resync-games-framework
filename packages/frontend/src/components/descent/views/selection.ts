@@ -34,6 +34,8 @@ export interface OrderUnit {
   classId: string;
   factionId: "hold" | "horde";
   id: string;
+  /** Owning player id in multiplayer matches; omitted in solo play. */
+  ownerId?: string;
   x: number;
   y: number;
 }
@@ -42,6 +44,23 @@ export interface OrderUnit {
 export interface OrderBuilding {
   factionId: "hold" | "horde";
   id: string;
+  /** Owning player id in multiplayer matches; omitted in solo play. */
+  ownerId?: string;
+}
+
+/**
+ * Checks whether a unit or building is controllable by the local player.
+ * In solo play (`localPlayerId === undefined`), every Hold entity is controllable.
+ * @param entity - Unit or building to test
+ * @param localPlayerId - Local player id in multiplayer, or undefined in solo
+ * @returns Whether the local player owns or controls this entity
+ */
+export function isLocalPlayerOwned(
+  entity: { ownerId?: string },
+  localPlayerId?: string,
+): boolean {
+  if (localPlayerId === undefined) return true;
+  return entity.ownerId === localPlayerId;
 }
 
 /** Fields the order helper needs from a resource node. */
@@ -88,21 +107,27 @@ export function clientToWorld(
 }
 
 /**
- * Hold units whose centers lie in a drag box.
+ * Hold units whose centers lie in a drag box. In multiplayer, only returns
+ * units owned by `localPlayerId`.
  * @param units - Units on the map
  * @param box - Drag rectangle in map space
- * @returns Ids of Hold units inside the box
+ * @param localPlayerId - Local player id in multiplayer
+ * @returns Ids of controllable Hold units inside the box
  */
 export function unitsInBox(
   units: readonly OrderUnit[],
   box: SelectionBox,
+  localPlayerId?: string,
 ): string[] {
   const left = Math.min(box.x0, box.x1);
   const right = Math.max(box.x0, box.x1);
   const top = Math.min(box.y0, box.y1);
   const bottom = Math.max(box.y0, box.y1);
   return units
-    .filter((unit) => unit.factionId === "hold")
+    .filter(
+      (unit) =>
+        unit.factionId === "hold" && isLocalPlayerOwned(unit, localPlayerId),
+    )
     .filter(
       (unit) =>
         unit.x >= left && unit.x <= right && unit.y >= top && unit.y <= bottom,
@@ -217,6 +242,7 @@ export function nodeNear<Node extends OrderNode>(
 export function ordersForRightClick(input: {
   buildings: readonly OrderBuilding[];
   ground: MapPoint;
+  localPlayerId?: string;
   nodes: readonly OrderNode[];
   /** Shift-click: queue moves as waypoints instead of replacing orders. */
   queue?: boolean;
@@ -227,7 +253,10 @@ export function ordersForRightClick(input: {
 }): Command[] {
   const selected = new Set(input.selectedIds);
   const actors = input.units.filter(
-    (unit) => selected.has(unit.id) && unit.factionId === "hold",
+    (unit) =>
+      selected.has(unit.id) &&
+      unit.factionId === "hold" &&
+      isLocalPlayerOwned(unit, input.localPlayerId),
   );
   if (actors.length === 0) return [];
   const villagerIds = actors
@@ -332,10 +361,21 @@ function villagerTarget(
  * @returns Idle villager ids
  */
 export function idleVillagerIds(
-  units: readonly { factionId: string; id: string; idle: boolean }[],
+  units: readonly {
+    factionId: string;
+    id: string;
+    idle: boolean;
+    ownerId?: string;
+  }[],
+  localPlayerId?: string,
 ): string[] {
   return units
-    .filter((unit) => unit.factionId === "hold" && unit.idle)
+    .filter(
+      (unit) =>
+        unit.factionId === "hold" &&
+        unit.idle &&
+        isLocalPlayerOwned(unit, localPlayerId),
+    )
     .map((unit) => unit.id)
     .sort();
 }
@@ -373,19 +413,22 @@ export function placementBuilders(
     factionId: string;
     id: string;
     idle: boolean;
+    ownerId?: string;
   }[],
   selection: Selection,
+  localPlayerId?: string,
 ): string[] {
   const selected = units
     .filter(
       (unit) =>
         selection.unitIds.includes(unit.id) &&
         unit.factionId === "hold" &&
+        isLocalPlayerOwned(unit, localPlayerId) &&
         unit.classId === "villager",
     )
     .map((unit) => unit.id);
   if (selected.length > 0) return selected;
-  return idleVillagerIds(units).slice(0, DRAFTED_BUILDERS);
+  return idleVillagerIds(units, localPlayerId).slice(0, DRAFTED_BUILDERS);
 }
 
 /**
@@ -481,19 +524,31 @@ function pointOf(
  * @returns Ids to select, the clicked unit first; empty if it is gone
  */
 export function similarVisibleUnitIds(
-  units: readonly { classId: string; factionId: string; id: string }[],
+  units: readonly {
+    classId: string;
+    factionId: string;
+    id: string;
+    ownerId?: string;
+  }[],
   clickedId: string,
   visibleIds: readonly string[],
+  localPlayerId?: string,
 ): string[] {
   const clicked = units.find((unit) => unit.id === clickedId);
   if (clicked === undefined) return [];
-  if (clicked.factionId !== "hold") return [clicked.id];
+  if (
+    clicked.factionId !== "hold" ||
+    !isLocalPlayerOwned(clicked, localPlayerId)
+  ) {
+    return [clicked.id];
+  }
   const visible = new Set(visibleIds);
   const others = units
     .filter(
       (unit) =>
         unit.id !== clicked.id &&
         unit.factionId === "hold" &&
+        isLocalPlayerOwned(unit, localPlayerId) &&
         unit.classId === clicked.classId &&
         visible.has(unit.id),
     )
