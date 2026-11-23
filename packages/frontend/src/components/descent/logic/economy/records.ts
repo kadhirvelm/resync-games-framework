@@ -2,7 +2,11 @@
  * Constructors and lookups for the records stored on the sim world.
  */
 
-import { worldTerrainObstacles, worldVentVolumes } from "../layers/hazards";
+import {
+  worldTerrainHills,
+  worldTerrainObstacles,
+  worldVentVolumes,
+} from "../layers/hazards";
 import type { SimWorldState } from "../sim/world";
 import {
   type BuildingState,
@@ -43,6 +47,7 @@ const NORMALIZED = new WeakSet<object>();
  */
 export function createEconomyMeta(): EconomyMeta {
   return {
+    explorationClaims: [],
     items: {},
     mercenarySerial: 0,
     nodes: [],
@@ -140,6 +145,29 @@ export function normalizeEconomyMeta(
 ): EconomyMeta {
   const defaults = createEconomyMeta();
   bag.tier = isHoldTier(bag.tier) ? bag.tier : defaults.tier;
+  bag.explorationClaims = arrayOf(
+    bag.explorationClaims,
+    (entry): entry is EconomyMeta["explorationClaims"][number] => {
+      if (!isPlainObject(entry)) return false;
+      if (
+        typeof entry.campId !== "string" ||
+        typeof entry.dropOffId !== "string"
+      ) {
+        return false;
+      }
+      const hasDeliveryDetails =
+        entry.nodeId !== undefined ||
+        entry.resourceId !== undefined ||
+        entry.amount !== undefined;
+      if (!hasDeliveryDetails) return true;
+      return (
+        typeof entry.nodeId === "string" &&
+        RESOURCE_IDS.includes(entry.resourceId as ResourceId) &&
+        isFiniteNumber(entry.amount) &&
+        entry.amount > 0
+      );
+    },
+  );
   bag.nodes = arrayOf(bag.nodes, isResourceNode);
   bag.veins = arrayOf(bag.veins, isSpiritVein);
   bag.works = arrayOf(bag.works, isDeepWork);
@@ -174,6 +202,7 @@ export function economyHost(
     buildings: world.buildings,
     economy,
     getLayerId: () => world.layerId,
+    getTerrainHills: () => worldTerrainHills(world),
     getTerrainObstacles: () => worldTerrainObstacles(world),
     getVentVolumes: () => worldVentVolumes(world),
     map: world.map,
@@ -306,6 +335,7 @@ export function createUnitRecord(input: UnitInit): EconomyUnit {
     id: input.id,
     maxHp,
     modifiers: [],
+    ...(input.name === undefined ? {} : { name: input.name }),
     ...(input.ownerId === undefined ? {} : { ownerId: input.ownerId }),
     popKind,
     preferredNodeId: null,

@@ -10,6 +10,7 @@ import {
 export type CommandCursorKind =
   | "attack"
   | "build"
+  | "gather"
   | "mineral"
   | "move"
   | "wood";
@@ -19,9 +20,19 @@ export interface CommandCursorNode extends OrderNode {
   resource: string;
 }
 
+/** Building fields needed to decide whether construction or repair is offered. */
+export interface CommandCursorBuilding extends OrderBuilding {
+  built?: boolean;
+  constructing?: boolean;
+  hitPoints?: number | null;
+  hp?: number | null;
+  maxHitPoints?: number | null;
+  maxHp?: number | null;
+}
+
 /** Hovered targets and selected actors used by the right-click rules. */
 export interface CommandCursorInput {
-  buildings: readonly OrderBuilding[];
+  buildings: readonly CommandCursorBuilding[];
   ground: MapPoint | null;
   localPlayerId?: string;
   nodes: readonly CommandCursorNode[];
@@ -42,6 +53,28 @@ const MINERAL_RESOURCES = new Set([
   "ore",
   "stone",
 ]);
+
+/**
+ * Reports whether a Hold building still needs construction or repair.
+ * Minimal test fixtures that omit both completion and health metadata default
+ * to true so they continue showing the build cursor.
+ * @param building - Targeted Hold building
+ * @returns True when under construction, damaged, or metadata is absent
+ */
+function needsBuildOrRepair(
+  building: CommandCursorBuilding | undefined,
+): boolean {
+  if (building === undefined) return false;
+  if (building.constructing === true || building.built === false) return true;
+  const hp = building.hitPoints ?? building.hp ?? null;
+  const maxHp = building.maxHitPoints ?? building.maxHp ?? null;
+  if (hp !== null && maxHp !== null && hp < maxHp) return true;
+  const hasCompletionInfo =
+    building.constructing !== undefined || building.built !== undefined;
+  const hasHealthInfo = hp !== null && maxHp !== null;
+  if (!hasCompletionInfo && !hasHealthInfo) return true;
+  return false;
+}
 
 /**
  * Resolves the same legal order as a right-click and describes its cursor.
@@ -65,7 +98,13 @@ export function commandCursorKind(
     units: input.units,
   });
   if (orders.some((order) => order.type === "order_attack")) return "attack";
-  if (orders.some((order) => order.type === "assign_build")) return "build";
+  const build = orders.find((order) => order.type === "assign_build");
+  if (build !== undefined && build.type === "assign_build") {
+    const target = input.buildings.find(
+      (building) => building.id === build.buildingId,
+    );
+    return needsBuildOrRepair(target) ? "build" : "move";
+  }
   const gather = orders.find((order) => order.type === "assign_gather");
   if (gather === undefined || gather.type !== "assign_gather") return "move";
   const resource = input.nodes
@@ -75,7 +114,7 @@ export function commandCursorKind(
   if (resource !== undefined && MINERAL_RESOURCES.has(resource)) {
     return "mineral";
   }
-  return "move";
+  return "gather";
 }
 
 /**
@@ -105,6 +144,9 @@ const COMMAND_CURSORS = {
   ),
   build: svgCursor(
     '<path d="m5 5 7-2 6 6-4 4-6-6-3 2Z" fill="#d7dde0"/><path d="m13 13 12 12-4 4L9 17Z"/><path d="m7 8 5-5"/>',
+  ),
+  gather: svgCursor(
+    '<path d="M5 17C5 8 13 4 22 6c-6 2-10 6-10 12l-3 1Z" fill="#d7dde0"/><path d="m14 17 11 10-3 3-11-10Z"/>',
   ),
   mineral: svgCursor(
     '<path d="M4 9q10-11 23 1l-3 3Q15 4 7 13Z" fill="#d7dde0"/><path d="m16 8 9 19-4 2-9-19Z"/>',

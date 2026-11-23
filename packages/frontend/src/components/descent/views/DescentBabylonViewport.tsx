@@ -2,7 +2,7 @@
 /** @jsxImportSource react */
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useClientServiceCallers } from "@/services/clientServiceCallers";
 import type { DescentUnitAcknowledgementKind } from "../audio/descentCommandAck";
 import { emitDescentUnitAcknowledgement } from "../audio/descentCommandAck";
@@ -38,6 +38,7 @@ import {
   type MapPoint,
   nodeNear,
   orderMarkerFor,
+  ordersForAttackMove,
   ordersForRightClick,
   placementBuilders,
   similarVisibleUnitIds,
@@ -85,6 +86,22 @@ function nodeHintAction(
 const LOAD_DEADLINE_MS = 30_000;
 /** Minimum interval between hover raycasts on pointermove (~30Hz). */
 const HOVER_PICK_INTERVAL_MS = 32;
+/** Minimum pointer drag distance in pixels before showing a selection marquee. */
+const MARQUEE_DRAG_THRESHOLD_PX = 6;
+/** Attack-sword CSS cursor reused while Attack-Move targeting is armed. */
+const ATTACK_MOVE_CURSOR = commandCursorFor({
+  buildings: [],
+  ground: { x: 0, y: 0 },
+  nodes: [],
+  placing: false,
+  selectedIds: ["__am_soldier"],
+  targetBuildingId: null,
+  targetUnitId: "__am_target",
+  units: [
+    { classId: "warden", factionId: "hold", id: "__am_soldier", x: 0, y: 0 },
+    { classId: "raider", factionId: "horde", id: "__am_target", x: 1, y: 0 },
+  ],
+});
 
 /** Battlefield props plus opening-load reporting. */
 export interface DescentBabylonViewportProps extends MapViewportProps {
@@ -104,6 +121,7 @@ export interface DescentBabylonViewportProps extends MapViewportProps {
 
 interface DragState {
   additive: boolean;
+  picked: DescentScenePick;
   pointerId: number;
   startX: number;
   startY: number;
@@ -152,47 +170,74 @@ function wallLineGhosts(
 
 /**
  * Adds class-specific selection and command responses at the shared viewport
- * boundary, so both Babylon and the DOM fallback publish the same audio events.
+ * boundary using stable callback references so 20Hz snapshot updates do not
+ * churn wrapper closures.
  * @param props - Original renderer-neutral viewport callbacks and read model
  * @returns Props whose interaction callbacks also publish audio events
  */
-function withUnitAcknowledgement(
+function useAcknowledgedProps(
   props: DescentBabylonViewportProps,
 ): DescentBabylonViewportProps {
-  return {
-    ...props,
-    onCommand: (command) => {
-      props.onCommand(command);
-      acknowledgeCommand(props, command);
-    },
-    onPlace: (point, queue) => {
-      const builderIds = placementBuilders(
-        props.model.units,
-        props.selection,
-        props.localPlayerId,
-      );
-      props.onPlace(point, queue);
-      acknowledgeFirstUnit(props, builderIds, "command", true);
-    },
-    onPlaceLine:
-      props.onPlaceLine &&
-      ((cells, keep) => {
-        const builderIds = placementBuilders(
-          props.model.units,
-          props.selection,
-          props.localPlayerId,
-        );
-        props.onPlaceLine?.(cells, keep);
-        acknowledgeFirstUnit(props, builderIds, "command", true);
-      }),
-    onSelectUnits: (ids, mode) => {
-      props.onSelectUnits(ids, mode);
+  const latest = useRef(props);
+  latest.current = props;
+  const hasOnPlaceLine = props.onPlaceLine !== undefined;
+
+  const onCommand = useCallback((command: Command) => {
+    const current = latest.current;
+    current.onCommand(command);
+    acknowledgeCommand(current, command);
+  }, []);
+
+  const onPlace = useCallback((point: MapPoint, queue?: boolean) => {
+    const current = latest.current;
+    const valid =
+      current.placingType != null &&
+      placementGroundValid(current.model, current.placingType, point);
+    current.onPlace(point, queue);
+    if (!valid) return;
+    const builderIds = placementBuilders(
+      current.model.units,
+      current.selection,
+      current.localPlayerId,
+    );
+    acknowledgeFirstUnit(current, builderIds, "command", true);
+  }, []);
+
+  const onPlaceLineImpl = useCallback((cells: WallCell[], keep: boolean) => {
+    const current = latest.current;
+    const type = current.placingType ?? "wall";
+    const hasValid = cells.some((cell) =>
+      placementGroundValid(current.model, type, cell),
+    );
+    current.onPlaceLine?.(cells, keep);
+    if (!hasValid) return;
+    const builderIds = placementBuilders(
+      current.model.units,
+      current.selection,
+      current.localPlayerId,
+    );
+    acknowledgeFirstUnit(current, builderIds, "command", true);
+  }, []);
+
+  const onSelectUnits = useCallback(
+    (ids: readonly string[], mode: "add" | "replace" | "toggle") => {
+      const current = latest.current;
+      current.onSelectUnits(ids, mode);
       const addedIds =
         mode === "replace"
           ? ids
-          : ids.filter((id) => !props.selection.unitIds.includes(id));
-      acknowledgeFirstUnit(props, addedIds, "select");
+          : ids.filter((id) => !current.selection.unitIds.includes(id));
+      acknowledgeFirstUnit(current, addedIds, "select");
     },
+    [],
+  );
+
+  return {
+    ...props,
+    onCommand,
+    onPlace,
+    onPlaceLine: hasOnPlaceLine ? onPlaceLineImpl : undefined,
+    onSelectUnits,
   };
 }
 
@@ -238,7 +283,8 @@ function acknowledgeFirstUnit(
 
 /**
  * Applies the context cursor for the latest picked target to the canvas.
- * Rally targeting keeps the default cursor because it issues no unit order.
+ * Attack-move shows the sword cursor; rally targeting keeps the default cursor
+ * because it issues no unit order.
  * @param canvas - Babylon canvas whose inline cursor should change
  * @param props - Current selection, targets, and placement state
  * @param picked - Latest hovered scene target, or null before a valid pick
@@ -247,6 +293,7 @@ function updateCommandCursor(
   canvas: HTMLCanvasElement,
   props: Pick<
     DescentBabylonViewportProps,
+    | "attackMoving"
     | "localPlayerId"
     | "model"
     | "placing"
@@ -256,6 +303,10 @@ function updateCommandCursor(
   >,
   picked: DescentScenePick | null,
 ): void {
+  if (props.attackMoving) {
+    canvas.style.cursor = ATTACK_MOVE_CURSOR;
+    return;
+  }
   const acceptsUnitOrders =
     props.rallyBuildingId === null && !props.settingRally;
   canvas.style.cursor = commandCursorFor({
@@ -277,13 +328,16 @@ function updateCommandCursor(
  * @param props - Current read model, selection, camera, and command callbacks
  * @returns A Babylon canvas or the DOM fallback when WebGL cannot start
  */
-export function DescentBabylonViewport(props: DescentBabylonViewportProps) {
-  const acknowledgedProps = withUnitAcknowledgement(props);
+function DescentBabylonViewportInner(props: DescentBabylonViewportProps) {
+  const acknowledgedProps = useAcknowledgedProps(props);
   if (!canUseBabylonRts()) {
     return <ReadyMapViewport {...acknowledgedProps} />;
   }
   return <ActiveBabylonViewport {...acknowledgedProps} />;
 }
+
+/** Memoized viewport wrapper to reduce 20Hz shell re-render overhead. */
+export const DescentBabylonViewport = memo(DescentBabylonViewportInner);
 
 /**
  * The DOM map has nothing to stream, so it reports ready as soon as it
@@ -309,7 +363,9 @@ function ReadyMapViewport({
  * @param props - Current read model and renderer-neutral interaction callbacks
  * @returns The interactive canvas and lightweight HTML overlays
  */
-function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
+const ActiveBabylonViewport = memo(function ActiveBabylonViewportInner(
+  props: DescentBabylonViewportProps,
+) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<DescentBabylonSceneHandle | null>(null);
@@ -340,14 +396,23 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
     null,
   );
 
-  /** Abandons an in-progress wall line and hides its ghosts. */
-  const cancelWallDrag = (): void => {
+  /** Abandons an in-progress wall line, releases capture, and hides its ghosts. */
+  const cancelWallDrag = useCallback((): void => {
+    const wallDrag = wallDragRef.current;
     wallDragRef.current = null;
+    if (
+      wallDrag !== null &&
+      frameRef.current?.hasPointerCapture?.(wallDrag.pointerId)
+    ) {
+      frameRef.current.releasePointerCapture(wallDrag.pointerId);
+    }
     handleRef.current?.setPlacementLine(null);
-  };
+  }, []);
+
   const [dragBox, setDragBox] = useState<DescentScreenBox | null>(null);
   const [nodeHint, setNodeHint] = useState<NodeHint | null>(null);
   const [failed, setFailed] = useState(false);
+  const [contextLost, setContextLost] = useState(false);
   const [minimapView, setMinimapView] = useState<MinimapView>(() => {
     const openingAnchor =
       props.model.buildings.find(
@@ -389,6 +454,10 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
   useEffect(() => cancelPendingHover, [cancelPendingHover]);
 
   useEffect(() => {
+    if (!props.placing) cancelWallDrag();
+  }, [cancelWallDrag, props.placing]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null) return;
     let active = true;
@@ -420,6 +489,14 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
         {},
         () => undefined,
         setMinimapView,
+        {
+          onContextLost: () => {
+            if (active) setContextLost(true);
+          },
+          onContextRestored: () => {
+            if (active) setContextLost(false);
+          },
+        },
       );
       const initialCamp =
         current.model.buildings.find(
@@ -524,6 +601,7 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
     updateCommandCursor(
       canvas,
       {
+        attackMoving: props.attackMoving,
         localPlayerId: props.localPlayerId,
         model: props.model,
         placing: props.placing,
@@ -534,6 +612,7 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
       hoverRef.current,
     );
   }, [
+    props.attackMoving,
     props.localPlayerId,
     props.model,
     props.placing,
@@ -585,10 +664,35 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
     handleRef.current?.focusCamera(point);
   }, []);
 
-  /** Issues a right-click or Shift-click order from the minimap. */
+  /** Issues a right-click, Shift-click, rally, or attack-move order from the minimap. */
   const handleMinimapOrder = useCallback(
     (point: MapPoint, queue: boolean): void => {
       const current = latest.current;
+      if (current.attackMoving) {
+        const orders = ordersForAttackMove(
+          current.model,
+          current.selection.unitIds,
+          point,
+          queue,
+          current.localPlayerId,
+        );
+        for (const order of orders) current.onCommand(order);
+        handleRef.current?.showOrderMarker({ kind: "attack", point });
+        if (!queue) current.onCancelAttackMove?.();
+        return;
+      }
+      if (
+        current.selection.unitIds.length === 0 &&
+        current.rallyBuildingId !== null
+      ) {
+        current.onSetRally(point);
+        const node = nodeNear(current.model.nodes, point);
+        handleRef.current?.showOrderMarker({
+          kind: node === null ? "move" : "gather",
+          point: node ?? point,
+        });
+        return;
+      }
       const orders = ordersForRightClick({
         buildings: current.model.buildings,
         ground: point,
@@ -718,6 +822,18 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
           cancelWallDrag();
           return;
         }
+        if (props.placing) {
+          props.onCancelPlacement?.();
+          return;
+        }
+        if (props.attackMoving) {
+          props.onCancelAttackMove?.();
+          return;
+        }
+        if (props.settingRally) {
+          props.onCancelRally?.();
+          return;
+        }
         const picked = handleRef.current?.pick(event.clientX, event.clientY);
         if (picked === undefined) return;
         if (props.rallyBuildingId !== null) {
@@ -774,9 +890,10 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
         );
       }}
       onPointerCancel={(event) => {
+        cancelWallDrag();
         dragRef.current = null;
         setDragBox(null);
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
           event.currentTarget.releasePointerCapture(event.pointerId);
         }
         clearPointerHover();
@@ -787,6 +904,11 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
         if (picked === undefined) return;
         if (props.settingRally) {
           props.onSetRally(picked.point);
+          const node = nodeNear(props.model.nodes, picked.point);
+          handleRef.current?.showOrderMarker({
+            kind: node === null ? "move" : "gather",
+            point: node ?? picked.point,
+          });
           return;
         }
         if (props.placing && isWallType(props.placingType)) {
@@ -794,53 +916,61 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
             pointerId: event.pointerId,
             start: snapCell(picked.point),
           };
-          event.currentTarget.setPointerCapture(event.pointerId);
+          event.currentTarget.setPointerCapture?.(event.pointerId);
           return;
         }
         if (props.placing) {
+          const valid =
+            props.placingType != null &&
+            placementGroundValid(props.model, props.placingType, picked.point);
           props.onPlace(picked.point, event.shiftKey);
-          if (!event.shiftKey) handleRef.current?.setPlacementPoint(null);
+          if (valid && !event.shiftKey) {
+            handleRef.current?.setPlacementPoint(null);
+          }
           return;
         }
-        if (picked.unitId !== null) {
-          props.onSelectUnits(
-            [picked.unitId],
-            event.shiftKey ? "toggle" : "replace",
+        if (props.attackMoving) {
+          const orders = ordersForAttackMove(
+            props.model,
+            props.selection.unitIds,
+            picked.point,
+            event.shiftKey,
+            props.localPlayerId,
           );
-          return;
-        }
-        if (picked.buildingId !== null) {
-          props.onSelectBuilding(picked.buildingId);
-          return;
-        }
-        if (picked.sceneryId !== null) {
-          props.onInspect({ id: picked.sceneryId, kind: "scenery" });
-          return;
-        }
-        const feature = inspectTargetAt(props.model, picked.point);
-        if (feature !== null) {
-          props.onInspect(feature);
+          for (const order of orders) props.onCommand(order);
+          handleRef.current?.showOrderMarker({
+            kind: "attack",
+            point: picked.point,
+          });
+          if (!event.shiftKey) props.onCancelAttackMove?.();
           return;
         }
         dragRef.current = {
           additive: event.shiftKey,
+          picked,
           pointerId: event.pointerId,
           startX: event.clientX,
           startY: event.clientY,
         };
-        event.currentTarget.setPointerCapture(event.pointerId);
+        event.currentTarget.setPointerCapture?.(event.pointerId);
       }}
       onPointerLeave={clearPointerHover}
       onPointerMove={(event) => {
         pointerRef.current = { clientX: event.clientX, clientY: event.clientY };
         const drag = dragRef.current;
         if (drag !== null) {
-          setDragBox({
-            bottom: event.clientY,
-            left: drag.startX,
-            right: event.clientX,
-            top: drag.startY,
-          });
+          const distance = Math.hypot(
+            event.clientX - drag.startX,
+            event.clientY - drag.startY,
+          );
+          if (distance >= MARQUEE_DRAG_THRESHOLD_PX) {
+            setDragBox({
+              bottom: event.clientY,
+              left: drag.startX,
+              right: event.clientX,
+              top: drag.startY,
+            });
+          }
           return;
         }
         scheduleHoverPick();
@@ -848,9 +978,12 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
       onPointerUp={(event) => {
         const wallDrag = wallDragRef.current;
         if (wallDrag !== null) {
+          if (event.button !== 0 || event.pointerId !== wallDrag.pointerId) {
+            return;
+          }
           const picked = handleRef.current?.pick(event.clientX, event.clientY);
           cancelWallDrag();
-          if (event.currentTarget.hasPointerCapture(wallDrag.pointerId)) {
+          if (event.currentTarget.hasPointerCapture?.(wallDrag.pointerId)) {
             event.currentTarget.releasePointerCapture(wallDrag.pointerId);
           }
           const end =
@@ -864,17 +997,38 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
           return;
         }
         const drag = dragRef.current;
+        if (drag === null) return;
+        if (event.button !== 0 || event.pointerId !== drag.pointerId) return;
         dragRef.current = null;
         setDragBox(null);
-        if (drag === null) return;
-        if (event.currentTarget.hasPointerCapture(drag.pointerId)) {
+        if (event.currentTarget.hasPointerCapture?.(drag.pointerId)) {
           event.currentTarget.releasePointerCapture(drag.pointerId);
         }
         const distance = Math.hypot(
           event.clientX - drag.startX,
           event.clientY - drag.startY,
         );
-        if (distance < 6) {
+        if (distance < MARQUEE_DRAG_THRESHOLD_PX) {
+          if (drag.picked.unitId !== null) {
+            props.onSelectUnits(
+              [drag.picked.unitId],
+              drag.additive ? "toggle" : "replace",
+            );
+            return;
+          }
+          if (drag.picked.buildingId !== null) {
+            props.onSelectBuilding(drag.picked.buildingId);
+            return;
+          }
+          if (drag.picked.sceneryId !== null) {
+            props.onInspect({ id: drag.picked.sceneryId, kind: "scenery" });
+            return;
+          }
+          const feature = inspectTargetAt(props.model, drag.picked.point);
+          if (feature !== null) {
+            props.onInspect(feature);
+            return;
+          }
           if (!drag.additive) props.onSelectUnits([], "replace");
           return;
         }
@@ -906,7 +1060,9 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
       />
       {dockMinimap(
         <DescentMinimap
+          attackMoving={props.attackMoving}
           model={props.model}
+          onCancelAttackMove={props.onCancelAttackMove}
           onNavigate={handleMinimapNavigate}
           onOrder={handleMinimapOrder}
           onPointerEnter={clearPointerHover}
@@ -943,6 +1099,41 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
       {props.model.paused ? (
         <p className={styles.pauseOverlay}>Paused</p>
       ) : null}
+      {contextLost ? (
+        <div
+          aria-live="assertive"
+          className={styles.pauseOverlay}
+          data-testid="webgl-context-lost-overlay"
+          role="alert"
+          style={{
+            alignItems: "center",
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+            pointerEvents: "auto",
+            textAlign: "center",
+            zIndex: 10,
+          }}
+        >
+          <span style={{ fontSize: 16, letterSpacing: "0.04em" }}>
+            Graphics context lost — restoring…
+          </span>
+          <button
+            onClick={() => setFailed(true)}
+            style={{
+              background: "rgba(38, 28, 19, 0.95)",
+              border: "1px solid var(--bronze, #b98a4a)",
+              color: "#f4e7cc",
+              cursor: "pointer",
+              fontSize: 13,
+              padding: "6px 14px",
+            }}
+            type="button"
+          >
+            Switch to 2D map
+          </button>
+        </div>
+      ) : null}
     </div>
   );
-}
+});

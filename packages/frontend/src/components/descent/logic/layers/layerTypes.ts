@@ -66,6 +66,24 @@ export interface TerrainBridge {
   readonly y: number;
 }
 
+/**
+ * A walkable Age of Empires-style hill with a flat hilltop plateau and a
+ * smooth sloped ramp down to flat ground. Overlapping hills combine smoothly
+ * to form terraced ridges and multi-tier high ground.
+ */
+export interface TerrainHill {
+  /** Peak elevation above flat ground, in world units. */
+  readonly height: number;
+  readonly id: string;
+  readonly label?: string;
+  /** Radius of the flat hilltop plateau, in tiles (must be < radius). */
+  readonly plateauRadius: number;
+  /** Outer radius where the hill slope meets flat ground, in tiles. */
+  readonly radius: number;
+  readonly x: number;
+  readonly y: number;
+}
+
 export interface EmberVentsHazard {
   readonly kind: "ember_vents";
   /** Burn damage per sim-second while standing inside a vent. */

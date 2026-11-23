@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Compass, PanelLeft } from "lucide-react";
+import { ArrowLeft, Compass, PanelLeft, Plus } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { ProductNowConnection } from "@/components/productNow/ProductNowConnection";
@@ -36,6 +36,9 @@ export function Assets() {
   const [initialPrompt] = useState(
     () => readPromptFromSearch(window.location.search) ?? "",
   );
+  const [isCreateOpen, setIsCreateOpen] = useState(
+    () => initialPrompt.trim() !== "",
+  );
   const [isNavDialogOpen, setIsNavDialogOpen] = useState(false);
   const {
     associateDungeonSlot,
@@ -68,6 +71,7 @@ export function Assets() {
    */
   const handleSelectClass = (assetClassId: string) => {
     setActiveClassId(assetClassId);
+    setIsCreateOpen(false);
     setIsNavDialogOpen(false);
     window.history.replaceState(
       null,
@@ -138,14 +142,14 @@ export function Assets() {
               </div>
             </div>
             {activeClass.customGeneration ? null : (
-              <PromptComposer
-                copy={activeClass.form}
-                id={`prompt-${activeClass.id}`}
-                initialPrompt={initialPrompt}
-                key={activeClass.id}
-                onSubmit={(prompt) => startJob(activeClass, prompt)}
-                runningCount={runningCount}
-              />
+              <button
+                className={styles.generateButton}
+                onClick={() => setIsCreateOpen(true)}
+                type="button"
+              >
+                <Plus aria-hidden="true" size={15} />
+                {activeClass.generateButtonLabel.replace(/^\+\s*/, "")}
+              </button>
             )}
           </section>
 
@@ -163,6 +167,27 @@ export function Assets() {
           />
         </main>
       </div>
+
+      <Dialog
+        content={
+          <PromptComposer
+            copy={activeClass.form}
+            id={`prompt-${activeClass.id}`}
+            initialPrompt={initialPrompt}
+            key={activeClass.id}
+            onSubmit={(prompt) => {
+              startJob(activeClass, prompt);
+              setIsCreateOpen(false);
+            }}
+            runningCount={runningCount}
+          />
+        }
+        description={activeClass.dialogDescription}
+        isOpen={isCreateOpen && !activeClass.customGeneration}
+        onToggleOpen={setIsCreateOpen}
+        title={activeClass.dialogTitle}
+        width="min(94vw, 600px)"
+      />
 
       <Dialog
         content={

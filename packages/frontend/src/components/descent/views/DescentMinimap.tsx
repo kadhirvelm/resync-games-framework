@@ -31,8 +31,11 @@ const EMPTY_PINGS: readonly MinimapPing[] = [];
 const MINIMAP_CANVAS_WIDTH = 256;
 /** Minimum interval between dynamic entity redraws on the minimap canvas. */
 const MINIMAP_REDRAW_INTERVAL_MS = 64;
+/** Minimum interval between ping clock React state updates (~16fps). */
+const MINIMAP_PING_TICK_MS = 60;
 
 interface StaticLayerSnapshot {
+  campSignature: string;
   height: number;
   nodeIds: readonly string[];
   terrainIds: readonly string[];
@@ -144,6 +147,29 @@ function paintStaticMinimapLayer(
   const scaleX = canvasWidth / mapWidth;
   const scaleY = canvasHeight / mapHeight;
 
+  for (let i = 0; i < model.hills.length; i += 1) {
+    const hill = model.hills[i];
+    if (hill === undefined) continue;
+    const cx = hill.x * scaleX;
+    const cy = hill.y * scaleY;
+    const rx = Math.max(2, hill.radius * scaleX);
+    const ry = Math.max(2, hill.radius * scaleY);
+    ctx.fillStyle = "rgba(148, 126, 98, 0.22)";
+    ctx.strokeStyle = "rgba(186, 158, 120, 0.45)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    const prx = Math.max(1.2, hill.plateauRadius * scaleX);
+    const pry = Math.max(1.2, hill.plateauRadius * scaleY);
+    ctx.fillStyle = "rgba(196, 168, 126, 0.24)";
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, prx, pry, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   for (let i = 0; i < model.terrain.length; i += 1) {
     const feature = model.terrain[i];
     if (feature === undefined || feature.kind === "bridge") continue;
@@ -186,6 +212,22 @@ function paintStaticMinimapLayer(
     if (node === undefined) continue;
     ctx.beginPath();
     ctx.arc(node.x * scaleX, node.y * scaleY, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  for (const camp of model.exploration?.camps ?? []) {
+    if (camp.cleared) continue;
+    const x = camp.x * scaleX;
+    const y = camp.y * scaleY;
+    ctx.fillStyle = camp.cleared ? "#7fa36f" : "#d5a74e";
+    ctx.strokeStyle = camp.cleared ? "#c4dfad" : "#fff0b3";
+    ctx.beginPath();
+    ctx.moveTo(x, y - 4);
+    ctx.lineTo(x + 4, y);
+    ctx.lineTo(x, y + 4);
+    ctx.lineTo(x - 4, y);
+    ctx.closePath();
     ctx.fill();
     ctx.stroke();
   }
@@ -271,7 +313,11 @@ export interface MinimapView {
 
 /** Props for the renderer-neutral strategic minimap. */
 export interface DescentMinimapProps {
+  /** Whether Attack-Move targeting is armed (left-click orders, right-click cancels). */
+  attackMoving?: boolean;
   model: ShellModel;
+  /** Cancels active Attack-Move targeting on minimap right-click. */
+  onCancelAttackMove?: () => void;
   onNavigate: (point: MapPoint) => void;
   /**
    * Orders the selection to a point: right-click moves, Shift+click (either
@@ -366,7 +412,9 @@ export function minimapPressAction(
  * @returns A clickable overview that recenters the camera or orders units
  */
 function DescentMinimapInner({
+  attackMoving = false,
   model,
+  onCancelAttackMove,
   onNavigate,
   onOrder,
   onPointerEnter,
@@ -380,6 +428,8 @@ function DescentMinimapInner({
   const staticSnapshotRef = useRef<StaticLayerSnapshot | null>(null);
   const lastDrawTimeRef = useRef(0);
   const pendingDrawRef = useRef<number | null>(null);
+  const draggingRef = useRef(false);
+  const dragPointerIdRef = useRef<number | null>(null);
   const latestModelRef = useRef(model);
   latestModelRef.current = model;
 
@@ -411,6 +461,7 @@ function DescentMinimapInner({
       <FogCanvas
         className={styles.minimapFog}
         fog={{ cells: fogCells, height: fogHeight, width: fogWidth }}
+        style={{ pointerEvents: "none", zIndex: 2 }}
       />
     );
   }, [fogCells, fogHeight, fogWidth]);
@@ -426,6 +477,10 @@ function DescentMinimapInner({
         prev === null ||
         prev.width !== canvasWidth ||
         prev.height !== height ||
+        prev.campSignature !==
+          (current.exploration?.camps
+            .map((camp) => `${camp.id}:${camp.cleared}`)
+            .join("|") ?? "") ||
         !sameFeatureIds(current.terrain, prev.terrainIds) ||
         !sameFeatureIds(current.vents, prev.ventIds) ||
         !sameFeatureIds(current.veins, prev.veinIds) ||
@@ -447,6 +502,10 @@ function DescentMinimapInner({
           );
         }
         staticSnapshotRef.current = {
+          campSignature:
+            current.exploration?.camps
+              .map((camp) => `${camp.id}:${camp.cleared}`)
+              .join("|") ?? "",
           height,
           nodeIds: current.nodes.map((item) => item.id),
           terrainIds: current.terrain.map((item) => item.id),
@@ -498,6 +557,26 @@ function DescentMinimapInner({
 
   /** Recenters the camera or orders the selection at the pointer. */
   const press = (event: ReactPointerEvent<HTMLButtonElement>): void => {
+    if (attackMoving) {
+      if (event.button === 2) {
+        event.preventDefault();
+        event.stopPropagation();
+        onCancelAttackMove?.();
+        return;
+      }
+      if (event.button === 0 && onOrder !== undefined) {
+        event.preventDefault();
+        event.stopPropagation();
+        const point = minimapPointerToMap(
+          event.clientX,
+          event.clientY,
+          event.currentTarget.getBoundingClientRect(),
+          model.map,
+        );
+        onOrder(point, event.shiftKey);
+        return;
+      }
+    }
     const action = minimapPressAction(
       event.button,
       event.shiftKey,
@@ -513,10 +592,38 @@ function DescentMinimapInner({
       model.map,
     );
     if (action === "navigate") {
+      draggingRef.current = true;
+      dragPointerIdRef.current = event.pointerId;
+      event.currentTarget.setPointerCapture?.(event.pointerId);
       onNavigate(point);
       return;
     }
     onOrder?.(point, action === "queue");
+  };
+
+  /** Continues panning the camera while dragging with the left button held. */
+  const move = (event: ReactPointerEvent<HTMLButtonElement>): void => {
+    event.stopPropagation();
+    if (!draggingRef.current) return;
+    const point = minimapPointerToMap(
+      event.clientX,
+      event.clientY,
+      event.currentTarget.getBoundingClientRect(),
+      model.map,
+    );
+    onNavigate(point);
+  };
+
+  /** Ends minimap camera dragging and releases pointer capture. */
+  const endDrag = (event: ReactPointerEvent<HTMLButtonElement>): void => {
+    event.stopPropagation();
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    const pointerId = dragPointerIdRef.current ?? event.pointerId;
+    dragPointerIdRef.current = null;
+    if (event.currentTarget.hasPointerCapture?.(pointerId)) {
+      event.currentTarget.releasePointerCapture(pointerId);
+    }
   };
 
   return (
@@ -534,17 +641,17 @@ function DescentMinimapInner({
         event.stopPropagation();
       }}
       onDoubleClick={(event) => event.stopPropagation()}
+      onPointerCancel={endDrag}
       onPointerDown={press}
       onPointerEnter={onPointerEnter}
-      onPointerMove={(event) => event.stopPropagation()}
-      onPointerUp={(event) => event.stopPropagation()}
+      onPointerMove={move}
+      onPointerUp={endDrag}
       style={{
         aspectRatio: `${model.map.width} / ${model.map.height}`,
         ["--minimap-ratio" as string]: model.map.width / model.map.height,
       }}
       type="button"
     >
-      {fogLayer}
       <canvas
         height={canvasHeight}
         ref={entityCanvasRef}
@@ -558,6 +665,7 @@ function DescentMinimapInner({
         }}
         width={canvasWidth}
       />
+      {fogLayer}
       <span className={styles.minimapTitle}>Map</span>
       <span
         className={styles.minimapCamera}
@@ -567,6 +675,7 @@ function DescentMinimapInner({
           top: `${mapPercent(view.centerY, model.map.height)}%`,
           transform: `translate(-50%, -50%) rotate(${view.rotation}rad)`,
           width: `${mapPercent(view.width, model.map.width)}%`,
+          zIndex: 3,
         }}
       />
       <svg
@@ -634,8 +743,9 @@ function usePrefersReducedMotion(): boolean {
 }
 
 /**
- * Advances a wall clock only while pings are alive. Reduced-motion mode uses
- * expiry timers rather than animation frames.
+ * Advances a wall clock only while pings are alive, throttled to ~16fps in
+ * animated mode so ping rings do not trigger 60Hz React re-renders.
+ * Reduced-motion mode uses expiry timers rather than animation frames.
  * @param pings - Current attack markers
  * @param reducedMotion - Whether expansion and fading are disabled
  * @returns Current `Date.now()` timestamp, or zero before mounting
@@ -649,12 +759,23 @@ function useMinimapPingClock(
     if (pings.length === 0) return;
     let animationFrame: number | undefined;
     let expiryTimer: number | undefined;
-    /** Publishes time and schedules the next frame or reduced-motion expiry. */
+    let lastCommit = 0;
+    /** Publishes time at a throttled cadence and schedules the next update. */
     const update = () => {
       const current = Date.now();
-      setNow(current);
       const active = pruneMinimapPings(pings, current);
-      if (active.length === 0) return;
+      if (active.length === 0) {
+        setNow(current);
+        return;
+      }
+      if (
+        reducedMotion ||
+        lastCommit === 0 ||
+        current - lastCommit >= MINIMAP_PING_TICK_MS
+      ) {
+        lastCommit = current;
+        setNow(current);
+      }
       if (!reducedMotion) {
         animationFrame = window.requestAnimationFrame(update);
         return;

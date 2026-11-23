@@ -7,7 +7,9 @@ import type {
 import { useState } from "react";
 import { Dialog, Flex } from "@/lib/radix";
 import styles from "./Assets.module.scss";
+import { TOWERS_OF_COREBORN_TAG } from "./assetGameTags";
 import { CopyableError } from "./CopyableError";
+import { GameTagList } from "./GameTagList";
 import { type PendingJob, PendingJobCard } from "./PendingJobCard";
 import { SpriteAnimationPlayer } from "./SpriteAnimationPlayer";
 
@@ -140,6 +142,7 @@ function SpriteSheetCard({ onSelect, sheet }: SpriteSheetCardProps) {
         <span className={styles.spriteSheetTitle}>{sheet.title}</span>
         <span className={styles.spriteSheetMeta}>faces {sheet.facing}</span>
       </span>
+      <GameTagList tags={[TOWERS_OF_COREBORN_TAG]} />
       <span className={styles.spriteSheetMeta}>
         {sheet.animations.map((animation) => animation.label).join(" · ")}
       </span>

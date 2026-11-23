@@ -353,4 +353,33 @@ describe("Descent multiplayer scoring", () => {
       initial[1]?.score.total ?? 0,
     );
   });
+
+  it("prunes dead combat.owners entries once no active burn or projectile references them", () => {
+    const sim = createMultiplayerDescentSim({ players: PLAYERS, seed: 781 });
+    sim.step(1);
+    const saved = JSON.parse(sim.serialize()) as { state: SimWorldState };
+    const slice = saved.state.meta[
+      ASHEN_GATE_SLICE_MODULE_ID
+    ] as AshenGateSliceState;
+    const livingUnit = saved.state.units.find(
+      (unit) => unit.ownerId === "p1" && unit.classId === "cultivator",
+    );
+    if (!livingUnit) throw new Error("Missing p1 cultivator");
+    slice.combat.owners = {
+      ...slice.combat.owners,
+      "dead-unit-orphan": "p1",
+      "tower:dead-tower-orphan": "p2",
+    };
+    sim.load(JSON.stringify(saved));
+    sim.step(1);
+
+    const afterSlice = sim.snapshot().meta[
+      ASHEN_GATE_SLICE_MODULE_ID
+    ] as AshenGateSliceState;
+    expect(afterSlice.combat.owners?.[livingUnit.id]).toBe("p1");
+    expect(afterSlice.combat.owners?.["dead-unit-orphan"]).toBeUndefined();
+    expect(
+      afterSlice.combat.owners?.["tower:dead-tower-orphan"],
+    ).toBeUndefined();
+  });
 });

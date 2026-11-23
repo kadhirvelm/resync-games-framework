@@ -88,6 +88,57 @@ describe("DescentGameExperience", () => {
     expect(exits).toBe(1);
   });
 
+  test("starts the self-paced exploration mode from the title screen", async () => {
+    mounted = await mountExperience();
+    expect(mounted.container.textContent).toContain("Exploration mode");
+    expect(mounted.container.textContent).toContain("No timed waves");
+
+    await act(async () => {
+      buttonNamed(mounted?.container ?? document, "Exploration mode").click();
+    });
+
+    expect(
+      mounted.container.querySelector('[data-testid="exploration-panel"]'),
+    ).toBeTruthy();
+    expect(mounted.container.textContent).toContain("Ashen Scavengers");
+    expect(mounted.container.textContent).toContain("fixed camp strength");
+  });
+
+  test("restarts an exploration outcome in exploration mode", async () => {
+    const saved = createAshenGateSim({
+      mode: "exploration",
+      seed: 17,
+      waterways: false,
+    });
+    const envelope = JSON.parse(saved.serialize()) as {
+      state: {
+        paused: boolean;
+        meta: { ashenGateSlice: { outcome: string } };
+      };
+    };
+    envelope.state.paused = true;
+    envelope.state.meta.ashenGateSlice.outcome = "victory";
+    window.localStorage.setItem(
+      saveSlotKey(AUTOSAVE_SLOT),
+      JSON.stringify(envelope),
+    );
+    mounted = await mountExperience();
+
+    await act(async () => {
+      buttonNamed(mounted?.container ?? document, "Continue").click();
+    });
+    await act(async () => {
+      buttonNamed(mounted?.container ?? document, "Restart").click();
+    });
+
+    expect(
+      mounted.container.querySelector('[data-testid="exploration-panel"]'),
+    ).toBeTruthy();
+    expect(
+      mounted.container.querySelector('[data-testid="threat-chip"]'),
+    ).toBeNull();
+  });
+
   test("offers continue when the Ashen Gate autosave is valid", async () => {
     const saved = createAshenGateSim({ seed: 17 });
     window.localStorage.setItem(saveSlotKey(AUTOSAVE_SLOT), saved.serialize());
@@ -120,5 +171,38 @@ describe("DescentGameExperience", () => {
     expect(
       mounted.container.querySelector('[data-testid="descent-title-artwork"]'),
     ).toBeTruthy();
+  });
+
+  test("opens the New Game setup screen to pick map type, difficulty, and starting resources", async () => {
+    mounted = await mountExperience();
+
+    await act(async () => {
+      buttonNamed(mounted?.container ?? document, "Start").click();
+    });
+
+    expect(
+      mounted.container.querySelector('[data-testid="descent-setup-screen"]'),
+    ).toBeTruthy();
+    expect(mounted.container.textContent).toContain("Highland Ridges");
+    expect(mounted.container.textContent).toContain("Crown Plateau");
+    expect(mounted.container.textContent).toContain("Basalt Flats");
+
+    await act(async () => {
+      buttonNamed(mounted?.container ?? document, "Crown Plateau").click();
+      buttonNamed(mounted?.container ?? document, "Hard").click();
+      buttonNamed(mounted?.container ?? document, "Deathmatch").click();
+    });
+
+    expect(mounted.container.textContent).toContain(
+      "Crown Plateau·Hard Siege·Deathmatch Resources",
+    );
+
+    await act(async () => {
+      buttonNamed(mounted?.container ?? document, "Start match").click();
+    });
+
+    expect(
+      mounted.container.querySelector('[data-testid="descent-setup-screen"]'),
+    ).toBeNull();
   });
 });

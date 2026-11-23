@@ -69,7 +69,7 @@
       "cost": { "stone": 50, "wood": 40 },
       "footprint": 3,
       "id": "spirit_array",
-      "job": "Gathers Essence passively and doubles nearby Cultivator Qi regen",
+      "job": "Produces shared Essence; nearby Qi cultivators gain 2× Qi regen, faster cooldowns, stronger arts, and 2.5× Meditation gains",
       "maxHp": 170,
       "name": "Spirit Gathering Array",
       "production": {
@@ -86,7 +86,7 @@
       "cost": { "iron": 20, "stone": 70, "wood": 60 },
       "footprint": 3,
       "id": "meditation_pavilion",
-      "job": "Seclusion chamber: grants nearby Cultivators steady Essence, Merit, and injury recovery",
+      "job": "Nearby Qi cultivators gain passive Personal Essence and Merit, faster injury recovery, and 2.5× Meditation gains",
       "maxHp": 200,
       "name": "Seclusion Pavilion",
       "tier": "Stronghold",

@@ -28,10 +28,12 @@ const COMMAND_SCHEMAS: Readonly<Record<string, CommandSchema>> = {
   },
   brew_pill: { required: { furnaceId: IDS(), pillId: IDS() } },
   call_next_wave: {},
+  cancel_construction: { required: { buildingId: IDS() } },
   cancel_training: { required: { buildingId: IDS(), jobId: IDS() } },
   cast_qi_art: { required: { unitIds: IDS("stringArray") } },
   choose_school: { required: { school: IDS(), unitId: IDS() } },
   descend: {},
+  disband_units: { required: { unitIds: IDS("stringArray") } },
   equip_treasure: { required: { treasureId: IDS(), unitId: IDS() } },
   feed_pill: { required: { pillId: IDS(), unitId: IDS() } },
   issue_rations: {

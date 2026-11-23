@@ -41,17 +41,24 @@ export function routePlan(units: readonly RoutedUnit[]): RoutePlan {
   const legs = Math.max(...moving.map((unit) => unit.route?.length ?? 0));
   const flags: RouteFlag[] = [];
   const path: MapPoint[] = [centroid(moving)];
+  let split = false;
   for (let leg = 0; leg < legs; leg += 1) {
     const points = moving.flatMap((unit) => {
       const point = unit.route?.[leg];
       return point === undefined ? [] : [point];
     });
-    for (const cluster of clusterPoints(points)) {
+    const clusters = clusterPoints(points);
+    for (const cluster of clusters) {
       flags.push({ ...cluster, order: leg + 1 });
     }
-    path.push(centroid(points));
+    if (clusters.length !== 1) {
+      split = true;
+    }
+    if (!split && clusters[0] !== undefined) {
+      path.push({ x: clusters[0].x, y: clusters[0].y });
+    }
   }
-  return { flags, path };
+  return { flags, path: path.length >= 2 ? path : [] };
 }
 
 /**

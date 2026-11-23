@@ -66,7 +66,8 @@ export function insideMap(
 }
 
 /**
- * Walks one cell toward `goal` on passable ground.
+ * Walks one cell toward `goal` on passable ground. Fractional combat positions
+ * are rounded to whole BFS cells so parent chains always remain valid.
  * Already being within reach, or having no path, returns null.
  * @param from - Cell the unit occupies
  * @param goal - Cell the unit is trying to reach
@@ -90,22 +91,25 @@ export function nextStep(
 
   const size = width * height;
   const stamp = acquireSearchStamp(size);
-  const goalX = goal.x;
-  const goalY = goal.y;
+  // Combat positions are fractional, but BFS parents are Int32Array cells.
+  // Normalize both endpoints before constructing integer parent chains.
+  const fromCell = { x: Math.round(from.x), y: Math.round(from.y) };
+  const goalX = Math.round(goal.x);
+  const goalY = Math.round(goal.y);
 
   let head = 0;
   let tail = 0;
   let startIndex = ROOT_PARENT;
 
-  if (insideMap(from, width, height)) {
-    startIndex = from.y * width + from.x;
+  if (insideMap(fromCell, width, height)) {
+    startIndex = fromCell.y * width + fromCell.x;
     visitedStamp[startIndex] = stamp;
     parentIndex[startIndex] = ROOT_PARENT;
     queue[0] = startIndex;
     tail = 1;
   } else {
     const seeded = seedOutOfBoundsStart(
-      from,
+      fromCell,
       goalX,
       goalY,
       passable,

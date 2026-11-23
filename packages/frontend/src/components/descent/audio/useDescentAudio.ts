@@ -15,10 +15,12 @@ import {
 } from "./descentAudioCatalog";
 import {
   installDescentAudioCatalog,
+  isDescentAudioRunning,
   playDescentAudio,
   setDescentAudioEnabled,
   setDescentAudioScene,
   stopDescentAudio,
+  subscribeDescentAudioStateChange,
   unlockDescentAudio,
 } from "./descentAudioEngine";
 import { subscribeDescentUnitAcknowledgement } from "./descentCommandAck";
@@ -165,12 +167,38 @@ export function useDescentAudio(input: UseDescentAudioInput): void {
   }, [input.active, input.sim]);
 
   useEffect(() => {
-    const unlock = () => unlockDescentAudio();
-    window.addEventListener("pointerdown", unlock, { once: true });
-    window.addEventListener("keydown", unlock, { once: true });
-    return () => {
+    let attached = false;
+    const unlock = () => {
+      unlockDescentAudio();
+      if (isDescentAudioRunning()) {
+        detach();
+      }
+    };
+    const attach = () => {
+      if (attached) return;
+      attached = true;
+      window.addEventListener("pointerdown", unlock);
+      window.addEventListener("keydown", unlock);
+    };
+    const detach = () => {
+      if (!attached) return;
+      attached = false;
       window.removeEventListener("pointerdown", unlock);
       window.removeEventListener("keydown", unlock);
+    };
+    const unsubscribeState = subscribeDescentAudioStateChange((state) => {
+      if (state === "running") {
+        detach();
+      } else {
+        attach();
+      }
+    });
+    if (!isDescentAudioRunning()) {
+      attach();
+    }
+    return () => {
+      unsubscribeState();
+      detach();
     };
   }, []);
 

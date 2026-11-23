@@ -92,4 +92,67 @@ describe("real-time driver", () => {
     expect(sim.tick).toBe(6);
     expect(callbacks.length).toBe(pending);
   });
+
+  test("resets frame clock on visibilitychange to avoid tab-return tick burst", () => {
+    const listeners = new Map<string, Set<() => void>>();
+    const mockDoc = {
+      addEventListener: (event: string, fn: () => void) => {
+        let set = listeners.get(event);
+        if (!set) {
+          set = new Set();
+          listeners.set(event, set);
+        }
+        set.add(fn);
+      },
+      hidden: false,
+      removeEventListener: (event: string, fn: () => void) => {
+        listeners.get(event)?.delete(fn);
+      },
+    };
+    const originalDocument = globalThis.document;
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: mockDoc,
+      writable: true,
+    });
+    try {
+      const callbacks: ((timeMs: number) => void)[] = [];
+      const scheduler: FrameScheduler = {
+        cancel: () => {},
+        request: (callback) => callbacks.push(callback),
+      };
+      const sim = createDescentSim({ seed: 1 });
+      sim.setSpeed(2);
+      const stop = startSimDriver(sim, { scheduler, stepMs: 50 });
+      const runFrame = (timeMs: number) =>
+        (callbacks.at(-1) as (t: number) => void)(timeMs);
+
+      runFrame(0);
+      runFrame(50);
+      expect(sim.tick).toBe(2);
+
+      // Simulate tab hidden for 60 seconds, then visible again.
+      mockDoc.hidden = true;
+      for (const fn of listeners.get("visibilitychange") ?? []) fn();
+      mockDoc.hidden = false;
+      for (const fn of listeners.get("visibilitychange") ?? []) fn();
+
+      // Next rAF arrives 60_000ms later; should re-anchor without bursting.
+      runFrame(60_050);
+      expect(sim.tick).toBe(2);
+
+      // Following normal frame advances normally.
+      runFrame(60_100);
+      expect(sim.tick).toBe(4);
+
+      stop();
+      expect(listeners.get("visibilitychange")?.size ?? 0).toBe(0);
+    } finally {
+      Object.defineProperty(globalThis, "document", {
+        configurable: true,
+        value: originalDocument,
+        writable: true,
+      });
+    }
+  });
 });

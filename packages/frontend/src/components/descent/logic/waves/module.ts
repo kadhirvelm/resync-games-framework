@@ -23,6 +23,8 @@ export const WAVES_MODULE_ID = "waves";
 
 /** Optional difficulty tuning and flow hooks for a waves module instance. */
 export interface WaveModuleOptions {
+  /** Set false for stationary exploration camps with no timed wave schedule. */
+  scheduledWaves?: boolean;
   /** Optional predicate that pauses the next wave while it returns true. */
   shouldHoldWave?: (world: SimWorldState, nextWaveIndex: number) => boolean;
   /** Multiplier for spawned horde HP and damage (default `1`). */
@@ -172,6 +174,7 @@ function freshState(
   const state = createWaveState(layerId, 0, world.map);
   state.collectedEssence = world.resources.essence;
   state.omenTower = hasOmenTower(world);
+  if (options?.scheduledWaves === false) state.scheduledWaves = false;
   if (options?.waveStatScale !== undefined) {
     state.waveStatScale = options.waveStatScale;
   }
@@ -203,6 +206,7 @@ function retarget(
     world.resources.essence,
   );
   next.omenTower = hasOmenTower(world);
+  if (previous.scheduledWaves === false) next.scheduledWaves = false;
   if (previous.waveStatScale !== undefined) {
     next.waveStatScale = previous.waveStatScale;
   }

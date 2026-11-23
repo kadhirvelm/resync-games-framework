@@ -8,6 +8,7 @@ import type {
   CircleVolume,
   TerrainBridge,
   TerrainFeature,
+  TerrainHill,
 } from "../../../logic/layers";
 import { ASHEN_GATE_STOCKPILE } from "../ashen_gate/map";
 
@@ -34,6 +35,8 @@ export interface AshenCrucibleMap {
   buildings: readonly BuildingInit[];
   chokePoints: readonly AshenCrucibleChokePoint[];
   height: number;
+  /** Walkable Age of Empires-style hills. */
+  hills: readonly TerrainHill[];
   nodes: readonly ResourceNode[];
   obstacles: readonly TerrainFeature[];
   stockpile: NonNullable<EconomyInit["stockpile"]>;

@@ -26,7 +26,11 @@ export type AshenGateAssetRole =
   | "stronghold"
   | "citadel"
   | "housing"
+  | "storehouse"
   | "wardTower"
+  | "omenTower"
+  | "wall"
+  | "holdGate"
   | "barracks"
   | "cultivatorSanctum"
   | "cultivationHall"
@@ -46,10 +50,15 @@ export type AshenGateAssetRole =
   | "qiLotus"
   | "plankBridge"
   | "riverRocks"
+  | "explorerCache"
   | "resourceGrove"
+  | "resourceSpiritHerbs"
   | "resourceOutcrop"
+  | "resourceIron"
+  | "resourceCoin"
   | "resourceTree"
   | "resourceWell"
+  | "resourceEssence"
   | "hordeGate"
   | "abyssSpire"
   | "rimRuin"
@@ -128,7 +137,11 @@ export const ASHEN_GATE_3D_ASSETS = [
   { kind: "prop", name: "Descent Stronghold", role: "stronghold" },
   { kind: "prop", name: "Descent Citadel", role: "citadel" },
   { kind: "prop", name: "Descent Housing", role: "housing" },
+  { kind: "prop", name: "Descent Storehouse", role: "storehouse" },
   { kind: "prop", name: "Descent Ward Tower", role: "wardTower" },
+  { kind: "prop", name: "Descent Omen Tower", role: "omenTower" },
+  { kind: "prop", name: "Descent Palisade Wall", role: "wall" },
+  { kind: "prop", name: "Descent Hold Gate", role: "holdGate" },
   { kind: "prop", name: "Descent Barracks", role: "barracks" },
   {
     kind: "prop",
@@ -172,6 +185,7 @@ export const ASHEN_GATE_3D_ASSETS = [
   { kind: "prop", name: "Descent Ember Vent", role: "emberVent" },
   { kind: "prop", name: "Descent Plank Bridge", role: "plankBridge" },
   { kind: "prop", name: "Descent River Rocks", role: "riverRocks" },
+  { kind: "prop", name: "Descent Explorer Cache", role: "explorerCache" },
   {
     kind: "prop",
     name: "Descent Harvest Grove",
@@ -179,9 +193,20 @@ export const ASHEN_GATE_3D_ASSETS = [
   },
   {
     kind: "prop",
+    name: "Descent Spirit Herb Patch",
+    role: "resourceSpiritHerbs",
+  },
+  {
+    kind: "prop",
     name: "Descent Ore Outcrop",
     role: "resourceOutcrop",
   },
+  {
+    kind: "prop",
+    name: "Descent Iron Outcrop",
+    role: "resourceIron",
+  },
+  { kind: "prop", name: "Descent Coin Hoard", role: "resourceCoin" },
   {
     kind: "prop",
     name: "Descent Harvest Tree",
@@ -191,6 +216,11 @@ export const ASHEN_GATE_3D_ASSETS = [
     kind: "prop",
     name: "Descent Spirit Well",
     role: "resourceWell",
+  },
+  {
+    kind: "prop",
+    name: "Descent Essence Spring",
+    role: "resourceEssence",
   },
   { kind: "prop", name: "Descent Horde Gate", role: "hordeGate" },
   { kind: "prop", name: "Descent Abyss Spire", role: "abyssSpire" },
@@ -229,7 +259,8 @@ export function resolveAshenGateAssets(
       (asset) =>
         asset.kind === definition.kind &&
         (asset.name === definition.name ||
-          asset.name.startsWith(`${definition.name}:`)) &&
+          asset.name.startsWith(`${definition.name}:`) ||
+          asset.name.startsWith(`${definition.name} `)) &&
         asset.validation.valid,
     );
     if (match !== undefined) resolved[definition.role] = match;
@@ -297,7 +328,11 @@ export function assetRoleForBuilding(
   if (buildingType === "camp" && tier === "Stronghold") return "stronghold";
   if (buildingType === "camp" && tier === "Outpost") return "outpost";
   if (buildingType === "housing") return "housing";
+  if (buildingType === "storehouse") return "storehouse";
   if (buildingType === "ward_tower") return "wardTower";
+  if (buildingType === "omen_tower") return "omenTower";
+  if (buildingType === "wall") return "wall";
+  if (buildingType === "gate") return "holdGate";
   if (buildingType === "barracks") return "barracks";
   if (buildingType === "cultivator_sanctum") return "cultivatorSanctum";
   if (buildingType === "cultivation_hall") return "cultivationHall";
@@ -310,9 +345,7 @@ export function assetRoleForBuilding(
   if (buildingType === "stone_quarry") return "stoneQuarry";
   if (buildingType === "hell_market") return "market";
   if (buildingType === "spirit_herb_garden") return "spiritHerbGarden";
-  if (buildingType.includes("fire_ward") || buildingType.includes("wall")) {
-    return "fireWard";
-  }
+  if (buildingType.includes("fire_ward")) return "fireWard";
   return "camp";
 }
 
@@ -321,15 +354,49 @@ export function assetRoleForBuilding(
  * @param resourceId - Stable economy resource id
  * @returns Asset role used to render its gatherable node
  */
-export function assetRoleForResource(resourceId: string): AshenGateAssetRole {
+export function assetRoleForResource(
+  resourceId: string,
+  nodeId?: string,
+): AshenGateAssetRole {
   if (resourceId === "wood") return "resourceTree";
-  if (resourceId === "food" || resourceId === "spirit_herbs") {
-    return "resourceGrove";
-  }
-  if (resourceId === "water" || resourceId === "essence") {
-    return "resourceWell";
-  }
+  if (resourceId === "food") return "resourceGrove";
+  if (resourceId === "spirit_herbs") return "resourceSpiritHerbs";
+  if (resourceId === "water") return "resourceWell";
+  if (resourceId === "essence") return "resourceEssence";
+  if (resourceId === "iron") return "resourceIron";
+  if (resourceId === "coin") return "resourceCoin";
+  if (hasSceneryVariant(nodeId, "stone")) return "basaltBoulders";
   return "resourceOutcrop";
+}
+
+/**
+ * Selects either the ordinary vent prop or a volcanic spire for one hazard.
+ * The stable feature id keeps the choice unchanged across frames and loads.
+ * @param ventId - Stable published ember-vent id
+ * @returns Generated prop role for this hazard
+ */
+export function assetRoleForVent(ventId: string): AshenGateAssetRole {
+  return hasSceneryVariant(ventId, "vent") ? "abyssSpire" : "emberVent";
+}
+
+/**
+ * Uses roughly half of eligible features for a former rim-only model.
+ * Hashing the stable id avoids load-order, filtering, and simulation RNG drift.
+ * @param featureId - Stable map feature id, or undefined for the default model
+ * @param salt - Independent variant family
+ * @returns Whether to use the scenery variant
+ */
+function hasSceneryVariant(
+  featureId: string | undefined,
+  salt: string,
+): boolean {
+  if (featureId === undefined) return false;
+  const key = `${salt}:${featureId}`;
+  let hash = 2166136261;
+  for (let index = 0; index < key.length; index += 1) {
+    hash = Math.imul(hash ^ key.charCodeAt(index), 16777619) >>> 0;
+  }
+  return hash % 2 === 0;
 }
 
 /**
@@ -337,7 +404,7 @@ export function assetRoleForResource(resourceId: string): AshenGateAssetRole {
  * @returns Whether the role is instantiated as a gatherable map decoration
  */
 export function isResourceAssetRole(role: AshenGateAssetRole): boolean {
-  return role.startsWith("resource");
+  return role.startsWith("resource") || role === "basaltBoulders";
 }
 
 /**

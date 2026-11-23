@@ -3,6 +3,7 @@
 import type { DungeonBlueprint, DungeonSlot } from "@resync-game-framework/api";
 import { Flex } from "@/lib/radix";
 import styles from "./Assets.module.scss";
+import { TOWERS_OF_COREBORN_TAG } from "./assetGameTags";
 import { CopyableError } from "./CopyableError";
 import { DungeonSlotCard } from "./DungeonSlotCard";
 import {
@@ -11,6 +12,7 @@ import {
   slotsStartedWith,
   spriteForOwner,
 } from "./dungeonSlotGroups";
+import { GameTagList } from "./GameTagList";
 import { type PendingJob, PendingJobCard } from "./PendingJobCard";
 
 interface DungeonListResult {
@@ -163,6 +165,7 @@ function DungeonPackage({
     <section className={styles.dungeonSetup}>
       <div className={styles.dungeonPackageHeader}>
         <p className={styles.dungeonSummary}>{dungeon.summary}</p>
+        <GameTagList tags={[TOWERS_OF_COREBORN_TAG]} />
         <span className={styles.promptSlotHint}>
           {readyCount} of {dungeon.slots.length} ready
         </span>

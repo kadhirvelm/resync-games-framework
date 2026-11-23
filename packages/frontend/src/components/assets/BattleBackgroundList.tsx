@@ -4,7 +4,9 @@ import type { ListBattleBackgroundsResponse } from "@resync-game-framework/api";
 import { useState } from "react";
 import { Dialog, Flex } from "@/lib/radix";
 import styles from "./Assets.module.scss";
+import { TOWERS_OF_COREBORN_TAG } from "./assetGameTags";
 import { CopyableError } from "./CopyableError";
+import { GameTagList } from "./GameTagList";
 import { type PendingJob, PendingJobCard } from "./PendingJobCard";
 
 type BattleBackground = ListBattleBackgroundsResponse["backgrounds"][number];
@@ -83,6 +85,7 @@ export function BattleBackgroundList({
                 src={background.imageUrl}
               />
               <span className={styles.backgroundTitle}>{background.title}</span>
+              <GameTagList tags={[TOWERS_OF_COREBORN_TAG]} />
               <span className={styles.backgroundDescription}>
                 {background.description}
               </span>

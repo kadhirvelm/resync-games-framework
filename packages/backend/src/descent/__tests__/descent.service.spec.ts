@@ -13,6 +13,26 @@ import type { RedisService } from "src/infra/redis/redis.service";
 import { MockRedisService } from "../../infra/redis/__tests__/mockRedis.module";
 import { DescentService } from "../descent.service";
 
+/**
+ * Polls until a condition holds, so timing tests pass as soon as the service's
+ * real broadcast interval catches up instead of betting on a fixed sleep.
+ * @param condition - Check to repeat; may be async
+ * @param timeoutMs - How long to wait before failing
+ * @returns Resolves once the condition is true; rejects on timeout
+ */
+async function waitUntil(
+  condition: () => boolean | Promise<boolean>,
+  timeoutMs = 5_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await condition())) {
+    if (Date.now() > deadline) {
+      throw new Error(`Condition not met within ${timeoutMs}ms`);
+    }
+    await Bun.sleep(10);
+  }
+}
+
 function createFakeStore(initialRoom: GameRoomState) {
   let room = structuredClone(initialRoom);
   const socketToPlayer = new Map<string, string>(
@@ -191,7 +211,7 @@ describe("DescentService", () => {
     );
     expect(ack.ok).toBe(true);
 
-    await new Promise((resolve) => setTimeout(resolve, 140));
+    await waitUntil(() => ticks.length > 0);
     expect(ticks.length > 0).toBe(true);
 
     const sync = await service.sync(
@@ -256,7 +276,15 @@ describe("DescentService", () => {
     );
     expect(invalid.ok).toBe(false);
 
-    await new Promise((resolve) => setTimeout(resolve, 140));
+    await waitUntil(
+      async () =>
+        (
+          await service.sync(
+            { fromTick: 0, matchId, roomId: "ABC234" },
+            "sock-1",
+          )
+        ).commands.length === commands.length,
+    );
     const sync = await service.sync(
       { fromTick: 0, matchId, roomId: "ABC234" },
       "sock-1",
@@ -385,7 +413,11 @@ describe("DescentService", () => {
       },
       "sock-2",
     );
-    await new Promise((resolve) => setTimeout(resolve, 140));
+    await waitUntil(
+      async () =>
+        (await first.sync({ fromTick: 0, matchId, roomId: "ABC234" }, "sock-1"))
+          .targetTick > 0,
+    );
     const before = await first.sync(
       { fromTick: 0, matchId, roomId: "ABC234" },
       "sock-1",
@@ -408,7 +440,9 @@ describe("DescentService", () => {
 
     const ticks: DescentTickPayload[] = [];
     second.setBroadcaster((payload) => ticks.push(payload));
-    await new Promise((resolve) => setTimeout(resolve, 140));
+    await waitUntil(
+      () => (ticks[ticks.length - 1]?.targetTick ?? 0) > before.targetTick,
+    );
     const lastTick = ticks[ticks.length - 1]?.targetTick;
     expect(lastTick !== undefined && lastTick > before.targetTick).toBe(true);
   });
@@ -433,7 +467,7 @@ describe("DescentService", () => {
       ? (started.room?.gameState as DescentRoomState | undefined)?.matchId
       : null;
     if (!matchId) return;
-    await new Promise((resolve) => setTimeout(resolve, 120));
+    await waitUntil(() => targets.length > 0);
 
     const acknowledged = await second.enqueueCommand(
       {
@@ -444,7 +478,8 @@ describe("DescentService", () => {
       "sock-2",
     );
     expect(acknowledged.ok).toBe(true);
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    const targetsBeforeCommand = targets.length;
+    await waitUntil(() => targets.length > targetsBeforeCommand + 1);
 
     const synced = await second.sync(
       { fromTick: 0, matchId, roomId: "ABC234" },
@@ -474,7 +509,11 @@ describe("DescentService", () => {
       ? (started.room?.gameState as DescentRoomState | undefined)?.matchId
       : null;
     if (!matchId) return;
-    await new Promise((resolve) => setTimeout(resolve, 120));
+    await waitUntil(
+      async () =>
+        (await first.sync({ fromTick: 0, matchId, roomId: "ABC234" }, "sock-1"))
+          .targetTick > 0,
+    );
     const before = await first.sync(
       { fromTick: 0, matchId, roomId: "ABC234" },
       "sock-1",
@@ -496,7 +535,9 @@ describe("DescentService", () => {
     const ticks: DescentTickPayload[] = [];
     second.setBroadcaster((payload) => ticks.push(payload));
     await second.sync({ fromTick: 0, matchId, roomId: "ABC234" }, "sock-2");
-    await new Promise((resolve) => setTimeout(resolve, 160));
+    await waitUntil(
+      () => (ticks[ticks.length - 1]?.targetTick ?? 0) > before.targetTick,
+    );
 
     const lastTick = ticks[ticks.length - 1]?.targetTick;
     expect(lastTick !== undefined && lastTick > before.targetTick).toBe(true);

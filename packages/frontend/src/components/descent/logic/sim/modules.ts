@@ -91,6 +91,12 @@ export interface SimModule {
    * @param world - The fresh world, before tick 0
    */
   init?(world: SimWorldState): void;
+  /**
+   * Rebuilds transient derived state (such as presentation) after `sim.load`.
+   * Must not alter deterministic simulation state.
+   * @param world - Restored world state
+   */
+  onLoad?(world: SimWorldState): void;
   processors?: readonly TickProcessor[];
 }
 

@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import {
+  isCultivatorAssetRole,
   SILHOUETTE_OUTLINE_COLOR,
   selectionRingDiameter,
+  unitFallbackScale,
+  unitHealthBarHeight,
   unitMarkerDiameter,
   unitOutlineWidth,
   unitOwnerRingColor,
+  unitTargetHeight,
 } from "../unitContrast";
 
 describe("descent unit contrast", () => {
@@ -34,6 +38,36 @@ describe("descent unit contrast", () => {
     expect(selectionRingDiameter("cinderjaw")).toBeGreaterThan(
       unitMarkerDiameter("cinderjaw"),
     );
+  });
+
+  test("makes cultivators visibly larger than ordinary soldiers while keeping bosses largest", () => {
+    for (const role of [
+      "cultivator",
+      "swordSage",
+      "formationMaster",
+      "emberCultivator",
+      "rimeCultivator",
+      "bloodCultivator",
+    ]) {
+      expect(isCultivatorAssetRole(role)).toBe(true);
+      expect(unitTargetHeight(role)).toBeGreaterThan(
+        unitTargetHeight("warden"),
+      );
+      expect(unitFallbackScale(role)).toBeGreaterThan(
+        unitFallbackScale("adept"),
+      );
+      expect(unitHealthBarHeight(role)).toBeGreaterThan(
+        unitHealthBarHeight("warden"),
+      );
+      expect(unitMarkerDiameter(role)).toBeGreaterThan(
+        unitMarkerDiameter("warden"),
+      );
+      expect(unitMarkerDiameter("cinderjaw")).toBeGreaterThan(
+        unitMarkerDiameter(role),
+      );
+    }
+    expect(isCultivatorAssetRole("warden")).toBe(false);
+    expect(isCultivatorAssetRole("adept")).toBe(false);
   });
 
   test("uses the assigned player color with faction fallbacks", () => {

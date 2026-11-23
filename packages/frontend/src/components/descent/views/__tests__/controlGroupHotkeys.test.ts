@@ -48,6 +48,19 @@ describe("control group hotkeys", () => {
     expect(hotkeyFromInput({ ...KEY, key: "!", shiftKey: true })).toBeNull();
   });
 
+  test("maps Alt+1 through Alt+9 as a browser-safe save alternative", () => {
+    for (let slot = 1; slot <= 9; slot += 1) {
+      expect(
+        hotkeyFromInput({
+          ...KEY,
+          altKey: true,
+          code: `Digit${slot}`,
+          key: String(slot),
+        }),
+      ).toEqual({ mode: "save", slot, type: "controlGroup" });
+    }
+  });
+
   test("ignores repeats and conflicting system modifiers", () => {
     expect(hotkeyFromInput({ ...KEY, key: "1", repeat: true })).toBeNull();
     expect(
@@ -58,8 +71,36 @@ describe("control group hotkeys", () => {
         shiftKey: true,
       }),
     ).toBeNull();
-    expect(hotkeyFromInput({ ...KEY, altKey: true, key: "1" })).toBeNull();
+    expect(
+      hotkeyFromInput({
+        ...KEY,
+        altKey: true,
+        key: "1",
+        shiftKey: true,
+      }),
+    ).toBeNull();
+    expect(
+      hotkeyFromInput({
+        ...KEY,
+        altKey: true,
+        ctrlKey: true,
+        key: "1",
+      }),
+    ).toBeNull();
     expect(hotkeyFromInput({ ...KEY, key: "1", metaKey: true })).toBeNull();
+  });
+
+  test("maps X to attack_move and Z to stop", () => {
+    expect(hotkeyFromInput({ ...KEY, key: "x" })).toEqual({
+      type: "attack_move",
+    });
+    expect(hotkeyFromInput({ ...KEY, key: "X" })).toEqual({
+      type: "attack_move",
+    });
+    expect(hotkeyFromInput({ ...KEY, key: "z" })).toEqual({ type: "stop" });
+    expect(hotkeyFromInput({ ...KEY, key: "Z" })).toEqual({ type: "stop" });
+    expect(hotkeyFromInput({ ...KEY, key: "x", repeat: true })).toBeNull();
+    expect(hotkeyFromInput({ ...KEY, key: "z", repeat: true })).toBeNull();
   });
 
   test("leaves existing camera and build-menu key mappings unchanged", () => {

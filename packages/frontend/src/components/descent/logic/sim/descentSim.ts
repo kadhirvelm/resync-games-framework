@@ -181,6 +181,9 @@ export function createDescentSim(options: DescentSimOptions): DescentSim {
       world = parseSerializedWorld(serialized);
       rng = createSimRng(world);
       pendingEvents.length = 0;
+      for (const simModule of pipeline.modules) {
+        simModule.onLoad?.(world);
+      }
       changed();
     },
     onEvent(listener) {

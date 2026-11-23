@@ -329,25 +329,22 @@ export function createAshenGatePreview(): SimSnapshot {
   };
 }
 
-/** The existing cyan used when placement validity has not been computed. */
-export const PLACEMENT_NEUTRAL_TINT = "#7fd1df";
 /** Placement ghost tint for a legal building site. */
-export const PLACEMENT_VALID_TINT = "#68d391";
-/** Placement ghost tint for a blocked building site. */
+export const PLACEMENT_VALID_TINT = "#7fd1df";
+/** Placement ghost tint for a blocked or unverified building site. */
 export const PLACEMENT_INVALID_TINT = "#ef6a5b";
 
 /**
  * Chooses the placement ghost color without requiring a Babylon dependency.
- * Undefined and null both retain the neutral preview until validation arrives.
+ * Shows blue only when the site is confirmed valid; invalid or unverified
+ * sites show red.
  * @param valid - Whether the pointed-at site accepts the building, if known
- * @returns Green for valid, red for invalid, or the existing neutral cyan
+ * @returns Blue for valid, red for invalid or unverified
  */
 export function placementPreviewTint(
   valid: boolean | null | undefined,
 ): string {
-  if (valid === true) return PLACEMENT_VALID_TINT;
-  if (valid === false) return PLACEMENT_INVALID_TINT;
-  return PLACEMENT_NEUTRAL_TINT;
+  return valid === true ? PLACEMENT_VALID_TINT : PLACEMENT_INVALID_TINT;
 }
 
 /** Vertical scale at the first visible construction stage. */

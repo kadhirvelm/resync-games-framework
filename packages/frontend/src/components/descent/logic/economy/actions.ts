@@ -33,7 +33,7 @@ import {
   nextHoldTier,
   tierAllows,
 } from "./records";
-import { trySpend } from "./stockpile";
+import { addDeposit, trySpend } from "./stockpile";
 import {
   buildingDef,
   coinSinkDef,
@@ -89,6 +89,39 @@ export function placeBuilding(
   );
   clearFootprint(host, site);
   return null;
+}
+
+/**
+ * Removes an unfinished building, refunds its full placement cost, and frees
+ * villagers assigned to its site. Completed buildings cannot be cancelled.
+ * @param host - World whose construction site is removed
+ * @param buildingId - Site to cancel
+ * @returns Whether an unfinished building was removed
+ */
+export function cancelConstruction(
+  host: EconomyHost,
+  buildingId: string,
+): boolean {
+  const index = host.buildings.findIndex(
+    (building) => building.id === buildingId,
+  );
+  if (index < 0) return false;
+  const record = host.buildings[index];
+  if (record === undefined) return false;
+  const building = asBuilding(record);
+  if (!building.constructing || building.completed) return false;
+  const cost = buildingDef(building.buildingType)?.cost;
+  if (cost === undefined) return false;
+  host.buildings.splice(index, 1);
+  addDeposit(host.resources, cost);
+  for (const unit of host.units) {
+    if (!isEconomyUnit(unit)) continue;
+    if (unit.task?.kind !== "build") continue;
+    if (unit.task.buildingId !== buildingId) continue;
+    unit.task = null;
+  }
+  recomputeBonuses(host);
+  return true;
 }
 
 /**
@@ -329,6 +362,16 @@ export function beginLayer(
   veins?: readonly SpiritVein[],
 ): void {
   host.setLayerId(layerId);
+  // Cache loads are backed by a node in the old layer. Unlike ordinary
+  // stockpile carries, they cannot be delivered against the new ground.
+  for (const unit of host.units) {
+    if (!isEconomyUnit(unit) || unit.carry?.explorationCacheId === undefined) {
+      continue;
+    }
+    unit.carry = null;
+    unit.preferredNodeId = null;
+    unit.task = null;
+  }
   host.economy.nodes = nodes.map((node) => ({ ...node }));
   if (veins) host.economy.veins = veins.map((vein) => ({ ...vein }));
   resetWorks(host);

@@ -94,6 +94,8 @@ export type Command = (
       count?: number;
     }
   | { type: "cancel_training"; buildingId: string; jobId: string }
+  | { type: "cancel_construction"; buildingId: string }
+  | { type: "disband_units"; unitIds: string[] }
   | {
       type: "set_rally_point";
       buildingId: string;
@@ -164,6 +166,8 @@ export interface StampedCommand {
 export interface UnitState {
   classId: ClassId;
   id: string;
+  /** Unique personal name assigned to named units such as cultivators. */
+  name?: string;
   /** Owning player id in multiplayer matches; omitted in solo play. */
   ownerId?: string;
   x: number;

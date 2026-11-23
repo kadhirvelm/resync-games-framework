@@ -2,9 +2,17 @@
 
 import type { ListAudioResponse } from "@resync-game-framework/api";
 import { AudioLines } from "lucide-react";
+import { useMemo, useState } from "react";
 import { Flex } from "@/lib/radix";
 import styles from "../Assets.module.scss";
+import {
+  type AssetGameId,
+  type AssetGameTag,
+  audioGameTags,
+} from "../assetGameTags";
 import { CopyableError } from "../CopyableError";
+import { GameFilterBar } from "../GameFilterBar";
+import { GameTagList } from "../GameTagList";
 import { type PendingJob, PendingJobCard } from "../PendingJobCard";
 import type { AssetClassDefinition } from "./assetClassDefinition";
 import { createAssetClassGallery } from "./createAssetClassGallery";
@@ -31,14 +39,54 @@ function AudioList({
   result: ListAudioResponse | null;
 }) {
   const clips = result?.clips ?? [];
+  const [gameFilter, setGameFilter] = useState<AssetGameId | "all">("all");
+
+  const taggedClips = useMemo(
+    () =>
+      clips.map((clip) => ({
+        clip,
+        tags: audioGameTags(clip),
+      })),
+    [clips],
+  );
+
+  const availableTags = useMemo(() => {
+    const seen = new Map<AssetGameId, AssetGameTag>();
+    for (const entry of taggedClips) {
+      for (const tag of entry.tags) {
+        seen.set(tag.id, tag);
+      }
+    }
+    return [...seen.values()];
+  }, [taggedClips]);
+
+  const filteredClips = useMemo(
+    () =>
+      gameFilter === "all"
+        ? taggedClips
+        : taggedClips.filter((entry) =>
+            entry.tags.some((tag) => tag.id === gameFilter),
+          ),
+    [gameFilter, taggedClips],
+  );
+
   return (
     <Flex direction="column" gap="3" width="100%">
       <Flex className={styles.sectionHeader}>
         <span className={styles.sectionTitle}>Library</span>
         {clips.length > 0 && (
-          <span className={styles.assetCount}>{clips.length}</span>
+          <span className={styles.assetCount}>
+            {gameFilter === "all"
+              ? clips.length
+              : `${filteredClips.length}/${clips.length}`}
+          </span>
         )}
       </Flex>
+      <GameFilterBar
+        activeGameId={gameFilter}
+        availableTags={availableTags}
+        onChange={setGameFilter}
+      />
       {isLoading && (
         <Flex align="center" gap="2">
           <div className={styles.loadingSpinner} />
@@ -58,7 +106,7 @@ function AudioList({
             </span>
           </Flex>
         )}
-      {(pendingJobs.length > 0 || clips.length > 0) && (
+      {(pendingJobs.length > 0 || filteredClips.length > 0) && (
         <div className={styles.backgroundGrid}>
           {pendingJobs.map((job) => (
             <PendingJobCard
@@ -68,8 +116,8 @@ function AudioList({
               onStop={() => onStopJob(job.id)}
             />
           ))}
-          {clips.map((clip) => (
-            <AudioCard clip={clip} key={clip.id} />
+          {filteredClips.map(({ clip, tags }) => (
+            <AudioCard clip={clip} key={clip.id} tags={tags} />
           ))}
         </div>
       )}
@@ -80,14 +128,22 @@ function AudioList({
 /**
  * One stored clip and the words that produced it.
  * @param props.clip - Stored audio asset
+ * @param props.tags - Games using this clip
  */
-function AudioCard({ clip }: { clip: AudioClip }) {
+function AudioCard({
+  clip,
+  tags,
+}: {
+  clip: AudioClip;
+  tags: readonly AssetGameTag[];
+}) {
   return (
     <article className={styles.backgroundCard}>
       <span className={styles.backgroundTitle}>{clip.title}</span>
       <span className={styles.backgroundDescription}>
         {clip.role} · {clip.cue}
       </span>
+      <GameTagList fallbackLabel="General" tags={tags} />
       {/* biome-ignore lint/a11y/useMediaCaption: generated game audio has no speech track */}
       <audio
         className={styles.promptSlotAudio}

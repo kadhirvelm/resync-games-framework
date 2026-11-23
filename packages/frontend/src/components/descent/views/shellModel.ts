@@ -41,6 +41,8 @@ export interface ShellUnit {
   breakthroughReady: boolean;
   /** Remaining seconds on an active breakthrough channel; otherwise null. */
   breakthroughRemainingSeconds: number | null;
+  /** True for the starting Captain with the Hall-free first promotion. */
+  captain: boolean;
   calamity: boolean;
   /** What a villager is carrying home, or null when empty-handed. */
   carrying: { amount: number; resource: ResourceId } | null;
@@ -54,6 +56,8 @@ export interface ShellUnit {
   idle: boolean;
   /** Whether a cultivator stands inside a Spirit Gathering Array aura. */
   inSpiritArray: boolean;
+  /** Seconds left on a failed-breakthrough injury, or zero. */
+  injurySeconds: number;
   maxHitPoints: number | null;
   /** Maximum Qi pool for cultivators, or null for non-cultivators. */
   maxQi: number | null;
@@ -72,6 +76,8 @@ export interface ShellUnit {
   qiArt: QiArtReadout | null;
   /** Where a Hold unit is headed: current destination, then queued legs. */
   route?: readonly RouteReadout[];
+  /** Nearby source of the 2.5× Meditation bonus, if any. */
+  sacredGround: "array" | "pavilion" | "vein" | null;
   /** Whether a Spirit Surge combat buff is active. */
   surgeActive: boolean;
   treasureSlots: number;
@@ -98,6 +104,8 @@ export interface ShellBuilding {
   activity: string | null;
   /** Progress of `activity`, 0 to 1. */
   activityProgress: number | null;
+  /** Cultivation Hall's Spirit Vein breakthrough chance bonus, or zero. */
+  breakthroughSuccessBonus: number;
   buildingType: string;
   constructing: boolean;
   factionId: "hold" | "horde";
@@ -246,6 +254,7 @@ function decorateUnit(
         ? Math.max(0, Math.ceil(readout.breakthroughRemainingSeconds))
         : null,
     calamity: readout?.calamity === true,
+    captain: readout?.captain === true,
     carrying: carriedLoad(readout),
     classId: unit.classId,
     cultivation: readout?.cultivation ?? null,
@@ -255,6 +264,7 @@ function decorateUnit(
       typeof readout?.hitPoints === "number" ? readout.hitPoints : null,
     id: unit.id,
     idle: readout?.idle === true,
+    injurySeconds: Math.max(0, Math.ceil(readout?.injurySeconds ?? 0)),
     inSpiritArray: readout?.inSpiritArray === true,
     maxHitPoints:
       typeof readout?.maxHitPoints === "number" ? readout.maxHitPoints : null,
@@ -264,6 +274,7 @@ function decorateUnit(
     qi: typeof readout?.qi === "number" ? readout.qi : null,
     qiArt: readout?.qiArt ?? null,
     route: readRoute(readout?.route),
+    sacredGround: readout?.sacredGround ?? null,
     surgeActive: readout?.surgeActive === true,
     treasureSlots: readout?.treasureSlots ?? 0,
     treasures: readout?.treasures ?? EMPTY_TREASURES,
@@ -314,6 +325,10 @@ function decorateBuilding(
     activity: typeof readout?.activity === "string" ? readout.activity : null,
     activityProgress:
       typeof readout?.progress === "number" ? readout.progress : null,
+    breakthroughSuccessBonus:
+      typeof readout?.breakthroughSuccessBonus === "number"
+        ? readout.breakthroughSuccessBonus
+        : 0,
     buildingType: building.buildingType,
     constructing: readout?.constructing === true,
     factionId: readout?.factionId === "horde" ? "horde" : "hold",

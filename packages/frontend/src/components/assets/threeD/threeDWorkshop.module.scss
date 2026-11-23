@@ -1,13 +1,17 @@
-@use "@/styles/variables.scss" as vars;
+/* 3D Workshop: clean white panels matching the home-route library. */
 
-// ── Blueprint palette (matches Assets.module.scss) ──────────────────────────
-$blueprint-muted: rgb(120 170 230 / 60%);
-$blueprint-border: rgb(80 160 255 / 22%);
-$blueprint-panel: rgb(0 18 50 / 72%);
-$blueprint-accent: rgb(80 160 255 / 85%);
+$bg: #fff;
+$surface: #fff;
+$surface-soft: #f5f5f4;
+$text: #18181b;
+$text-soft: #71717a;
+$line: #e7e5e4;
+$line-strong: #d6d3d1;
+$focus: #18181b;
+$ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 
 .studio {
-  color: vars.$white;
+  color: $text;
   font-family: inherit;
   font-size: 14px;
   width: 100%;
@@ -19,7 +23,7 @@ $blueprint-accent: rgb(80 160 255 / 85%);
   h1 {
     font-size: 18px;
     font-weight: 700;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.02em;
     line-height: 1.2;
     margin: 4px 0;
     max-width: 640px;
@@ -27,41 +31,49 @@ $blueprint-accent: rgb(80 160 255 / 85%);
 
   h2 {
     font-size: 16px;
-    font-weight: 600;
-    margin: 0 0 18px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0 0 14px;
   }
 
   h3 {
-    font-size: 13px;
-    margin: 12px 0;
+    font-size: 14px;
+    font-weight: 600;
+    margin: 10px 0 6px;
   }
 
   p {
-    color: rgb(180 210 255 / 78%);
+    color: $text-soft;
     font-size: 13px;
-    line-height: 1.6;
+    line-height: 1.55;
   }
 
   a {
-    color: #ffe7a8;
-    font-size: 13px;
-    font-weight: 700;
+    color: $text;
+    font-size: 12.5px;
+    font-weight: 600;
     text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
   }
 
   button {
-    background: transparent;
-    border: 1px solid $blueprint-border;
-    border-radius: 8px;
-    color: vars.$white;
+    background: $surface;
+    border: 1px solid $line-strong;
+    border-radius: 999px;
+    color: $text;
     cursor: pointer;
     font: inherit;
     font-size: 12px;
     font-weight: 600;
-    padding: 9px 13px;
+    padding: 7px 13px;
+    transition: background 140ms ease, border-color 140ms ease;
 
     &:hover:not(:disabled) {
-      border-color: rgb(126 176 240 / 70%);
+      background: $surface-soft;
+      border-color: $text-soft;
     }
   }
 
@@ -71,13 +83,14 @@ $blueprint-accent: rgb(80 160 255 / 85%);
   }
 
   button.primary {
-    background: linear-gradient(180deg, #ffe7a8, #f0b429 60%, #d99a12);
-    border-color: #d99a12;
-    color: #241806;
-    font-weight: 700;
+    background: $text;
+    border-color: $text;
+    color: $bg;
+    font-weight: 600;
 
     &:hover:not(:disabled) {
-      filter: brightness(1.05);
+      background: $text;
+      opacity: 0.88;
     }
   }
 
@@ -86,32 +99,41 @@ $blueprint-accent: rgb(80 160 255 / 85%);
   select:focus-visible,
   textarea:focus-visible,
   a:focus-visible {
-    outline: 2px solid $blueprint-accent;
-    outline-offset: 3px;
+    outline: 2px solid $focus;
+    outline-offset: 2px;
   }
 
   label {
+    color: $text;
     display: flex;
     flex-direction: column;
     font-size: 12px;
-    gap: 9px;
-    margin: 18px 0;
+    font-weight: 600;
+    gap: 6px;
+    margin: 14px 0;
   }
 
   input,
   textarea,
   select {
-    background: rgb(0 10 32 / 70%);
-    border: 1px solid $blueprint-border;
-    border-radius: 6px;
-    color: vars.$white;
+    background: $surface-soft;
+    border: 1px solid $line;
+    border-radius: 10px;
+    color: $text;
     font: inherit;
     font-size: 13px;
+    font-weight: 400;
     max-width: 100%;
-    padding: 11px;
+    padding: 10px 12px;
+
+    &:focus {
+      background: $surface;
+      border-color: $text;
+    }
 
     &::placeholder {
-      color: rgb(186 210 240 / 62%);
+      color: $text-soft;
+      opacity: 0.75;
     }
   }
 
@@ -122,8 +144,8 @@ $blueprint-accent: rgb(80 160 255 / 85%);
 
   hr {
     border: 0;
-    border-top: 1px solid $blueprint-border;
-    margin: 24px 0;
+    border-top: 1px solid $line;
+    margin: 20px 0;
   }
 }
 
@@ -131,17 +153,24 @@ $blueprint-accent: rgb(80 160 255 / 85%);
   align-items: start;
   display: grid;
   gap: 24px;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
   margin: auto;
   max-width: 1600px;
 }
 
+.stackLayout {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+}
+
 .panel {
-  background: $blueprint-panel;
-  border: 1px solid $blueprint-border;
-  border-radius: 12px;
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: 16px;
   min-width: 0;
-  padding: 24px;
+  padding: 22px 24px;
 }
 
 .workspace {
@@ -157,7 +186,14 @@ $blueprint-accent: rgb(80 160 255 / 85%);
   flex-wrap: wrap;
   gap: 12px;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
+}
+
+.headingGroup {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .heading h2 {
@@ -165,122 +201,144 @@ $blueprint-accent: rgb(80 160 255 / 85%);
 }
 
 .heading span {
-  color: $blueprint-muted;
-  font-size: 11px;
-  text-transform: uppercase;
+  color: $text-soft;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .heading a {
-  background: transparent;
-  border: 1px solid rgb(240 180 41 / 55%);
-  border-radius: 8px;
-  color: #ffe7a8;
-  padding: 7px 10px;
+  background: $surface;
+  border: 1px solid $line-strong;
+  border-radius: 999px;
+  color: $text;
+  padding: 6px 12px;
   text-decoration: none;
+
+  &:hover {
+    background: $surface-soft;
+    text-decoration: none;
+  }
 }
 
 .actions {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin: 14px 0 0;
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.heading .actions {
+  margin: 0;
 }
 
 .chips {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
 .chips button {
-  background: transparent;
-  color: $blueprint-accent;
-  padding: 7px 12px;
+  background: $surface-soft;
+  border-color: $line;
+  color: $text-soft;
+  padding: 5px 11px;
+
+  &:hover:not(:disabled) {
+    color: $text;
+  }
 }
 
 .hint {
-  color: $blueprint-muted !important;
-  font-size: 11px !important;
+  color: $text-soft !important;
+  font-size: 12px !important;
+  margin: 8px 0;
 }
 
 .checkbox {
   align-items: center;
   flex-direction: row !important;
+  font-weight: 500 !important;
+  gap: 8px !important;
+
+  input {
+    width: auto;
+  }
 }
 
 .upload {
-  border: 1px dashed $blueprint-border;
-  border-radius: 8px;
+  border: 1px dashed $line-strong;
+  border-radius: 10px;
   padding: 12px;
 }
 
 .upload input {
+  background: transparent;
   border: 0;
-  font-size: 11px;
+  font-size: 12px;
   padding: 0;
 }
 
 .error {
-  background: rgb(255 80 80 / 18%);
-  border: 1px solid rgb(255 80 80 / 35%);
-  border-radius: 6px;
-  color: rgb(255 190 190) !important;
-  padding: 12px;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: 10px;
+  color: #b91c1c !important;
+  padding: 10px 12px;
 }
 
 .slots {
   display: grid;
   gap: 14px;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  margin-top: 24px;
+  margin-top: 20px;
 }
 
 .slot {
-  background: rgb(0 10 32 / 60%);
-  border: 1px solid $blueprint-border;
-  border-radius: 9px;
-  padding: 16px;
+  background: $surface-soft;
+  border: 1px solid $line;
+  border-radius: 12px;
+  padding: 14px;
 }
 
 .slot > p {
   -webkit-box-orient: vertical;
   display: -webkit-box;
   -webkit-line-clamp: 3;
-  min-height: 60px;
+  min-height: 54px;
   overflow: hidden;
 }
 
 .slot select {
+  background: $surface;
   width: 100%;
 }
 
 .emptyPreview {
   align-items: center;
-  background: radial-gradient(
-    ellipse at center,
-    rgb(80 160 255 / 16%),
-    rgb(0 10 32 / 60%)
-  );
-  border-radius: 8px;
-  color: $blueprint-muted;
+  background: $surface-soft;
+  border: 1px dashed $line-strong;
+  border-radius: 10px;
+  color: $text-soft;
   display: flex;
   font-size: 12px;
   justify-content: center;
-  min-height: 150px;
+  min-height: 140px;
   padding: 20px;
   text-align: center;
 }
 
 .thumbnailButton {
-  background: rgb(0 10 32 / 60%) !important;
+  background: $surface-soft !important;
   border: 0 !important;
+  border-bottom: 1px solid $line !important;
+  border-radius: 0 !important;
   display: block;
   padding: 0 !important;
   width: 100%;
 }
 
 .thumbnailButton img {
-  border-radius: 7px;
   display: block;
   height: auto;
   object-fit: contain;
@@ -289,10 +347,10 @@ $blueprint-accent: rgb(80 160 255 / 85%);
 
 .job {
   align-items: center;
-  border-top: 1px solid $blueprint-border;
+  border-top: 1px solid $line;
   display: flex;
   gap: 12px;
-  padding: 14px 0;
+  padding: 12px 0;
 }
 
 .job > div {
@@ -300,43 +358,101 @@ $blueprint-accent: rgb(80 160 255 / 85%);
 }
 
 .job p {
-  margin: 5px 0;
+  margin: 4px 0;
   overflow-wrap: anywhere;
 }
 
 .job progress {
-  accent-color: $blueprint-accent;
+  accent-color: $text;
   height: 5px;
   width: 100%;
+}
+
+@keyframes jobs-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.jobsTrigger {
+  align-items: center;
+  color: $text-soft !important;
+  display: inline-flex;
+  gap: 7px;
+
+  &:hover:not(:disabled) {
+    color: $text !important;
+  }
+}
+
+.jobsSpinner {
+  animation: jobs-spin 0.9s linear infinite;
+  border: 2px solid $line-strong;
+  border-radius: 50%;
+  border-top-color: $text;
+  flex-shrink: 0;
+  height: 12px;
+  width: 12px;
 }
 
 .library {
   display: grid;
   gap: 18px;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
 }
 
 .asset {
-  min-width: 0;
-}
-
-.asset span {
-  color: $blueprint-accent;
-  font-size: 10px;
-}
-
-.asset p {
-  font-size: 11px;
-}
-
-.asset .actions {
-  align-items: start;
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: 16px;
+  display: flex;
   flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 0 14px;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms $ease;
+
+  &:hover {
+    border-color: $line-strong;
+    box-shadow: 0 12px 32px rgb(0 0 0 / 8%);
+    transform: translateY(-2px);
+  }
+
+  > h3,
+  > p,
+  > span,
+  > div {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  > h3 {
+    margin: 6px 0 0;
+  }
+
+  > p {
+    font-size: 12px;
+    margin: 0;
+  }
+
+  > span {
+    color: $text-soft;
+    font-size: 11px;
+  }
+
+  .actions {
+    gap: 6px 10px;
+    margin-top: 6px;
+  }
 }
 
 .overlay {
   align-items: center;
-  background: rgb(1 8 12 / 88%);
+  background: rgb(24 24 27 / 45%);
   display: flex;
   inset: 0;
   justify-content: center;
@@ -347,22 +463,23 @@ $blueprint-accent: rgb(80 160 255 / 85%);
 }
 
 .previewDialog {
-  --scrollbar-thumb: rgb(168 198 236 / 36%);
-  --scrollbar-thumb-hover: rgb(198 220 248 / 62%);
+  --scrollbar-thumb: rgb(24 24 27 / 18%);
+  --scrollbar-thumb-hover: rgb(24 24 27 / 32%);
 
-  background: #012;
-  border: 1px solid $blueprint-border;
-  border-radius: 12px;
-  color: #e6efed;
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgb(0 0 0 / 18%);
+  color: $text;
   max-height: 90vh;
   max-width: min(960px, calc(100vw - 40px));
   overflow: auto;
-  padding: 26px;
+  padding: 24px;
   width: 100%;
 }
 
 .previewDialog::backdrop {
-  background: rgb(1 8 12 / 88%);
+  background: rgb(24 24 27 / 45%);
 }
 
 .previewScene {
@@ -380,25 +497,33 @@ $blueprint-accent: rgb(80 160 255 / 85%);
   }
 }
 
-// ── Roster, search/filter, and remix ────────────────────────────────────────
+/* ── Roster, search/filter, and remix ────────────────────────────────────── */
 .roster {
+  border-top: 1px solid $line;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .rosterRow {
   align-items: center;
-  border-bottom: 1px solid $blueprint-border;
+  border-bottom: 1px solid $line;
   display: flex;
+  gap: 12px;
   justify-content: space-between;
-  padding: 10px 0;
+  padding: 9px 0;
+
+  &:last-child {
+    border-bottom: 0;
+  }
 }
 
 .rosterInfo {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 
   strong {
     font-size: 13px;
@@ -406,7 +531,7 @@ $blueprint-accent: rgb(80 160 255 / 85%);
 }
 
 .rosterRole {
-  color: rgb(140 190 255 / 65%);
+  color: $text-soft;
   font-family: monospace;
   font-size: 11px;
 }
@@ -418,21 +543,23 @@ $blueprint-accent: rgb(80 160 255 / 85%);
 }
 
 .rosterGenerating {
-  color: #ffe7a8;
+  color: #b45309;
   font-size: 12px;
+  font-weight: 600;
 }
 
 .libraryFilters {
   display: flex;
-  gap: 12px;
-  margin-bottom: 18px;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0 18px;
 
   input,
   select {
-    background: rgb(0 14 40 / 80%);
-    border: 1px solid $blueprint-border;
-    border-radius: 8px;
-    color: vars.$white;
+    background: $surface-soft;
+    border: 1px solid $line;
+    border-radius: 10px;
+    color: $text;
     font: inherit;
     font-size: 13px;
     padding: 8px 12px;
@@ -440,5 +567,6 @@ $blueprint-accent: rgb(80 160 255 / 85%);
 
   .librarySearch {
     flex: 1;
+    min-width: 180px;
   }
 }

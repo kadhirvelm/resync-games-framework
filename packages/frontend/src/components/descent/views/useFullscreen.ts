@@ -27,10 +27,40 @@ export function canUseFullscreen(doc: FullscreenDocument): boolean {
   );
 }
 
+/** Keys requested under Keyboard Lock in fullscreen (Escape and control groups). */
+export const FULLSCREEN_LOCK_KEYS = [
+  "Escape",
+  "Digit1",
+  "Digit2",
+  "Digit3",
+  "Digit4",
+  "Digit5",
+  "Digit6",
+  "Digit7",
+  "Digit8",
+  "Digit9",
+] as const;
+
 /**
- * Enters or leaves fullscreen. Entering also asks to keep Escape for the
- * game, so Esc closes menus instead of dropping out of fullscreen; where the
- * browser grants that, holding Esc still leaves fullscreen.
+ * Locks Escape and number-row keys when supported, falling back to Escape only.
+ * @param keyboard - The browser's keyboard lock, if any
+ */
+async function lockFullscreenKeys(
+  keyboard: KeyboardLock | undefined,
+): Promise<void> {
+  if (typeof keyboard?.lock !== "function") return;
+  try {
+    await keyboard.lock(FULLSCREEN_LOCK_KEYS);
+  } catch {
+    await keyboard.lock(["Escape"]);
+  }
+}
+
+/**
+ * Enters or leaves fullscreen. Entering also asks to keep Escape and
+ * Digit1-Digit9 for the game, so Esc closes menus and Ctrl+1-9 saves control
+ * groups instead of switching browser tabs; where granted, holding Esc still
+ * leaves fullscreen.
  * @param doc - Page document
  * @param keyboard - The browser's keyboard lock, if any
  * @returns Resolves once the browser has answered; a refusal is not an error
@@ -47,7 +77,7 @@ export async function toggleFullscreen(
     }
     if (!canUseFullscreen(doc)) return;
     await doc.documentElement.requestFullscreen?.();
-    await keyboard?.lock?.(["Escape"]);
+    await lockFullscreenKeys(keyboard);
   } catch {
     // The browser refused (no user gesture, or a policy); stay windowed.
   }

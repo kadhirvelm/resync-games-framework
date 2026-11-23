@@ -24,6 +24,7 @@ import {
   waveDistance,
 } from "./modifiers";
 import {
+  clampToMap,
   compositionFromPlans,
   FODDER_SCALE,
   minorPlan,
@@ -121,7 +122,7 @@ export function isWaveClockState(value: unknown): value is WaveClockState {
  * @returns The next wave inside the 60 second window
  */
 export function readOmen(state: WaveClockState): OmenPreview | null {
-  if (!state.omenTower) return null;
+  if (state.scheduledWaves === false || !state.omenTower) return null;
   const preview = nextPreview(state);
   if (!preview) return null;
   return {
@@ -161,6 +162,10 @@ export function resolveWaveTick(state: WaveClockState): WaveEvent[] {
   if (state.layerId === null) return [];
   if (state.resolvedTick === state.completedTick) return [];
   state.resolvedTick = state.completedTick;
+  if (state.scheduledWaves === false) {
+    // Stationary boss camps still use telegraphs, but have no schedule.
+    return advanceTwists(state);
+  }
   const events: WaveEvent[] = [];
   events.push(...updatePressure(state));
   if (state.waveHeld !== true) {
@@ -179,7 +184,7 @@ export function resolveWaveTick(state: WaveClockState): WaveEvent[] {
  * @returns Next wave index, or -1
  */
 export function nextWaveIndex(state: WaveClockState): number {
-  if (state.layerId === null) return -1;
+  if (state.layerId === null || state.scheduledWaves === false) return -1;
   const schedule = getSchedule(state.layerId);
   return schedule.waves.findIndex(
     (wave) => !state.spawnedWaveIds.includes(wave.id),
@@ -194,7 +199,11 @@ export function nextWaveIndex(state: WaveClockState): number {
  * @returns Whether a wave was pulled early, seconds skipped, and its 0-based index
  */
 export function callNextWaveEarly(state: WaveClockState): EarlyWaveCallResult {
-  if (state.layerId === null || state.waveHeld === true) {
+  if (
+    state.layerId === null ||
+    state.waveHeld === true ||
+    state.scheduledWaves === false
+  ) {
     return { called: false, secondsSkipped: 0, waveIndex: -1 };
   }
   const index = nextWaveIndex(state);
@@ -424,6 +433,10 @@ function spawnFodder(state: WaveClockState, summoner: WaveUnit): WaveUnit[] {
       y: summoner.y + 1,
     });
     unit.id = `${summoner.id}:fodder:${state.completedTick}:${index}`;
+    inheritExplorationGuard(state, summoner, unit, {
+      x: summoner.guardHome?.x ?? summoner.x,
+      y: (summoner.guardHome?.y ?? summoner.y) + 1,
+    });
     state.units.push(unit);
     state.trackedUnitIds.push(unit.id);
     spawned.push(unit);
@@ -546,11 +559,36 @@ function spawnVentImps(
         y: boss.y + 2,
       });
       unit.id = `${boss.id}:vent:${index}`;
+      inheritExplorationGuard(state, boss, unit, {
+        x: (boss.guardHome?.x ?? boss.x) - (index % 4) * 2,
+        y: (boss.guardHome?.y ?? boss.y) + 2,
+      });
       state.units.push(unit);
       state.trackedUnitIds.push(unit.id);
       index += 1;
     }
   }
+}
+
+/**
+ * Copies exploration-camp ownership and a fixed home to a summoned body.
+ * Ordinary siege summons have no such metadata and keep their Camp rally.
+ * @param state - Wave clock whose map bounds clamp the home
+ * @param parent - Summoner or boss that owns the new body
+ * @param child - Newly spawned body to annotate
+ * @param home - Preferred guard home near the parent's original camp
+ */
+function inheritExplorationGuard(
+  state: WaveClockState,
+  parent: WaveUnit,
+  child: WaveUnit,
+  home: { x: number; y: number },
+): void {
+  if (parent.guardCampId === undefined || parent.guardHome === undefined) {
+    return;
+  }
+  child.guardCampId = parent.guardCampId;
+  child.guardHome = clampToMap(home, waveBounds(state));
 }
 
 /**
@@ -729,10 +767,11 @@ function spawnContext(state: WaveClockState, waveId: string): WaveSpawnContext {
   if (state.layerId === null) throw new Error("Cannot spawn without a layer");
   return {
     bounds: waveBounds(state),
-    collectedEssence: state.collectedEssence,
+    collectedEssence:
+      state.scheduledWaves === false ? 0 : state.collectedEssence,
     fallenAllies: state.fallenAlliesByWave[waveId] ?? 0,
     grade: essenceGrade(state.layerId),
-    hellPressure: state.hellPressure,
+    hellPressure: state.scheduledWaves === false ? 0 : state.hellPressure,
     layerId: state.layerId,
     statMultiplier: validSize(state.waveStatScale, 1),
     waveId,

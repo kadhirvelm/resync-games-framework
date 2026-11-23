@@ -4,7 +4,9 @@ import type { ListCardCharactersResponse } from "@resync-game-framework/api";
 import { useState } from "react";
 import { Dialog, Flex } from "@/lib/radix";
 import styles from "./Assets.module.scss";
+import { TOWERS_OF_COREBORN_TAG } from "./assetGameTags";
 import { CopyableError } from "./CopyableError";
+import { GameTagList } from "./GameTagList";
 import { type PendingJob, PendingJobCard } from "./PendingJobCard";
 
 type CardCharacterSet = ListCardCharactersResponse["sets"][number];
@@ -126,6 +128,7 @@ function CardCharacterSetCard({ onOpen, set }: CardCharacterSetCardProps) {
       <span className={styles.cardSetPrompt} title={set.prompt}>
         {set.prompt}
       </span>
+      <GameTagList tags={[TOWERS_OF_COREBORN_TAG]} />
       <span className={styles.cardSetTheme}>{set.theme}</span>
       <CardCharacterLevelRow levels={set.levels} />
     </button>

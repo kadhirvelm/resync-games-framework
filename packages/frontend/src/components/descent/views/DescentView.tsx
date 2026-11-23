@@ -17,6 +17,7 @@ import type { TutorialTargetHint } from "../logic/tutorial";
 import type { Command, FormationId, SimSnapshot } from "../logic/types";
 import { BuildMenu } from "./BuildMenu";
 import { blockedToast } from "./blockers";
+import bottomHudStyles from "./bottomHud.module.scss";
 import { CommandCard } from "./CommandCard";
 import {
   buildCardButtons,
@@ -30,12 +31,17 @@ import { activeCoach, type CoachMarkId } from "./coach";
 import { buildConfirm } from "./confirm";
 import {
   addToControlGroup,
+  CONTROL_GROUP_DOUBLE_TAP_MS,
+  type ControlGroupSlot,
   type ControlGroupsState,
   createControlGroupsState,
   recallControlGroup,
   saveControlGroup,
 } from "./controlGroups";
-import { DescentBabylonViewport } from "./DescentBabylonViewport";
+import {
+  canUseBabylonRts,
+  DescentBabylonViewport,
+} from "./DescentBabylonViewport";
 import { DescentLoadingScreen } from "./DescentLoadingScreen";
 import styles from "./descentView.module.scss";
 import {
@@ -43,9 +49,11 @@ import {
   CommitDialog,
   GlossaryDialog,
   HotkeyDialog,
+  PauseMenuDialog,
   ToastList,
   type ToastTone,
 } from "./dialogs";
+import { ExplorationPanel } from "./ExplorationPanel";
 import type { ControlGroupHotkeyAction, HotkeyAction } from "./hotkeys";
 import {
   describeSelection,
@@ -58,7 +66,11 @@ import {
 } from "./loadingProgress";
 import type { CameraFocusRequest } from "./MapViewport";
 import { PlayerScoreboard } from "./PlayerScoreboard";
-import type { BuildReadout } from "./presentation";
+import {
+  placementBlockReason,
+  placementGroundValid,
+} from "./placementValidity";
+import type { BuildReadout, ExplorationCampReadout } from "./presentation";
 import {
   type Camera,
   EMPTY_SELECTION,
@@ -114,6 +126,9 @@ export interface DescentMultiplayerBar {
 
 /** Props for the Descent desktop shell. */
 export interface DescentViewProps {
+  /** Optional solo campaign mission status and terminal controls. */
+  campaignProgress?: ReactNode;
+  campaignDebrief?: ReactNode;
   /** Whether the page is fullscreen. */
   fullscreen?: boolean;
   /** Local player id in multiplayer matches; omitted in solo play. */
@@ -126,6 +141,8 @@ export interface DescentViewProps {
   onToggleFullscreen?: () => void;
   /** Clears the slice autosave and starts Ashen Gate from tick zero. */
   onRestart?: () => void;
+  /** Leaves a solo match for the title screen; co-op uses `multiplayer.onLeaveRoom`. */
+  onExit?: () => void;
   /** Asks the sim to pause or resume. The button follows `snapshot.paused`. */
   onSetPaused?: (paused: boolean) => void;
   /** Asks the sim to change how many ticks advance per frame. */
@@ -164,6 +181,24 @@ interface Toast {
 
 /** Maximum notices allowed to cover the battlefield at once. */
 const MAX_VISIBLE_TOASTS = 2;
+
+/** Maximum remembered notice keys before evicting the oldest entries. */
+const MAX_SEEN_NOTICES = 256;
+
+/** Ordered control-group slots displayed above the bottom HUD. */
+const CONTROL_GROUP_SLOTS: readonly ControlGroupSlot[] = [
+  1, 2, 3, 4, 5, 6, 7, 8, 9,
+];
+
+/** Status banner text while Attack-Move targeting is armed. */
+const ATTACK_MOVE_STATUS =
+  "Attack-Move: left-click destination, Shift+click to queue, right-click or Esc to cancel.";
+
+interface ControlGroupSummary {
+  count: number;
+  label: string;
+  slot: ControlGroupSlot;
+}
 
 let toastSequence = 0;
 
@@ -243,6 +278,8 @@ function applyFormation(command: Command, formation: FormationId): Command {
  * @returns The shell
  */
 export function DescentView({
+  campaignDebrief,
+  campaignProgress,
   fullscreen = false,
   localPlayerId,
   multiplayer,
@@ -251,6 +288,7 @@ export function DescentView({
   onDismissTutorial,
   onLoaded,
   onRevive,
+  onExit,
   onRestart,
   onSetPaused,
   onSetSpeed,
@@ -267,6 +305,13 @@ export function DescentView({
   );
   const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION);
   const controlGroups = useRef<ControlGroupsState>(createControlGroupsState());
+  const buildingGroups = useRef<Partial<Record<ControlGroupSlot, string>>>({});
+  const lastBuildingRecall = useRef<{
+    at: number;
+    slot: ControlGroupSlot;
+  } | null>(null);
+  const [controlGroupsVersion, setControlGroupsVersion] = useState(0);
+  const isBabylon = useMemo(() => canUseBabylonRts(), []);
   const attackPings = useAttackAlerts({ localPlayerId, snapshot });
   const [inspected, setInspected] = useState<InspectTarget | null>(null);
   const [focusRequest, setFocusRequest] = useState<CameraFocusRequest | null>(
@@ -279,9 +324,12 @@ export function DescentView({
   const buildWasOpen = useRef(false);
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [hotkeysOpen, setHotkeysOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const pausedByMenuRef = useRef(false);
   const [formation, setFormation] = useState<FormationId>("ranks");
   const [placing, setPlacing] = useState<string | null>(null);
   const [rallying, setRallying] = useState<string | null>(null);
+  const [attackMoving, setAttackMoving] = useState(false);
   const [intent, setIntent] = useState<ConfirmIntent | null>(null);
   const [tradeAmount, setTradeAmount] = useState(1);
   const [cursor, setCursor] = useState<MapPoint | null>(null);
@@ -399,6 +447,22 @@ export function DescentView({
     );
   }, [activeSelection.unitIds, localPlayerId, model.units]);
 
+  const hasSelectedMilitary = useMemo(() => {
+    if (activeSelection.unitIds.length === 0) return false;
+    const selectedIds = new Set(activeSelection.unitIds);
+    return model.units.some(
+      (unit) =>
+        unit.classId !== "villager" &&
+        unit.factionId === "hold" &&
+        isLocalPlayerOwned(unit, localPlayerId) &&
+        selectedIds.has(unit.id),
+    );
+  }, [activeSelection.unitIds, localPlayerId, model.units]);
+
+  useEffect(() => {
+    if (attackMoving && !hasSelectedMilitary) setAttackMoving(false);
+  }, [attackMoving, hasSelectedMilitary]);
+
   useEffect(() => {
     const lostVillagerSelection =
       villagerWasSelected.current && !hasSelectedVillager;
@@ -429,6 +493,11 @@ export function DescentView({
       .filter((entry) => entry.length > 0 && !seenNotices.current.has(entry));
     if (fresh.length === 0) return;
     for (const entry of fresh) seenNotices.current.add(entry);
+    while (seenNotices.current.size > MAX_SEEN_NOTICES) {
+      const oldest = seenNotices.current.values().next().value;
+      if (oldest === undefined) break;
+      seenNotices.current.delete(oldest);
+    }
     setToasts((current) =>
       appendToasts(
         current,
@@ -523,8 +592,16 @@ export function DescentView({
         inspectTarget,
         formation,
         localPlayerId,
+        attackMoving,
       ),
-    [activeSelection, formation, inspectTarget, localPlayerId, model],
+    [
+      activeSelection,
+      attackMoving,
+      formation,
+      inspectTarget,
+      localPlayerId,
+      model,
+    ],
   );
   const selectedResource =
     inspectTarget?.kind === "stockpile" ? inspectTarget.resource : null;
@@ -547,7 +624,7 @@ export function DescentView({
         feedOpen: intent?.type === "feed",
         flags: model.onboarding,
         furnaceSelected: selectedBuilding?.buildingType === "alchemy_furnace",
-        holdUnitPresent: model.units.some((unit) => unit.factionId === "hold"),
+        holdUnitPresent: primaryCultivation !== null,
         layerName: model.banner.name,
         schoolChoiceVisible,
       }),
@@ -556,13 +633,14 @@ export function DescentView({
       intent?.type,
       model.banner.name,
       model.onboarding,
-      model.units,
+      primaryCultivation,
       schoolChoiceVisible,
       selectedBuilding?.buildingType,
     ],
   );
   /** Selects one building and clears mutually exclusive map intents. */
   const selectBuilding = (id: string) => {
+    setAttackMoving(false);
     setRallying(null);
     setPlacing(null);
     setInspected(null);
@@ -575,6 +653,7 @@ export function DescentView({
    * @param target - Feature or stockpile entry to inspect
    */
   const inspect = (target: InspectTarget) => {
+    setAttackMoving(false);
     setRallying(null);
     setPlacing(null);
     setSelection(EMPTY_SELECTION);
@@ -601,6 +680,16 @@ export function DescentView({
     setFocusRequest({ id: focusSequence.current, point });
   };
 
+  /** Centers and inspects a discovered guarded camp without issuing an order. */
+  const focusExplorationCamp = (camp: ExplorationCampReadout) => {
+    setAttackMoving(false);
+    setRallying(null);
+    setPlacing(null);
+    setSelection(EMPTY_SELECTION);
+    setInspected({ id: camp.id, kind: "camp" });
+    focusOnPoint({ x: camp.x, y: camp.y });
+  };
+
   /**
    * Selects the next idle villager and centers the camera on it, cycling
    * through idle villagers on repeated presses.
@@ -615,6 +704,7 @@ export function DescentView({
       pushToast("No idle villagers.");
       return;
     }
+    setAttackMoving(false);
     setRallying(null);
     setPlacing(null);
     setInspected(null);
@@ -623,32 +713,83 @@ export function DescentView({
   };
 
   /**
-   * Saves, extends, or recalls one session-local unit control group.
+   * Saves, extends, or recalls one session-local unit or building control group.
    * Recalled ids are resolved against the latest model before selection, and
-   * a double-tap centers on the surviving units' mean map position.
+   * a double-tap centers on the surviving entities' mean map position.
    * @param action - Control-group key action
    */
   const handleControlGroup = (action: ControlGroupHotkeyAction) => {
     if (action.mode === "save") {
-      controlGroups.current = saveControlGroup(
-        controlGroups.current,
-        action.slot,
-        activeSelection.unitIds,
-      );
+      if (activeSelection.unitIds.length > 0) {
+        controlGroups.current = saveControlGroup(
+          controlGroups.current,
+          action.slot,
+          activeSelection.unitIds,
+        );
+        delete buildingGroups.current[action.slot];
+        setControlGroupsVersion((version) => version + 1);
+        return;
+      }
+      if (activeSelection.buildingId !== null) {
+        const building = model.buildings.find(
+          (entry) =>
+            entry.id === activeSelection.buildingId &&
+            entry.factionId === "hold" &&
+            isLocalPlayerOwned(entry, localPlayerId),
+        );
+        if (building === undefined) return;
+        buildingGroups.current[action.slot] = building.id;
+        controlGroups.current = saveControlGroup(
+          controlGroups.current,
+          action.slot,
+          [],
+        );
+        setControlGroupsVersion((version) => version + 1);
+      }
       return;
     }
     if (action.mode === "add") {
+      if (activeSelection.unitIds.length === 0) return;
       controlGroups.current = addToControlGroup(
         controlGroups.current,
         action.slot,
         activeSelection.unitIds,
       );
+      delete buildingGroups.current[action.slot];
+      setControlGroupsVersion((version) => version + 1);
       return;
     }
+    const now = Date.now();
+    const savedBuildingId = buildingGroups.current[action.slot];
+    if (savedBuildingId !== undefined) {
+      const building = model.buildings.find(
+        (entry) =>
+          entry.id === savedBuildingId &&
+          entry.factionId === "hold" &&
+          isLocalPlayerOwned(entry, localPlayerId),
+      );
+      if (building === undefined) return;
+      const previous = lastBuildingRecall.current;
+      const elapsed =
+        previous === null ? Number.POSITIVE_INFINITY : now - previous.at;
+      const center =
+        previous?.slot === action.slot &&
+        elapsed >= 0 &&
+        elapsed <= CONTROL_GROUP_DOUBLE_TAP_MS;
+      lastBuildingRecall.current = { at: now, slot: action.slot };
+      setAttackMoving(false);
+      setRallying(null);
+      setPlacing(null);
+      setInspected(null);
+      setSelection({ buildingId: building.id, unitIds: [] });
+      if (center) focusOnPoint({ x: building.x, y: building.y });
+      return;
+    }
+    lastBuildingRecall.current = null;
     const recalled = recallControlGroup(
       controlGroups.current,
       action.slot,
-      Date.now(),
+      now,
     );
     controlGroups.current = recalled.state;
     if (recalled.selectionIds === null) return;
@@ -664,6 +805,8 @@ export function DescentView({
       }
       return [unit];
     });
+    if (units.length === 0) return;
+    setAttackMoving(false);
     setRallying(null);
     setPlacing(null);
     setInspected(null);
@@ -671,7 +814,7 @@ export function DescentView({
       buildingId: null,
       unitIds: units.map((unit) => unit.id),
     });
-    if (!recalled.center || units.length === 0) return;
+    if (!recalled.center) return;
     const center = units.reduce(
       (sum, unit) => ({ x: sum.x + unit.x, y: sum.y + unit.y }),
       { x: 0, y: 0 },
@@ -682,8 +825,111 @@ export function DescentView({
     });
   };
 
+  /** Centers the camera on the living members of one control group. */
+  const centerControlGroup = (slot: ControlGroupSlot) => {
+    const savedBuildingId = buildingGroups.current[slot];
+    if (savedBuildingId !== undefined) {
+      const building = model.buildings.find(
+        (entry) =>
+          entry.id === savedBuildingId &&
+          entry.factionId === "hold" &&
+          isLocalPlayerOwned(entry, localPlayerId),
+      );
+      if (building !== undefined) {
+        focusOnPoint({ x: building.x, y: building.y });
+      }
+      return;
+    }
+    const ids = controlGroups.current.groups[slot];
+    if (ids === undefined || ids.length === 0) return;
+    const idSet = new Set(ids);
+    const units = model.units.filter(
+      (unit) =>
+        idSet.has(unit.id) &&
+        unit.factionId === "hold" &&
+        isLocalPlayerOwned(unit, localPlayerId),
+    );
+    if (units.length === 0) return;
+    const center = units.reduce(
+      (sum, unit) => ({ x: sum.x + unit.x, y: sum.y + unit.y }),
+      { x: 0, y: 0 },
+    );
+    focusOnPoint({ x: center.x / units.length, y: center.y / units.length });
+  };
+
+  const controlGroupTabs = useMemo<ControlGroupSummary[]>(() => {
+    void controlGroupsVersion;
+    const unitsById = new Map(model.units.map((unit) => [unit.id, unit]));
+    const buildingsById = new Map(
+      model.buildings.map((building) => [building.id, building]),
+    );
+    const tabs: ControlGroupSummary[] = [];
+    for (const slot of CONTROL_GROUP_SLOTS) {
+      const buildingId = buildingGroups.current[slot];
+      if (buildingId !== undefined) {
+        const building = buildingsById.get(buildingId);
+        if (
+          building !== undefined &&
+          building.factionId === "hold" &&
+          isLocalPlayerOwned(building, localPlayerId)
+        ) {
+          tabs.push({ count: 1, label: building.name, slot });
+          continue;
+        }
+      }
+      const ids = controlGroups.current.groups[slot];
+      if (ids === undefined || ids.length === 0) continue;
+      let alive = 0;
+      for (const id of ids) {
+        const unit = unitsById.get(id);
+        if (
+          unit !== undefined &&
+          unit.factionId === "hold" &&
+          isLocalPlayerOwned(unit, localPlayerId)
+        ) {
+          alive += 1;
+        }
+      }
+      if (alive > 0) {
+        tabs.push({
+          count: alive,
+          label: `${alive} ${alive === 1 ? "unit" : "units"}`,
+          slot,
+        });
+      }
+    }
+    return tabs;
+  }, [controlGroupsVersion, localPlayerId, model.buildings, model.units]);
+
   /** Clears every selection and inspected feature. */
+  const openMenu = () => {
+    setMenuOpen(true);
+    if (multiplayer !== undefined || model.paused) return;
+    pausedByMenuRef.current = true;
+    onSetPaused?.(true);
+  };
+
+  /** Closes the pause menu and resumes a solo match the menu paused. */
+  const closeMenu = () => {
+    setMenuOpen(false);
+    if (!pausedByMenuRef.current) return;
+    pausedByMenuRef.current = false;
+    onSetPaused?.(false);
+  };
+
+  /** Leaves the match: the co-op room (stopping server ticks) or the solo run. */
+  const exitMatch = () => {
+    pausedByMenuRef.current = false;
+    setMenuOpen(false);
+    if (multiplayer !== undefined) {
+      multiplayer.onLeaveRoom();
+      return;
+    }
+    onExit?.();
+  };
+
   const clearSelection = () => {
+    setAttackMoving(false);
     setInspected(null);
     setSelection(EMPTY_SELECTION);
   };
@@ -726,8 +972,27 @@ export function DescentView({
       return;
     }
     if (next.type === "rally") {
+      setAttackMoving(false);
       setPlacing(null);
       setRallying(next.buildingId);
+      return;
+    }
+    if (next.type === "attack_move") {
+      setPlacing(null);
+      setRallying(null);
+      setAttackMoving((active) => !active);
+      return;
+    }
+    if (next.type === "cancel_construction") {
+      onCommand?.({
+        buildingId: next.buildingId,
+        type: "cancel_construction",
+      });
+      return;
+    }
+    if (next.type === "disband") {
+      setAttackMoving(false);
+      onCommand?.({ type: "disband_units", unitIds: next.unitIds });
       return;
     }
     if (next.type === "recall") {
@@ -739,6 +1004,7 @@ export function DescentView({
       return;
     }
     if (next.type === "stop") {
+      setAttackMoving(false);
       onCommand?.({ type: "order_stop", unitIds: next.unitIds });
       return;
     }
@@ -769,13 +1035,36 @@ export function DescentView({
       pushToast("Boss still lives");
       return;
     }
-    if (isConfirmIntent(next)) setIntent(next);
+    if (isConfirmIntent(next)) {
+      setTradeAmount(1);
+      setIntent(next);
+    }
   };
 
   /**
    * @param action - Hotkey the player pressed
    */
   const onHotkey = (action: HotkeyAction) => {
+    if (menuOpen) {
+      if (action.type === "close") closeMenu();
+      return;
+    }
+    if (glossaryOpen || hotkeysOpen || intent !== null) {
+      if (action.type === "close") {
+        if (glossaryOpen) {
+          setGlossaryOpen(false);
+          return;
+        }
+        if (intent !== null) {
+          setIntent(null);
+          return;
+        }
+        if (hotkeysOpen) {
+          setHotkeysOpen(false);
+        }
+      }
+      return;
+    }
     if (action.type === "pause") {
       onSetPaused?.(!model.paused);
       return;
@@ -785,6 +1074,7 @@ export function DescentView({
       return;
     }
     if (action.type === "camera") {
+      if (isBabylon) return;
       setCamera((current) => ({
         x: Math.max(0, current.x + action.x),
         y: Math.max(0, current.y + action.y),
@@ -792,20 +1082,12 @@ export function DescentView({
       return;
     }
     if (action.type === "close") {
-      if (glossaryOpen) {
-        setGlossaryOpen(false);
-        return;
-      }
-      if (intent !== null) {
-        setIntent(null);
-        return;
-      }
       if (buildOpen) {
         setBuildOpen(false);
         return;
       }
-      if (hotkeysOpen) {
-        setHotkeysOpen(false);
+      if (attackMoving) {
+        setAttackMoving(false);
         return;
       }
       if (rallying !== null) {
@@ -816,16 +1098,93 @@ export function DescentView({
         setPlacing(null);
         return;
       }
-      clearSelection();
+      if (selection.buildingId !== null || selection.unitIds.length > 0) {
+        clearSelection();
+        return;
+      }
+      openMenu();
       return;
     }
-    if (glossaryOpen || intent !== null) return;
     if (action.type === "controlGroup") {
       handleControlGroup(action);
       return;
     }
+    if (action.type === "attack_move") {
+      if (!hasSelectedMilitary) return;
+      setPlacing(null);
+      setRallying(null);
+      setAttackMoving(true);
+      return;
+    }
+    if (action.type === "disband") {
+      if (
+        selectedBuilding?.constructing === true &&
+        isLocalPlayerOwned(selectedBuilding, localPlayerId)
+      ) {
+        onCommand?.({
+          buildingId: selectedBuilding.id,
+          type: "cancel_construction",
+        });
+        return;
+      }
+      const unitsById = new Map(model.units.map((unit) => [unit.id, unit]));
+      const unitIds = activeSelection.unitIds.filter((id) => {
+        const match = unitsById.get(id);
+        return (
+          match !== undefined &&
+          match.factionId === "hold" &&
+          isLocalPlayerOwned(match, localPlayerId)
+        );
+      });
+      if (unitIds.length === 0) return;
+      setAttackMoving(false);
+      onCommand?.({ type: "disband_units", unitIds });
+      return;
+    }
+    if (action.type === "stop") {
+      const unitsById = new Map(model.units.map((unit) => [unit.id, unit]));
+      const unitIds = activeSelection.unitIds.filter((id) => {
+        const match = unitsById.get(id);
+        return (
+          match !== undefined &&
+          match.factionId === "hold" &&
+          isLocalPlayerOwned(match, localPlayerId)
+        );
+      });
+      if (unitIds.length > 0) {
+        setAttackMoving(false);
+        onCommand?.({ type: "order_stop", unitIds });
+      }
+      return;
+    }
     if (action.type === "build") {
-      setBuildOpen((open) => !open);
+      if (buildOpen) {
+        setBuildOpen(false);
+        return;
+      }
+      if (hasSelectedVillager) {
+        setBuildOpen(true);
+        return;
+      }
+      const idleIds = idleVillagerIds(model.units, localPlayerId);
+      const fallbackVillager =
+        model.units.find((unit) => unit.id === idleIds[0]) ??
+        model.units.find(
+          (unit) =>
+            unit.classId === "villager" &&
+            unit.factionId === "hold" &&
+            isLocalPlayerOwned(unit, localPlayerId),
+        );
+      if (fallbackVillager === undefined) {
+        pushToast("No villagers available to build.");
+        return;
+      }
+      setAttackMoving(false);
+      setRallying(null);
+      setPlacing(null);
+      setInspected(null);
+      setSelection({ buildingId: null, unitIds: [fallbackVillager.id] });
+      setBuildOpen(true);
       return;
     }
     if (action.type === "qi_art") {
@@ -891,6 +1250,9 @@ export function DescentView({
           (item) => item.buildingType === "camp" && item.factionId === "hold",
         );
       if (camp !== undefined) {
+        setAttackMoving(false);
+        setPlacing(null);
+        setRallying(null);
         setInspected(null);
         setSelection({ buildingId: camp.id, unitIds: [] });
         focusOnPoint({ x: camp.x, y: camp.y });
@@ -922,10 +1284,7 @@ export function DescentView({
       type: "train_unit",
     });
   };
-  useHotkeys((action) => {
-    if (loadPhase === "loading") return;
-    onHotkey(action);
-  });
+  useHotkeys(onHotkey, loadPhase !== "loading");
 
   /**
    * Commits the open confirm step, or explains why it cannot.
@@ -1007,6 +1366,10 @@ export function DescentView({
       const candidate =
         model.units.find(
           (unit) =>
+            unit.factionId === "hold" && unit.captain && owned(unit.ownerId),
+        ) ??
+        model.units.find(
+          (unit) =>
             unit.factionId === "hold" &&
             unit.breakthroughReady &&
             owned(unit.ownerId),
@@ -1050,6 +1413,7 @@ export function DescentView({
       pushToast(option.lockedReason ?? "Not enough resources");
       return;
     }
+    setAttackMoving(false);
     setPlacing(option.buildingType);
     setRallying(null);
     setBuildOpen(false);
@@ -1068,21 +1432,33 @@ export function DescentView({
       growingCrops(model.buildings).length > 0,
     [holdUpgradeProgress, model.buildings],
   );
+  let mapStatusText: string | null = placementStatus(placingOption, onVein);
+  if (attackMoving) mapStatusText = ATTACK_MOVE_STATUS;
+  else if (rallying !== null) mapStatusText = "Set rally point";
+  const shellInert = loadPhase === "loading";
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: RTS shell suppresses browser right-click menu
     <div
       className={styles.shell}
       data-has-training={hasActiveTraining}
       data-paused={model.paused}
       data-testid="descent-view"
+      onContextMenu={(event) => event.preventDefault()}
       ref={shellRef}
     >
       <h1 className={styles.srOnly}>Descent</h1>
-      <div className={styles.topHud} data-testid="descent-top-hud">
+      <div
+        aria-hidden={shellInert || undefined}
+        className={styles.topHud}
+        data-testid="descent-top-hud"
+        inert={shellInert}
+      >
         <ResourceBar
           fullscreen={fullscreen}
           localPlayerId={localPlayerId}
           model={model}
+          onSelectIdleVillager={selectIdleVillager}
           onSelectResource={selectResource}
           onSetPaused={onSetPaused}
           onSetSoundEnabled={onSetSoundEnabled}
@@ -1092,60 +1468,66 @@ export function DescentView({
           soundEnabled={soundEnabled}
         />
       </div>
-      <div className={styles.stage}>
-        <div className={styles.coopHud} data-testid="descent-coop-hud">
-          {multiplayer !== undefined || model.players.length > 0 ? (
-            <div className={styles.coopBar} data-testid="descent-coop-bar">
-              {multiplayer === undefined ? null : (
-                <span className={styles.coopRoomBadge}>
-                  Room <strong>{multiplayer.roomId}</strong>
-                  {tutorialMode ? " · Tutorial" : ""}
-                </span>
-              )}
-              {multiplayer?.isSpectator === true ? (
-                <span className={styles.coopSpectatorBadge}>Spectator</span>
-              ) : null}
-              {multiplayer?.onRestart === undefined ? null : (
-                <button
-                  className={styles.coopLeaveButton}
-                  onClick={multiplayer.onRestart}
-                  type="button"
-                >
-                  Restart
-                </button>
-              )}
-              {multiplayer === undefined ? null : (
-                <button
-                  className={styles.coopLeaveButton}
-                  onClick={multiplayer.onLeaveRoom}
-                  type="button"
-                >
-                  Leave
-                </button>
-              )}
-              {multiplayer?.error == null ? null : (
-                <span className={styles.coopError} role="alert">
-                  {multiplayer.error}
-                </span>
-              )}
-            </div>
-          ) : null}
-          {multiplayer?.campaignProgress}
-          <PlayerScoreboard
-            localPlayerId={localPlayerId}
-            players={model.players}
+      <div
+        aria-hidden={shellInert || undefined}
+        className={styles.stage}
+        inert={shellInert}
+      >
+        <div className={styles.topLeftHud}>
+          <div className={styles.coopHud} data-testid="descent-coop-hud">
+            {multiplayer !== undefined || model.players.length > 0 ? (
+              <div className={styles.coopBar} data-testid="descent-coop-bar">
+                {multiplayer === undefined ? null : (
+                  <span className={styles.coopRoomBadge}>
+                    Room <strong>{multiplayer.roomId}</strong>
+                    {tutorialMode ? " · Tutorial" : ""}
+                  </span>
+                )}
+                {multiplayer?.isSpectator === true ? (
+                  <span className={styles.coopSpectatorBadge}>Spectator</span>
+                ) : null}
+                {multiplayer?.onRestart === undefined ? null : (
+                  <button
+                    className={styles.coopLeaveButton}
+                    onClick={multiplayer.onRestart}
+                    type="button"
+                  >
+                    Restart
+                  </button>
+                )}
+                {multiplayer === undefined ? null : (
+                  <button
+                    className={styles.coopLeaveButton}
+                    onClick={multiplayer.onLeaveRoom}
+                    type="button"
+                  >
+                    Leave
+                  </button>
+                )}
+                {multiplayer?.error == null ? null : (
+                  <span className={styles.coopError} role="alert">
+                    {multiplayer.error}
+                  </span>
+                )}
+              </div>
+            ) : null}
+            {multiplayer?.campaignProgress ?? campaignProgress}
+            <PlayerScoreboard
+              localPlayerId={localPlayerId}
+              players={model.players}
+            />
+          </div>
+          <ToastList
+            onDismiss={(id) =>
+              setToasts((current) => current.filter((toast) => toast.id !== id))
+            }
+            only="info"
+            toasts={toasts}
           />
         </div>
-        {tutorialMode ? (
-          <TutorialGuide
-            onDismiss={onDismissTutorial}
-            onFocusTarget={focusTutorialTarget}
-            snapshot={snapshot}
-            waveHeld={model.wave?.waveHeld === true}
-          />
-        ) : null}
         <TierUnlockBanner holdTier={holdTier} />
         <DescentBabylonViewport
+          attackMoving={attackMoving}
           camera={camera}
           focusRequest={focusRequest}
           inspected={inspectTarget}
@@ -1153,6 +1535,9 @@ export function DescentView({
           minimapHost={minimapHost}
           model={model}
           onCameraChange={setCamera}
+          onCancelAttackMove={() => setAttackMoving(false)}
+          onCancelPlacement={() => setPlacing(null)}
+          onCancelRally={() => setRallying(null)}
           onCommand={(command) =>
             onCommand?.(applyFormation(command, formation))
           }
@@ -1163,6 +1548,11 @@ export function DescentView({
           onPlace={(point, queue = false) => {
             if (placing === null) return;
             const cell = snapMapCell(point);
+            const reason = placementBlockReason(model, placing, cell);
+            if (reason !== null) {
+              pushToast(reason);
+              return;
+            }
             onCommand?.({
               builderIds: placementBuilders(
                 model.units,
@@ -1179,13 +1569,26 @@ export function DescentView({
           }}
           onPlaceLine={(cells, keepPlacing) => {
             if (placing === null) return;
+            const validCells = cells.filter((cell) =>
+              placementGroundValid(model, placing, cell),
+            );
+            if (validCells.length === 0) {
+              const first = cells[0];
+              const reason =
+                first === undefined
+                  ? "Cannot build there."
+                  : (placementBlockReason(model, placing, first) ??
+                    "Cannot build there.");
+              pushToast(reason);
+              return;
+            }
             const builderIds = placementBuilders(
               model.units,
               activeSelection,
               localPlayerId,
             );
-            // Every piece is queued so builders sweep the whole line.
-            for (const cell of cells) {
+            // Every valid piece is queued so builders sweep the whole line.
+            for (const cell of validCells) {
               onCommand?.({
                 builderIds,
                 buildingType: placing,
@@ -1199,10 +1602,13 @@ export function DescentView({
           }}
           onSelectBuilding={selectBuilding}
           onSelectUnits={(ids, mode) => {
+            setAttackMoving(false);
             setRallying(null);
             setPlacing(null);
             setInspected(null);
-            setSelection((current) => nextUnitSelection(current, ids, mode));
+            setSelection((current) =>
+              nextUnitSelection(current, ids, mode, model.units),
+            );
           }}
           onSetRally={(point) => {
             const buildingId = rallying ?? rallyBuildingId;
@@ -1217,29 +1623,42 @@ export function DescentView({
           rallyBuildingId={rallyBuildingId}
           selection={activeSelection}
           settingRally={rallying !== null}
-          status={
-            rallying === null
-              ? placementStatus(placingOption, onVein)
-              : "Set rally point"
-          }
+          status={mapStatusText}
         />
-        <aside
-          aria-label="Strategic status"
-          className={styles.strategicHud}
-          data-has-training={hasActiveTraining}
-        >
-          <TrainingTracker
-            buildings={model.buildings}
-            localPlayerId={localPlayerId}
-            onSelectBuilding={selectBuilding}
-            upgrade={holdUpgradeProgress}
-          />
-          <StrategicStatus
-            model={model}
-            onCallWaveEarly={() => onCommand?.({ type: "call_next_wave" })}
-            onGlossary={() => setGlossaryOpen(true)}
-          />
-        </aside>
+        <div className={styles.topRightHud}>
+          <aside
+            aria-label="Strategic status"
+            className={styles.strategicHud}
+            data-has-training={hasActiveTraining}
+          >
+            <TrainingTracker
+              buildings={model.buildings}
+              localPlayerId={localPlayerId}
+              onSelectBuilding={selectBuilding}
+              upgrade={holdUpgradeProgress}
+            />
+            {model.exploration === null ? (
+              <StrategicStatus
+                model={model}
+                onCallWaveEarly={() => onCommand?.({ type: "call_next_wave" })}
+                onGlossary={() => setGlossaryOpen(true)}
+              />
+            ) : (
+              <ExplorationPanel
+                exploration={model.exploration}
+                onFocusCamp={focusExplorationCamp}
+              />
+            )}
+          </aside>
+          {tutorialMode ? (
+            <TutorialGuide
+              onDismiss={onDismissTutorial}
+              onFocusTarget={focusTutorialTarget}
+              snapshot={snapshot}
+              waveHeld={model.wave?.waveHeld === true}
+            />
+          ) : null}
+        </div>
         {coach === null ? null : (
           <div className={styles.coachDock}>
             <CoachMark
@@ -1257,10 +1676,49 @@ export function DescentView({
           onDismiss={(id) =>
             setToasts((current) => current.filter((toast) => toast.id !== id))
           }
+          only="error"
           toasts={toasts}
         />
       </div>
-      <div className={styles.bottomHud} data-testid="descent-bottom-hud">
+      <div
+        aria-hidden={shellInert || undefined}
+        className={styles.bottomHud}
+        data-testid="descent-bottom-hud"
+        inert={shellInert}
+      >
+        {controlGroupTabs.length === 0 ? null : (
+          <nav
+            aria-label="Control groups"
+            className={bottomHudStyles.controlGroupBar}
+            data-testid="control-group-bar"
+          >
+            {controlGroupTabs.map((group) => (
+              <button
+                aria-label={`Select control group ${group.slot} (${group.label})`}
+                className={bottomHudStyles.controlGroupPill}
+                data-control-group={group.slot}
+                key={group.slot}
+                onClick={() =>
+                  handleControlGroup({
+                    mode: "recall",
+                    slot: group.slot,
+                    type: "controlGroup",
+                  })
+                }
+                onDoubleClick={() => centerControlGroup(group.slot)}
+                title={`Group ${group.slot}: ${group.label} (click to select, double-click to center)`}
+                type="button"
+              >
+                <kbd className={bottomHudStyles.controlGroupKey}>
+                  {group.slot}
+                </kbd>
+                <span className={bottomHudStyles.controlGroupCount}>
+                  {group.count}
+                </span>
+              </button>
+            ))}
+          </nav>
+        )}
         {buildOpen ? (
           <BuildMenu
             onChoose={chooseBuilding}
@@ -1268,6 +1726,7 @@ export function DescentView({
             onGlossary={() => setGlossaryOpen(true)}
             options={model.buildOptions}
             shortcutsSuspended={
+              menuOpen ||
               glossaryOpen ||
               hotkeysOpen ||
               intent !== null ||
@@ -1311,6 +1770,17 @@ export function DescentView({
           ref={setMinimapHost}
         />
       </div>
+      {menuOpen ? (
+        <PauseMenuDialog
+          onControls={() => {
+            setMenuOpen(false);
+            setHotkeysOpen(true);
+          }}
+          onExit={exitMatch}
+          onResume={closeMenu}
+          roomExit={multiplayer !== undefined}
+        />
+      ) : null}
       {glossaryOpen ? (
         <GlossaryDialog onClose={() => setGlossaryOpen(false)} />
       ) : null}
@@ -1333,19 +1803,24 @@ export function DescentView({
           progress={loadProgress}
         />
       )}
-      {multiplayer?.campaignDebrief != null || model.outcome !== null ? (
+      {campaignDebrief != null ||
+      multiplayer?.campaignDebrief != null ||
+      model.outcome !== null ? (
         <section
           aria-label={
-            multiplayer?.campaignDebrief != null
+            campaignDebrief != null || multiplayer?.campaignDebrief != null
               ? "Campaign debrief"
               : "Match outcome"
           }
           className={styles.outcome}
           role="dialog"
         >
-          {multiplayer?.campaignDebrief ?? (
+          {campaignDebrief ?? multiplayer?.campaignDebrief ?? (
             <>
               <h2>{model.outcome?.title}</h2>
+              {model.outcome?.body === undefined ? null : (
+                <p>{model.outcome.body}</p>
+              )}
               {onRestart === undefined ? null : (
                 <button onClick={onRestart} type="button">
                   Restart

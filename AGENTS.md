@@ -325,12 +325,28 @@ sight or deposits, veins, and vents on unexplored ground. Rim and abyss scenery 
 above the flat fog sheet, so `views/sceneryFog.ts` hides each piece until the
 map edge beside it is explored. The mounted slice ends after
 Cinderjaw; later layers, heroes, Calamities, and Tribulation are not live
-runtime content. Multiplayer also offers a three-mission Ashen Crucible campaign:
+runtime content. The solo title screen also offers an exploration mode with no
+timed waves or Essence/Pressure stat scaling. Its seeded camps guard stockpile
+bundles, pills, and rescued units, leash back to their prizes, and publish only
+fog-discovered details. Guards drop one full physical cache per resource
+reward. A villager or Qi cultivator must haul each cache to Camp or a
+Storehouse: pickup reserves its stock without depleting it, and delivery
+credits that resource and removes the node. Pills and rescued units arrive at
+the first receiving storage; the camp completes after every resource arrives.
+Cache sources, carries, and claims live in the Ashen Gate slice and economy
+metadata so they autosave with the run; the canonical `Descent Explorer Cache`
+prop has a procedural fallback.
+Every non-villager soldier cultivates, but only
+Sword, Flying-Sword, and Formation Cultivators use Qi Arts and Meditation.
+Ashen Gate caps cultivation at Sworn; live brewing and feeding offer only pill
+effects implemented by combat modifiers, not later-layer or data-only recipes.
+Multiplayer also offers a three-mission Ashen Crucible campaign:
 `DESCENT_CAMPAIGN_MISSIONS` in the API defines the ordered scenarios and wave
 tuning. Each mission starts fresh forces; only mission progress carries over.
-Progress belongs to the Redis room, survives reconnects within the shared room
+Co-op progress belongs to the Redis room, survives reconnects within the shared room
 lifecycle, and is deleted on final leave; it is not an account-backed campaign
-save. Locked participants report immutable replay outcomes; all must report
+save. Solo campaign progress and per-mission autosaves are stored separately in
+the browser; completed missions can be replayed and victories unlock the next. Locked participants report immutable replay outcomes; all must report
 victory to advance, while any defeat permits a host retry. This is cooperative
 peer attestation, not server-verified anti-cheat. Campaign transitions are
 host-only and fenced to the current match id. Browser solo autosave runs at
@@ -364,9 +380,11 @@ silhouettes. As the Hold climbs tiers (`Camp` → `Outpost` → `Stronghold` →
 `Citadel`), the Camp swaps to each tier's generated model (falling back to the
 previous tier until generated), gradually unlocking buildings and trainable unit
 classes.
-Surface nodes reuse four
-harvestable prop families (grove, tree, outcrop, and well) with resource-color
-cues, while ember vents use one generated hazard prop with a procedural glow.
+Surface nodes use resource-specific canonical props: Harvest Grove/Tree,
+Spirit Herb Patch, Ore/Iron Outcrops, Coin Hoard, Spirit Well, and Essence
+Spring, with distinct procedural stand-ins. Storehouse, Omen Tower, ordinary
+Palisade Wall, and Hold Gate likewise have their own roles rather than reusing
+Camp or Fire Ward. Ember vents use one generated hazard prop with a glow.
 Both maps also carry water: `placeWaterways` (`logic/mapgen/rivers.ts`) lays
 north-south rivers as chains of overlapping `deep_water` disks (impassable
 terrain obstacles, so pathing, building placement, and fog already handle them)
@@ -380,10 +398,12 @@ prop (`plankBridge` role), falling back to a procedural plank deck.
 The battlefield sits on a basalt plateau a little larger than the map, with
 cliffs dropping to a lava sea (`views/ashenBackdrop.ts`). Its ground, cliff,
 and lava paintings come from the `static-image` agent and are found again by
-the prompt tags in `data/layers/ashen_gate/environmentArt.ts`. Generated
-scenery (Horde Gate, abyss spires, rim ruins, spirit crystals, boulders) is
-placed by `views/ashenTerrainLayout.ts` and never lands inside the playable
-map. Every surface and scenery role has a procedural stand-in.
+the prompt tags in `data/layers/ashen_gate/environmentArt.ts`. Generated scenery remains outside the playable map, but only the Horde Gate
+is interactive; it marks the real eastern wave approach. Ambient pieces do not
+intercept clicks. The same models also have gameplay homes: Spirit Crystals
+mark Spirit Veins, Basalt Boulders vary stone deposits, Abyss Spires vary ember
+vents, and Rim Ruin marks Cinderjaw's exploration stronghold. Variants use
+stable feature ids, and every role has a procedural stand-in.
 Generate the local roster, textures, and audio through the agent generation API
 above. Read canonical model names from `data/layers/ashen_gate/threeDAssets.ts`,
 texture tags from `environmentArt.ts`, and audio prompts and cues from

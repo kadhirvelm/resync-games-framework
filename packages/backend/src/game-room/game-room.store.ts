@@ -553,6 +553,23 @@ export class GameRoomStore {
   }
 
   /**
+   * Checks whether a game room still exists for a game. Rooms are deleted on
+   * an explicit final leave.
+   * @param requestedRoomId - Human-entered room code
+   * @param gameId - Game expected to own the room
+   * @returns `false` for missing or mismatched rooms
+   */
+  public async roomExists(
+    requestedRoomId: unknown,
+    gameId: string,
+  ): Promise<boolean> {
+    const roomId = normalizeRoomId(requestedRoomId);
+    if (!roomId) return false;
+    const room = await this.readStoredRoom(roomId);
+    return room?.gameId === gameId;
+  }
+
+  /**
    * Checks whether a game room currently has any connected members.
    * @param requestedRoomId - Human-entered room code
    * @param gameId - Game expected to own the room

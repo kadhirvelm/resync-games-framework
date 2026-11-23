@@ -11,8 +11,8 @@ export const COACH_MARKS: Record<CoachMarkId, { body: string; title: string }> =
       title: "Body Pill",
     },
     realm: {
-      body: "Fill merit and essence to reach Sworn.",
-      title: "Ranks",
+      body: "Earn Merit, Personal Essence, and 3 killing blows. After the first fight, your Captain needs no Hall.",
+      title: "Captain cultivation",
     },
     school: {
       body: "Choose Ember, Rime, or Blood. Locked for this run.",

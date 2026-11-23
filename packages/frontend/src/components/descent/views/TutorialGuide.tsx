@@ -2,7 +2,7 @@
 /** @jsxImportSource react */
 "use client";
 
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import {
   evaluateTutorialProgress,
   type TutorialStepId,
@@ -42,7 +42,7 @@ const FOCUS_ACTION_LABELS: Readonly<Record<TutorialTargetHint, string>> = {
  * @param props - Snapshot and optional focus, dismiss, and wave-hold controls
  * @returns The tutorial guide overlay
  */
-export function TutorialGuide({
+export const TutorialGuide = memo(function TutorialGuide({
   onDismiss,
   onFocusTarget,
   snapshot,
@@ -296,4 +296,4 @@ export function TutorialGuide({
       </details>
     </aside>
   );
-}
+});

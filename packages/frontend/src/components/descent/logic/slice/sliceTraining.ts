@@ -12,12 +12,14 @@ import {
   asBuilding,
   createUnitRecord,
   economyHost,
+  isEconomyUnit,
   tierAllows,
 } from "../economy/records";
 import { canAfford, trySpend } from "../economy/stockpile";
 import { trainingCost } from "../economy/tables";
 import {
   cellOpen,
+  hasGatherableStock,
   orderVillagersGather,
   orderVillagersMove,
 } from "../economy/villagers";
@@ -25,7 +27,9 @@ import { secondsToTicks } from "../sim/constants";
 import type { TickContext } from "../sim/modules";
 import type { SimWorldState } from "../sim/world";
 import type { ClassId, ResourceStockpile } from "../types";
+import { assignUniqueCultivatorName } from "./cultivatorNames";
 import { openCultivation, saveCultivation } from "./sliceCultivation";
+import { isCultivatorClass } from "./sliceCultivatorPowers";
 import {
   ECONOMY_STEP_TICKS,
   pushFx,
@@ -54,7 +58,7 @@ export const CULTIVATOR_SANCTUM_CLASSES: readonly CombatClassId[] = [
 
 /** Minimum Hold tier required to train each unit class. */
 export const CLASS_REQUIRED_TIER: Readonly<Record<ClassId, HoldTier>> = {
-  adept: "Citadel",
+  adept: "Camp",
   breaker: "Citadel",
   cultivator: "Outpost",
   formation_master: "Stronghold",
@@ -65,6 +69,9 @@ export const CLASS_REQUIRED_TIER: Readonly<Record<ClassId, HoldTier>> = {
   villager: "Camp",
   warden: "Camp",
 };
+
+/** Maximum living or queued units allowed per cultivator path for each Hold. */
+export const CULTIVATOR_LIMIT_PER_CLASS = 1;
 
 /**
  * @param classId - Unit class
@@ -173,6 +180,47 @@ export function isTrainingShortfall(reason: string | null): boolean {
 }
 
 /**
+ * Checks whether the owning Hold already has a living or queued cultivator of
+ * the requested path, enforcing {@link CULTIVATOR_LIMIT_PER_CLASS}.
+ * @param world - Sim world
+ * @param classId - Requested unit class
+ * @param ownerId - Owning player id in co-op, or undefined in solo play
+ * @returns Player-facing limit reason, or null when training is allowed
+ */
+function cultivatorLimitBlocker(
+  world: SimWorldState,
+  classId: ClassId,
+  ownerId: string | undefined,
+): string | null {
+  if (!isCultivatorClass(classId)) return null;
+  const label = getUnitDefinition(classId).name.replace("Hold ", "");
+  const living = world.units.filter(
+    (unit) =>
+      isEconomyUnit(unit) &&
+      unit.hp > 0 &&
+      unit.classId === classId &&
+      unit.ownerId === ownerId,
+  ).length;
+  if (living >= CULTIVATOR_LIMIT_PER_CLASS) {
+    return `Limit 1: you already have a ${label}.`;
+  }
+  const queued = sliceState(world).training.filter((job) => {
+    if (job.classId !== classId) return false;
+    const ownerBuilding = world.buildings.find(
+      (entry) => entry.id === job.buildingId,
+    );
+    return (
+      ownerBuilding !== undefined &&
+      asBuilding(ownerBuilding).ownerId === ownerId
+    );
+  }).length;
+  if (living + queued >= CULTIVATOR_LIMIT_PER_CLASS) {
+    return `Limit 1: already training a ${label}.`;
+  }
+  return null;
+}
+
+/**
  * Explains why an order cannot be placed right now.
  * @param world - Sim world
  * @param buildingId - Training building
@@ -189,11 +237,7 @@ export function trainingBlocker(
   const record = asBuilding(building);
   if (record.buildingType !== trainerFor(classId)) {
     if (classId === "villager") return "Villagers train at the Camp.";
-    if (
-      classId === "cultivator" ||
-      classId === "sword_sage" ||
-      classId === "formation_master"
-    ) {
+    if (isCultivatorClass(classId)) {
       return "Cultivators train at a Cultivator Sanctum.";
     }
     return "Soldiers train at a Barracks.";
@@ -204,6 +248,8 @@ export function trainingBlocker(
   if (!isClassUnlocked(getHoldTier(host, record.ownerId), classId)) {
     return `Needs ${requiredTier} to train this unit.`;
   }
+  const limitReason = cultivatorLimitBlocker(world, classId, record.ownerId);
+  if (limitReason !== null) return limitReason;
   const queued = sliceState(world).training.filter(
     (job) => job.buildingId === buildingId,
   ).length;
@@ -281,7 +327,7 @@ export function queueTraining(
   count?: number,
 ): void {
   const world = context.world;
-  const requested = requestedTrainCount(count);
+  const requested = isCultivatorClass(classId) ? 1 : requestedTrainCount(count);
   let queued = 0;
   let blocker: string | null = null;
   for (let index = 0; index < requested; index += 1) {
@@ -469,7 +515,12 @@ function rallyNode(
   const node = economyHost(world, ECONOMY_STEP_TICKS).economy.nodes.find(
     (entry) => entry.id === nodeId,
   );
-  if (node === undefined || node.remaining <= 0) return null;
+  if (
+    node === undefined ||
+    !hasGatherableStock(economyHost(world, ECONOMY_STEP_TICKS), node)
+  ) {
+    return null;
+  }
   return node;
 }
 
@@ -495,10 +546,12 @@ function spawnBatch(
   building: ReturnType<typeof asBuilding>,
 ): void {
   const world = context.world;
-  const cells = openCellsAround(world, building, job.count);
+  const rally = trainingRallyPoint(world, building.id);
+  const cells = openCellsAround(world, building, job.count, rally);
   const cultivation = openCultivation(world);
   const soldierIds: string[] = [];
   const villagerIds: string[] = [];
+  const spawnedNames: string[] = [];
   for (const cell of cells) {
     const id = context.nextEntityId(job.classId);
     const ownerField =
@@ -517,12 +570,17 @@ function spawnBatch(
       continue;
     }
     const definition = getUnitDefinition(job.classId);
+    const customName = isCultivatorClass(job.classId)
+      ? assignUniqueCultivatorName(world, id)
+      : undefined;
+    if (customName !== undefined) spawnedNames.push(customName);
     world.units.push(
       createUnitRecord({
         classId: job.classId,
         hp: definition.maxHitPoints,
         id,
         maxHp: definition.maxHitPoints,
+        ...(customName === undefined ? {} : { name: customName }),
         ...ownerField,
         popKind: "soldier",
         realmId: "qi_gathering",
@@ -540,7 +598,7 @@ function spawnBatch(
   }
   saveCultivation(world, cultivation);
   sendBatchToRallyPoint(world, building.id, villagerIds, soldierIds);
-  pushNotice(world, readyMessage(job), "good");
+  pushNotice(world, readyMessage(job, spawnedNames[0]), "good");
 }
 
 /**
@@ -614,12 +672,18 @@ function clampCoordinate(value: number, size: number): number {
 
 /**
  * @param job - Finished job
+ * @param customName - Assigned personal name for a unique cultivator, if any
  * @returns The arrival notice
  */
-function readyMessage(job: TrainingJob): string {
+function readyMessage(job: TrainingJob, customName?: string): string {
   if (job.classId === "villager") return "A villager joins the Hold.";
-  const name = getUnitDefinition(job.classId as CombatClassId).name;
-  return `${job.count} Ashborn ${name.replace("Hold ", "")}s report for duty.`;
+  const classLabel = getUnitDefinition(
+    job.classId as CombatClassId,
+  ).name.replace("Hold ", "");
+  if (customName !== undefined) {
+    return `${customName} (${classLabel}) joins the Hold.`;
+  }
+  return `${job.count} Ashborn ${classLabel}s report for duty.`;
 }
 
 /**
@@ -627,12 +691,14 @@ function readyMessage(job: TrainingJob): string {
  * @param world - Sim world
  * @param building - Building and its center cell
  * @param count - Cells wanted
+ * @param rally - Destination used to prefer the closest side of each ring
  * @returns `count` cells; on a packed map the rest fall on the south edge
  */
 function openCellsAround(
   world: SimWorldState,
   building: { buildingType: string; x: number; y: number },
   count: number,
+  rally: TrainingRallyPoint | null,
 ): { x: number; y: number }[] {
   const { x, y } = building;
   const edge = footprintRadius(building.buildingType);
@@ -643,8 +709,9 @@ function openCellsAround(
     radius <= edge + 4 && cells.length < count;
     radius += 1
   ) {
-    for (let dy = -radius; dy <= radius && cells.length < count; dy += 1) {
-      for (let dx = -radius; dx <= radius && cells.length < count; dx += 1) {
+    const ring: { x: number; y: number }[] = [];
+    for (let dy = -radius; dy <= radius; dy += 1) {
+      for (let dx = -radius; dx <= radius; dx += 1) {
         if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
         const cell = { x: x + dx, y: y + dy };
         if (!cellOpen(host, cell.x, cell.y, "ally")) continue;
@@ -652,9 +719,18 @@ function openCellsAround(
           (node) => node.x === cell.x && node.y === cell.y,
         );
         if (nodeHere) continue;
-        cells.push(cell);
+        ring.push(cell);
       }
     }
+    if (rally !== null) {
+      ring.sort(
+        (a, b) =>
+          (a.x - rally.x) ** 2 +
+          (a.y - rally.y) ** 2 -
+          ((b.x - rally.x) ** 2 + (b.y - rally.y) ** 2),
+      );
+    }
+    cells.push(...ring.slice(0, count - cells.length));
   }
   while (cells.length < count) cells.push({ x, y: y + edge + 1 });
   return cells;

@@ -432,6 +432,37 @@ export function isInsideSpiritArray(
 }
 
 /**
+ * Identifies the nearby source of the 2.5× Meditation bonus.
+ * @param world - Sim world
+ * @param x - Map x
+ * @param y - Map y
+ * @returns The nearby sacred-ground source, or null on ordinary ground
+ */
+export function sacredGroundAt(
+  world: SimWorldState,
+  x: number,
+  y: number,
+): "array" | "pavilion" | "vein" | null {
+  if (isInsideSpiritArray(world, x, y)) return "array";
+  if (
+    hasCompletedBuildingNear(
+      world,
+      "meditation_pavilion",
+      x,
+      y,
+      MEDITATION_PAVILION_RADIUS,
+    )
+  ) {
+    return "pavilion";
+  }
+  const host = economyHost(world, ECONOMY_STEP_TICKS);
+  const onVein = host.economy.veins.some(
+    (vein) => Math.hypot(vein.x - x, vein.y - y) <= SPIRIT_VEIN_MEDITATE_RADIUS,
+  );
+  return onVein ? "vein" : null;
+}
+
+/**
  * Checks whether a point lies near a Spirit Vein, Spirit Array, or Pavilion.
  * @param world - Sim world
  * @param x - Map x
@@ -443,22 +474,7 @@ export function isOnSacredGround(
   x: number,
   y: number,
 ): boolean {
-  if (isInsideSpiritArray(world, x, y)) return true;
-  if (
-    hasCompletedBuildingNear(
-      world,
-      "meditation_pavilion",
-      x,
-      y,
-      MEDITATION_PAVILION_RADIUS,
-    )
-  ) {
-    return true;
-  }
-  const host = economyHost(world, ECONOMY_STEP_TICKS);
-  return host.economy.veins.some(
-    (vein) => Math.hypot(vein.x - x, vein.y - y) <= SPIRIT_VEIN_MEDITATE_RADIUS,
-  );
+  return sacredGroundAt(world, x, y) !== null;
 }
 
 /**

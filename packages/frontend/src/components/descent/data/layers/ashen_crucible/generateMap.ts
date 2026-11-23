@@ -16,6 +16,7 @@ import type {
   TerrainBridge,
   TerrainFeature,
   TerrainFeatureKind,
+  TerrainHill,
 } from "../../../logic/layers";
 import {
   clamp,
@@ -26,6 +27,7 @@ import {
   type MapPoint,
   nearestDistance,
   pickBest,
+  placeHills,
   placeWaterways,
   poissonDiskSample,
   polarOffset,
@@ -171,6 +173,15 @@ function layoutAttempt(
   );
   const veins = placeCrucibleVeins(rng, placements, vents, obstacles, spawn);
   const nodes = placeCrucibleNodes(rng, placements, vents, obstacles, veins);
+  const hillRng = createMapRng(seed, `ashen_crucible:hills:${attempt}`);
+  const hills = placeCrucibleHills(
+    hillRng,
+    placements,
+    spawn,
+    vents,
+    obstacles,
+    bridges,
+  );
 
   const buildings: BuildingInit[] = placements.map((entry) => ({
     buildingType: "camp",
@@ -210,6 +221,7 @@ function layoutAttempt(
       },
     ],
     height,
+    hills,
     nodes,
     obstacles,
     stockpile: ashenCrucibleStockpile(players.length),
@@ -218,6 +230,78 @@ function layoutAttempt(
     vents,
     width,
   };
+}
+
+/**
+ * Places Age of Empires-style walkable hills across Ashen Crucible while
+ * keeping player Camp aprons, water channels, bridges, and spawn flat.
+ * @param rng - Hill RNG stream
+ * @param placements - Allied player camp placements
+ * @param spawn - Horde spawn point
+ * @param vents - Placed ember vents
+ * @param obstacles - Placed obstacles including deep water
+ * @param bridges - Placed bridges
+ * @returns Walkable hills for this co-op layout
+ */
+function placeCrucibleHills(
+  rng: SimRng,
+  placements: readonly CampPlacement[],
+  spawn: MapPoint,
+  vents: readonly CircleVolume[],
+  obstacles: readonly TerrainFeature[],
+  bridges: readonly TerrainBridge[],
+): TerrainHill[] {
+  const { height, width } = ASHEN_CRUCIBLE_MAP_SIZE;
+  const waterDisks = obstacles.filter((entry) => entry.kind === "deep_water");
+  const canPlace = (x: number, y: number, radius: number): boolean => {
+    const point = { x, y };
+    if (
+      placements.some(
+        (entry) => distance(point, entry.camp) < BUILD_APRON + radius + 3,
+      )
+    ) {
+      return false;
+    }
+    if (
+      x + radius >= width - SPAWN_CLEARING_COLUMNS - 2 &&
+      Math.abs(y - spawn.y) <= SPAWN_CLEARING_ROWS + radius
+    ) {
+      return false;
+    }
+    if (
+      waterDisks.some(
+        (disk) => distance(point, disk) < disk.radius + radius + 2,
+      )
+    ) {
+      return false;
+    }
+    if (
+      bridges.some(
+        (bridge) => distance(point, bridge) < bridge.length / 2 + radius + 2,
+      )
+    ) {
+      return false;
+    }
+    if (
+      vents.some((vent) => distance(point, vent) < vent.radius + radius * 0.65)
+    ) {
+      return false;
+    }
+    return true;
+  };
+  const preferredCenters: MapPoint[] = bridges.flatMap((bridge) => [
+    { x: bridge.x - 19, y: bridge.y - 16 },
+    { x: bridge.x + 19, y: bridge.y + 16 },
+  ]);
+  return placeHills({
+    canPlace,
+    count: 11,
+    height,
+    idPrefix: "crucible",
+    preferredCenters,
+    rng,
+    width,
+  });
 }
 
 /**
@@ -687,7 +771,7 @@ function startingUnitsForPlayer(entry: CampPlacement): UnitInit[] {
     {
       classId: "cultivator",
       id: `crucible-captain-${slot}`,
-      maxHp: 135,
+      maxHp: getUnitDefinition("cultivator").maxHitPoints,
       ownerId: player.id,
       popKind: "soldier",
       realmId: "qi_gathering",

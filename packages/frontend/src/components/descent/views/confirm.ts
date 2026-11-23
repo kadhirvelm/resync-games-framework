@@ -1,13 +1,21 @@
+import { REALMS } from "../logic/cultivation/data";
+import type { BreakthroughDefinition } from "../logic/cultivation/types";
+import { LAYER_TABLE } from "../logic/layers/layerTable";
 import type { Command, SchoolId } from "../logic/types";
 import type { ConfirmIntent } from "./card";
-import type { ShellModel, ShellUnit } from "./shellModel";
+import { pillEffectLabel } from "./pillGuidance";
+import {
+  schoolPassiveDescription,
+  schoolQiArtDescription,
+} from "./schoolGuidance";
+import type { ShellBuilding, ShellModel, ShellUnit } from "./shellModel";
 import {
   breakthroughToast,
   feedBlockMessage,
   formatChance,
   populationToast,
+  RESOURCE_COPY,
   SCHOOL_LABEL,
-  schoolCommitValue,
   toxicityLabel,
 } from "./text";
 
@@ -39,29 +47,6 @@ function unitById(model: ShellModel, unitId: string): ShellUnit | null {
 }
 
 /**
- * The three numbers every cultivation commit must show.
- * @param unit - Unit being committed
- * @param schoolValue - School-match sentence
- * @param toxicity - Toxicity sentence
- * @returns Success, toxicity, and school rows
- */
-function cultivationRows(
-  unit: ShellUnit,
-  schoolValue: string,
-  toxicity: string,
-): CommitRow[] {
-  const chance =
-    unit.cultivation === null
-      ? "Unpublished"
-      : formatChance(unit.cultivation.successChance);
-  return [
-    { label: "Chance", value: chance },
-    { label: "Toxicity", value: toxicity },
-    { label: "School", value: schoolValue },
-  ];
-}
-
-/**
  * A confirm that cannot emit a command.
  * @param title - Dialog title
  * @param message - Why the commit is blocked
@@ -87,6 +72,75 @@ function blocked(
 }
 
 /**
+ * Chooses the eligible Hall with the largest Spirit Vein bonus, breaking ties by id.
+ * @param model - Shell model with completed buildings
+ * @param ownerId - Owning co-op player, or undefined in solo play
+ * @returns The best Hall to use, or null
+ */
+function bestCultivationHall(
+  model: ShellModel,
+  ownerId: string | undefined,
+): ShellBuilding | null {
+  let best: ShellBuilding | null = null;
+  for (const building of model.buildings) {
+    if (building.buildingType !== "cultivation_hall" || building.constructing) {
+      continue;
+    }
+    if (building.ownerId !== ownerId) continue;
+    if (best === null) {
+      best = building;
+      continue;
+    }
+    const bonus = building.breakthroughSuccessBonus;
+    if (bonus > best.breakthroughSuccessBonus) {
+      best = building;
+      continue;
+    }
+    if (bonus === best.breakthroughSuccessBonus && building.id < best.id) {
+      best = building;
+    }
+  }
+  return best;
+}
+
+/**
+ * Formats the actual consumables for one rank transition.
+ * @param definition - Breakthrough requirements from the realm catalog
+ * @returns Pill/material cost, or the free introductory transition
+ */
+function breakthroughCostLabel(definition: BreakthroughDefinition): string {
+  const parts = Object.entries(definition.materials).map(
+    ([resource, amount]) => {
+      const copy = RESOURCE_COPY[resource as keyof typeof RESOURCE_COPY];
+      return `${amount} ${copy.name}`;
+    },
+  );
+  if (definition.requiresPill !== false) parts.push("1 Breakthrough Pill");
+  return parts.length === 0 ? "No pill or tier materials" : parts.join(" · ");
+}
+
+/**
+ * Explains a school's modifier in the current scenario.
+ * @param model - Shell model with the layer banner
+ * @param school - School being considered
+ * @returns Exact layer modifier and scenario name
+ */
+function schoolLayerModifierLabel(model: ShellModel, school: SchoolId): string {
+  const layer = LAYER_TABLE.layers.find(
+    (candidate) => candidate.name === model.banner.name,
+  );
+  const scenario = layer?.name ?? model.banner.name;
+  const multiplier = layer?.schoolModifiers[school] ?? 1;
+  if (multiplier > 1) {
+    return `+${Math.round((multiplier - 1) * 100)}% school effect in ${scenario}`;
+  }
+  if (multiplier < 1) {
+    return `-${Math.round((1 - multiplier) * 100)}% school effect in ${scenario}`;
+  }
+  return `Neutral school effect in ${scenario}`;
+}
+
+/**
  * Builds the breakthrough confirm from the unit's published cultivation view.
  * @param model - Shell model
  * @param unitId - Unit that would channel
@@ -103,23 +157,63 @@ function breakthroughCommit(model: ShellModel, unitId: string): CommitModel {
     );
   }
   const cultivation = unit.cultivation;
-  const rows = [
-    ...cultivationRows(
-      unit,
-      schoolCommitValue(cultivation.school),
-      `${cultivation.toxicity}/${cultivation.toxicityCap}`,
-    ),
+  if (cultivation.rankCapReached === true) {
+    return blocked(
+      "Breakthrough",
+      `${cultivation.rank} is the ${cultivation.rankCapLabel ?? "current scenario"} rank cap.`,
+      [
+        {
+          label: "Rank cap",
+          value: `${cultivation.rankCapLabel ?? "Current scenario"} · ${cultivation.rank}`,
+        },
+      ],
+      "Begin breakthrough",
+    );
+  }
+  const currentRealm = REALMS.find((realm) => realm.rank === cultivation.rank);
+  const definition = currentRealm?.breakthrough;
+  const targetRealm = REALMS.find(
+    (realm) => realm.rank === definition?.targetRank,
+  );
+  const hall = bestCultivationHall(model, unit.ownerId);
+  const hallBonus = hall?.breakthroughSuccessBonus ?? 0;
+  let route = "Cultivation Hall required";
+  if (unit.captain && hall === null) {
+    route = "Captain battlefield · no Hall required";
+  } else if (hall !== null) {
+    route = `${hall.name} · ${hallBonus > 0 ? `+${Math.round(hallBonus * 100)}% from Spirit Vein` : "no Spirit Vein bonus"}`;
+  }
+  const rows: CommitRow[] = [
+    {
+      label: "Rank",
+      value: definition
+        ? `${cultivation.rank} → ${definition.targetRank}`
+        : `${cultivation.rank} · no next rank`,
+    },
+    { label: "Chance", value: formatChance(cultivation.successChance) },
+    { label: "Channel", value: `${definition?.channelSeconds ?? 20}s` },
+    {
+      label: "Cost",
+      value: definition
+        ? breakthroughCostLabel(definition)
+        : "No promotion available",
+    },
+    {
+      label: "Payoff",
+      value: targetRealm
+        ? `×${targetRealm.statMultiplier} health & damage · school unlock`
+        : "No promotion available",
+    },
+    {
+      label: "Failure",
+      value: "Keep Merit · halve Personal Essence · injured 45s",
+    },
+    { label: "Route", value: route },
     ...cultivation.missingRequirements.map((line) => ({
       label: "Missing",
       value: line,
     })),
   ];
-  const hall = model.buildings.find(
-    (building) =>
-      building.buildingType === "cultivation_hall" &&
-      !building.constructing &&
-      building.ownerId === unit.ownerId,
-  );
   if (cultivation.missingRequirements.length > 0) {
     return blocked(
       "Breakthrough",
@@ -128,7 +222,7 @@ function breakthroughCommit(model: ShellModel, unitId: string): CommitModel {
       "Begin breakthrough",
     );
   }
-  if (hall === undefined && !unit.breakthroughReady) {
+  if (hall === null && !unit.breakthroughReady) {
     return blocked(
       "Breakthrough",
       "Cultivation Hall is not on the map.",
@@ -139,7 +233,7 @@ function breakthroughCommit(model: ShellModel, unitId: string): CommitModel {
   return {
     blockedMessage: null,
     command:
-      hall === undefined
+      hall === null
         ? { type: "start_breakthrough", unitId }
         : { hallId: hall.id, type: "start_breakthrough", unitId },
     confirmLabel: "Begin breakthrough",
@@ -169,16 +263,16 @@ function feedCommit(
   if (unit === null || feed === undefined) {
     return blocked("Feed pill", "Pill unavailable.", [], "Feed pill");
   }
-  const rows = [
-    ...cultivationRows(
-      unit,
-      feed.schoolMatchLabel,
-      toxicityLabel(feed.preview),
-    ),
+  const rows: CommitRow[] = [
     {
       label: "Effect",
-      value: String(feed.preview.projectedAmount),
+      value:
+        feed.effectLabel ??
+        pillEffectLabel(feed.preview.pillId, feed.preview.projectedAmount),
     },
+    { label: "Duration", value: "Permanent for this run" },
+    { label: "School", value: feed.schoolMatchLabel },
+    { label: "Toxicity", value: toxicityLabel(feed.preview) },
   ];
   if (!feed.preview.canFeed) {
     return blocked(
@@ -216,16 +310,18 @@ function schoolCommit(
   if (unit === null || unit.cultivation === null) {
     return blocked(name, "Cultivation unavailable.", [], `Lock ${name}`);
   }
+  const art = schoolQiArtDescription(unit, school);
   return {
     blockedMessage: null,
     command: { school, type: "choose_school", unitId },
     confirmLabel: `Lock ${name}`,
     revive: null,
-    rows: cultivationRows(
-      unit,
-      `${name} · locked`,
-      `${unit.cultivation.toxicity}/${unit.cultivation.toxicityCap}`,
-    ),
+    rows: [
+      { label: "Passive", value: schoolPassiveDescription(school) },
+      { label: "Scenario", value: schoolLayerModifierLabel(model, school) },
+      ...(art === null ? [] : [{ label: "Qi Art", value: art }]),
+      { label: "Lock", value: `${name} · permanent for this run` },
+    ],
     title: `Choose ${name}`,
     tradeAmount: false,
   };
@@ -263,6 +359,9 @@ export function buildConfirm(
     const rows = [
       { label: "Pill", value: option.name },
       { label: "Brew", value: option.detail },
+      ...(option.effectLabel === undefined
+        ? []
+        : [{ label: "Effect", value: option.effectLabel }]),
     ];
     if (!option.allowed) {
       return blocked(
@@ -449,16 +548,21 @@ export function buildConfirm(
     };
   }
   const rows: CommitRow[] = [];
+  const label = model.exploration === null ? "Descend" : "Finish expedition";
+  const blockedMessage =
+    model.exploration?.bossDefeated === true
+      ? "Hoard still guarded"
+      : "Boss still lives";
   if (!model.bossGateCleared) {
-    return blocked("Descend", "Boss still lives", rows, "Descend");
+    return blocked(label, blockedMessage, rows, label);
   }
   return {
     blockedMessage: null,
     command: { type: "descend" },
-    confirmLabel: "Descend",
+    confirmLabel: label,
     revive: null,
     rows,
-    title: "Descend",
+    title: label,
     tradeAmount: false,
   };
 }

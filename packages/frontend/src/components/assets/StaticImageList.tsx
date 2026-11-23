@@ -4,10 +4,17 @@ import type {
   ListStaticImagesResponse,
   StaticImageAsset,
 } from "@resync-game-framework/api";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Dialog, Flex } from "@/lib/radix";
 import styles from "./Assets.module.scss";
+import {
+  type AssetGameId,
+  type AssetGameTag,
+  staticImageGameTags,
+} from "./assetGameTags";
 import { CopyableError } from "./CopyableError";
+import { GameFilterBar } from "./GameFilterBar";
+import { GameTagList } from "./GameTagList";
 import { type PendingJob, PendingJobCard } from "./PendingJobCard";
 
 interface StaticImageListProps {
@@ -127,21 +134,62 @@ export function StaticImageList({
   pendingJobs,
   result,
 }: StaticImageListProps) {
-  const images = [
-    ...(result?.staticImages ?? []),
-    ...BUNDLED_DESCENT_RESOURCE_IMAGES,
-  ];
+  const images = useMemo(
+    () => [...(result?.staticImages ?? []), ...BUNDLED_DESCENT_RESOURCE_IMAGES],
+    [result?.staticImages],
+  );
   const [selected, setSelected] = useState<StaticImageAsset | null>(null);
-  const hasContent = pendingJobs.length > 0 || images.length > 0;
+  const [gameFilter, setGameFilter] = useState<AssetGameId | "all">("all");
+
+  const taggedImages = useMemo(
+    () =>
+      images.map((image) => ({
+        image,
+        tags: staticImageGameTags(image),
+      })),
+    [images],
+  );
+
+  const availableTags = useMemo(() => {
+    const seen = new Map<AssetGameId, AssetGameTag>();
+    for (const entry of taggedImages) {
+      for (const tag of entry.tags) {
+        seen.set(tag.id, tag);
+      }
+    }
+    return [...seen.values()];
+  }, [taggedImages]);
+
+  const filteredImages = useMemo(
+    () =>
+      gameFilter === "all"
+        ? taggedImages
+        : taggedImages.filter((entry) =>
+            entry.tags.some((tag) => tag.id === gameFilter),
+          ),
+    [gameFilter, taggedImages],
+  );
+
+  const hasContent = pendingJobs.length > 0 || filteredImages.length > 0;
 
   return (
     <Flex direction="column" gap="3" width="100%">
       <Flex className={styles.sectionHeader}>
         <span className={styles.sectionTitle}>Library</span>
         {images.length > 0 && (
-          <span className={styles.assetCount}>{images.length}</span>
+          <span className={styles.assetCount}>
+            {gameFilter === "all"
+              ? images.length
+              : `${filteredImages.length}/${images.length}`}
+          </span>
         )}
       </Flex>
+
+      <GameFilterBar
+        activeGameId={gameFilter}
+        availableTags={availableTags}
+        onChange={setGameFilter}
+      />
 
       {isLoading && (
         <Flex align="center" gap="2">
@@ -169,7 +217,7 @@ export function StaticImageList({
               onStop={() => onStopJob(job.id)}
             />
           ))}
-          {images.map((image) => (
+          {filteredImages.map(({ image, tags }) => (
             <button
               className={styles.staticImageCard}
               key={image.id}
@@ -188,6 +236,7 @@ export function StaticImageList({
                   {image.aspectRatio}
                 </span>
               </span>
+              <GameTagList fallbackLabel="General" tags={tags} />
               <span className={styles.staticImageDescription}>
                 {image.description}
               </span>

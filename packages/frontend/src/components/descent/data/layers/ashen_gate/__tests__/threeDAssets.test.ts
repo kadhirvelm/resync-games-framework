@@ -4,7 +4,10 @@ import {
   assetRoleForBuilding,
   assetRoleForResource,
   assetRoleForUnit,
+  assetRoleForVent,
   isCharacterAssetRole,
+  isResourceAssetRole,
+  isSceneryAssetRole,
   resolveAshenGateAssets,
 } from "../threeDAssets";
 
@@ -65,6 +68,30 @@ describe("Ashen Gate 3D asset routing", () => {
     expect(resolveAshenGateAssets([grove]).resourceGrove?.id).toBe(grove.id);
   });
 
+  test("resolves distinct resource and utility building props", () => {
+    const definitions = [
+      ["Descent Spirit Herb Patch", "resourceSpiritHerbs"],
+      ["Descent Essence Spring", "resourceEssence"],
+      ["Descent Iron Outcrop", "resourceIron"],
+      ["Descent Coin Hoard", "resourceCoin"],
+      ["Descent Storehouse", "storehouse"],
+      ["Descent Palisade Wall", "wall"],
+      ["Descent Hold Gate", "holdGate"],
+      ["Descent Omen Tower", "omenTower"],
+    ] as const;
+    const assets = definitions.map(([name], index) =>
+      asset(
+        name,
+        `2026-12-${String(index + 1).padStart(2, "0")}T00:00:00.000Z`,
+        "prop",
+      ),
+    );
+    const resolved = resolveAshenGateAssets(assets);
+    for (const [index, [, role]] of definitions.entries()) {
+      expect(resolved[role]?.id).toBe(assets[index]?.id);
+    }
+  });
+
   test("resolves the canonical Rider character", () => {
     const rider = asset("Descent Rider", "2026-11-04T00:00:00.000Z");
     expect(resolveAshenGateAssets([rider]).rider?.id).toBe(rider.id);
@@ -77,6 +104,15 @@ describe("Ashen Gate 3D asset routing", () => {
       "prop",
     );
     expect(resolveAshenGateAssets([vent]).emberVent?.id).toBe(vent.id);
+  });
+
+  test("resolves the Meshy explorer cache with its generated subtitle", () => {
+    const cache = asset(
+      "Descent Explorer Cache — a single ornate ancient treasure ch",
+      "2026-11-23T00:00:00.000Z",
+      "prop",
+    );
+    expect(resolveAshenGateAssets([cache]).explorerCache?.id).toBe(cache.id);
   });
 
   test("maps gameplay identities to a small reusable model roster", () => {
@@ -140,6 +176,10 @@ describe("Ashen Gate 3D asset routing", () => {
     expect(assetRoleForBuilding("cultivator_sanctum")).toBe(
       "cultivatorSanctum",
     );
+    expect(assetRoleForBuilding("storehouse")).toBe("storehouse");
+    expect(assetRoleForBuilding("omen_tower")).toBe("omenTower");
+    expect(assetRoleForBuilding("wall")).toBe("wall");
+    expect(assetRoleForBuilding("gate")).toBe("holdGate");
     expect(assetRoleForBuilding("fire_ward_wall")).toBe("fireWard");
     expect(assetRoleForBuilding("well")).toBe("well");
     expect(assetRoleForBuilding("farm")).toBe("farm");
@@ -147,14 +187,47 @@ describe("Ashen Gate 3D asset routing", () => {
     expect(assetRoleForBuilding("hell_market")).toBe("market");
     expect(assetRoleForBuilding("spirit_herb_garden")).toBe("spiritHerbGarden");
     expect(assetRoleForResource("food")).toBe("resourceGrove");
-    expect(assetRoleForResource("spirit_herbs")).toBe("resourceGrove");
+    expect(assetRoleForResource("spirit_herbs")).toBe("resourceSpiritHerbs");
     expect(assetRoleForResource("wood")).toBe("resourceTree");
-    expect(assetRoleForResource("iron")).toBe("resourceOutcrop");
-    expect(assetRoleForResource("essence")).toBe("resourceWell");
+    expect(assetRoleForResource("stone")).toBe("resourceOutcrop");
+    expect(assetRoleForResource("iron")).toBe("resourceIron");
+    expect(assetRoleForResource("coin")).toBe("resourceCoin");
+    expect(assetRoleForResource("water")).toBe("resourceWell");
+    expect(assetRoleForResource("essence")).toBe("resourceEssence");
     expect(isCharacterAssetRole("warden")).toBe(true);
     expect(isCharacterAssetRole("cinderjaw")).toBe(true);
     expect(isCharacterAssetRole("camp")).toBe(false);
     expect(isCharacterAssetRole("basaltBoulders")).toBe(false);
+  });
+
+  test("uses stable former rim assets on real resource and hazard features", () => {
+    const ids = Array.from({ length: 24 }, (_, index) => `feature-${index}`);
+    const boulderNode = ids.find(
+      (id) => assetRoleForResource("stone", id) === "basaltBoulders",
+    );
+    const oreNode = ids.find(
+      (id) => assetRoleForResource("stone", id) === "resourceOutcrop",
+    );
+    expect(boulderNode).toBeDefined();
+    expect(oreNode).toBeDefined();
+    expect(assetRoleForResource("stone")).toBe("resourceOutcrop");
+    expect(assetRoleForResource("stone", boulderNode)).toBe("basaltBoulders");
+    expect(assetRoleForResource("stone", "ashen-stone-near")).toBe(
+      "basaltBoulders",
+    );
+    expect(assetRoleForResource("stone", "ashen-stone-near-cluster")).toBe(
+      "resourceOutcrop",
+    );
+
+    const spireVent = ids.find((id) => assetRoleForVent(id) === "abyssSpire");
+    const ordinaryVent = ids.find((id) => assetRoleForVent(id) === "emberVent");
+    expect(spireVent).toBeDefined();
+    expect(ordinaryVent).toBeDefined();
+    expect(assetRoleForVent(spireVent ?? "")).toBe("abyssSpire");
+    expect(isResourceAssetRole("basaltBoulders")).toBe(true);
+    expect(isSceneryAssetRole("spiritCrystals")).toBe(true);
+    expect(isSceneryAssetRole("rimRuin")).toBe(true);
+    expect(isSceneryAssetRole("abyssSpire")).toBe(true);
   });
 
   test("the Camp grows through Outpost, Stronghold, and Citadel, and Housing and Ward Tower use their own meshes", () => {

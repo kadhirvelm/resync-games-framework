@@ -23,15 +23,30 @@ import {
 import {
   ASHEN_GATE_CONTENT,
   ASHEN_GATE_MAP_SIZE,
+  type AshenGateMapType,
+  applyStartingResources,
+  type DescentDifficulty,
+  type DescentStartingResources,
   generateAshenGateMap,
+  getDifficultyOption,
 } from "../data/layers/ashen_gate";
 import { BOSS_INTROS } from "../data/narrative";
 import type { CombatCommand } from "./combat/types";
+import { cancelConstruction } from "./economy/actions";
 import { seedEconomyWorld } from "./economy/economy";
 import type { EconomyUnit } from "./economy/model";
 import { createEconomyModule } from "./economy/module";
 import { asBuilding, economyHost, isEconomyUnit } from "./economy/records";
 import { orderVillagersMove, orderVillagersStop } from "./economy/villagers";
+import {
+  advanceExploration,
+  cancelExplorationHaul,
+  discoverExplorationCamps,
+  initializeExploration,
+  isExplorationBossCampCleared,
+  normalizeExplorationState,
+} from "./exploration";
+import { isFogVisible } from "./fog";
 import { setLayerTerrain } from "./layers/hazards";
 import { creditPlayerCultivation } from "./scoring";
 import {
@@ -43,6 +58,7 @@ import {
   TICK_MS,
   type TickContext,
 } from "./sim";
+import { assignUniqueCultivatorName } from "./slice/cultivatorNames";
 import { formationCenter, planFormation } from "./slice/formation";
 import { runCombatTick } from "./slice/sliceCombat";
 import {
@@ -56,9 +72,11 @@ import {
   advanceCultivatorPowersTick,
   cancelMeditation,
   castQiArt,
+  isCultivatorClass,
   toggleMeditate,
 } from "./slice/sliceCultivatorPowers";
-import { updateFogOfWar } from "./slice/sliceFog";
+import { disbandHoldUnits } from "./slice/sliceDisband";
+import { readFogOfWar, updateFogOfWar } from "./slice/sliceFog";
 import {
   earlyCallBonus,
   formatEarlyCallBonus,
@@ -100,6 +118,14 @@ export {
 
 /** Options for a new playable Ashen Gate simulation. */
 export interface AshenGateSimOptions {
+  /** Wave difficulty preset; defaults to `"moderate"`. */
+  difficulty?: DescentDifficulty;
+  /** Terrain-focused map archetype; defaults to `"ashen_crossings"`. */
+  mapType?: AshenGateMapType;
+  /** Timed siege by default; stationary guarded camps in exploration mode. */
+  mode?: "exploration" | "siege";
+  /** Starting stockpile preset; defaults to `"standard"`. */
+  startingResources?: DescentStartingResources;
   /**
    * Whether the map floods rivers and a pond. Defaults to true; scripted
    * scenarios that need a dry approach turn it off.
@@ -142,9 +168,37 @@ export interface MultiplayerDescentSimOptions {
  * @returns A ready Ashen Gate simulation
  */
 export function createAshenGateSim(options: AshenGateSimOptions): DescentSim {
-  const waveOptions = options.shouldHoldWave
-    ? { shouldHoldWave: options.shouldHoldWave }
-    : undefined;
+  const exploration = options.mode === "exploration";
+  const difficulty = getDifficultyOption(options.difficulty);
+  const customDifficulty =
+    !exploration &&
+    (difficulty.waveStatScale !== 1 || difficulty.waveTimeScale !== 1);
+  const waveOptions = exploration
+    ? {
+        scheduledWaves: false,
+        ...(options.shouldHoldWave
+          ? { shouldHoldWave: options.shouldHoldWave }
+          : {}),
+      }
+    : customDifficulty || options.shouldHoldWave
+      ? {
+          ...(customDifficulty
+            ? {
+                waveStatScale: difficulty.waveStatScale,
+                waveTimeScale: difficulty.waveTimeScale,
+              }
+            : {}),
+          ...(options.shouldHoldWave
+            ? { shouldHoldWave: options.shouldHoldWave }
+            : {}),
+        }
+      : undefined;
+  const needsCustomSlice =
+    exploration ||
+    options.waterways === false ||
+    (options.mapType !== undefined && options.mapType !== "ashen_crossings") ||
+    (options.startingResources !== undefined &&
+      options.startingResources !== "standard");
   return createDescentSim({
     layerId: "ashen_gate",
     map: { ...ASHEN_GATE_MAP_SIZE },
@@ -154,8 +208,13 @@ export function createAshenGateSim(options: AshenGateSimOptions): DescentSim {
         stepEveryTicks: ECONOMY_STEP_TICKS,
       }),
       createWavesModule(undefined, waveOptions),
-      options.waterways === false
-        ? createSliceModule({ waterways: false })
+      needsCustomSlice
+        ? createSliceModule({
+            exploration,
+            mapType: options.mapType,
+            startingResources: options.startingResources,
+            waterways: options.waterways,
+          })
         : ashenGateSliceModule,
     ],
     seed: options.seed,
@@ -209,6 +268,22 @@ export function createMultiplayerDescentSim(
 export function isAshenGateSliceSnapshot(snapshot: SimSnapshot): boolean {
   if (snapshot.layerId !== "ashen_gate") return false;
   return isAshenGateSliceState(snapshot.meta[ASHEN_GATE_SLICE_MODULE_ID]);
+}
+
+/**
+ * Reports whether a snapshot belongs to the self-paced camp scenario.
+ * @param snapshot - Sim snapshot to inspect
+ * @returns True when guarded camps, rather than timed waves, drive the run
+ */
+export function isExplorationSnapshot(snapshot: SimSnapshot): boolean {
+  if (!isAshenGateSliceSnapshot(snapshot)) return false;
+  const state = snapshot.meta[ASHEN_GATE_SLICE_MODULE_ID];
+  return (
+    typeof state === "object" &&
+    state !== null &&
+    "exploration" in state &&
+    state.exploration !== undefined
+  );
 }
 
 /**
@@ -281,7 +356,13 @@ function ownsUnit(
 }
 
 interface SliceModuleConfig {
+  /** Enables stationary solo camps and disables the timed wave schedule. */
+  exploration?: boolean;
+  /** Terrain-focused map archetype for solo Ashen Gate runs. */
+  mapType?: AshenGateMapType;
   players?: readonly AshenCruciblePlayer[];
+  /** Starting stockpile preset for solo runs. */
+  startingResources?: DescentStartingResources;
   tutorial?: boolean;
   /** Set false to generate the map without rivers or ponds. */
   waterways?: boolean;
@@ -299,6 +380,21 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
       context: TickContext,
     ) {
       callNextWave(context.world);
+    },
+    cancel_construction(
+      command: Extract<Command, { type: "cancel_construction" }>,
+      context: TickContext,
+    ) {
+      if (!ownsBuilding(context.world, command.buildingId, command.actorId)) {
+        return;
+      }
+      const host = economyHost(context.world, ECONOMY_STEP_TICKS);
+      if (!cancelConstruction(host, command.buildingId)) return;
+      pushNotice(
+        context.world,
+        "Construction cancelled. Cost refunded.",
+        "info",
+      );
     },
     cancel_training(
       command: Extract<Command, { type: "cancel_training" }>,
@@ -351,12 +447,37 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
         pushNotice(context.world, "Boss still lives", "warn");
         return;
       }
+      if (!isExplorationBossCampCleared(context.world)) {
+        pushNotice(
+          context.world,
+          "Cinderjaw's remaining guards still protect the hoard. Clear them to claim the prize and finish.",
+          "warn",
+        );
+        return;
+      }
       const state = sliceState(context.world);
       state.outcome = "victory";
       context.world.paused = true;
       context.emit(ASHEN_GATE_SLICE_MODULE_ID, "slice_completed", {
         outcome: "victory",
       });
+    },
+    disband_units(
+      command: Extract<Command, { type: "disband_units" }>,
+      context: TickContext,
+    ) {
+      const unitIds = authorizedUnitIds(
+        context.world,
+        command.unitIds,
+        command.actorId,
+      );
+      const count = disbandHoldUnits(context.world, unitIds);
+      if (count === 0) return;
+      pushNotice(
+        context.world,
+        `${count} ${count === 1 ? "unit" : "units"} disbanded. Population freed.`,
+        "info",
+      );
     },
     feed_pill(
       command: Extract<Command, { type: "feed_pill" }>,
@@ -383,6 +504,7 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
         command.actorId,
       );
       if (unitIds.length === 0) return;
+      cancelExplorationHaul(context.world, unitIds);
       cancelMeditation(context.world, unitIds);
       clearWaypoints(context.world, unitIds);
       queueOrder(context.world, { ...command, unitIds });
@@ -397,6 +519,7 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
         command.actorId,
       );
       if (unitIds.length === 0) return;
+      cancelExplorationHaul(context.world, unitIds);
       cancelMeditation(context.world, unitIds);
       routeMove(context.world, { ...command, unitIds });
     },
@@ -410,6 +533,7 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
         command.actorId,
       );
       if (unitIds.length === 0) return;
+      cancelExplorationHaul(context.world, unitIds);
       cancelMeditation(context.world, unitIds);
       routeMove(context.world, { ...command, unitIds });
     },
@@ -423,6 +547,7 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
         command.actorId,
       );
       if (unitIds.length === 0) return;
+      cancelExplorationHaul(context.world, unitIds);
       clearWaypoints(context.world, unitIds);
       orderVillagersStop(
         economyHost(context.world, ECONOMY_STEP_TICKS),
@@ -495,6 +620,7 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
         command.actorId,
       );
       if (unitIds.length === 0) return;
+      cancelExplorationHaul(context.world, unitIds);
       clearWaypoints(context.world, unitIds);
       queueOrder(context.world, { type: "order_stop", unitIds });
       toggleMeditate(context.world, unitIds);
@@ -519,33 +645,44 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
     id: ASHEN_GATE_SLICE_MODULE_ID,
     init(world) {
       // Solo uses Ashen Gate; co-op uses the multi-Camp Ashen Crucible map.
+      const explorationLayout =
+        config.exploration === true
+          ? generateAshenGateMap(world.seed, {
+              mapType: config.mapType,
+              waterways: config.waterways,
+            })
+          : null;
       const layout =
-        config.players !== undefined && config.players.length > 0
+        explorationLayout ??
+        (config.players !== undefined && config.players.length > 0
           ? generateAshenCrucibleMap(world.seed, config.players)
           : generateAshenGateMap(world.seed, {
+              mapType: config.mapType,
               waterways: config.waterways,
-            });
+            }));
       setLayerTerrain(world, {
         bridges: [...layout.bridges],
+        hills: [...layout.hills],
         layerId: "ashen_gate",
         obstacles: [...layout.obstacles],
         ventVolumes: [...layout.vents],
       });
+      const baseStockpile = applyStartingResources(
+        layout.stockpile,
+        config.startingResources,
+      );
       const stockpile = config.tutorial
         ? {
-            ...layout.stockpile,
+            ...baseStockpile,
             essence:
-              (layout.stockpile.essence ?? 0) +
-              TUTORIAL_STOCKPILE_BONUS.essence,
-            food: (layout.stockpile.food ?? 0) + TUTORIAL_STOCKPILE_BONUS.food,
-            iron: (layout.stockpile.iron ?? 0) + TUTORIAL_STOCKPILE_BONUS.iron,
-            stone:
-              (layout.stockpile.stone ?? 0) + TUTORIAL_STOCKPILE_BONUS.stone,
-            water:
-              (layout.stockpile.water ?? 0) + TUTORIAL_STOCKPILE_BONUS.water,
-            wood: (layout.stockpile.wood ?? 0) + TUTORIAL_STOCKPILE_BONUS.wood,
+              (baseStockpile.essence ?? 0) + TUTORIAL_STOCKPILE_BONUS.essence,
+            food: (baseStockpile.food ?? 0) + TUTORIAL_STOCKPILE_BONUS.food,
+            iron: (baseStockpile.iron ?? 0) + TUTORIAL_STOCKPILE_BONUS.iron,
+            stone: (baseStockpile.stone ?? 0) + TUTORIAL_STOCKPILE_BONUS.stone,
+            water: (baseStockpile.water ?? 0) + TUTORIAL_STOCKPILE_BONUS.water,
+            wood: (baseStockpile.wood ?? 0) + TUTORIAL_STOCKPILE_BONUS.wood,
           }
-        : layout.stockpile;
+        : baseStockpile;
       seedEconomyWorld(world, {
         buildings: [...layout.buildings],
         layerId: "ashen_gate",
@@ -562,19 +699,38 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
         );
       }
       world.meta[ASHEN_GATE_SLICE_MODULE_ID] = initialSlice;
+      if (explorationLayout !== null) {
+        initialSlice.exploration = initializeExploration(
+          world,
+          explorationLayout,
+        );
+      }
       const cultivation = openCultivation(world);
       for (const unit of world.units) {
         if (!isEconomyUnit(unit) || unit.popKind !== "soldier") continue;
+        if (isCultivatorClass(unit.classId) && unit.name === undefined) {
+          unit.name = assignUniqueCultivatorName(world, unit.id);
+        }
         cultivation.registerUnit({ maxHealth: unit.maxHp, unitId: unit.id });
       }
       saveCultivation(world, cultivation);
-      const openingNotice = config.tutorial
-        ? "Co-op Tutorial begun — follow the guide on the right to gather, build, and repel the Horde together!"
-        : config.players !== undefined && config.players.length > 0
-          ? "Ashen Crucible co-op begun — defend your allied Holds together!"
-          : ASHEN_GATE_CONTENT.briefing;
+      const openingNotice = config.exploration
+        ? "Exploration begun — no timed waves. Scout the rumored Threat I camp with your Captain and Rider, then choose your own route."
+        : config.tutorial
+          ? "Co-op Tutorial begun — follow the guide on the right to gather, build, and repel the Horde together!"
+          : config.players !== undefined && config.players.length > 0
+            ? "Ashen Crucible co-op begun — defend your allied Holds together!"
+            : ASHEN_GATE_CONTENT.briefing;
       pushNotice(world, openingNotice, "info");
       updateFogOfWar(world, true);
+      discoverExplorationCamps(world);
+      publishPresentation(world);
+    },
+    onLoad(world) {
+      if (!isAshenGateSliceState(world.meta[ASHEN_GATE_SLICE_MODULE_ID])) {
+        return;
+      }
+      normalizeExplorationState(world);
       publishPresentation(world);
     },
     processors: [
@@ -607,10 +763,15 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
         phase: "cultivation",
         run(context) {
           if (sliceState(context.world).outcome !== "playing") return;
+          advanceExploration(context);
           if (unlockCaptainBattlefieldBreakthrough(context.world)) {
+            const exploration =
+              sliceState(context.world).exploration !== undefined;
             pushNotice(
               context.world,
-              "Scouts repelled! Your Captain can break through to Sworn without a Cultivation Hall.",
+              exploration
+                ? "First camp cleared! Your Captain can break through to Sworn without a Cultivation Hall."
+                : "Scouts repelled! Your Captain can break through to Sworn without a Cultivation Hall.",
               "good",
             );
           }
@@ -625,6 +786,7 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
           announceBoss(context.world);
           pruneTransient(context.world);
           updateFogOfWar(context.world);
+          discoverExplorationCamps(context.world);
           publishPresentation(context.world);
         },
       },
@@ -785,6 +947,14 @@ function queueOrder(world: SimWorldState, command: CombatCommand): void {
  */
 function callNextWave(world: SimWorldState): void {
   if (sliceState(world).outcome !== "playing") return;
+  if (waveState(world).scheduledWaves === false) {
+    pushNotice(
+      world,
+      "Exploration has no timed waves. Find a camp and attack when ready.",
+      "info",
+    );
+    return;
+  }
   if (waveState(world).waveHeld === true) {
     pushNotice(world, "Wave is currently held.", "warn");
     return;
@@ -925,7 +1095,7 @@ function announceBoss(world: SimWorldState): void {
   const boss = waveState(world).units.find(
     (unit) => unit.bossId === ASHEN_GATE_CONTENT.bossId,
   );
-  if (!boss) return;
+  if (!boss || !isFogVisible(readFogOfWar(world), boss)) return;
   state.bossIntroShown = true;
   const line = BOSS_INTROS.cinderjaw.lines[0];
   pushNotice(world, `${line.speaker}: “${line.text}”`, "warn");

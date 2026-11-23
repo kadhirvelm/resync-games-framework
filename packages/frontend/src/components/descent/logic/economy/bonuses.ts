@@ -4,16 +4,56 @@
  */
 
 import { footprintCovers, footprintDistance, footprintGap } from "./footprint";
-import type { BonusFlag, EconomyBuilding, EconomyHost } from "./model";
+import type {
+  BonusFlag,
+  EconomyBuilding,
+  EconomyHost,
+  EconomyMeta,
+} from "./model";
 import { getHoldTier } from "./queries";
 import { asBuilding } from "./records";
 import { type BuildingDef, buildingDef } from "./tables";
 
+/** Last bonus-affecting signature computed for each `EconomyMeta` instance. */
+const bonusSignatureCache = new WeakMap<EconomyMeta, string>();
+
 /**
- * Rewrites vein and adjacency flags on every building.
+ * Builds a deterministic signature of all inputs that can change vein or
+ * adjacency bonuses so `recomputeBonuses` can short-circuit unchanged steps.
+ * @param host - Economy host
+ * @returns Lightweight signature string
+ */
+function bonusSignature(host: EconomyHost): string {
+  const parts: string[] = [host.economy.tier];
+  const { ownerTiers } = host.economy;
+  for (const ownerId in ownerTiers) {
+    if (!Object.hasOwn(ownerTiers, ownerId)) continue;
+    parts.push(`t:${ownerId}=${ownerTiers[ownerId]}`);
+  }
+  for (const building of host.buildings) {
+    const record = asBuilding(building);
+    parts.push(
+      `b:${record.id},${record.buildingType},${record.x},${record.y},${record.completed ? 1 : 0},${record.ownerId ?? ""}`,
+    );
+  }
+  for (const vein of host.economy.veins) {
+    parts.push(`v:${vein.x},${vein.y}`);
+  }
+  for (const node of host.economy.nodes) {
+    if (node.remaining <= 0) continue;
+    parts.push(`n:${node.id},${node.nodeType},${node.x},${node.y}`);
+  }
+  return parts.join("|");
+}
+
+/**
+ * Rewrites vein and adjacency flags on every building when any bonus-affecting
+ * building, tier, vein, or live surface node has changed.
  * @param host - World whose buildings are updated in place
  */
 export function recomputeBonuses(host: EconomyHost): void {
+  const signature = bonusSignature(host);
+  if (bonusSignatureCache.get(host.economy) === signature) return;
   for (const building of host.buildings) {
     const record = asBuilding(building);
     const def = buildingDef(record.buildingType);
@@ -25,6 +65,7 @@ export function recomputeBonuses(host: EconomyHost): void {
       vein: veinFlag(host, record, def),
     };
   }
+  bonusSignatureCache.set(host.economy, signature);
 }
 
 /**

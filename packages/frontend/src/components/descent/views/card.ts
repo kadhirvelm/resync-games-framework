@@ -1,3 +1,4 @@
+import { isCultivatorClass } from "../logic/slice/sliceCultivatorPowers";
 import { isTrainingBuilding } from "../logic/slice/sliceTraining";
 import type {
   ClassId,
@@ -12,6 +13,7 @@ import {
 } from "./blockers";
 import { type CostLine, type CostStock, costLineFrom } from "./costLine";
 import type { InspectTarget } from "./inspect";
+import { schoolChoiceSummary } from "./schoolGuidance";
 import {
   idleVillagerIds,
   isLocalPlayerOwned,
@@ -38,6 +40,8 @@ export type ConfirmIntent =
 /** Every command-card button. Only confirm intents open a dialog. */
 export type CardIntent =
   | ConfirmIntent
+  | { buildingId: string; type: "cancel_construction" }
+  | { type: "disband"; unitIds: string[] }
   | {
       buildingId: string;
       classId: ClassId;
@@ -46,6 +50,7 @@ export type CardIntent =
       type: "train";
     }
   | { buildingId: string; type: "rally" }
+  | { type: "attack_move"; unitIds: string[] }
   | { type: "build" }
   | { formation: FormationId; type: "formation"; unitIds: string[] }
   | { count: "all" | "one"; nodeId: string; type: "gather_idle" }
@@ -59,7 +64,10 @@ export type CardIntent =
 
 /** Card intents that act at once instead of opening a confirm step. */
 const IMMEDIATE_INTENTS: ReadonlySet<CardIntent["type"]> = new Set([
+  "attack_move",
   "build",
+  "cancel_construction",
+  "disband",
   "formation",
   "gather_idle",
   "hotkeys",
@@ -96,7 +104,15 @@ const COMMAND_ICONS = {
   summon: "/descent/command-icons/summon.png",
   upgrade: "/descent/command-icons/upgrade.png",
 } as const satisfies Record<
-  Exclude<CardIntent["type"], "formation" | "school" | "train">,
+  Exclude<
+    CardIntent["type"],
+    | "attack_move"
+    | "cancel_construction"
+    | "disband"
+    | "formation"
+    | "school"
+    | "train"
+  >,
   string
 >;
 
@@ -109,7 +125,14 @@ const COMMAND_ICONS = {
 export function commandIconSrc(button: CardButton): string {
   const intent = button.intent;
   if (intent.type === "train") return button.imageSrc ?? "";
-  if (intent.type === "formation") return "";
+  if (
+    intent.type === "formation" ||
+    intent.type === "attack_move" ||
+    intent.type === "cancel_construction" ||
+    intent.type === "disband"
+  ) {
+    return "";
+  }
   if (intent.type === "school") {
     return `/descent/command-icons/school-${intent.school}.png`;
   }
@@ -182,9 +205,10 @@ export interface UnitTrainingGuide {
 /** Stable offline portraits and battlefield jobs for every trainable class. */
 export const UNIT_TRAINING_GUIDES: Record<ClassId, UnitTrainingGuide> = {
   adept: {
-    description: "Ranged spirit caster that heals badly wounded allies.",
+    description:
+      "Ranged spirit healer that mends wounded allies and supports your cultivator.",
     iconSrc: "/descent/unit-icons/adept.svg",
-    role: "Support",
+    role: "Healer",
   },
   breaker: {
     description: "Slow maul unit with double damage against structures.",
@@ -193,15 +217,15 @@ export const UNIT_TRAINING_GUIDES: Record<ClassId, UnitTrainingGuide> = {
   },
   cultivator: {
     description:
-      "Agile spirit-blade vanguard. Unleashes Sword Qi bursts and Dao Arts.",
+      "Unique spirit-blade champion (Limit 1). Unleashes Sword Qi bursts and Dao Arts.",
     iconSrc: "/descent/unit-icons/cultivator.svg",
-    role: "Cultivator",
+    role: "Qi Cultivator",
   },
   formation_master: {
     description:
-      "Ranged talisman caster whose arrays heal allies, grant Spirit Surge, and pulse foes.",
+      "Unique talisman champion (Limit 1) whose arrays heal allies, grant Spirit Surge, and pulse foes.",
     iconSrc: "/descent/unit-icons/formation_master.svg",
-    role: "Formation",
+    role: "Qi Cultivator",
   },
   hunter: {
     description: "Long-range archer that stays behind the front line.",
@@ -221,9 +245,9 @@ export const UNIT_TRAINING_GUIDES: Record<ClassId, UnitTrainingGuide> = {
   },
   sword_sage: {
     description:
-      "Ranged flying-sword cultivator that pierces armor and rains spirit blades.",
+      "Unique flying-sword champion (Limit 1) that pierces armor and rains spirit blades.",
     iconSrc: "/descent/unit-icons/sword_sage.svg",
-    role: "Sword Sage",
+    role: "Qi Cultivator",
   },
   villager: {
     description: "Gathers resources, constructs buildings, and repairs.",
@@ -272,6 +296,7 @@ function unitButtons(
   model: ShellModel,
   selection: Selection,
   activeFormation: FormationId,
+  attackMoving = false,
 ): CardButton[] {
   const selected = model.units.filter((unit) =>
     selection.unitIds.includes(unit.id),
@@ -281,6 +306,9 @@ function unitButtons(
   const holdIds = selected
     .filter((unit) => unit.factionId === "hold")
     .map((unit) => unit.id);
+  const hasMilitary = selected.some(
+    (unit) => unit.factionId === "hold" && unit.classId !== "villager",
+  );
   if (
     selected.some(
       (unit) => unit.classId === "villager" && unit.factionId === "hold",
@@ -294,13 +322,35 @@ function unitButtons(
       label: "Build",
     });
   }
-  if (holdIds.length > 0) {
+  if (hasMilitary && holdIds.length > 0) {
     buttons.push({
-      description: "Drop the current order and stand still.",
-      id: "stop",
-      intent: { type: "stop", unitIds: holdIds },
-      label: "Stop",
+      description: "Move to a point and engage enemies along the way.",
+      hotkey: "X",
+      id: "attack-move",
+      intent: { type: "attack_move", unitIds: holdIds },
+      label: "Attack-Move",
+      pressed: attackMoving,
     });
+  }
+  if (holdIds.length > 0) {
+    buttons.push(
+      {
+        description: "Drop the current order and stand still.",
+        hotkey: "Z",
+        id: "stop",
+        intent: { type: "stop", unitIds: holdIds },
+        label: "Stop",
+      },
+      {
+        description:
+          "Permanently remove the selected units to free their population.",
+        detail: "No resource refund",
+        hotkey: "Del",
+        id: "disband",
+        intent: { type: "disband", unitIds: holdIds },
+        label: "Disband",
+      },
+    );
   }
   const militaryGroup =
     selected.length >= 2 &&
@@ -351,7 +401,7 @@ function unitButtons(
     });
     buttons.push({
       description:
-        "Channel Heaven & Earth Qi in place for Essence, Merit, and healing (2.5× near Spirit Veins or Arrays).",
+        "Channel Qi in place for personal Essence, Merit, and healing (2.5× near Spirit Veins, Arrays, or Seclusion Pavilions).",
       detail: primary.meditating ? "Active" : "Seclusion",
       hotkey: "M",
       id: "meditate",
@@ -363,16 +413,23 @@ function unitButtons(
   }
   if (primary.cultivation !== null) {
     const missing = primary.cultivation.missingRequirements;
-    const maxRank = primary.cultivation.meritToNext === 0;
+    const rankCapped = primary.cultivation.rankCapReached === true;
+    const maxRank = rankCapped || primary.cultivation.meritToNext === 0;
     const blocked = maxRank || missing.length > 0;
-    const gateLines = maxRank ? ["Already at the highest rank."] : missing;
-    const breakthroughDetail = primary.breakthroughReady
-      ? `Ready! (${Math.round(primary.cultivation.successChance * 100)}%)`
-      : missing[0];
+    const capLine = `${primary.cultivation.rank} is the ${primary.cultivation.rankCapLabel ?? "current scenario"} rank cap.`;
+    let gateLines = missing;
+    if (maxRank) gateLines = ["Already at the highest rank."];
+    if (rankCapped) gateLines = [capLine];
+    let breakthroughDetail = missing[0];
+    if (rankCapped) breakthroughDetail = capLine;
+    if (primary.breakthroughReady) {
+      breakthroughDetail = `Ready! (${Math.round(primary.cultivation.successChance * 100)}%)`;
+    }
     buttons.push({
       blockers: blocked ? blockersFromLines(gateLines) : undefined,
-      description:
-        "Advance a rank. The first breakthrough needs no pill; a Hall on a Spirit Vein improves success.",
+      description: primary.captain
+        ? "Captain breakthrough: no Hall required for the first promotion. Other soldiers use a Cultivation Hall; Spirit Veins improve success."
+        : "Advance a rank. The first breakthrough needs no pill; a Hall on a Spirit Vein improves success.",
       detail: breakthroughDetail,
       disabled: blocked,
       id: "breakthrough",
@@ -383,6 +440,10 @@ function unitButtons(
   for (const feed of model.pillFeeds) {
     if (feed.unitId !== primary.id) continue;
     buttons.push({
+      description:
+        feed.effectLabel ??
+        "Feed this pill for its published cultivation effect.",
+      detail: `Toxicity ${feed.preview.toxicity} → ${feed.preview.toxicityAfter}/${feed.preview.toxicityCap}`,
       id: `feed-${feed.preview.pillId}`,
       intent: {
         pillId: feed.preview.pillId,
@@ -394,12 +455,6 @@ function unitButtons(
   }
   const rank = primary.cultivation?.rank;
   if (rank === "Sworn" && primary.cultivation?.school === undefined) {
-    const schoolGuides: Record<SchoolId, string> = {
-      blood: "Lifesteal attacks + Crimson Tempest / Blood-Oath Dao Arts.",
-      ember:
-        "Ignites foes (favored in Ashen Gate) + Blazing Lotus / Solar Sword Dao Arts.",
-      rime: "Chills & freezes foes + Glacial Mirror / Sanctum healing Dao Arts.",
-    };
     const schools = [
       "ember",
       "rime",
@@ -408,7 +463,7 @@ function unitButtons(
     for (const school of schools) {
       const name = SCHOOL_LABEL[school];
       buttons.push({
-        description: schoolGuides[school],
+        description: schoolChoiceSummary(primary, school),
         id: `school-${school}`,
         intent: { school, type: "school", unitId: primary.id },
         label: name,
@@ -470,6 +525,15 @@ function buildingButtons(
   building: ShellBuilding,
 ): CardButton[] {
   const buttons: CardButton[] = [];
+  if (building.constructing) {
+    buttons.push({
+      description: "Remove this unfinished building and refund its full cost.",
+      hotkey: "Del",
+      id: "cancel-construction",
+      intent: { buildingId: building.id, type: "cancel_construction" },
+      label: "Cancel construction",
+    });
+  }
   if (!building.constructing && isTrainingBuilding(building.buildingType)) {
     buttons.push({
       description: "Choose where new units walk. Or just right-click the map.",
@@ -504,17 +568,18 @@ function buildingButtons(
     if (option.buildingId !== building.id) continue;
     const guide = UNIT_TRAINING_GUIDES[option.classId];
     const popFree = model.pop === null ? null : model.pop.cap - model.pop.used;
-    const quote = option.allowed
-      ? shiftTrainQuote(
-          {
-            food: model.resources.food,
-            popFree,
-            queueLength: building.trainingQueue.length,
-            water: model.resources.water,
-          },
-          option,
-        )
-      : null;
+    const quote =
+      option.allowed && !isCultivatorClass(option.classId)
+        ? shiftTrainQuote(
+            {
+              food: model.resources.food,
+              popFree,
+              queueLength: building.trainingQueue.length,
+              water: model.resources.water,
+            },
+            option,
+          )
+        : null;
     const cost =
       option.cost === undefined
         ? undefined
@@ -567,6 +632,7 @@ function buildingButtons(
     for (const option of model.brewOptions) {
       if (option.furnaceId !== building.id) continue;
       buttons.push({
+        description: option.effectLabel,
         id: `brew-${option.pillId}`,
         intent: {
           furnaceId: option.furnaceId,
@@ -718,6 +784,21 @@ function generalButtons(
   localPlayerId?: string,
 ): CardButton[] {
   const idle = idleVillagerIds(model.units, localPlayerId).length;
+  let completionDetail = "Boss still lives";
+  let completionFix =
+    model.exploration === null
+      ? "Defeat the layer boss at the far side of the map."
+      : "Find Cinderjaw's guarded hoard and defeat its camp when ready.";
+  let completionProblem = "The boss still lives";
+  if (model.exploration?.bossDefeated && !model.bossGateCleared) {
+    completionDetail = "Hoard still guarded";
+    completionFix = "Clear the remaining guards around Cinderjaw's hoard.";
+    completionProblem = "Cinderjaw's prize is still guarded";
+  }
+  if (model.bossGateCleared) {
+    completionDetail =
+      model.exploration === null ? "Boss gate clear" : "Cinderjaw defeated";
+  }
   return [
     {
       description: "Select the next villager with nothing to do.",
@@ -739,16 +820,19 @@ function generalButtons(
         ? undefined
         : [
             {
-              fix: "Defeat the layer boss at the far side of the map.",
-              problem: "The boss still lives",
+              fix: completionFix,
+              problem: completionProblem,
             },
           ],
-      description: "Go down to the next layer once the boss is dead.",
-      detail: model.bossGateCleared ? "Boss gate clear" : "Boss still lives",
+      description:
+        model.exploration === null
+          ? "Go down to the next layer once the boss is dead."
+          : "Finish once Cinderjaw and his hoard guards are dead. Remaining camps are optional.",
+      detail: completionDetail,
       disabled: !model.bossGateCleared,
       id: "descend",
       intent: { type: "descend" },
-      label: "Descend",
+      label: model.exploration === null ? "Descend" : "Finish expedition",
     },
   ];
 }
@@ -768,6 +852,7 @@ export function buildCardButtons(
   target: InspectTarget | null = null,
   activeFormation: FormationId = "ranks",
   localPlayerId?: string,
+  attackMoving = false,
 ): CardButton[] {
   if (target?.kind === "node") {
     return nodeButtons(model, target.id, localPlayerId);
@@ -802,13 +887,13 @@ export function buildCardButtons(
   );
   if (building !== undefined && !isLocalPlayerOwned(building, localPlayerId)) {
     return ownedSelection.unitIds.length > 0
-      ? unitButtons(model, ownedSelection, activeFormation)
+      ? unitButtons(model, ownedSelection, activeFormation, attackMoving)
       : generalButtons(model, localPlayerId);
   }
 
   const context =
     building === undefined
-      ? unitButtons(model, ownedSelection, activeFormation)
+      ? unitButtons(model, ownedSelection, activeFormation, attackMoving)
       : buildingButtons(model, building);
   if (ownedSelection.unitIds.length > 0 || selection.buildingId !== null) {
     return context;

@@ -1,75 +1,61 @@
 @use "@/styles/variables.scss" as vars;
 
-// ── Blueprint palette ──────────────────────────────────────────────────────
-$blueprint-base: #021433;
-$blueprint-line-major: rgb(120 176 255 / 14%);
-$blueprint-line-minor: rgb(120 176 255 / 5%);
-$blueprint-muted: rgb(168 198 236 / 78%);
-$blueprint-border: rgb(126 176 240 / 22%);
-$blueprint-ink: #241806;
-$workshop-gold: #f0b429;
-$workshop-gold-deep: #d99a12;
-$surface: rgb(5 24 58 / 82%);
-$surface-raised: rgb(9 33 74 / 92%);
-$text-soft: rgb(214 228 248 / 84%);
-$paper: #f6f2e8;
-$ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+/* Blueprint Workshop: clean white shelf matching the home-route game library. */
 
-// Gallery cards are dark tiles; their text classes read these. The same text
-// classes inside the white detail dialogs fall back to dark ink.
-@mixin dark-tile {
-  --card-ink: #{vars.$white};
+$bg: #fff;
+$surface: #fff;
+$surface-soft: #f5f5f4;
+$text: #18181b;
+$text-soft: #71717a;
+$line: #e7e5e4;
+$line-strong: #d6d3d1;
+$focus: #18181b;
+$paper: #f5f5f4;
+$sans: var(--font-descent), var(--font-inter), system-ui, sans-serif;
+$ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+@mixin light-tile {
+  --card-ink: #{$text};
   --card-ink-soft: #{$text-soft};
-  --card-ink-muted: #{$blueprint-muted};
+  --card-ink-muted: #{$text-soft};
 
   background: $surface;
-  border: 1px solid $blueprint-border;
+  border: 1px solid $line;
   border-radius: 16px;
-  box-shadow: 0 14px 34px rgb(0 8 28 / 30%);
   cursor: pointer;
   font: inherit;
   overflow: hidden;
   text-align: left;
   transition:
-    border-color 0.18s ease,
-    box-shadow 0.18s ease,
-    transform 0.25s $ease-pop;
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms $ease;
 
   &:hover {
-    border-color: rgb(240 180 41 / 60%);
-    box-shadow:
-      0 18px 40px rgb(0 8 28 / 42%),
-      0 0 0 1px rgb(240 180 41 / 25%);
-    transform: translateY(-3px);
+    border-color: $line-strong;
+    box-shadow: 0 12px 32px rgb(0 0 0 / 8%);
+    transform: translateY(-2px);
   }
 
   &:focus-visible {
-    outline: 2px solid $workshop-gold;
+    outline: 2px solid $focus;
     outline-offset: 3px;
   }
 }
 
-// ── Page ───────────────────────────────────────────────────────────────────
+/* ── Page ────────────────────────────────────────────────────────────────── */
 .pageWrapper {
-  --scrollbar-thumb: rgb(168 198 236 / 36%);
-  --scrollbar-thumb-hover: rgb(198 220 248 / 62%);
+  --scrollbar-thumb: rgb(24 24 27 / 18%);
+  --scrollbar-thumb-hover: rgb(24 24 27 / 32%);
 
-  background-attachment: fixed;
-  background-color: $blueprint-base;
-  background-image:
-    radial-gradient(ellipse 70% 42% at 12% -8%, rgb(88 150 255 / 26%), transparent 58%),
-    radial-gradient(ellipse 36% 28% at 100% 0%, rgb(240 180 41 / 12%), transparent 52%),
-    linear-gradient($blueprint-line-major 1px, transparent 1px),
-    linear-gradient(90deg, $blueprint-line-major 1px, transparent 1px),
-    linear-gradient($blueprint-line-minor 1px, transparent 1px),
-    linear-gradient(90deg, $blueprint-line-minor 1px, transparent 1px);
-  background-size: auto, auto, 80px 80px, 80px 80px, 20px 20px, 20px 20px;
+  background: $bg;
   box-sizing: border-box;
-  color: vars.$white;
+  color: $text;
   display: flex;
   flex-direction: column;
+  font-family: $sans;
   min-height: 100dvh;
-  padding: 0 28px 48px;
+  padding: 0 32px 64px;
   width: 100%;
 
   *,
@@ -79,19 +65,21 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 }
 
-// ── Top bar ────────────────────────────────────────────────────────────────
+/* ── Top bar ─────────────────────────────────────────────────────────────── */
 .topBar {
   align-items: center;
-  backdrop-filter: blur(14px);
-  background: rgb(2 20 51 / 78%);
-  border-bottom: 1px solid $blueprint-border;
+  backdrop-filter: blur(10px);
+  background: rgb(255 255 255 / 92%);
+  border-bottom: 1px solid $line;
   display: flex;
   gap: 16px;
   justify-content: space-between;
-  margin: 0 -28px 24px;
-  padding: 12px 28px;
+  margin: 0 auto 28px;
+  max-width: 1360px;
+  padding: 16px 0;
   position: sticky;
   top: 0;
+  width: 100%;
   z-index: 20;
 }
 
@@ -107,17 +95,11 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
   display: flex;
   flex-shrink: 0;
   gap: 10px;
-
-  // The shared ProductNow button is styled for light pages.
-  button {
-    background: rgb(255 255 255 / 8%) !important;
-    box-shadow: inset 0 0 0 1px rgb(168 198 236 / 40%) !important;
-    color: #e8f1ff !important;
-  }
 }
 
 .backLink {
   align-items: center;
+  border: 1px solid $line;
   border-radius: 999px;
   color: $text-soft;
   display: inline-flex;
@@ -125,39 +107,39 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
   font-size: 13px;
   font-weight: 600;
   gap: 6px;
-  padding: 7px 12px 7px 9px;
+  padding: 7px 14px 7px 10px;
   text-decoration: none;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
 
   &:hover {
-    background: rgb(255 255 255 / 8%);
-    color: vars.$white;
+    background: $surface-soft;
+    border-color: $line-strong;
+    color: $text;
   }
 
   &:focus-visible {
-    outline: 2px solid $workshop-gold;
+    outline: 2px solid $focus;
     outline-offset: 2px;
   }
 }
 
 .topBarDivider {
-  background: $blueprint-border;
+  background: $line;
   flex-shrink: 0;
-  height: 24px;
+  height: 22px;
   width: 1px;
 }
 
 .brandMark {
   align-items: center;
-  background: linear-gradient(160deg, #ffe7a8, $workshop-gold 55%, $workshop-gold-deep);
-  border-radius: 10px;
-  box-shadow: 0 6px 16px rgb(240 180 41 / 24%);
-  color: $blueprint-ink;
+  background: $text;
+  border-radius: 8px;
+  color: $bg;
   display: inline-flex;
   flex-shrink: 0;
-  height: 34px;
+  height: 30px;
   justify-content: center;
-  width: 34px;
+  width: 30px;
 }
 
 .titleGroup {
@@ -167,14 +149,15 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .pageTitle {
-  font-size: 17px;
+  color: $text;
+  font-size: 16px;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   line-height: 1.2;
 }
 
 .pageSubtitle {
-  color: $blueprint-muted;
+  color: $text-soft;
   font-size: 12px;
   line-height: 1.4;
   overflow: hidden;
@@ -184,10 +167,10 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 
 .mobileNavTrigger {
   align-items: center;
-  background: rgb(4 22 52 / 82%);
-  border: 1px solid $blueprint-border;
+  background: $surface;
+  border: 1px solid $line-strong;
   border-radius: 999px;
-  color: vars.$white;
+  color: $text;
   cursor: pointer;
   display: none;
   flex-shrink: 0;
@@ -195,54 +178,53 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
   font-size: 13px;
   font-weight: 600;
   gap: 8px;
-  padding: 8px 14px;
+  padding: 7px 14px;
 
   &:hover {
-    border-color: rgb(240 180 41 / 70%);
+    background: $surface-soft;
   }
 }
 
-// ── Layout ─────────────────────────────────────────────────────────────────
+/* ── Layout ──────────────────────────────────────────────────────────────── */
 .workshopLayout {
   align-items: flex-start;
   display: grid;
-  gap: 24px;
-  grid-template-columns: 236px minmax(0, 1fr);
+  gap: 32px;
+  grid-template-columns: 224px minmax(0, 1fr);
   margin: 0 auto;
-  max-width: 1480px;
+  max-width: 1360px;
   width: 100%;
 }
 
 .sidebar {
-  --nav-ink: #{vars.$white};
-  --nav-ink-soft: rgb(214 228 248 / 86%);
-  --nav-ink-muted: #{$blueprint-muted};
-  --nav-hover: rgb(255 255 255 / 6%);
-  --nav-field: rgb(255 255 255 / 5%);
-  --nav-line: #{$blueprint-border};
+  --nav-ink: #{$text};
+  --nav-ink-soft: #{$text-soft};
+  --nav-ink-muted: #{$text-soft};
+  --nav-hover: #{$surface-soft};
+  --nav-field: #{$surface-soft};
+  --nav-line: #{$line};
 
-  background: rgb(3 18 46 / 78%);
-  border: 1px solid $blueprint-border;
+  background: $surface;
+  border: 1px solid $line;
   border-radius: 16px;
-  box-shadow: 0 18px 40px rgb(0 8 28 / 28%);
   display: flex;
   flex-direction: column;
-  max-height: calc(100dvh - 96px);
-  padding: 10px;
+  max-height: calc(100dvh - 104px);
+  padding: 12px;
   position: sticky;
-  top: 80px;
+  top: 84px;
   width: 100%;
 }
 
 .mainColumn {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 24px;
   min-width: 0;
   width: 100%;
 }
 
-// ── Sidebar / mobile nav ───────────────────────────────────────────────────
+/* ── Sidebar / mobile nav ────────────────────────────────────────────────── */
 .navPanel {
   display: flex;
   flex-direction: column;
@@ -253,25 +235,25 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 
 .navSearchField {
   align-items: center;
-  background: var(--nav-field, #f3f6fb);
-  border: 1px solid var(--nav-line, #d5deea);
+  background: var(--nav-field, #{$surface-soft});
+  border: 1px solid var(--nav-line, #{$line});
   border-radius: 10px;
-  color: var(--nav-ink-muted, #5b6b84);
+  color: var(--nav-ink-muted, #{$text-soft});
   display: flex;
   flex-shrink: 0;
   gap: 8px;
   padding: 7px 10px;
 
   &:focus-within {
-    border-color: rgb(240 180 41 / 70%);
-    color: var(--nav-ink, #14213a);
+    border-color: $text;
+    color: var(--nav-ink, #{$text});
   }
 }
 
 .navSearchInput {
   background: transparent;
   border: 0;
-  color: var(--nav-ink, #14213a);
+  color: var(--nav-ink, #{$text});
   flex: 1;
   font: inherit;
   font-size: 13px;
@@ -279,7 +261,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
   outline: none;
 
   &::placeholder {
-    color: var(--nav-ink-muted, #7b8aa3);
+    color: var(--nav-ink-muted, #{$text-soft});
     opacity: 0.75;
   }
 }
@@ -287,7 +269,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 .navGroups {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   overflow-y: auto;
   padding: 2px 2px 2px 0;
 }
@@ -295,53 +277,30 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 .navSection {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 
 .navSectionLabel {
   align-items: center;
-  color: var(--section-accent);
+  color: $text-soft;
   display: flex;
   font-size: 11px;
   font-weight: 700;
   gap: 8px;
-  letter-spacing: 0.12em;
-  padding: 4px 8px 6px;
+  letter-spacing: 0.08em;
+  padding: 4px 8px;
   text-transform: uppercase;
 
   &::after {
-    background: linear-gradient(90deg, color-mix(in srgb, var(--section-accent) 40%, transparent), transparent);
+    background: $line;
     content: "";
     flex: 1;
     height: 1px;
   }
 }
 
-.navSection[data-medium="2d"] {
-  --section-accent: #f0b429;
-}
-
-// Outside the dark sidebar (the mobile dialog), icons and labels need ink.
-.navPanel:not(.sidebar .navPanel) {
-  .navSectionLabel {
-    color: color-mix(in srgb, var(--section-accent) 60%, #14213a);
-  }
-
-  .navItemIcon {
-    color: color-mix(in srgb, var(--nav-accent, #7ec8ff) 55%, #14213a);
-  }
-}
-
-.navSection[data-medium="3d"] {
-  --section-accent: #7ddec8;
-}
-
-.navSection[data-medium="both"] {
-  --section-accent: #f3c6a0;
-}
-
 .navEmpty {
-  color: var(--nav-ink-muted, #5b6b84);
+  color: var(--nav-ink-muted, #{$text-soft});
   font-size: 12px;
   padding: 8px 4px;
 }
@@ -351,105 +310,51 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
   background: transparent;
   border: 0;
   border-radius: 10px;
-  color: var(--nav-ink-soft, #2a3a55);
+  color: var(--nav-ink-soft, #{$text-soft});
   cursor: pointer;
   display: flex;
   font: inherit;
   font-size: 13.5px;
-  font-weight: 600;
+  font-weight: 500;
   gap: 10px;
-  padding: 5px 8px 5px 5px;
+  padding: 6px 8px;
   position: relative;
   text-align: left;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 140ms ease, color 140ms ease;
   width: 100%;
 
   &:hover {
-    background: var(--nav-hover, #eef2f8);
-    color: var(--nav-ink, #14213a);
-
-    .navItemIcon {
-      transform: scale(1.08) rotate(-4deg);
-    }
+    background: var(--nav-hover, #{$surface-soft});
+    color: var(--nav-ink, #{$text});
   }
 
   &:focus-visible {
-    outline: 2px solid $workshop-gold;
+    outline: 2px solid $focus;
     outline-offset: 1px;
   }
 
   &.navItemActive {
-    background: color-mix(in srgb, var(--nav-accent, #{$workshop-gold}) 16%, transparent);
-    color: var(--nav-ink, #14213a);
+    background: $text;
+    color: $bg;
+    font-weight: 600;
 
-    &::before {
-      background: var(--nav-accent, #{$workshop-gold});
-      border-radius: 0 3px 3px 0;
-      bottom: 8px;
-      content: "";
-      left: -10px;
-      position: absolute;
-      top: 8px;
-      width: 3px;
+    .navItemIcon {
+      background: rgb(255 255 255 / 16%);
+      color: $bg;
     }
   }
 }
 
 .navItemIcon {
   align-items: center;
+  background: $surface-soft;
   border-radius: 8px;
+  color: $text;
   display: inline-flex;
   flex-shrink: 0;
-  height: 28px;
+  height: 26px;
   justify-content: center;
-  transition: transform 0.25s $ease-pop;
-  width: 28px;
-}
-
-.navItem[data-category="Dungeons"],
-.contentHeader[data-category="Dungeons"] {
-  --nav-accent: #f0b429;
-}
-
-.navItem[data-category="Models"],
-.contentHeader[data-category="Models"] {
-  --nav-accent: #7ddec8;
-}
-
-.navItem[data-category="Characters"],
-.contentHeader[data-category="Characters"] {
-  --nav-accent: #c4b5fd;
-}
-
-.navItem[data-category="Environments"],
-.contentHeader[data-category="Environments"] {
-  --nav-accent: #7ec8ff;
-}
-
-.navItem[data-category="Cards"],
-.contentHeader[data-category="Cards"] {
-  --nav-accent: #f3a0c8;
-}
-
-.navItem[data-category="Sprites"],
-.contentHeader[data-category="Sprites"] {
-  --nav-accent: #c6e87a;
-}
-
-.navItem[data-category="Images"],
-.contentHeader[data-category="Images"] {
-  --nav-accent: #8fd3ff;
-}
-
-.navItem[data-category="Sound"],
-.contentHeader[data-category="Sound"] {
-  --nav-accent: #f3c6a0;
-}
-
-.navItemIcon,
-.contentIcon {
-  background: color-mix(in srgb, var(--nav-accent, #7ec8ff) 20%, transparent);
-  color: var(--nav-accent, #d7e8ff);
+  width: 26px;
 }
 
 .navItemLabel {
@@ -461,7 +366,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 @keyframes nav-badge-pulse {
-  0%, 100% { opacity: 0.7; }
+  0%, 100% { opacity: 0.75; }
   50% { opacity: 1; }
 }
 
@@ -481,69 +386,72 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 
 .navBadgeRunning {
   animation: nav-badge-pulse 2s ease-in-out infinite;
-  background: $workshop-gold;
-  color: $blueprint-ink;
+  background: #f59e0b;
+  color: $text;
 }
 
 .navBadgeFailed {
-  background: rgb(255 80 80 / 35%);
-  color: vars.$white;
+  background: #fee2e2;
+  color: #b91c1c;
 }
 
-// ── Generator panel: identity + prompt box ─────────────────────────────────
+/* ── Generator panel: identity + prompt box ──────────────────────────────── */
 .contentHeader {
-  background:
-    radial-gradient(ellipse 60% 120% at 0% 0%, color-mix(in srgb, var(--nav-accent, #7ec8ff) 14%, transparent), transparent 60%),
-    rgb(3 18 46 / 80%);
-  border: 1px solid $blueprint-border;
-  border-radius: 18px;
-  box-shadow: 0 18px 40px rgb(0 8 28 / 24%);
+  align-items: center;
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: 16px;
   display: flex;
-  flex-direction: column;
-  gap: 18px;
-  padding: 20px;
+  flex-flow: row wrap;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 18px 22px;
   width: 100%;
 }
 
 .contentIdentity {
   align-items: flex-start;
   display: flex;
+  flex: 1 1 320px;
   gap: 14px;
   min-width: 0;
 }
 
 .contentIcon {
   align-items: center;
-  border-radius: 14px;
+  background: $surface-soft;
+  border: 1px solid $line;
+  border-radius: 12px;
+  color: $text;
   display: inline-flex;
   flex-shrink: 0;
-  height: 48px;
+  height: 44px;
   justify-content: center;
-  width: 48px;
+  width: 44px;
 }
 
 .contentHeading {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
 }
 
 .contentEyebrow {
-  color: var(--nav-accent, #{$blueprint-muted});
+  color: $text-soft;
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .contentTitle {
-  color: vars.$white;
-  font-size: 28px;
+  color: $text;
+  font-size: 26px;
   font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
   margin: 0;
 }
 
@@ -556,50 +464,50 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .composer {
-  background: rgb(0 10 32 / 55%);
-  border: 1px solid $blueprint-border;
-  border-radius: 14px;
+  background: $surface-soft;
+  border: 1px solid $line;
+  border-radius: 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px 12px 10px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  padding: 12px 14px;
+  transition: border-color 150ms ease, background 150ms ease;
 
   &:focus-within {
-    border-color: rgb(240 180 41 / 65%);
-    box-shadow: 0 0 0 3px rgb(240 180 41 / 14%);
+    background: $surface;
+    border-color: $text;
   }
 }
 
 .composerLabel {
-  color: $blueprint-muted;
+  color: $text;
   font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-weight: 600;
   padding: 0 2px;
 }
 
 .composerInput {
   background: transparent;
   border: 0;
-  color: vars.$white;
+  color: $text;
   font: inherit;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.5;
-  min-height: 72px;
+  min-height: 64px;
   outline: none;
   padding: 2px;
   resize: vertical;
   width: 100%;
 
   &::placeholder {
-    color: rgb(150 185 230 / 50%);
+    color: $text-soft;
+    opacity: 0.7;
   }
 }
 
 .composerFooter {
   align-items: center;
-  border-top: 1px solid rgb(126 176 240 / 12%);
+  border-top: 1px solid $line;
   display: flex;
   gap: 12px;
   padding-top: 10px;
@@ -615,17 +523,17 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .composerHint {
-  color: $blueprint-muted;
+  color: $text-soft;
 }
 
 .composerStarted {
-  color: #8ee6b6;
+  color: #15803d;
   font-weight: 600;
 }
 
 .composerRunning {
   align-items: center;
-  color: #ffe7a8;
+  color: #b45309;
   display: flex;
   font-weight: 600;
   gap: 8px;
@@ -633,51 +541,46 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 
 .composerRunningDot {
   animation: nav-badge-pulse 1.4s ease-in-out infinite;
-  background: $workshop-gold;
+  background: #f59e0b;
   border-radius: 50%;
-  box-shadow: 0 0 10px $workshop-gold;
   height: 8px;
   width: 8px;
 }
 
 .composerShortcut {
-  color: rgb(150 185 230 / 55%);
+  color: $text-soft;
   flex-shrink: 0;
   font-size: 11px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
 }
 
 .generateButton {
   align-items: center;
-  background: linear-gradient(180deg, #ffe7a8 0%, $workshop-gold 58%, $workshop-gold-deep 100%);
-  border: 0;
-  border-radius: 11px;
-  box-shadow: 0 8px 20px rgb(240 180 41 / 24%);
-  color: $blueprint-ink;
+  background: $text;
+  border: 1px solid $text;
+  border-radius: 999px;
+  color: $bg;
   cursor: pointer;
   display: inline-flex;
   flex-shrink: 0;
   font: inherit;
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
   gap: 8px;
-  padding: 10px 16px;
-  transition: filter 0.15s ease, transform 0.2s $ease-pop;
+  padding: 9px 18px;
+  transition: opacity 150ms ease, transform 150ms ease;
 
   &:hover:not(:disabled) {
-    filter: brightness(1.06);
-    transform: translateY(-1px);
+    opacity: 0.88;
   }
 
   &:disabled {
-    box-shadow: none;
     cursor: not-allowed;
-    filter: grayscale(0.6);
-    opacity: 0.45;
+    opacity: 0.35;
   }
 
   &:focus-visible {
-    outline: 2px solid vars.$white;
+    outline: 2px solid $focus;
     outline-offset: 3px;
   }
 }
@@ -688,8 +591,8 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 
   .topBar {
-    margin: 0 -16px 16px;
-    padding: 10px 16px;
+    margin: 0 auto 16px;
+    padding: 12px 0;
   }
 
   .topBarDivider,
@@ -719,7 +622,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 
   .contentTitle {
-    font-size: 23px;
+    font-size: 22px;
   }
 
   .composerShortcut {
@@ -747,14 +650,14 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 }
 
-// ── Library ────────────────────────────────────────────────────────────────
+/* ── Library & game tags ─────────────────────────────────────────────────── */
 .sectionHeader {
   align-items: center;
   gap: 10px;
   margin-bottom: 2px;
 
   &::after {
-    background: linear-gradient(90deg, $blueprint-border, transparent);
+    background: $line;
     content: "";
     flex: 1;
     height: 1px;
@@ -762,32 +665,110 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .sectionTitle {
-  color: $blueprint-muted;
+  color: $text-soft;
   font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .assetCount {
-  background: rgb(240 180 41 / 14%);
-  border: 1px solid rgb(240 180 41 / 36%);
+  background: $surface-soft;
+  border: 1px solid $line;
   border-radius: 999px;
-  color: #ffe7a8;
+  color: $text;
   font-size: 11px;
-  font-weight: 700;
-  padding: 1px 8px;
+  font-weight: 600;
+  padding: 2px 9px;
 }
 
-// ── Empty / status states ──────────────────────────────────────────────────
+.gameFilterBar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gameFilterPill {
+  align-items: center;
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: 999px;
+  color: $text-soft;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  gap: 7px;
+  padding: 6px 13px;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+
+  &:hover {
+    border-color: $line-strong;
+    color: $text;
+  }
+
+  &[data-active="true"] {
+    background: $text;
+    border-color: $text;
+    color: $bg;
+  }
+}
+
+.gameTagRow {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.gameTag,
+.gameTagMuted {
+  align-items: center;
+  background: $surface-soft;
+  border: 1px solid $line;
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 600;
+  gap: 6px;
+  line-height: 1;
+  padding: 4px 9px;
+}
+
+.gameTag {
+  color: $text;
+}
+
+.gameTagMuted {
+  color: $text-soft;
+}
+
+.gameTagDot {
+  border-radius: 50%;
+  flex-shrink: 0;
+  height: 7px;
+  width: 7px;
+}
+
+/* Padding inside padded vs full-bleed cards */
+.backgroundCard .gameTagRow,
+.enemyCard .gameTagRow,
+.staticImageCard .gameTagRow,
+.spriteSheetCard .gameTagRow {
+  padding: 0 14px;
+}
+
+/* ── Empty / status states ───────────────────────────────────────────────── */
 .emptyState {
   align-items: center;
-  background: rgb(255 255 255 / 3%);
-  border: 1px dashed rgb(126 176 240 / 35%);
+  background: $surface-soft;
+  border: 1px dashed $line-strong;
   border-radius: 16px;
-  color: vars.$white;
+  color: $text;
   flex-direction: column;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   gap: 6px;
   padding: 44px 24px;
@@ -795,19 +776,19 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .emptyStateHint {
-  color: $blueprint-muted;
+  color: $text-soft;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 400;
   max-width: 46ch;
 }
 
 .loadingText {
-  color: rgb(160 210 255 / 90%);
+  color: $text-soft;
   font-size: 13px;
 }
 
 .errorText {
-  color: vars.$red-light;
+  color: #b91c1c;
   font-size: 13px;
 }
 
@@ -821,7 +802,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .copyableErrorText {
-  color: rgb(255 130 130 / 90%);
+  color: #b91c1c;
   font-family: monospace;
   font-size: 12px;
   line-height: 1.45;
@@ -833,17 +814,16 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .copyableErrorCopy {
-  background: transparent;
-  border: 1px solid rgb(255 80 80 / 45%);
+  background: $surface;
+  border: 1px solid #fca5a5;
   border-radius: 6px;
-  color: rgb(255 160 160 / 90%);
+  color: #b91c1c;
   cursor: pointer;
   font-size: 11px;
   padding: 4px 10px;
 
   &:hover {
-    border-color: rgb(255 80 80 / 80%);
-    color: vars.$white;
+    border-color: #ef4444;
   }
 }
 
@@ -853,80 +833,65 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 
 .loadingSpinner {
   animation: spin 0.9s linear infinite;
-  border: 2px solid rgb(80 160 255 / 25%);
+  border: 2px solid $line;
   border-radius: 50%;
-  border-top-color: rgb(100 180 255 / 90%);
+  border-top-color: $text;
   flex-shrink: 0;
   height: 14px;
   width: 14px;
 }
 
-// ── Pending generation tiles ───────────────────────────────────────────────
+/* ── Pending generation tiles ────────────────────────────────────────────── */
 @keyframes pending-pulse {
   0%, 100% {
-    border-color: rgb(80 160 255 / 40%);
-    box-shadow: none;
+    border-color: $line-strong;
   }
 
   50% {
-    border-color: rgb(80 160 255 / 90%);
-    box-shadow: 0 0 18px 0 rgb(80 160 255 / 22%);
+    border-color: $text;
   }
-}
-
-@keyframes pending-shimmer {
-  from { background-position: -200% 0; }
-  to { background-position: 200% 0; }
 }
 
 .pendingCard {
   align-items: center;
   animation: pending-pulse 2s ease-in-out infinite;
-  background:
-    linear-gradient(110deg, transparent 30%, rgb(120 176 255 / 10%) 50%, transparent 70%) 0 0 / 200% 100%,
-    $surface;
-  border: 1px solid rgb(80 160 255 / 45%);
+  background: $surface-soft;
+  border: 1px solid $line-strong;
   border-radius: 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   justify-content: center;
-  min-height: 220px;
+  min-height: 200px;
   padding: 22px 16px 16px;
   width: 100%;
-
-  &:not(.pendingCardFailed) {
-    animation:
-      pending-pulse 2s ease-in-out infinite,
-      pending-shimmer 2.4s linear infinite;
-  }
 }
 
 .pendingCard.pendingCardFailed {
   animation: none;
-  background: rgb(60 10 24 / 55%);
-  border-color: rgb(255 80 80 / 55%);
+  background: #fef2f2;
+  border-color: #fca5a5;
 }
 
 .pendingSpinner {
   animation: spin 1s linear infinite;
-  border: 3px solid rgb(80 160 255 / 18%);
+  border: 3px solid $line;
   border-radius: 50%;
-  border-top-color: $workshop-gold;
+  border-top-color: $text;
   flex-shrink: 0;
-  height: 30px;
-  width: 30px;
+  height: 28px;
+  width: 28px;
 }
 
 .pendingStatusLabel {
-  color: #ffe7a8;
+  color: $text;
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 
   .pendingCardFailed & {
-    color: rgb(255 120 120 / 95%);
+    color: #b91c1c;
   }
 }
 
@@ -941,47 +906,41 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
   max-width: 40ch;
   overflow: hidden;
   text-align: center;
-
-  .pendingCardFailed & {
-    color: rgb(230 180 180 / 75%);
-  }
 }
 
 .pendingStop,
 .pendingDismiss {
-  background: transparent;
-  border-radius: 8px;
+  background: $surface;
+  border-radius: 999px;
   cursor: pointer;
   font: inherit;
   font-size: 12px;
   font-weight: 600;
   margin-top: 4px;
   padding: 6px 16px;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  transition: border-color 140ms ease, color 140ms ease;
 }
 
 .pendingStop {
-  border: 1px solid rgb(126 176 240 / 45%);
-  color: rgb(190 220 255 / 92%);
+  border: 1px solid $line-strong;
+  color: $text;
 
   &:hover:not(:disabled) {
-    border-color: rgb(126 176 240 / 85%);
-    color: vars.$white;
+    border-color: $text;
   }
 
   &:disabled {
     cursor: default;
-    opacity: 0.7;
+    opacity: 0.6;
   }
 }
 
 .pendingDismiss {
-  border: 1px solid rgb(255 80 80 / 40%);
-  color: rgb(255 150 150 / 90%);
+  border: 1px solid #fca5a5;
+  color: #b91c1c;
 
   &:hover {
-    border-color: rgb(255 80 80 / 75%);
-    color: rgb(255 180 180);
+    border-color: #ef4444;
   }
 }
 
@@ -995,7 +954,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 }
 
-// ── Gallery cards ──────────────────────────────────────────────────────────
+/* ── Gallery cards ───────────────────────────────────────────────────────── */
 .cardSetList {
   display: flex;
   flex-direction: column;
@@ -1004,7 +963,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .cardSet {
-  @include dark-tile;
+  @include light-tile;
 
   align-items: stretch;
   display: flex;
@@ -1016,7 +975,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 
 .cardSetPrompt {
   -webkit-box-orient: vertical;
-  color: var(--card-ink, #{vars.$font});
+  color: var(--card-ink, #{$text});
   display: -webkit-box;
   font-size: 15px;
   font-weight: 700;
@@ -1028,7 +987,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 
 .cardSetTheme {
   -webkit-box-orient: vertical;
-  color: var(--card-ink-muted, #{vars.$gray-hover});
+  color: var(--card-ink-muted, #{$text-soft});
   display: -webkit-box;
   font-size: 12px;
   -webkit-line-clamp: 2;
@@ -1053,6 +1012,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 
 .cardPortraitFrame {
   background: $paper;
+  border: 1px solid $line;
   border-radius: 10px;
   overflow: hidden;
 }
@@ -1065,7 +1025,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .cardLevelIndex {
-  color: var(--card-ink-muted, #{vars.$gray});
+  color: var(--card-ink-muted, #{$text-soft});
   font-family: monospace;
   font-size: 10px;
   letter-spacing: 0.08em;
@@ -1073,13 +1033,13 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .cardLevelTitle {
-  color: var(--card-ink, #{vars.$font});
+  color: var(--card-ink, #{$text});
   font-size: 12px;
   font-weight: 600;
 }
 
 .cardLevelDescription {
-  color: var(--card-ink-soft, #{vars.$gray-hover});
+  color: var(--card-ink-soft, #{$text-soft});
   font-size: 12px;
   line-height: 1.4;
 }
@@ -1096,7 +1056,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .backgroundCard {
-  @include dark-tile;
+  @include light-tile;
 
   display: flex;
   flex-direction: column;
@@ -1106,21 +1066,22 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 
 .backgroundImage {
   aspect-ratio: 16 / 9;
+  border-bottom: 1px solid $line;
   display: block;
   object-fit: cover;
   width: 100%;
 }
 
 .backgroundTitle {
-  color: var(--card-ink, #{vars.$font});
+  color: var(--card-ink, #{$text});
   font-size: 14px;
   font-weight: 600;
-  padding: 0 14px;
+  padding: 4px 14px 0;
 }
 
 .backgroundDescription {
   -webkit-box-orient: vertical;
-  color: var(--card-ink-soft, #{vars.$gray-hover});
+  color: var(--card-ink-soft, #{$text-soft});
   display: -webkit-box;
   font-size: 12px;
   -webkit-line-clamp: 3;
@@ -1144,7 +1105,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .playableCard {
-  @include dark-tile;
+  @include light-tile;
 
   align-items: stretch;
   display: flex;
@@ -1154,7 +1115,8 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 
 .playableCardArt {
   aspect-ratio: 3 / 4;
-  background: $blueprint-base;
+  background: $surface-soft;
+  border-bottom: 1px solid $line;
   display: block;
   object-fit: cover;
   width: 100%;
@@ -1164,7 +1126,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 12px;
+  padding: 12px 14px 14px;
 }
 
 .playableCardHeader {
@@ -1175,20 +1137,20 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .playableCardName {
-  color: var(--card-ink, #{vars.$font});
+  color: var(--card-ink, #{$text});
   font-size: 15px;
   font-weight: 700;
 }
 
 .playableCardCost {
-  color: var(--card-ink-muted, #{vars.$gray});
+  color: var(--card-ink-muted, #{$text-soft});
   flex-shrink: 0;
   font-family: monospace;
   font-size: 11px;
 }
 
 .playableCardKind {
-  color: var(--card-ink-muted, #{vars.$gray});
+  color: var(--card-ink-muted, #{$text-soft});
   font-family: monospace;
   font-size: 10px;
   letter-spacing: 0.08em;
@@ -1196,14 +1158,14 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .playableCardEffect {
-  color: var(--card-ink, #{vars.$surface-text});
+  color: var(--card-ink, #{$text});
   font-size: 13px;
   line-height: 1.35;
   margin: 0;
 }
 
 .playableCardDescription {
-  color: var(--card-ink-soft, #{vars.$gray-hover});
+  color: var(--card-ink-soft, #{$text-soft});
   font-size: 12px;
   font-style: italic;
   line-height: 1.4;
@@ -1224,7 +1186,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .enemyCard {
-  @include dark-tile;
+  @include light-tile;
 
   display: flex;
   flex-direction: column;
@@ -1233,7 +1195,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .enemyPattern {
-  color: var(--card-ink-soft, #{vars.$gray-hover});
+  color: var(--card-ink-soft, #{$text-soft});
   font-family: monospace;
   font-size: 11px;
   letter-spacing: 0.02em;
@@ -1242,7 +1204,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .enemyPatternList {
-  color: var(--card-ink-muted, #{vars.$gray});
+  color: var(--card-ink-muted, #{$text-soft});
   display: flex;
   flex-direction: column;
   font-size: 13px;
@@ -1254,7 +1216,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 
 .enemyDescription {
   -webkit-box-orient: vertical;
-  color: var(--card-ink-soft, #{vars.$gray-hover});
+  color: var(--card-ink-soft, #{$text-soft});
   display: -webkit-box;
   font-size: 12px;
   -webkit-line-clamp: 3;
@@ -1284,11 +1246,11 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
   display: flex;
   gap: 8px;
   justify-content: space-between;
-  padding: 0 14px;
+  padding: 4px 14px 0;
 }
 
 .enemyHealth {
-  color: var(--card-ink-muted, #{vars.$gray});
+  color: var(--card-ink-muted, #{$text-soft});
   flex-shrink: 0;
   font-family: monospace;
   font-size: 11px;
@@ -1297,13 +1259,14 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 .enemyPortrait {
   aspect-ratio: 3 / 4;
   background: $paper;
+  border-bottom: 1px solid $line;
   display: block;
   object-fit: contain;
   width: 100%;
 }
 
 .enemyTitle {
-  color: var(--card-ink, #{vars.$font});
+  color: var(--card-ink, #{$text});
   font-size: 15px;
   font-weight: 700;
 }
@@ -1316,7 +1279,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .staticImageCard {
-  @include dark-tile;
+  @include light-tile;
 
   display: flex;
   flex-direction: column;
@@ -1327,13 +1290,14 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 .staticImagePreview {
   aspect-ratio: 1;
   background:
-    linear-gradient(45deg, rgb(104 132 177 / 12%) 25%, transparent 25%),
-    linear-gradient(-45deg, rgb(104 132 177 / 12%) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, rgb(104 132 177 / 12%) 75%),
-    linear-gradient(-45deg, transparent 75%, rgb(104 132 177 / 12%) 75%),
-    #eef4fd;
+    linear-gradient(45deg, rgb(24 24 27 / 4%) 25%, transparent 25%),
+    linear-gradient(-45deg, rgb(24 24 27 / 4%) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgb(24 24 27 / 4%) 75%),
+    linear-gradient(-45deg, transparent 75%, rgb(24 24 27 / 4%) 75%),
+    $surface-soft;
   background-position: 0 0, 0 8px, 8px -8px, -8px 0;
   background-size: 16px 16px;
+  border-bottom: 1px solid $line;
   display: block;
   object-fit: contain;
   width: 100%;
@@ -1344,17 +1308,17 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
   display: flex;
   gap: 8px;
   justify-content: space-between;
-  padding: 0 14px;
+  padding: 4px 14px 0;
 }
 
 .staticImageTitle {
-  color: var(--card-ink, #{vars.$font});
+  color: var(--card-ink, #{$text});
   font-size: 15px;
   font-weight: 700;
 }
 
 .staticImageRatio {
-  color: var(--card-ink-muted, #{vars.$gray});
+  color: var(--card-ink-muted, #{$text-soft});
   flex-shrink: 0;
   font-family: monospace;
   font-size: 11px;
@@ -1362,7 +1326,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 
 .staticImageDescription {
   -webkit-box-orient: vertical;
-  color: var(--card-ink-soft, #{vars.$gray-hover});
+  color: var(--card-ink-soft, #{$text-soft});
   display: -webkit-box;
   font-size: 12px;
   -webkit-line-clamp: 3;
@@ -1373,7 +1337,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .staticImageDetail {
-  background-color: #eef4fd;
+  background-color: $surface-soft;
   display: block;
   height: auto;
   max-height: 76vh;
@@ -1396,7 +1360,7 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .dungeonGroupLabel {
-  color: $blueprint-muted;
+  color: $text-soft;
   font-family: monospace;
   font-size: 11px;
   letter-spacing: 0.08em;
@@ -1421,40 +1385,42 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
   cursor: default;
 
   &:hover {
-    border-color: vars.$border-color;
+    border-color: $line;
     box-shadow: none;
+    transform: none;
   }
 }
 
 .dungeonSummary {
-  color: vars.$white;
+  color: $text;
   font-size: 16px;
+  font-weight: 600;
   line-height: 1.45;
   margin: 0;
 }
 
 .dungeonPackageHeader {
-  align-items: baseline;
+  align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 12px 16px;
 }
 
 .dungeonJsonLink {
-  color: rgb(160 210 255 / 90%);
+  color: $text-soft;
   font-family: monospace;
   font-size: 12px;
   margin-left: auto;
 
   &:hover {
-    color: vars.$white;
+    color: $text;
   }
 }
 
 .promptSlot {
-  background: rgb(0 18 50 / 88%);
-  border: 1px solid $blueprint-border;
-  border-radius: 12px;
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: 14px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1467,26 +1433,26 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .promptSlotFailed {
-  border-color: rgb(255 80 80 / 55%);
+  border-color: #fca5a5;
 }
 
 .promptSlotKind {
-  color: $blueprint-muted;
+  color: $text-soft;
   font-family: monospace;
   font-size: 10px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
 .promptSlotTitle {
-  color: vars.$white;
+  color: $text;
   font-size: 15px;
   font-weight: 700;
 }
 
 .promptSlotImage {
   aspect-ratio: 16 / 9;
-  background: $blueprint-base;
+  background: $surface-soft;
   border-radius: 8px;
   display: block;
   object-fit: cover;
@@ -1494,7 +1460,6 @@ $ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .promptSlotAudio {
-  color-scheme: dark;
   display: block;
   width: 100%;
 }
@@ -1504,8 +1469,8 @@ article.backgroundCard {
   padding: 14px 0;
 
   &:hover {
-    border-color: $blueprint-border;
-    box-shadow: 0 14px 34px rgb(0 8 28 / 30%);
+    border-color: $line;
+    box-shadow: none;
     transform: none;
   }
 
@@ -1516,7 +1481,7 @@ article.backgroundCard {
 }
 
 .promptSlotSubtitle {
-  color: rgb(160 210 255 / 80%);
+  color: $text-soft;
   font-size: 12px;
 }
 
@@ -1524,7 +1489,7 @@ article.backgroundCard {
 .promptSlotPromptStatic {
   background: transparent;
   border: 0;
-  color: rgb(180 210 255 / 78%);
+  color: $text-soft;
   font: inherit;
   font-size: 13px;
   line-height: 1.45;
@@ -1538,13 +1503,13 @@ article.backgroundCard {
   cursor: pointer;
 
   &:hover {
-    color: vars.$white;
+    color: $text;
   }
 }
 
 .promptSlotStatus,
 .promptSlotHint {
-  color: $blueprint-muted;
+  color: $text-soft;
   font-family: monospace;
   font-size: 11px;
 }
@@ -1557,35 +1522,36 @@ article.backgroundCard {
 }
 
 .promptSlotAction {
-  background: transparent;
-  border: 1px solid rgb(126 176 240 / 45%);
-  border-radius: 8px;
-  color: rgb(214 228 248 / 92%);
+  background: $surface;
+  border: 1px solid $line-strong;
+  border-radius: 999px;
+  color: $text;
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
-  padding: 6px 12px;
+  padding: 6px 14px;
 
   &:hover:not(:disabled) {
-    border-color: rgb(126 176 240 / 85%);
-    color: vars.$white;
+    background: $surface-soft;
+    border-color: $text-soft;
   }
 
   &:disabled {
     cursor: default;
-    opacity: 0.7;
+    opacity: 0.5;
   }
 }
 
 .promptSlotPrimary {
-  background: linear-gradient(180deg, #ffe7a8, $workshop-gold 60%, $workshop-gold-deep);
-  border-color: $workshop-gold-deep;
-  color: $blueprint-ink;
+  background: $text;
+  border-color: $text;
+  color: $bg;
 
   &:hover:not(:disabled) {
-    border-color: $workshop-gold-deep;
-    color: $blueprint-ink;
-    filter: brightness(1.05);
+    background: $text;
+    border-color: $text;
+    color: $bg;
+    opacity: 0.88;
   }
 }
 
@@ -1600,8 +1566,8 @@ article.backgroundCard {
 
 .attachOption {
   align-items: center;
-  background: vars.$white;
-  border: 1px solid vars.$border-color;
+  background: $surface;
+  border: 1px solid $line;
   border-radius: 10px;
   cursor: pointer;
   display: flex;
@@ -1611,12 +1577,12 @@ article.backgroundCard {
   text-align: left;
 
   &:hover:not(:disabled) {
-    border-color: vars.$blue-medium;
+    border-color: $text;
   }
 
   &:disabled {
     cursor: default;
-    opacity: 0.7;
+    opacity: 0.6;
   }
 }
 
@@ -1629,18 +1595,18 @@ article.backgroundCard {
 }
 
 .attachTitle {
-  color: var(--card-ink, #{vars.$font});
+  color: var(--card-ink, #{$text});
   font-size: 14px;
   font-weight: 600;
 }
 
 .attachSubtitle {
-  color: var(--card-ink-soft, #{vars.$gray-hover});
+  color: var(--card-ink-soft, #{$text-soft});
   font-size: 12px;
 }
 
 .playableCardLore {
-  color: var(--card-ink-muted, #{vars.$gray});
+  color: var(--card-ink-muted, #{$text-soft});
   display: flex;
   flex-direction: column;
   font-size: 12px;
@@ -1648,7 +1614,7 @@ article.backgroundCard {
   line-height: 1.4;
 
   a {
-    color: vars.$blue-medium;
+    color: $text;
   }
 
   p {
@@ -1666,7 +1632,7 @@ article.backgroundCard {
   }
 }
 
-// ── Sprite sheets ─────────────────────────────────────────────────────────
+/* ── Sprite sheets ───────────────────────────────────────────────────────── */
 @keyframes sprite-frames {
   from {
     background-position-x: 0%;
@@ -1685,7 +1651,7 @@ article.backgroundCard {
 }
 
 .spriteSheetCard {
-  @include dark-tile;
+  @include light-tile;
 
   display: flex;
   flex-direction: column;
@@ -1698,17 +1664,17 @@ article.backgroundCard {
   }
 }
 
-// Checkerboard makes leftover background pixels easy to spot.
 .spriteStage {
   align-items: flex-end;
-  background-color: vars.$neutral-light;
+  background-color: $surface-soft;
   background-image:
-    linear-gradient(45deg, vars.$neutral-light2 25%, transparent 25%),
-    linear-gradient(-45deg, vars.$neutral-light2 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, vars.$neutral-light2 75%),
-    linear-gradient(-45deg, transparent 75%, vars.$neutral-light2 75%);
+    linear-gradient(45deg, rgb(24 24 27 / 4%) 25%, transparent 25%),
+    linear-gradient(-45deg, rgb(24 24 27 / 4%) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgb(24 24 27 / 4%) 75%),
+    linear-gradient(-45deg, transparent 75%, rgb(24 24 27 / 4%) 75%);
   background-position: 0 0, 0 8px, 8px -8px, -8px 0;
   background-size: 16px 16px;
+  border-bottom: 1px solid $line;
   display: flex;
   justify-content: center;
   overflow: hidden;
@@ -1733,16 +1699,17 @@ article.backgroundCard {
   display: flex;
   gap: 8px;
   justify-content: space-between;
+  padding-top: 4px;
 }
 
 .spriteSheetTitle {
-  color: var(--card-ink, #{vars.$font});
+  color: var(--card-ink, #{$text});
   font-size: 15px;
   font-weight: 700;
 }
 
 .spriteSheetMeta {
-  color: var(--card-ink-muted, #{vars.$gray});
+  color: var(--card-ink-muted, #{$text-soft});
   flex-shrink: 0;
   font-family: monospace;
   font-size: 11px;
@@ -1756,17 +1723,18 @@ article.backgroundCard {
 }
 
 .spriteMirrorToggle {
-  background: transparent;
-  border: 1px solid vars.$border-color;
-  border-radius: 8px;
-  color: var(--card-ink-soft, #{vars.$gray-hover});
+  background: $surface;
+  border: 1px solid $line-strong;
+  border-radius: 999px;
+  color: var(--card-ink-soft, #{$text-soft});
   cursor: pointer;
   font: inherit;
   font-size: 12px;
-  padding: 4px 10px;
+  padding: 4px 12px;
 
   &:hover {
-    border-color: vars.$blue-medium;
+    border-color: $text;
+    color: $text;
   }
 }
 
@@ -1777,7 +1745,7 @@ article.backgroundCard {
 }
 
 .spriteAnimationCell {
-  border: 1px solid vars.$border-color;
+  border: 1px solid $line;
   border-radius: 12px;
   display: flex;
   flex-direction: column;
@@ -1793,7 +1761,7 @@ article.backgroundCard {
 }
 
 .spriteAnimationDescription {
-  color: var(--card-ink-soft, #{vars.$gray-hover});
+  color: var(--card-ink-soft, #{$text-soft});
   font-size: 12px;
   line-height: 1.4;
 }

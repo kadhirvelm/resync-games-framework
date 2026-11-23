@@ -35,7 +35,9 @@ describe("requirementFix", () => {
     expect(requirementFix("Spare population 2 is required.")).toContain(
       "Housing",
     );
-    expect(requirementFix("Layer rank cap is Sworn.")).toContain("Descend");
+    expect(requirementFix("Layer rank cap is Sworn.")).toContain(
+      "already at its rank cap",
+    );
     expect(
       requirementFix("School choice is required before advancing."),
     ).toContain("Ember, Rime, or Blood");

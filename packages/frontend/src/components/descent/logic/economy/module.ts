@@ -13,6 +13,7 @@
 
 import type { CommandHandlerMap, SimModule } from "../sim/modules";
 import type { SimWorldState } from "../sim/world";
+import { clearWaypoints } from "../slice/sliceWaypoints";
 import {
   issueRations,
   placeBuilding,
@@ -93,6 +94,7 @@ export function createEconomyModule(
         command.actorId,
       );
       if (unitIds.length === 0) return;
+      clearWaypoints(context.world, unitIds);
       orderVillagersBuild(host(context.world), unitIds, command.buildingId);
     },
     assign_gather(command, context) {
@@ -102,6 +104,7 @@ export function createEconomyModule(
         command.actorId,
       );
       if (unitIds.length === 0) return;
+      clearWaypoints(context.world, unitIds);
       orderVillagersGather(host(context.world), unitIds, command.nodeId);
     },
     brew_pill(command, context) {
@@ -146,6 +149,7 @@ export function createEconomyModule(
         command.actorId,
       );
       if (builders.length === 0) return;
+      clearWaypoints(context.world, builders);
       if (command.queue === true) {
         orderVillagersBuildAcrossSites(economy, builders, id);
         return;

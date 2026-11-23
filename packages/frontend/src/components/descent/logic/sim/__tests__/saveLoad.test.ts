@@ -8,7 +8,11 @@ import {
 } from "../autosave";
 import { SIM_SAVE_VERSION } from "../constants";
 import { createDescentSim } from "../descentSim";
-import { DescentSaveError, parseSerializedWorld } from "../saveFormat";
+import {
+  DescentSaveError,
+  parseSerializedWorld,
+  serializeWorld,
+} from "../saveFormat";
 import {
   captureError,
   createMemoryStorage,
@@ -63,6 +67,21 @@ describe("serialize / load", () => {
 
     expect(restored.paused).toBe(true);
     expect(restored.speed).toBe(4);
+  });
+
+  test("serializeWorld omits transient meta.ui without mutating live world", () => {
+    const sim = createDescentSim({ seed: 5 });
+    const world = parseSerializedWorld(sim.serialize());
+    world.meta.ui = { bloated: true };
+    world.meta.persisted = { ok: 1 };
+
+    const raw = serializeWorld(world);
+    const parsed = JSON.parse(raw) as {
+      state: { meta: Record<string, unknown> };
+    };
+    expect("ui" in parsed.state.meta).toBe(false);
+    expect(parsed.state.meta.persisted).toEqual({ ok: 1 });
+    expect(world.meta.ui).toEqual({ bloated: true });
   });
 
   test("writes a versioned envelope", () => {

@@ -11,13 +11,12 @@ type GameCardProps = {
   /** Whether this browser has saved progress in the game. */
   canResume: boolean;
   experience: GameExperienceDefinition;
-  /** Position in the list, used for the card number and entrance stagger. */
+  /** Position in the list, used for the entrance stagger. */
   index: number;
 };
 
 type CardStyle = CSSProperties & {
   "--accent": string;
-  "--glow": string;
   "--i": number;
 };
 
@@ -29,7 +28,6 @@ type CardStyle = CSSProperties & {
 export function GameCard({ canResume, experience, index }: GameCardProps) {
   const cardStyle: CardStyle = {
     "--accent": experience.artwork.accent,
-    "--glow": experience.artwork.glow,
     "--i": index,
   };
   const actionLabel = canResume ? "Continue" : experience.launchLabel;
@@ -41,16 +39,18 @@ export function GameCard({ canResume, experience, index }: GameCardProps) {
         className={styles.art}
         role="img"
       >
-        <span aria-hidden="true" className={styles.artStripes} />
-        <span aria-hidden="true" className={styles.number}>
-          {String(index + 1).padStart(2, "0")}
-        </span>
-        <span aria-hidden="true" className={styles.tile}>
-          {experience.artwork.monogram}
-        </span>
-        <span aria-hidden="true" className={styles.sparkleA} />
-        <span aria-hidden="true" className={styles.sparkleB} />
-        <span aria-hidden="true" className={styles.sparkleC} />
+        {experience.artwork.image ? (
+          <span
+            aria-hidden="true"
+            className={styles.artImage}
+            style={{ backgroundImage: `url("${experience.artwork.image}")` }}
+          />
+        ) : null}
+        {experience.artwork.image ? null : (
+          <span aria-hidden="true" className={styles.tile}>
+            {experience.artwork.monogram}
+          </span>
+        )}
         {canResume ? (
           <span className={styles.savedBadge}>Saved game</span>
         ) : null}

@@ -15,7 +15,14 @@ import { HOTKEY_ROWS } from "./hotkeys";
  */
 export function GlossaryDialog({ onClose }: { onClose: () => void }) {
   return (
-    <div className={styles.backdrop}>
+    // biome-ignore lint/a11y/noStaticElementInteractions: backdrop click dismisses modal
+    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes modal via shell hotkeys
+    <div
+      className={styles.backdrop}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <div aria-label="Glossary" className={styles.dialog} role="dialog">
         <h2>Glossary</h2>
         <dl className={styles.glossaryList}>
@@ -53,7 +60,14 @@ export function CommitDialog({
   tradeAmount: number;
 }) {
   return (
-    <div className={styles.backdrop}>
+    // biome-ignore lint/a11y/noStaticElementInteractions: backdrop click dismisses modal
+    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes modal via shell hotkeys
+    <div
+      className={styles.backdrop}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <div
         aria-labelledby="descent-confirm-title"
         className={styles.dialog}
@@ -72,11 +86,15 @@ export function CommitDialog({
           <p role="alert">{model.blockedMessage}</p>
         )}
         {model.tradeAmount ? (
-          <label>
+          <label className={styles.tradeAmountLabel}>
             Amount
             <input
               min={1}
-              onChange={(event) => onTradeAmount(Number(event.target.value))}
+              onChange={(event) =>
+                onTradeAmount(
+                  Math.max(1, Math.floor(Number(event.target.value) || 1)),
+                )
+              }
               type="number"
               value={tradeAmount}
             />
@@ -124,18 +142,67 @@ export function CoachMark({
  */
 export function HotkeyDialog({ onClose }: { onClose: () => void }) {
   return (
-    <div className={styles.backdrop}>
+    // biome-ignore lint/a11y/noStaticElementInteractions: backdrop click dismisses modal
+    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes modal via shell hotkeys
+    <div
+      className={styles.backdrop}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <div aria-label="Controls" className={styles.dialog} role="dialog">
         <h2>Controls</h2>
-        <ul>
+        <ul className={styles.hotkeyList}>
           {HOTKEY_ROWS.map((row) => (
-            <li key={`${row.key}:${row.action}`}>
-              {row.key}: {row.action}
+            <li className={styles.hotkeyRow} key={`${row.key}:${row.action}`}>
+              <kbd className={styles.keycap}>{row.key}</kbd>
+              <span className={styles.hotkeyAction}>{row.action}</span>
             </li>
           ))}
         </ul>
         <button onClick={onClose} type="button">
           Close
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Pause menu opened with Escape: resume, review controls, or leave the match.
+ * @param props - Handlers and whether leaving closes a co-op room
+ * @returns The dialog
+ */
+export function PauseMenuDialog({
+  onControls,
+  onExit,
+  onResume,
+  roomExit,
+}: {
+  onControls: () => void;
+  onExit: () => void;
+  onResume: () => void;
+  roomExit: boolean;
+}) {
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: backdrop click dismisses modal
+    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes modal via shell hotkeys
+    <div
+      className={styles.backdrop}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onResume();
+      }}
+    >
+      <div aria-label="Game menu" className={styles.dialog} role="dialog">
+        <h2>Paused</h2>
+        <button onClick={onResume} type="button">
+          Resume
+        </button>
+        <button onClick={onControls} type="button">
+          Controls
+        </button>
+        <button onClick={onExit} type="button">
+          {roomExit ? "Leave room" : "Exit to title"}
         </button>
       </div>
     </div>
@@ -204,41 +271,50 @@ export type ToastTone = "error" | "info";
 export function ToastList({
   lifetimeMs = TOAST_DISMISS_MS,
   onDismiss,
+  only,
   toasts,
 }: {
   /** How long each notice stays. Defaults to a short self-dismiss. */
   lifetimeMs?: number;
   onDismiss: (id: number) => void;
+  /** Optional tone filter so the shell can dock info and error stacks separately. */
+  only?: ToastTone;
   toasts: readonly { id: number; message: string; tone?: ToastTone }[];
 }) {
   const errors = toasts.filter((toast) => toast.tone === "error");
   const notices = toasts.filter((toast) => toast.tone !== "error");
+  const showInfo = only === undefined || only === "info";
+  const showError = only === undefined || only === "error";
   return (
     <>
-      <div aria-live="polite" className={styles.toasts} data-testid="toasts">
-        {notices.map((toast) => (
-          <ToastNotice
-            id={toast.id}
-            key={toast.id}
-            lifetimeMs={lifetimeMs}
-            message={toast.message}
-            onDismiss={onDismiss}
-            tone="info"
-          />
-        ))}
-      </div>
-      <div className={styles.errorToasts} data-testid="error-toasts">
-        {errors.map((toast) => (
-          <ToastNotice
-            id={toast.id}
-            key={toast.id}
-            lifetimeMs={Math.max(lifetimeMs, ERROR_TOAST_DISMISS_MS)}
-            message={toast.message}
-            onDismiss={onDismiss}
-            tone="error"
-          />
-        ))}
-      </div>
+      {showInfo ? (
+        <div aria-live="polite" className={styles.toasts} data-testid="toasts">
+          {notices.map((toast) => (
+            <ToastNotice
+              id={toast.id}
+              key={toast.id}
+              lifetimeMs={lifetimeMs}
+              message={toast.message}
+              onDismiss={onDismiss}
+              tone="info"
+            />
+          ))}
+        </div>
+      ) : null}
+      {showError ? (
+        <div className={styles.errorToasts} data-testid="error-toasts">
+          {errors.map((toast) => (
+            <ToastNotice
+              id={toast.id}
+              key={toast.id}
+              lifetimeMs={Math.max(lifetimeMs, ERROR_TOAST_DISMISS_MS)}
+              message={toast.message}
+              onDismiss={onDismiss}
+              tone="error"
+            />
+          ))}
+        </div>
+      ) : null}
     </>
   );
 }

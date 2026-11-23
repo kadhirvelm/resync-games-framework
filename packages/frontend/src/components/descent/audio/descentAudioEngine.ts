@@ -32,6 +32,8 @@ let catalog: DescentAudioCatalog = {};
 let context: AudioContext | undefined;
 let master: GainNode | undefined;
 let enabled = true;
+let backgrounded = false;
+let visibilityAttached = false;
 let scene: DescentAudioScene = {
   active: false,
   ambience: "volcanic-ambience",
@@ -39,12 +41,112 @@ let scene: DescentAudioScene = {
 };
 const buffers = new Map<string, Promise<AudioBuffer>>();
 const lastPlayedAt = new Map<AshenGateAudioId, number>();
+const stateListeners = new Set<(state: AudioContextState) => void>();
 const musicChannel: LoopChannel = { release: () => {}, token: 0, url: "" };
 const ambienceChannel: LoopChannel = {
   release: () => {},
   token: 0,
   url: "",
 };
+
+/**
+ * Reports whether the browser audio context is currently running.
+ * @returns True when an AudioContext exists and its state is `"running"`
+ */
+export function isDescentAudioRunning(): boolean {
+  return context?.state === "running";
+}
+
+/**
+ * Subscribes to AudioContext state transitions so gesture unlock listeners can
+ * detach once running and re-arm if the browser later suspends audio.
+ * @param listener - Invoked with the new AudioContext state
+ * @returns Cleanup function that removes the listener
+ */
+export function subscribeDescentAudioStateChange(
+  listener: (state: AudioContextState) => void,
+): () => void {
+  stateListeners.add(listener);
+  return () => {
+    stateListeners.delete(listener);
+  };
+}
+
+/** Notifies subscribers of the current AudioContext state. */
+function notifyStateChange(state: AudioContextState): void {
+  for (const listener of stateListeners) listener(state);
+}
+
+/** Synchronizes master gain with the enabled and backgrounded flags. */
+function syncMasterGain(): void {
+  if (master === undefined) return;
+  master.gain.value = enabled && !backgrounded ? 1 : 0;
+}
+
+/**
+ * Resumes a suspended AudioContext and applies the active scene once running.
+ * Autoplay rejections outside a valid user gesture are caught cleanly.
+ * @param audioContext - Context to resume
+ */
+function resumeContext(audioContext: AudioContext): void {
+  void audioContext
+    .resume()
+    .then(() => {
+      if (context !== audioContext) return;
+      notifyStateChange(audioContext.state);
+      if (audioContext.state === "running") {
+        applyScene();
+      }
+    })
+    .catch(() => {
+      // Autoplay policy may reject resume until a valid user gesture arrives.
+    });
+}
+
+/** Handles browser tab visibility changes for the active Descent session. */
+function handleVisibilityChange(): void {
+  if (typeof document === "undefined") return;
+  setDescentAudioBackgrounded(document.hidden);
+}
+
+/** Attaches the document visibility listener once per active session. */
+function ensureVisibilityListener(): void {
+  if (visibilityAttached || typeof document === "undefined") return;
+  visibilityAttached = true;
+  backgrounded = document.hidden;
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+}
+
+/** Detaches the document visibility listener when Descent unmounts. */
+function removeVisibilityListener(): void {
+  if (!visibilityAttached || typeof document === "undefined") return;
+  visibilityAttached = false;
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
+}
+
+/**
+ * Suspends and mutes audio when the browser tab is hidden, and resumes when
+ * visible again if audio is enabled and the session is active.
+ * @param hidden - Whether the document is currently hidden
+ */
+export function setDescentAudioBackgrounded(hidden: boolean): void {
+  backgrounded = hidden;
+  syncMasterGain();
+  if (hidden) {
+    if (context !== undefined && context.state === "running") {
+      void context.suspend().catch(() => {
+        // Ignore suspend failures when the context is already closing.
+      });
+    }
+    return;
+  }
+  if (!enabled || !scene.active || context === undefined) return;
+  if (context.state === "suspended") {
+    resumeContext(context);
+    return;
+  }
+  applyScene();
+}
 
 /** Installs newly listed clips and retries the requested loops. */
 export function installDescentAudioCatalog(next: DescentAudioCatalog): void {
@@ -60,13 +162,22 @@ export function unlockDescentAudio(): boolean {
   if (typeof window === "undefined" || !("AudioContext" in window)) {
     return false;
   }
+  ensureVisibilityListener();
   if (context === undefined || master === undefined) {
-    context = new window.AudioContext();
-    master = context.createGain();
-    master.gain.value = enabled ? 1 : 0;
-    master.connect(context.destination);
+    const nextContext = new window.AudioContext();
+    context = nextContext;
+    master = nextContext.createGain();
+    syncMasterGain();
+    master.connect(nextContext.destination);
+    nextContext.addEventListener?.("statechange", () => {
+      if (context === nextContext) {
+        notifyStateChange(nextContext.state);
+      }
+    });
   }
-  if (context.state === "suspended") void context.resume();
+  if (context.state === "suspended" && !backgrounded) {
+    resumeContext(context);
+  }
   applyScene();
   return true;
 }
@@ -74,7 +185,10 @@ export function unlockDescentAudio(): boolean {
 /** Enables or mutes the complete Descent mix. */
 export function setDescentAudioEnabled(next: boolean): void {
   enabled = next;
-  if (master !== undefined) master.gain.value = next ? 1 : 0;
+  if (next) {
+    unlockDescentAudio();
+  }
+  syncMasterGain();
   applyScene();
 }
 
@@ -93,7 +207,14 @@ export function playDescentAudio(
   id: AshenGateAudioId,
   gain = EFFECT_GAIN,
 ): void {
-  if (!enabled || context === undefined || master === undefined) return;
+  if (
+    !enabled ||
+    backgrounded ||
+    context === undefined ||
+    master === undefined
+  ) {
+    return;
+  }
   const url = catalog[id]?.audioUrl;
   if (url === undefined) return;
   const now = typeof performance === "undefined" ? 0 : performance.now();
@@ -144,6 +265,8 @@ function playbackRateLimit(id: AshenGateAudioId): number | undefined {
 /** Stops Descent's long-running loops when the game experience unmounts. */
 export function stopDescentAudio(): void {
   scene = { ...scene, active: false };
+  backgrounded = false;
+  removeVisibilityListener();
   stopLoop(musicChannel);
   stopLoop(ambienceChannel);
 }
@@ -153,6 +276,7 @@ function applyScene(): void {
   if (
     !scene.active ||
     !enabled ||
+    backgrounded ||
     context === undefined ||
     master === undefined
   ) {

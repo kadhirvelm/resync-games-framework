@@ -37,10 +37,30 @@ function fakePage(enabled = true) {
 }
 
 describe("fullscreen", () => {
-  test("enters fullscreen and keeps Escape for the game", async () => {
+  test("enters fullscreen and keeps Escape and Digit1-9 for the game", async () => {
     const { calls, doc, keyboard } = fakePage();
     await toggleFullscreen(doc, keyboard);
-    expect(calls).toEqual(["enter", "lock:Escape"]);
+    expect(calls).toEqual([
+      "enter",
+      "lock:Escape,Digit1,Digit2,Digit3,Digit4,Digit5,Digit6,Digit7,Digit8,Digit9",
+    ]);
+    expect(doc.fullscreenElement).not.toBeNull();
+  });
+
+  test("falls back to locking Escape alone when locking Digit keys is rejected", async () => {
+    const { calls, doc, keyboard } = fakePage();
+    let attempts = 0;
+    keyboard.lock = async (keys?: readonly string[]) => {
+      attempts += 1;
+      calls.push(`lock:${keys?.join(",")}`);
+      if (attempts === 1) throw new Error("Digit keys unsupported");
+    };
+    await toggleFullscreen(doc, keyboard);
+    expect(calls).toEqual([
+      "enter",
+      "lock:Escape,Digit1,Digit2,Digit3,Digit4,Digit5,Digit6,Digit7,Digit8,Digit9",
+      "lock:Escape",
+    ]);
     expect(doc.fullscreenElement).not.toBeNull();
   });
 

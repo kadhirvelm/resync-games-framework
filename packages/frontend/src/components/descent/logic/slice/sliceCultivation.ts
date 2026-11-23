@@ -88,11 +88,17 @@ export function isStartingCaptain(unitId: string): boolean {
 }
 
 /**
- * Reports whether the opening scout wave has spawned and been cleared.
+ * Reports whether the opening siege wave is clear or an exploration cache arrived.
  * @param world - Sim world
- * @returns Whether at least one wave has spawned and no horde bodies remain
+ * @returns Whether the early Captain battlefield condition has been met
  */
 export function isOpeningWaveRepelled(world: SimWorldState): boolean {
+  const exploration = sliceState(world).exploration;
+  if (exploration !== undefined) {
+    return exploration.camps.some(
+      (camp) => camp.bonusCollected === true || camp.rewardCollected === true,
+    );
+  }
   const waves = waveState(world);
   return waves.spawnedWaveIds.length >= 1 && waves.units.length === 0;
 }
@@ -248,12 +254,35 @@ export function indexCompletedHalls(world: SimWorldState): CompletedHallIndex {
     if (record.buildingType !== "cultivation_hall" || !record.completed) {
       continue;
     }
-    if (anyHall === null) anyHall = record;
-    if (record.ownerId !== undefined && !byOwner.has(record.ownerId)) {
+    if (isBetterCultivationHall(record, anyHall)) anyHall = record;
+    if (record.ownerId === undefined) continue;
+    const current = byOwner.get(record.ownerId) ?? null;
+    if (isBetterCultivationHall(record, current)) {
       byOwner.set(record.ownerId, record);
     }
   }
   return { anyHall, byOwner };
+}
+
+/**
+ * Compares two Halls by their actual Spirit Vein bonus, then stable id.
+ * @param candidate - New Hall being considered
+ * @param current - Previously selected Hall, or null
+ * @returns True when the candidate offers a better or deterministic equal choice
+ */
+function isBetterCultivationHall(
+  candidate: ReturnType<typeof asBuilding>,
+  current: ReturnType<typeof asBuilding> | null,
+): boolean {
+  if (current === null) return true;
+  const bonus = (hall: ReturnType<typeof asBuilding>) =>
+    hall.bonuses.vein?.id === "breakthrough_success"
+      ? hall.bonuses.vein.amount
+      : 0;
+  const candidateBonus = bonus(candidate);
+  const currentBonus = bonus(current);
+  if (candidateBonus !== currentBonus) return candidateBonus > currentBonus;
+  return candidate.id < current.id;
 }
 
 /**

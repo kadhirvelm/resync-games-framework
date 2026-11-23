@@ -10,6 +10,7 @@ export {
   sideOfLine,
   toCell,
 } from "./geometry";
+export { type HillSpec, placeHills } from "./hills";
 export { pickBest } from "./placement";
 export { poissonDiskSample, type SampleArea } from "./poissonDisk";
 export { createMapRng, deriveSeed, randomBetween } from "./random";

@@ -139,7 +139,7 @@ describe("Descent tutorial curriculum & rules", () => {
     const expectedHints: Record<TutorialStepId, TutorialTargetHint> = {
       build_barracks: "build_barracks",
       build_tower: "camp",
-      cultivate: "camp",
+      cultivate: "cultivator",
       defeat_boss: "boss",
       defend_wave: "soldiers",
       gather: "idle_villagers",
@@ -167,9 +167,9 @@ describe("Descent tutorial curriculum & rules", () => {
     expect(instructions("build_barracks")).toContain("Military");
     expect(instructions("build_tower")).toContain("Defense");
     expect(instructions("build_tower")).toContain("confirm Upgrade Hold");
-    expect(instructions("cultivate")).toContain(
-      "Cultivation, then Cultivation Hall",
-    );
+    expect(instructions("cultivate")).toContain("starting Captain");
+    expect(instructions("cultivate")).toContain("without a Hall");
+    expect(instructions("cultivate")).toContain("Cultivation Hall at Outpost");
     expect(instructions("defend_wave")).toContain("Right-click an enemy");
     expect(instructions("defeat_boss")).toContain("right-click ground");
     for (const step of DESCENT_TUTORIAL_STEPS) {
@@ -320,14 +320,14 @@ describe("Descent tutorial curriculum & rules", () => {
       "cultivate",
     );
 
-    // Step 6: cultivate completes via Cultivation Hall OR Sworn unit OR chosen school
+    // Step 6 requires an actual promotion; a Hall alone or an impossible early school is not enough.
     const viaHall = makeSnapshot({
       buildings: [makeBuilding("h1", "cultivation_hall", true)],
     });
     expect(
       evaluateTutorialProgress(viaHall).steps.find((s) => s.id === "cultivate")
         ?.completed,
-    ).toBe(true);
+    ).toBe(false);
 
     const viaSworn = makeSnapshot({
       slice: {
@@ -379,7 +379,7 @@ describe("Descent tutorial curriculum & rules", () => {
       evaluateTutorialProgress(viaSchool).steps.find(
         (s) => s.id === "cultivate",
       )?.completed,
-    ).toBe(true);
+    ).toBe(false);
 
     // Step 7: defeat_boss completes on bossGateCleared or victory outcome
     const allDone = makeSnapshot({
@@ -388,6 +388,24 @@ describe("Descent tutorial curriculum & rules", () => {
         makeBuilding("t1", "ward_tower", true),
         makeBuilding("h1", "cultivation_hall", true),
       ],
+      slice: {
+        cultivation: {
+          groundTreasures: [],
+          inventoryTreasures: [],
+          units: [
+            {
+              appliedPills: [],
+              combatProof: 0,
+              equippedTreasures: [],
+              essence: 0,
+              isHero: false,
+              merit: 0,
+              rank: "Sworn",
+              unitId: "cap-1",
+            },
+          ],
+        },
+      },
       units: [
         makeVillager("v1", true),
         makeVillager("v2", true),

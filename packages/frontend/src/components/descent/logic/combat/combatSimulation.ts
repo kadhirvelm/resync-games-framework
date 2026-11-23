@@ -1,3 +1,10 @@
+import {
+  elevationAt,
+  highGroundDamageMultiplier,
+  highGroundRangeBonus,
+  slopeSpeedMultiplier,
+} from "../layers/elevation";
+import type { TerrainHill } from "../layers/layerTypes";
 import { type HurtDisk, stepAroundHurt } from "../pathing/avoidHurt";
 import { terrainWaypoint } from "../pathing/terrainNav";
 import { TICK_MS } from "../sim/constants";
@@ -85,6 +92,8 @@ export interface CombatSimulationOptions {
    * can weaken healing. Defaults to 1.
    */
   healingMultiplier?: number;
+  /** Walkable Age of Empires-style hills affecting movement speed and high-ground combat. */
+  hills?: readonly TerrainHill[];
   /** Disks a unit is hurt for standing in. Steps skirt them. */
   hurtZones?: readonly HurtDisk[];
   /** Playable map bounds, used by coarse terrain navigation around ridges. */
@@ -330,6 +339,7 @@ export class CombatSimulation {
     readonly height: number;
     readonly width: number;
   } | null;
+  private readonly hills: readonly TerrainHill[];
   private readonly movementHazards: readonly HurtDisk[];
   private readonly obstacles: readonly HurtDisk[];
   private readonly pendingProjectiles: PendingProjectile[] = [];
@@ -352,6 +362,7 @@ export class CombatSimulation {
     this.healingMultiplier = validHealingMultiplier(
       options.healingMultiplier ?? 1,
     );
+    this.hills = options.hills ?? [];
     this.hurtZones = options.hurtZones ?? [];
     this.mapSize = options.mapSize ?? null;
     this.obstacles = options.obstacles ?? [];
@@ -858,12 +869,35 @@ export class CombatSimulation {
       return;
     }
     if (
-      this.reachDistance(unit, targetId, targetPosition) <= unit.attackRange
+      this.reachDistance(unit, targetId, targetPosition) <=
+      this.effectiveAttackRange(unit, targetPosition)
     ) {
       this.startAttack(unit, targetId);
       return;
     }
     this.moveToward(unit, targetPosition);
+  }
+
+  /**
+   * Returns a unit's effective attack range against a target, including the
+   * high-ground ranged reach bonus when firing downhill.
+   * @param source - Attacking unit
+   * @param targetPosition - Target position on the map
+   * @returns Attack range in tiles
+   */
+  private effectiveAttackRange(
+    source: CombatUnit,
+    targetPosition: CombatPoint,
+  ): number {
+    if (this.hills.length === 0 || source.attackKind !== "projectile") {
+      return source.attackRange;
+    }
+    const bonus = highGroundRangeBonus(
+      elevationAt(this.hills, source.position.x, source.position.y),
+      elevationAt(this.hills, targetPosition.x, targetPosition.y),
+      source.attackKind,
+    );
+    return source.attackRange + bonus;
   }
 
   /**
@@ -1118,7 +1152,8 @@ export class CombatSimulation {
    * @param unit - Unit to move
    * @param destination - Point to approach
    * @param pace - Optional top speed, used when marching with a group
-   * @returns Whether the destination was reached
+   * @returns Whether movement finished at the destination, its safe approach,
+   * or because no traversable route exists
    */
   private moveToward(
     unit: CombatUnit,
@@ -1136,17 +1171,28 @@ export class CombatSimulation {
       return false;
     }
     const steerTarget =
-      this.terrainObstacles.length > 0 && this.mapSize !== null
+      this.movementHazards.length > 0 && this.mapSize !== null
         ? terrainWaypoint(
             unit.position,
             destination,
-            this.terrainObstacles,
+            this.movementHazards,
             this.mapSize,
           )
         : destination;
     const steerRemaining = distance(unit.position, steerTarget);
-    const effectiveRemaining = steerRemaining > 0 ? steerRemaining : remaining;
-    const ratio = Math.min(1, step / effectiveRemaining);
+    // A blocked destination resolves to a safe approach point. Once there (or
+    // when no route exists), release the order so queued legs cannot deadlock.
+    if (steerRemaining < 0.001) return true;
+    const slopeMultiplier = slopeSpeedMultiplier(
+      this.hills,
+      unit.position.x,
+      unit.position.y,
+      steerTarget.x - unit.position.x,
+      steerTarget.y - unit.position.y,
+    );
+    const effectiveStep = step * slopeMultiplier;
+    const effectiveRemaining = steerRemaining;
+    const ratio = Math.min(1, effectiveStep / effectiveRemaining);
     const proposed = {
       x: unit.position.x + (steerTarget.x - unit.position.x) * ratio,
       y: unit.position.y + (steerTarget.y - unit.position.y) * ratio,
@@ -1169,6 +1215,21 @@ export class CombatSimulation {
       x: combatValue(next.x),
       y: combatValue(next.y),
     };
+    // Finish at the safe terminal in this tick, before body separation nudges
+    // the unit away from the obstacle rim and makes it chase that point again.
+    if (
+      next.x === steerTarget.x &&
+      next.y === steerTarget.y &&
+      this.mapSize !== null
+    ) {
+      const continuation = terrainWaypoint(
+        unit.position,
+        destination,
+        this.movementHazards,
+        this.mapSize,
+      );
+      return distance(unit.position, continuation) < 0.001;
+    }
     return false;
   }
 
@@ -1330,9 +1391,16 @@ export class CombatSimulation {
       source.classId,
       target.classId,
     );
+    const elevationMultiplier =
+      this.hills.length === 0
+        ? 1
+        : highGroundDamageMultiplier(
+            elevationAt(this.hills, source.position.x, source.position.y),
+            elevationAt(this.hills, target.position.x, target.position.y),
+          );
     const mitigated = Math.max(
       1,
-      (rawDamage - target.armor) * counterMultiplier,
+      (rawDamage - target.armor) * counterMultiplier * elevationMultiplier,
     );
     return this.applyPureUnitDamage(source.id, target, mitigated);
   }
@@ -1382,9 +1450,18 @@ export class CombatSimulation {
     if (target.hitPoints <= 0 || rawDamage <= 0) {
       return 0;
     }
+    const elevationMultiplier =
+      this.hills.length === 0
+        ? 1
+        : highGroundDamageMultiplier(
+            elevationAt(this.hills, source.position.x, source.position.y),
+            elevationAt(this.hills, target.position.x, target.position.y),
+          );
     const modified = Math.max(
       1,
-      (rawDamage - target.armor) * source.structureDamageMultiplier,
+      (rawDamage - target.armor) *
+        source.structureDamageMultiplier *
+        elevationMultiplier,
     );
     const dealt = combatValue(Math.min(target.hitPoints, modified));
     target.hitPoints = combatValue(target.hitPoints - dealt);
