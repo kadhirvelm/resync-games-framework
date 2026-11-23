@@ -761,3 +761,95 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
     display: none;
   }
 }
+
+// ── Build menu progressive tier teaser ───────────────────────────────────
+
+.buildTierFooter {
+  border-top: 1px solid rgb(198 154 85 / 20%);
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 8px;
+}
+
+.buildTierTeaser {
+  align-items: center;
+  background: rgb(255 255 255 / 3%);
+  border: 1px solid rgb(198 154 85 / 26%);
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  padding: 7px 10px;
+}
+
+.buildTierTeaserText {
+  color: #c5b494;
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 0;
+  min-width: 0;
+
+  strong {
+    color: var(--bronze-bright, #efc977);
+    font-weight: 700;
+  }
+}
+
+.buildTierToggle {
+  background: #2b1e14;
+  border: 1px solid #70502c;
+  color: #e6d1a6;
+  cursor: pointer;
+  flex: 0 0 auto;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  white-space: nowrap;
+
+  &:hover,
+  &:focus-visible {
+    background: #422d1a;
+    border-color: var(--bronze-bright, #efc977);
+    color: #fff2d2;
+    outline: none;
+  }
+}
+
+.buildLaterRow {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.buildLaterToggle {
+  background: transparent;
+  border: 1px solid rgb(198 154 85 / 24%);
+  color: #a8967a;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 8px;
+
+  &:hover,
+  &:focus-visible {
+    border-color: var(--bronze, #c69a55);
+    color: #e6d1a6;
+    outline: none;
+  }
+}
+
+.buildPreviewSection {
+  display: grid;
+  gap: 6px;
+}
+
+.buildPreviewHeading {
+  color: #a8967a;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  margin: 0;
+  text-transform: uppercase;
+}

@@ -14,7 +14,7 @@
             }
           ],
           "id": "ashen_scout",
-          "spawnAtSeconds": 90,
+          "spawnAtSeconds": 120,
           "type": "scout"
         },
         {
@@ -31,7 +31,7 @@
             }
           ],
           "id": "ashen_swarm",
-          "spawnAtSeconds": 210,
+          "spawnAtSeconds": 285,
           "type": "swarm"
         },
         {
@@ -47,7 +47,7 @@
             "classId": "raider"
           },
           "id": "ashen_elite_summoner",
-          "spawnAtSeconds": 345,
+          "spawnAtSeconds": 480,
           "type": "elite"
         },
         {
@@ -68,7 +68,7 @@
             "classId": "warden"
           },
           "id": "ashen_elite_armored",
-          "spawnAtSeconds": 480,
+          "spawnAtSeconds": 690,
           "type": "elite"
         },
         {
@@ -86,7 +86,7 @@
             }
           ],
           "id": "ashen_boss",
-          "spawnAtSeconds": 615,
+          "spawnAtSeconds": 900,
           "type": "boss"
         }
       ]

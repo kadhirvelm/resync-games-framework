@@ -48,10 +48,11 @@ import { TICKS_PER_SECOND } from "../sim/constants";
 import type { SimWorldState } from "../sim/world";
 import type { ClassId, ResourceStockpile, SchoolId } from "../types";
 import { getBossDefinition, getSchedule, isLayerId } from "../waves/catalog";
-import { readOmen } from "../waves/clock";
+import { readOmen, ticksUntilWave } from "../waves/clock";
 import type { WaveClockState, WaveDefinition } from "../waves/types";
 import { TOWER_PREFIX } from "./sliceCombat";
 import {
+  canUseCaptainBattlefieldBreakthrough,
   completedHall,
   layerSchoolModifier,
   openCultivation,
@@ -87,6 +88,41 @@ const TIER_ORDER: readonly HoldTier[] = [
   "Stronghold",
   "Citadel",
 ];
+
+/** Minimum remaining seconds required before a wave can be called early. */
+export const EARLY_CALL_MIN_SECONDS = 5;
+
+/** Resource bonus awarded for calling the next wave early. */
+export interface EarlyCallBonus {
+  essence: number;
+  food: number;
+  wood: number;
+}
+
+/**
+ * Computes the scaled supply bonus for calling a wave early based on the
+ * number of sim seconds skipped. Floors at 15 Food / 15 Wood / 10 Essence
+ * and caps at 60 Food / 60 Wood / 40 Essence.
+ * @param secondsSkipped - Sim seconds pulled forward
+ * @returns Food, Wood, and Essence bonus
+ */
+export function earlyCallBonus(secondsSkipped: number): EarlyCallBonus {
+  const clampedSeconds = Math.max(0, secondsSkipped);
+  return {
+    essence: Math.min(40, Math.max(10, 10 + Math.floor(clampedSeconds / 6))),
+    food: Math.min(60, Math.max(15, 15 + Math.floor(clampedSeconds / 4))),
+    wood: Math.min(60, Math.max(15, 15 + Math.floor(clampedSeconds / 4))),
+  };
+}
+
+/**
+ * Formats an early-call bonus for the HUD button and player notice.
+ * @param bonus - Computed Food, Wood, and Essence bonus
+ * @returns Compact display string, e.g. `+35 Food · +35 Wood · +20 Essence`
+ */
+export function formatEarlyCallBonus(bonus: EarlyCallBonus): string {
+  return `+${bonus.food} Food · +${bonus.wood} Wood · +${bonus.essence} Essence`;
+}
 
 /**
  * Publishes the complete read model consumed by the Descent shell under
@@ -265,11 +301,18 @@ function holdUnitReadout(
   };
   if (!cultivation.hasUnit(unit.id)) return readout;
   const record = cultivation.getUnitState(unit.id);
-  const view = withHallRequirement(
-    world,
-    cultivation.getCultivationView(unit.id),
-    unit.ownerId,
-  );
+  const hall = completedHall(world, unit.ownerId);
+  const captainBattlefield =
+    hall === null && canUseCaptainBattlefieldBreakthrough(world, unit.id);
+  const view = captainBattlefield
+    ? openCultivation(world, { bypassHallMaterials: true }).getCultivationView(
+        unit.id,
+      )
+    : withHallRequirement(
+        world,
+        cultivation.getCultivationView(unit.id),
+        unit.ownerId,
+      );
   const active = record.activeBreakthrough;
   const cultivatorFields = isCultivatorClass(unit.classId)
     ? (() => {
@@ -295,6 +338,7 @@ function holdUnitReadout(
   return {
     ...readout,
     ...cultivatorFields,
+    ...(hall !== null ? { breakthroughHallId: hall.id } : {}),
     breakthroughReady:
       view.meritToNext > 0 && view.missingRequirements.length === 0,
     channel: active
@@ -803,30 +847,42 @@ function upgradeProgress(
 function waveReadout(waves: WaveClockState): WaveReadout | null {
   if (!isLayerId(waves.layerId)) return null;
   const schedule = getSchedule(waves.layerId).waves;
-  const elapsed =
-    (waves.completedTick - waves.layerStartedTick) / TICKS_PER_SECOND;
   const nextIndex = schedule.findIndex(
     (wave) => !waves.spawnedWaveIds.includes(wave.id),
   );
   const live = waves.units.length;
+  const waveHeld = waves.waveHeld === true;
   if (nextIndex < 0) {
     return {
+      canCallEarly: false,
       etaSeconds: null,
       index: schedule.length,
       label: waves.bossGateCleared ? "The gate is open" : "Final wave",
       live,
       total: schedule.length,
       type: "boss",
+      waveHeld: false,
     };
   }
   const wave = schedule[nextIndex] as WaveDefinition;
+  const etaSeconds = Math.max(
+    0,
+    Math.ceil(ticksUntilWave(waves, wave) / TICKS_PER_SECOND),
+  );
+  const canCallEarly = !waveHeld && etaSeconds >= EARLY_CALL_MIN_SECONDS;
+  const earlyCallBonusLabel = canCallEarly
+    ? formatEarlyCallBonus(earlyCallBonus(etaSeconds))
+    : undefined;
   return {
-    etaSeconds: Math.max(0, Math.ceil(wave.spawnAtSeconds - elapsed)),
+    canCallEarly,
+    ...(earlyCallBonusLabel !== undefined ? { earlyCallBonusLabel } : {}),
+    etaSeconds,
     index: nextIndex + 1,
     label: waveLabel(wave),
     live,
     total: schedule.length,
     type: wave.type,
+    waveHeld,
   };
 }
 

@@ -10,9 +10,10 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { HoldTier } from "../logic/economy/model";
 import { SIM_SPEEDS, type SimSpeed } from "../logic/sim/constants";
-import { RESOURCE_IDS } from "../logic/types";
+import type { ResourceId } from "../logic/types";
 import styles from "./descentView.module.scss";
 import type { ShellBuilding, ShellModel } from "./shellModel";
 import {
@@ -26,14 +27,50 @@ import {
   type ResourceSelectionId,
 } from "./text";
 import type { HoldUpgradeProgress } from "./UnitPanel";
+import { visibleResourceIds } from "./visibleResources";
+
+const VALID_HOLD_TIERS: ReadonlySet<string> = new Set<HoldTier>([
+  "Camp",
+  "Outpost",
+  "Stronghold",
+  "Citadel",
+]);
 
 /**
- * Eight resources, population, pause, and speed.
- * @param props - Model and sim clock callbacks
+ * Type guard for published Hold tier strings.
+ * @param value - Candidate tier string
+ * @returns Whether the value is a known HoldTier
+ */
+function isHoldTier(value: string | null | undefined): value is HoldTier {
+  return value !== null && value !== undefined && VALID_HOLD_TIERS.has(value);
+}
+
+/**
+ * Reads the Hold's current tier from the shell model, falling back to Camp.
+ * @param model - Shell model
+ * @returns Current Hold tier
+ */
+export function modelHoldTier(model: ShellModel): HoldTier {
+  if (isHoldTier(model.holdUpgrade?.currentTier)) {
+    return model.holdUpgrade.currentTier;
+  }
+  const camp = model.buildings.find(
+    (building) =>
+      building.buildingType === "camp" && building.factionId === "hold",
+  );
+  if (isHoldTier(camp?.tier)) return camp.tier;
+  return "Camp";
+}
+
+/**
+ * Progressively revealed resources, population, pause, and speed.
+ * @param props - Model, optional progression overrides, and sim clock callbacks
  * @returns The resource bar
  */
 export function ResourceBar({
+  discoveredResourceIds,
   fullscreen = false,
+  holdTier,
   model,
   onSelectResource,
   onSetPaused,
@@ -43,8 +80,12 @@ export function ResourceBar({
   selectedResource = null,
   soundEnabled = true,
 }: {
+  /** Explored deposit resources; defaults to resources visible in `model.nodes`. */
+  discoveredResourceIds?: ReadonlySet<ResourceId>;
   /** Whether the page is fullscreen. */
   fullscreen?: boolean;
+  /** Current Hold tier override; defaults to the tier inferred from `model`. */
+  holdTier?: HoldTier;
   model: ShellModel;
   onSelectResource?: (resource: ResourceSelectionId) => void;
   onSetPaused?: (paused: boolean) => void;
@@ -56,10 +97,20 @@ export function ResourceBar({
   soundEnabled?: boolean;
 }) {
   const pop = model.pop === null ? "—" : `${model.pop.used}/${model.pop.cap}`;
+  const resolvedTier = holdTier ?? modelHoldTier(model);
+  const resolvedDiscovered = useMemo(() => {
+    if (discoveredResourceIds !== undefined) return discoveredResourceIds;
+    return new Set(model.nodes.map((node) => node.resource));
+  }, [discoveredResourceIds, model.nodes]);
+  const visibleIds = visibleResourceIds({
+    discoveredResourceIds: resolvedDiscovered,
+    holdTier: resolvedTier,
+    resources: model.resources,
+  });
   return (
     <div className={styles.resources}>
       <div className={styles.resourceLedger}>
-        {RESOURCE_IDS.map((resourceId) => {
+        {visibleIds.map((resourceId) => {
           const copy = RESOURCE_COPY[resourceId];
           return (
             <ResourceChip
@@ -491,37 +542,65 @@ function Chevron({ direction }: { direction: "down" | "up" }) {
  */
 export function StrategicStatus({
   model,
+  onCallWaveEarly,
   onGlossary,
 }: {
   model: ShellModel;
+  /** Calls the next wave immediately for an early-call resource bonus. */
+  onCallWaveEarly?: () => void;
   onGlossary: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const percent = pressurePercent(model.hellPressure);
+  const waveHeld = model.wave?.waveHeld === true;
+  const canCallEarly =
+    model.wave?.canCallEarly === true && onCallWaveEarly !== undefined;
+  const bonusLabel = model.wave?.earlyCallBonusLabel;
+  const callEarlyTitle =
+    bonusLabel === undefined
+      ? "Call the next wave early for bonus supplies"
+      : `Call the next wave early (${bonusLabel})`;
+
   if (!expanded) {
     return (
-      <button
-        aria-expanded={false}
-        aria-label={collapsedThreatLabel(model, percent)}
-        className={styles.threatChip}
-        data-testid="threat-chip"
-        onClick={() => setExpanded(true)}
-        title="Show pressure and omen"
-        type="button"
-      >
-        <span className={styles.threatChipLabel}>Pressure</span>
-        <strong data-testid="threat-chip-percent">{`${percent}%`}</strong>
-        {model.omen === null ? null : (
-          <>
-            <span aria-hidden="true" className={styles.threatChipDivider} />
-            <span className={styles.threatChipLabel}>Wave</span>
-            <span className={styles.threatChipEta}>
-              {formatEta(model.omen.etaSeconds, model.paused)}
-            </span>
-          </>
-        )}
-        <Chevron direction="down" />
-      </button>
+      <div className={styles.threatRow}>
+        <button
+          aria-expanded={false}
+          aria-label={collapsedThreatLabel(model, percent)}
+          className={styles.threatChip}
+          data-testid="threat-chip"
+          onClick={() => setExpanded(true)}
+          title="Show pressure and omen"
+          type="button"
+        >
+          <span className={styles.threatChipLabel}>Pressure</span>
+          <strong data-testid="threat-chip-percent">{`${percent}%`}</strong>
+          {model.omen === null ? null : (
+            <>
+              <span aria-hidden="true" className={styles.threatChipDivider} />
+              <span className={styles.threatChipLabel}>Wave</span>
+              <span className={styles.threatChipEta}>
+                {waveHeld
+                  ? "Held"
+                  : formatEta(model.omen.etaSeconds, model.paused)}
+              </span>
+            </>
+          )}
+          <Chevron direction="down" />
+        </button>
+        {canCallEarly ? (
+          <button
+            aria-label={callEarlyTitle}
+            className={styles.callWaveButton}
+            data-testid="call-wave-early"
+            onClick={onCallWaveEarly}
+            title={callEarlyTitle}
+            type="button"
+          >
+            Call Wave
+          </button>
+        ) : null}
+      </div>
     );
   }
   return (
@@ -529,6 +608,7 @@ export function StrategicStatus({
       <HellPressure model={model} />
       <OmenPanel
         model={model}
+        onCallWaveEarly={onCallWaveEarly}
         onCollapse={() => setExpanded(false)}
         onGlossary={onGlossary}
       />
@@ -563,15 +643,22 @@ export function HellPressure({ model }: { model: ShellModel }) {
  */
 export function OmenPanel({
   model,
+  onCallWaveEarly,
   onCollapse,
   onGlossary,
 }: {
   model: ShellModel;
+  /** Calls the next wave immediately for an early-call resource bonus. */
+  onCallWaveEarly?: () => void;
   /** Folds the threat cluster back to its chip; omitted, no control shows. */
   onCollapse?: () => void;
   onGlossary: () => void;
 }) {
   const omen = model.omen;
+  const waveHeld = model.wave?.waveHeld === true;
+  const canCallEarly =
+    model.wave?.canCallEarly === true && onCallWaveEarly !== undefined;
+  const bonusLabel = model.wave?.earlyCallBonusLabel;
   return (
     <section aria-label="Omen panel" className={styles.omenPanel}>
       <div className={styles.omenHeading}>
@@ -587,10 +674,10 @@ export function OmenPanel({
         </button>
         {omen === null ? null : (
           <p
-            className={`${styles.omenEta} ${model.paused ? styles.omenHeld : ""}`}
+            className={`${styles.omenEta} ${model.paused || waveHeld ? styles.omenHeld : ""}`}
             data-testid="omen-countdown"
           >
-            {formatEta(omen.etaSeconds, model.paused)}
+            {waveHeld ? "Held" : formatEta(omen.etaSeconds, model.paused)}
           </p>
         )}
         {onCollapse === undefined ? null : (
@@ -622,6 +709,19 @@ export function OmenPanel({
           })}
         </ul>
       )}
+      {canCallEarly ? (
+        <button
+          className={styles.callWavePanelButton}
+          data-testid="call-wave-early"
+          onClick={onCallWaveEarly}
+          type="button"
+        >
+          <span>Call next wave early</span>
+          {bonusLabel === undefined ? null : (
+            <span className={styles.callWaveBonus}>{bonusLabel}</span>
+          )}
+        </button>
+      ) : null}
     </section>
   );
 }

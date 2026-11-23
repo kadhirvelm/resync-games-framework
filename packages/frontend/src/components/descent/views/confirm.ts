@@ -128,7 +128,7 @@ function breakthroughCommit(model: ShellModel, unitId: string): CommitModel {
       "Begin breakthrough",
     );
   }
-  if (hall === undefined) {
+  if (hall === undefined && !unit.breakthroughReady) {
     return blocked(
       "Breakthrough",
       "Cultivation Hall is not on the map.",
@@ -138,7 +138,10 @@ function breakthroughCommit(model: ShellModel, unitId: string): CommitModel {
   }
   return {
     blockedMessage: null,
-    command: { hallId: hall.id, type: "start_breakthrough", unitId },
+    command:
+      hall === undefined
+        ? { type: "start_breakthrough", unitId }
+        : { hallId: hall.id, type: "start_breakthrough", unitId },
     confirmLabel: "Begin breakthrough",
     revive: null,
     rows,

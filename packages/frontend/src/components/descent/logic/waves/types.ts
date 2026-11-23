@@ -277,15 +277,29 @@ export interface WaveClockState {
   omenTower: boolean;
   pendingTwists: PendingTwist[];
   resolvedTick: number;
+  /**
+   * Cumulative tick shift applied to unspawned waves: positive when held by
+   * `shouldHoldWave`, negative when pulled forward by `callNextWaveEarly`.
+   */
+  scheduleOffsetTicks?: number;
   spawnedWaveIds: string[];
   summonAt: Record<string, number>;
   trackedUnitIds: string[];
   triggeredPhases: string[];
   units: WaveUnit[];
+  /** Whether the wave clock is currently held by an external condition. */
+  waveHeld?: boolean;
   /** Optional difficulty scale applied to spawned horde HP and damage. */
   waveStatScale?: number;
   /** Optional pacing multiplier applied to wave spawn timestamps. */
   waveTimeScale?: number;
+}
+
+/** Result of pulling the next scheduled wave forward via `callNextWaveEarly`. */
+export interface EarlyWaveCallResult {
+  called: boolean;
+  secondsSkipped: number;
+  waveIndex: number;
 }
 
 /** Result of removing one horde body. */

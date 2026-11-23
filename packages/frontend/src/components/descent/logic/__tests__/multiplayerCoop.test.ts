@@ -149,7 +149,7 @@ describe("Descent multiplayer co-op simulation", () => {
     });
     let snapshot = sim.snapshot();
     let horde = snapshot.units.find((unit) => unit.ownerId === undefined);
-    for (let attempt = 0; attempt < 100 && !horde; attempt += 1) {
+    for (let attempt = 0; attempt < 150 && !horde; attempt += 1) {
       sim.step(20);
       snapshot = sim.snapshot();
       horde = snapshot.units.find((unit) => unit.ownerId === undefined);

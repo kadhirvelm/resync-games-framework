@@ -78,7 +78,7 @@ describe("spawn slots", () => {
 describe("overdue waves", () => {
   test("a wave whose mark has passed still spawns", () => {
     const state = createWaveState("ashen_gate", 0);
-    state.completedTick = secondsToWaveTicks(100);
+    state.completedTick = secondsToWaveTicks(waveAt("ashen_scout") + 10);
     resolveWaveTick(state);
     expect(state.spawnedWaveIds).toEqual(["ashen_scout"]);
     expect(state.units).toHaveLength(2);
@@ -175,24 +175,30 @@ describe("horde depth", () => {
 
   test("leaves Ashen Gate unscaled", () => {
     const { director } = boot("ashen_gate", false);
-    stepTo(director, 90);
+    const scoutAt = waveAt("ashen_scout");
+    stepTo(director, scoutAt);
     const raider = getUnitDefinition("raider");
     const scoutScale =
       getSchedule("ashen_gate").waves[0]?.composition[0]?.statScale ?? 1;
+    const expectedPressure =
+      HELL_PRESSURE_PER_MINUTE * Math.floor(scoutAt / 60);
     expect(director.getUnits()[0]?.maxHitPoints).toBeCloseTo(
       raider.maxHitPoints *
         scoutScale *
-        pressureStatMultiplier(HELL_PRESSURE_PER_MINUTE),
+        pressureStatMultiplier(expectedPressure),
     );
   });
 
   test("scales a composition group's hit points and damage by its statScale", () => {
     const { director } = boot("ashen_gate", false);
-    stepTo(director, 90);
+    const scoutAt = waveAt("ashen_scout");
+    stepTo(director, scoutAt);
     const group = getSchedule("ashen_gate").waves[0]?.composition[0];
     expect(group?.statScale).toBeLessThan(1);
     const raider = getUnitDefinition("raider");
-    const pressure = pressureStatMultiplier(HELL_PRESSURE_PER_MINUTE);
+    const pressure = pressureStatMultiplier(
+      HELL_PRESSURE_PER_MINUTE * Math.floor(scoutAt / 60),
+    );
     const scout = director.getUnits()[0];
     expect(scout?.damage).toBeCloseTo(
       raider.damage * (group?.statScale ?? 1) * pressure,
@@ -203,7 +209,7 @@ describe("horde depth", () => {
 describe("horde bark keys", () => {
   test("come from the layer faction, not the Hold unit", () => {
     const ashen = boot("ashen_gate", false);
-    stepTo(ashen.director, 90);
+    stepTo(ashen.director, waveAt("ashen_scout"));
     expect(ashen.director.getUnits()[0]?.barkKey).toBe("imp_swarm.raider");
 
     const bone = boot("bone_wastes", false);

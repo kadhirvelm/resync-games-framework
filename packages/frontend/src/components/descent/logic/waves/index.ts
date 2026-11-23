@@ -8,6 +8,11 @@ export {
   WAVE_SCHEDULES,
 } from "./catalog";
 export {
+  callNextWaveEarly,
+  nextWaveIndex,
+  ticksUntilWave,
+} from "./clock";
+export {
   FODDER_CLASS_ID,
   HELL_PRESSURE_PER_MINUTE,
   HELL_PRESSURE_STAT_BONUS,
@@ -32,10 +37,12 @@ export {
   wavePowerMultiplier,
 } from "./modifiers";
 export {
+  callWorldNextWaveEarly,
   createWavesModule,
   getHellPressureFromMeta,
   getOmenFromMeta,
   noteWaveCasualty,
+  type WaveModuleOptions,
   wavesModule,
 } from "./module";
 export { clampToMap, hordeBarkKey, omenComposition } from "./spawn";
@@ -44,6 +51,7 @@ export type {
   BossDrops,
   DamageKind,
   DescendGateResult,
+  EarlyWaveCallResult,
   EliteAffixId,
   EncounterState,
   OmenPreview,

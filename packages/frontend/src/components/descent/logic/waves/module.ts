@@ -2,13 +2,16 @@ import type { SimModule } from "../sim/modules";
 import type { SimWorldState } from "../sim/world";
 import { isLayerId, OMEN_TOWER_BUILDING_TYPE } from "./catalog";
 import {
+  callNextWaveEarly as callClockNextWaveEarly,
   createWaveState,
   isWaveClockState,
+  nextWaveIndex,
   readOmen,
   resolveCasualty,
   resolveWaveTick,
 } from "./clock";
 import type {
+  EarlyWaveCallResult,
   OmenPreview,
   WaveClockState,
   WaveEvent,
@@ -18,8 +21,10 @@ import type {
 /** Sim-module id. Snapshot readers look up `meta.waves`. */
 export const WAVES_MODULE_ID = "waves";
 
-/** Optional difficulty tuning for a waves module instance. */
+/** Optional difficulty tuning and flow hooks for a waves module instance. */
 export interface WaveModuleOptions {
+  /** Optional predicate that pauses the next wave while it returns true. */
+  shouldHoldWave?: (world: SimWorldState, nextWaveIndex: number) => boolean;
   /** Multiplier for spawned horde HP and damage (default `1`). */
   waveStatScale?: number;
   /** Multiplier for wave spawn timestamps (default `1`). */
@@ -70,6 +75,15 @@ export function createWavesModule(
             state.collectedEssence,
             context.world.resources.essence,
           );
+          const upcoming = nextWaveIndex(state);
+          const held =
+            upcoming >= 0 &&
+            options?.shouldHoldWave !== undefined &&
+            options.shouldHoldWave(context.world, upcoming);
+          state.waveHeld = held;
+          if (held) {
+            state.scheduleOffsetTicks = (state.scheduleOffsetTicks ?? 0) + 1;
+          }
           const events = resolveWaveTick(state);
           grantEssence(context.world, events);
           for (const event of events) {
@@ -88,6 +102,18 @@ export function createWavesModule(
  * should prefer `createWavesModule(runtime)`.
  */
 export const wavesModule: SimModule = createWavesModule();
+
+/**
+ * Pulls the next unspawned wave forward on a sim world's wave clock so it
+ * spawns on the very next tick.
+ * @param world - Sim world
+ * @returns Whether a wave was pulled early, seconds skipped, and its 0-based index
+ */
+export function callWorldNextWaveEarly(
+  world: SimWorldState,
+): EarlyWaveCallResult {
+  return callClockNextWaveEarly(requireState(world));
+}
 
 /**
  * Applies a combat death to the clock stored on a world.

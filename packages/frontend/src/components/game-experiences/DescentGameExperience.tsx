@@ -28,10 +28,15 @@ import {
   type DescentSim,
   readSaveSlot,
   type SimSpeed,
+  type SimWorldState,
   saveSlotKey,
   startSimDriver,
   writeSaveSlot,
 } from "@/components/descent/logic/sim";
+import {
+  evaluateTutorialProgress,
+  shouldHoldWaveForTutorial,
+} from "@/components/descent/logic/tutorial";
 import {
   DescentCampaignDebrief,
   DescentCampaignProgress,
@@ -83,12 +88,43 @@ function createRunSeed(): number {
   return values[0] ?? 0;
 }
 
+/** Local-storage key recording that the player completed or dismissed the solo tutorial. */
+const SOLO_TUTORIAL_DONE_KEY = "descent.soloTutorialDone";
+
+/**
+ * Reads whether the first-run solo tutorial should start enabled.
+ * @returns True on a player's first solo session before dismissal or completion
+ */
+function readSoloTutorialDefault(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(SOLO_TUTORIAL_DONE_KEY) !== "1";
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Marks the first-run solo tutorial as completed or dismissed.
+ */
+function markSoloTutorialDone(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SOLO_TUTORIAL_DONE_KEY, "1");
+  } catch {
+    /* Storage can be blocked; dismissal still applies for this session. */
+  }
+}
+
 /**
  * Creates a fresh slice or restores the current browser autosave.
+ * @param shouldHoldWave - Optional wave-hold gate for first-run solo tutorial
  * @returns A playable Ashen Gate session and whether it restored a save
  */
-function createPlayableSession(): PlayableDescentSession {
-  const sim = createAshenGateSim({ seed: createRunSeed() });
+function createPlayableSession(
+  shouldHoldWave: (world: SimWorldState, nextWaveIndex: number) => boolean,
+): PlayableDescentSession {
+  const sim = createAshenGateSim({ seed: createRunSeed(), shouldHoldWave });
   if (typeof window === "undefined") return { hasSavedRun: false, sim };
   const saved = readSaveSlot(window.localStorage, AUTOSAVE_SLOT);
   if (saved === null) return { hasSavedRun: false, sim };
@@ -102,7 +138,7 @@ function createPlayableSession(): PlayableDescentSession {
   }
   return {
     hasSavedRun: false,
-    sim: createAshenGateSim({ seed: createRunSeed() }),
+    sim: createAshenGateSim({ seed: createRunSeed(), shouldHoldWave }),
   };
 }
 
@@ -110,11 +146,22 @@ function createPlayableSession(): PlayableDescentSession {
  * Owns one sim for the mounted experience. It only advances and autosaves
  * after the player leaves the title screen.
  * @param active - Whether gameplay is currently visible
+ * @param tutorialActiveRef - Ref indicating whether solo tutorial wave-hold is active
  * @returns The sim, its latest snapshot, and a run id that changes on restart
  */
-function useDescentSim(active: boolean) {
-  const [session, setSession] = useState<PlayableDescentSession>(
-    createPlayableSession,
+function useDescentSim(
+  active: boolean,
+  tutorialActiveRef: { current: boolean },
+) {
+  const shouldHoldWave = (
+    world: SimWorldState,
+    nextWaveIndex: number,
+  ): boolean =>
+    tutorialActiveRef.current &&
+    shouldHoldWaveForTutorial(world, nextWaveIndex);
+
+  const [session, setSession] = useState<PlayableDescentSession>(() =>
+    createPlayableSession(shouldHoldWave),
   );
   const [runId, setRunId] = useState(0);
   const { sim } = session;
@@ -160,7 +207,7 @@ function useDescentSim(active: boolean) {
     setRunId((current) => current + 1);
     setSession({
       hasSavedRun: false,
-      sim: createAshenGateSim({ seed: createRunSeed() }),
+      sim: createAshenGateSim({ seed: createRunSeed(), shouldHoldWave }),
     });
   };
 
@@ -499,13 +546,33 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
     useState<DescentMapId>("ashen_crucible");
   const [battlefieldReady, setBattlefieldReady] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soloTutorialActive, setSoloTutorialActive] = useState(
+    readSoloTutorialDefault,
+  );
+  const soloTutorialRef = useRef(soloTutorialActive);
+  soloTutorialRef.current = soloTutorialActive;
   const screen = useFullscreen();
   const toggleFullscreen = screen.available ? screen.toggle : undefined;
   const isSoloPlaying = mode === "solo";
   const { hasSavedRun, restart, runId, sim, snapshot } = useDescentSim(
     isSoloPlaying && battlefieldReady,
+    soloTutorialRef,
   );
   const shellModel = useMemo(() => buildShellModel(snapshot), [snapshot]);
+
+  useEffect(() => {
+    if (!isSoloPlaying || !soloTutorialActive) return;
+    if (evaluateTutorialProgress(snapshot).allComplete) {
+      markSoloTutorialDone();
+    }
+  }, [isSoloPlaying, soloTutorialActive, snapshot]);
+
+  /** Dismisses the solo tutorial guide and releases any held tutorial waves. */
+  const dismissSoloTutorial = () => {
+    soloTutorialRef.current = false;
+    setSoloTutorialActive(false);
+    markSoloTutorialDone();
+  };
   useDescentAudio({
     active: isSoloPlaying,
     enabled: soundEnabled,
@@ -580,6 +647,7 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
       onCommand={(command) => {
         sim.enqueue(command);
       }}
+      onDismissTutorial={dismissSoloTutorial}
       onLoaded={() => setBattlefieldReady(true)}
       onRestart={restartRun}
       onSetPaused={(paused) => sim.setPaused(paused)}
@@ -589,6 +657,7 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
       shellModel={shellModel}
       snapshot={snapshot}
       soundEnabled={soundEnabled}
+      tutorialMode={soloTutorialActive}
     />
   );
 };

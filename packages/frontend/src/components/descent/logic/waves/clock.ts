@@ -35,6 +35,7 @@ import type {
   BossDrops,
   CasualtyResult,
   DamageKind,
+  EarlyWaveCallResult,
   NarrativeBossId,
   OmenPreview,
   PendingTwist,
@@ -162,11 +163,60 @@ export function resolveWaveTick(state: WaveClockState): WaveEvent[] {
   state.resolvedTick = state.completedTick;
   const events: WaveEvent[] = [];
   events.push(...updatePressure(state));
-  events.push(...spawnDueWaves(state));
+  if (state.waveHeld !== true) {
+    events.push(...spawnDueWaves(state));
+  }
   events.push(...pulseSummoners(state));
   events.push(...advanceTwists(state));
   events.push(...announceOmen(state));
   return events;
+}
+
+/**
+ * Returns the 0-based index of the next unspawned wave on the active layer,
+ * or `-1` when no layer is active or every wave has spawned.
+ * @param state - Wave clock
+ * @returns Next wave index, or -1
+ */
+export function nextWaveIndex(state: WaveClockState): number {
+  if (state.layerId === null) return -1;
+  const schedule = getSchedule(state.layerId);
+  return schedule.waves.findIndex(
+    (wave) => !state.spawnedWaveIds.includes(wave.id),
+  );
+}
+
+/**
+ * Pulls the next unspawned wave forward so it spawns on the very next tick,
+ * shifting all subsequent unspawned waves earlier by the same number of ticks
+ * so later waves keep their spacing.
+ * @param state - Wave clock
+ * @returns Whether a wave was pulled early, seconds skipped, and its 0-based index
+ */
+export function callNextWaveEarly(state: WaveClockState): EarlyWaveCallResult {
+  if (state.layerId === null || state.waveHeld === true) {
+    return { called: false, secondsSkipped: 0, waveIndex: -1 };
+  }
+  const index = nextWaveIndex(state);
+  if (index < 0) {
+    return { called: false, secondsSkipped: 0, waveIndex: -1 };
+  }
+  const wave = getSchedule(state.layerId).waves[index];
+  if (!wave) {
+    return { called: false, secondsSkipped: 0, waveIndex: -1 };
+  }
+  const remaining = ticksUntilWave(state, wave);
+  if (remaining <= 0) {
+    return { called: false, secondsSkipped: 0, waveIndex: index };
+  }
+  const ticksSkipped = Math.max(0, remaining - 1);
+  state.scheduleOffsetTicks =
+    validOffset(state.scheduleOffsetTicks) - ticksSkipped;
+  return {
+    called: true,
+    secondsSkipped: Math.round(ticksSkipped / TICKS_PER_SECOND),
+    waveIndex: index,
+  };
 }
 
 /**
@@ -735,16 +785,42 @@ function nextPreview(state: WaveClockState): {
 }
 
 /**
- * Ticks from the clock's current tick to a wave's spawn mark.
+ * Ticks from the clock's current tick to a wave's effective spawn mark,
+ * accounting for `waveTimeScale` and `scheduleOffsetTicks`.
+ * @param state - Wave clock
+ * @param wave - Scheduled wave
+ * @returns Remaining ticks; zero or negative when due or overdue
+ */
+export function ticksUntilWave(
+  state: WaveClockState,
+  wave: WaveDefinition,
+): number {
+  const timeScale = validSize(state.waveTimeScale, 1);
+  const offset = validOffset(state.scheduleOffsetTicks);
+  return (
+    state.layerStartedTick +
+    secondsToWaveTicks(wave.spawnAtSeconds * timeScale) +
+    offset -
+    state.completedTick
+  );
+}
+
+/**
+ * Reads a stored tick offset, defaulting to 0 when absent or non-finite.
+ * @param value - Stored offset
+ * @returns Finite tick offset
+ */
+function validOffset(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  return value;
+}
+
+/**
+ * Internal alias for `ticksUntilWave`.
  * @param state - Wave clock
  * @param wave - Scheduled wave
  * @returns Remaining ticks; zero or negative when due or overdue
  */
 function ticksUntil(state: WaveClockState, wave: WaveDefinition): number {
-  const timeScale = validSize(state.waveTimeScale, 1);
-  return (
-    state.layerStartedTick +
-    secondsToWaveTicks(wave.spawnAtSeconds * timeScale) -
-    state.completedTick
-  );
+  return ticksUntilWave(state, wave);
 }

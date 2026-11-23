@@ -35,6 +35,7 @@ import { orderVillagersMove, orderVillagersStop } from "./economy/villagers";
 import { setLayerTerrain } from "./layers/hazards";
 import { creditPlayerCultivation } from "./scoring";
 import {
+  type CommandHandlerMap,
   createDescentSim,
   type DescentSim,
   type SimModule,
@@ -45,9 +46,11 @@ import {
 import { formationCenter, planFormation } from "./slice/formation";
 import { runCombatTick } from "./slice/sliceCombat";
 import {
+  canUseCaptainBattlefieldBreakthrough,
   openCultivation,
   REALM_FOR_RANK,
   saveCultivation,
+  unlockCaptainBattlefieldBreakthrough,
 } from "./slice/sliceCultivation";
 import {
   advanceCultivatorPowersTick,
@@ -56,7 +59,11 @@ import {
   toggleMeditate,
 } from "./slice/sliceCultivatorPowers";
 import { updateFogOfWar } from "./slice/sliceFog";
-import { publishPresentation } from "./slice/slicePresentation";
+import {
+  earlyCallBonus,
+  formatEarlyCallBonus,
+  publishPresentation,
+} from "./slice/slicePresentation";
 import {
   ASHEN_GATE_SLICE_MODULE_ID,
   createSliceState,
@@ -83,7 +90,7 @@ import {
   queuedWaypoints,
 } from "./slice/sliceWaypoints";
 import type { Command, SimSnapshot } from "./types";
-import { createWavesModule } from "./waves/module";
+import { callWorldNextWaveEarly, createWavesModule } from "./waves/module";
 
 export type { AshenGateSliceState } from "./slice/sliceState";
 export {
@@ -94,6 +101,8 @@ export {
 /** Options for a new playable Ashen Gate simulation. */
 export interface AshenGateSimOptions {
   seed: number;
+  /** Optional predicate that pauses the next wave until ready (e.g. tutorial). */
+  shouldHoldWave?: (world: SimWorldState, nextWaveIndex: number) => boolean;
 }
 
 /** Wave spawn-time multiplier for the co-op tutorial (50% more prep time). */
@@ -118,14 +127,19 @@ export interface MultiplayerDescentSimOptions {
   mapId?: DescentMapId;
   players: readonly AshenCruciblePlayer[];
   seed: number;
+  /** Optional predicate that pauses the next wave until ready (e.g. tutorial). */
+  shouldHoldWave?: (world: SimWorldState, nextWaveIndex: number) => boolean;
 }
 
 /**
  * Creates the Layer 1 composition without changing the empty generic sim.
- * @param options - Deterministic run seed
+ * @param options - Deterministic run seed and optional wave-hold hook
  * @returns A ready Ashen Gate simulation
  */
 export function createAshenGateSim(options: AshenGateSimOptions): DescentSim {
+  const waveOptions = options.shouldHoldWave
+    ? { shouldHoldWave: options.shouldHoldWave }
+    : undefined;
   return createDescentSim({
     layerId: "ashen_gate",
     map: { ...ASHEN_GATE_MAP_SIZE },
@@ -134,7 +148,7 @@ export function createAshenGateSim(options: AshenGateSimOptions): DescentSim {
         manualVillagers: true,
         stepEveryTicks: ECONOMY_STEP_TICKS,
       }),
-      createWavesModule(),
+      createWavesModule(undefined, waveOptions),
       ashenGateSliceModule,
     ],
     seed: options.seed,
@@ -156,12 +170,15 @@ export function createMultiplayerDescentSim(
   const campaignMission = DESCENT_CAMPAIGN_MISSIONS.find(
     (mission) => mission.id === options.mapId,
   );
-  const waveOptions = isTutorial
+  const baseWaveOptions = isTutorial
     ? {
         waveStatScale: TUTORIAL_WAVE_STAT_SCALE,
         waveTimeScale: TUTORIAL_WAVE_TIME_SCALE,
       }
     : campaignMission;
+  const waveOptions = options.shouldHoldWave
+    ? { ...baseWaveOptions, shouldHoldWave: options.shouldHoldWave }
+    : baseWaveOptions;
   return createDescentSim({
     layerId: "ashen_gate",
     map: { ...ASHEN_CRUCIBLE_MAP_SIZE },
@@ -267,172 +284,229 @@ interface SliceModuleConfig {
  * @returns Configured `SimModule`
  */
 function createSliceModule(config: SliceModuleConfig = {}): SimModule {
-  return {
-    commands: {
-      cancel_training(command, context) {
-        if (!ownsBuilding(context.world, command.buildingId, command.actorId)) {
-          return;
-        }
-        if (!cancelTraining(context.world, command.buildingId, command.jobId)) {
-          return;
-        }
-        pushNotice(context.world, "Training cancelled. Cost refunded.", "info");
-      },
-      cast_qi_art(command, context) {
-        const unitIds = authorizedUnitIds(
-          context.world,
-          command.unitIds,
-          command.actorId,
-        );
-        if (unitIds.length === 0) return;
-        castQiArt(context, unitIds);
-      },
-      choose_school(command, context) {
-        if (!ownsUnit(context.world, command.unitId, command.actorId)) return;
-        const cultivation = openCultivation(context.world);
-        if (!cultivation.hasUnit(command.unitId)) return;
-        const result = cultivation.chooseSchool(command.unitId, command.school);
-        saveCultivation(context.world, cultivation);
-        if (!result.ok) {
-          pushNotice(context.world, result.error, "warn");
-          return;
-        }
-        pushNotice(
-          context.world,
-          `${schoolName(command.school)} school locked. ${schoolTagline(command.school)}`,
-          "good",
-        );
-      },
-      descend(_command, context) {
-        if (!waveState(context.world).bossGateCleared) {
-          pushNotice(context.world, "Boss still lives", "warn");
-          return;
-        }
-        const state = sliceState(context.world);
-        state.outcome = "victory";
-        context.world.paused = true;
-        context.emit(ASHEN_GATE_SLICE_MODULE_ID, "slice_completed", {
-          outcome: "victory",
-        });
-      },
-      feed_pill(command, context) {
-        if (!ownsUnit(context.world, command.unitId, command.actorId)) return;
-        const cultivation = openCultivation(context.world);
-        if (!cultivation.hasUnit(command.unitId)) return;
-        const result = cultivation.feedPill(command.unitId, command.pillId);
-        saveCultivation(context.world, cultivation);
-        if (!result.ok) {
-          pushNotice(context.world, result.error, "warn");
-          return;
-        }
-        pushNotice(context.world, "The pill takes hold.", "good");
-      },
-      order_attack(command, context) {
-        const unitIds = authorizedUnitIds(
-          context.world,
-          command.unitIds,
-          command.actorId,
-        );
-        if (unitIds.length === 0) return;
-        cancelMeditation(context.world, unitIds);
-        clearWaypoints(context.world, unitIds);
-        queueOrder(context.world, { ...command, unitIds });
-      },
-      order_attack_move(command, context) {
-        const unitIds = authorizedUnitIds(
-          context.world,
-          command.unitIds,
-          command.actorId,
-        );
-        if (unitIds.length === 0) return;
-        cancelMeditation(context.world, unitIds);
-        routeMove(context.world, { ...command, unitIds });
-      },
-      order_move(command, context) {
-        const unitIds = authorizedUnitIds(
-          context.world,
-          command.unitIds,
-          command.actorId,
-        );
-        if (unitIds.length === 0) return;
-        cancelMeditation(context.world, unitIds);
-        routeMove(context.world, { ...command, unitIds });
-      },
-      order_stop(command, context) {
-        const unitIds = authorizedUnitIds(
-          context.world,
-          command.unitIds,
-          command.actorId,
-        );
-        if (unitIds.length === 0) return;
-        clearWaypoints(context.world, unitIds);
-        orderVillagersStop(
-          economyHost(context.world, ECONOMY_STEP_TICKS),
-          unitIds,
-        );
-        queueOrder(context.world, { ...command, unitIds });
-      },
-      set_formation(command, context) {
-        const unitIds = authorizedUnitIds(
-          context.world,
-          command.unitIds,
-          command.actorId,
-        );
-        if (unitIds.length === 0) return;
-        reformInPlace(context.world, { ...command, unitIds });
-      },
-      set_rally_point(command, context) {
-        if (!ownsBuilding(context.world, command.buildingId, command.actorId)) {
-          return;
-        }
-        const accepted = setTrainingRallyPoint(
-          context.world,
-          command.buildingId,
-          command,
-        );
-        if (!accepted) return;
-        const onNode =
-          command.nodeId !== undefined &&
-          trainingRallyPoint(context.world, command.buildingId)?.nodeId ===
-            command.nodeId;
-        pushNotice(
-          context.world,
-          onNode
-            ? "Rally set on a resource. New villagers will gather there."
-            : "Rally point set.",
-          "info",
-        );
-      },
-      start_breakthrough(command, context) {
-        if (!ownsUnit(context.world, command.unitId, command.actorId)) return;
-        if (!ownsBuilding(context.world, command.hallId, command.actorId)) {
-          return;
-        }
-        startBreakthrough(context.world, command.unitId, command.hallId);
-      },
-      toggle_meditate(command, context) {
-        const unitIds = authorizedUnitIds(
-          context.world,
-          command.unitIds,
-          command.actorId,
-        );
-        if (unitIds.length === 0) return;
-        clearWaypoints(context.world, unitIds);
-        queueOrder(context.world, { type: "order_stop", unitIds });
-        toggleMeditate(context.world, unitIds);
-      },
-      train_unit(command, context) {
-        if (!ownsBuilding(context.world, command.buildingId, command.actorId)) {
-          return;
-        }
-        queueTraining(
-          context,
-          command.buildingId,
-          command.classId,
-          command.count,
-        );
-      },
+  const commands = {
+    call_next_wave(
+      _command: { actorId?: string; type: "call_next_wave" },
+      context: TickContext,
+    ) {
+      callNextWave(context.world);
     },
+    cancel_training(
+      command: Extract<Command, { type: "cancel_training" }>,
+      context: TickContext,
+    ) {
+      if (!ownsBuilding(context.world, command.buildingId, command.actorId)) {
+        return;
+      }
+      if (!cancelTraining(context.world, command.buildingId, command.jobId)) {
+        return;
+      }
+      pushNotice(context.world, "Training cancelled. Cost refunded.", "info");
+    },
+    cast_qi_art(
+      command: Extract<Command, { type: "cast_qi_art" }>,
+      context: TickContext,
+    ) {
+      const unitIds = authorizedUnitIds(
+        context.world,
+        command.unitIds,
+        command.actorId,
+      );
+      if (unitIds.length === 0) return;
+      castQiArt(context, unitIds);
+    },
+    choose_school(
+      command: Extract<Command, { type: "choose_school" }>,
+      context: TickContext,
+    ) {
+      if (!ownsUnit(context.world, command.unitId, command.actorId)) return;
+      const cultivation = openCultivation(context.world);
+      if (!cultivation.hasUnit(command.unitId)) return;
+      const result = cultivation.chooseSchool(command.unitId, command.school);
+      saveCultivation(context.world, cultivation);
+      if (!result.ok) {
+        pushNotice(context.world, result.error, "warn");
+        return;
+      }
+      pushNotice(
+        context.world,
+        `${schoolName(command.school)} school locked. ${schoolTagline(command.school)}`,
+        "good",
+      );
+    },
+    descend(
+      _command: Extract<Command, { type: "descend" }>,
+      context: TickContext,
+    ) {
+      if (!waveState(context.world).bossGateCleared) {
+        pushNotice(context.world, "Boss still lives", "warn");
+        return;
+      }
+      const state = sliceState(context.world);
+      state.outcome = "victory";
+      context.world.paused = true;
+      context.emit(ASHEN_GATE_SLICE_MODULE_ID, "slice_completed", {
+        outcome: "victory",
+      });
+    },
+    feed_pill(
+      command: Extract<Command, { type: "feed_pill" }>,
+      context: TickContext,
+    ) {
+      if (!ownsUnit(context.world, command.unitId, command.actorId)) return;
+      const cultivation = openCultivation(context.world);
+      if (!cultivation.hasUnit(command.unitId)) return;
+      const result = cultivation.feedPill(command.unitId, command.pillId);
+      saveCultivation(context.world, cultivation);
+      if (!result.ok) {
+        pushNotice(context.world, result.error, "warn");
+        return;
+      }
+      pushNotice(context.world, "The pill takes hold.", "good");
+    },
+    order_attack(
+      command: Extract<Command, { type: "order_attack" }>,
+      context: TickContext,
+    ) {
+      const unitIds = authorizedUnitIds(
+        context.world,
+        command.unitIds,
+        command.actorId,
+      );
+      if (unitIds.length === 0) return;
+      cancelMeditation(context.world, unitIds);
+      clearWaypoints(context.world, unitIds);
+      queueOrder(context.world, { ...command, unitIds });
+    },
+    order_attack_move(
+      command: Extract<Command, { type: "order_attack_move" }>,
+      context: TickContext,
+    ) {
+      const unitIds = authorizedUnitIds(
+        context.world,
+        command.unitIds,
+        command.actorId,
+      );
+      if (unitIds.length === 0) return;
+      cancelMeditation(context.world, unitIds);
+      routeMove(context.world, { ...command, unitIds });
+    },
+    order_move(
+      command: Extract<Command, { type: "order_move" }>,
+      context: TickContext,
+    ) {
+      const unitIds = authorizedUnitIds(
+        context.world,
+        command.unitIds,
+        command.actorId,
+      );
+      if (unitIds.length === 0) return;
+      cancelMeditation(context.world, unitIds);
+      routeMove(context.world, { ...command, unitIds });
+    },
+    order_stop(
+      command: Extract<Command, { type: "order_stop" }>,
+      context: TickContext,
+    ) {
+      const unitIds = authorizedUnitIds(
+        context.world,
+        command.unitIds,
+        command.actorId,
+      );
+      if (unitIds.length === 0) return;
+      clearWaypoints(context.world, unitIds);
+      orderVillagersStop(
+        economyHost(context.world, ECONOMY_STEP_TICKS),
+        unitIds,
+      );
+      queueOrder(context.world, { ...command, unitIds });
+    },
+    set_formation(
+      command: Extract<Command, { type: "set_formation" }>,
+      context: TickContext,
+    ) {
+      const unitIds = authorizedUnitIds(
+        context.world,
+        command.unitIds,
+        command.actorId,
+      );
+      if (unitIds.length === 0) return;
+      reformInPlace(context.world, { ...command, unitIds });
+    },
+    set_rally_point(
+      command: Extract<Command, { type: "set_rally_point" }>,
+      context: TickContext,
+    ) {
+      if (!ownsBuilding(context.world, command.buildingId, command.actorId)) {
+        return;
+      }
+      const accepted = setTrainingRallyPoint(
+        context.world,
+        command.buildingId,
+        command,
+      );
+      if (!accepted) return;
+      const onNode =
+        command.nodeId !== undefined &&
+        trainingRallyPoint(context.world, command.buildingId)?.nodeId ===
+          command.nodeId;
+      pushNotice(
+        context.world,
+        onNode
+          ? "Rally set on a resource. New villagers will gather there."
+          : "Rally point set.",
+        "info",
+      );
+    },
+    start_breakthrough(
+      command: {
+        actorId?: string;
+        hallId?: string;
+        type: "start_breakthrough";
+        unitId: string;
+      },
+      context: TickContext,
+    ) {
+      if (!ownsUnit(context.world, command.unitId, command.actorId)) return;
+      if (
+        command.hallId !== undefined &&
+        !ownsBuilding(context.world, command.hallId, command.actorId)
+      ) {
+        return;
+      }
+      startBreakthrough(context.world, command.unitId, command.hallId);
+    },
+    toggle_meditate(
+      command: Extract<Command, { type: "toggle_meditate" }>,
+      context: TickContext,
+    ) {
+      const unitIds = authorizedUnitIds(
+        context.world,
+        command.unitIds,
+        command.actorId,
+      );
+      if (unitIds.length === 0) return;
+      clearWaypoints(context.world, unitIds);
+      queueOrder(context.world, { type: "order_stop", unitIds });
+      toggleMeditate(context.world, unitIds);
+    },
+    train_unit(
+      command: Extract<Command, { type: "train_unit" }>,
+      context: TickContext,
+    ) {
+      if (!ownsBuilding(context.world, command.buildingId, command.actorId)) {
+        return;
+      }
+      queueTraining(
+        context,
+        command.buildingId,
+        command.classId,
+        command.count,
+      );
+    },
+  } as CommandHandlerMap;
+  return {
+    commands,
     id: ASHEN_GATE_SLICE_MODULE_ID,
     init(world) {
       // Solo uses Ashen Gate; co-op uses the multi-Camp Ashen Crucible map.
@@ -520,6 +594,13 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
         phase: "cultivation",
         run(context) {
           if (sliceState(context.world).outcome !== "playing") return;
+          if (unlockCaptainBattlefieldBreakthrough(context.world)) {
+            pushNotice(
+              context.world,
+              "Swarm repelled! Your Captain can break through to Sworn without a Cultivation Hall.",
+              "good",
+            );
+          }
           advanceCultivatorPowersTick(context.world);
           advanceBreakthroughs(context);
         },
@@ -686,27 +767,61 @@ function queueOrder(world: SimWorldState, command: CombatCommand): void {
 }
 
 /**
- * Validates the selected Hall and starts a breakthrough channel.
+ * Pulls the next scheduled wave forward and awards a scaled supply bonus.
+ * @param world - Sim world
+ */
+function callNextWave(world: SimWorldState): void {
+  if (sliceState(world).outcome !== "playing") return;
+  if (waveState(world).waveHeld === true) {
+    pushNotice(world, "Wave is currently held.", "warn");
+    return;
+  }
+  const result = callWorldNextWaveEarly(world);
+  if (!result.called) {
+    pushNotice(world, "No upcoming wave to call early.", "warn");
+    return;
+  }
+  const bonus = earlyCallBonus(result.secondsSkipped);
+  world.resources.food += bonus.food;
+  world.resources.wood += bonus.wood;
+  world.resources.essence += bonus.essence;
+  pushNotice(
+    world,
+    `Wave called early! Bonus: ${formatEarlyCallBonus(bonus)}.`,
+    "good",
+  );
+}
+
+/**
+ * Validates the selected Hall (or a starting Captain's unlocked battlefield
+ * breakthrough) and starts a breakthrough channel.
  * @param world - Sim world
  * @param unitId - Cultivator
- * @param hallId - Completed Cultivation Hall selected for this command
+ * @param hallId - Completed Cultivation Hall, optional for Captain battlefield breakthrough
  */
 function startBreakthrough(
   world: SimWorldState,
   unitId: string,
-  hallId: string,
+  hallId?: string,
 ): void {
-  const hall = world.buildings.find(
-    (building) =>
-      building.id === hallId &&
-      building.buildingType === "cultivation_hall" &&
-      asBuilding(building).completed,
-  );
-  if (hall === undefined) {
+  const hall =
+    hallId === undefined
+      ? undefined
+      : world.buildings.find(
+          (building) =>
+            building.id === hallId &&
+            building.buildingType === "cultivation_hall" &&
+            asBuilding(building).completed,
+        );
+  const captainBattlefield =
+    hall === undefined && canUseCaptainBattlefieldBreakthrough(world, unitId);
+  if (hall === undefined && !captainBattlefield) {
     pushNotice(world, "Build a Cultivation Hall first.", "warn");
     return;
   }
-  const cultivation = openCultivation(world);
+  const cultivation = openCultivation(world, {
+    bypassHallMaterials: captainBattlefield,
+  });
   if (!cultivation.hasUnit(unitId)) return;
   const result = cultivation.startBreakthrough(unitId);
   saveCultivation(world, cultivation);
