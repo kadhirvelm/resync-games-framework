@@ -139,7 +139,7 @@ describe("Descent multiplayer scoring", () => {
 
   it("attributes a real combat kill to the killing player's military score", () => {
     const sim = createMultiplayerDescentSim({ players: PLAYERS, seed: 778 });
-    sim.step(90 * TICKS_PER_SECOND);
+    sim.step(120 * TICKS_PER_SECOND);
     const saved = JSON.parse(sim.serialize()) as { state: SimWorldState };
     const waves = saved.state.meta.waves as WaveClockState;
     const victim = waves.units[0];
@@ -170,7 +170,7 @@ describe("Descent multiplayer scoring", () => {
 
   it("keeps military attribution when an Ember burn kills after its source dies", () => {
     const sim = createMultiplayerDescentSim({ players: PLAYERS, seed: 779 });
-    sim.step(90 * TICKS_PER_SECOND + 1);
+    sim.step(120 * TICKS_PER_SECOND + 1);
     const saved = JSON.parse(sim.serialize()) as { state: SimWorldState };
     const waves = saved.state.meta.waves as WaveClockState;
     const slice = saved.state.meta[
@@ -213,7 +213,7 @@ describe("Descent multiplayer scoring", () => {
 
   it("keeps military attribution when a tower dies after its projectile kills", () => {
     const sim = createMultiplayerDescentSim({ players: PLAYERS, seed: 780 });
-    sim.step(90 * TICKS_PER_SECOND + 1);
+    sim.step(120 * TICKS_PER_SECOND + 1);
     const saved = JSON.parse(sim.serialize()) as { state: SimWorldState };
     const waves = saved.state.meta.waves as WaveClockState;
     const slice = saved.state.meta[

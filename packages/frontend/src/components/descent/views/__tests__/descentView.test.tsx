@@ -287,19 +287,29 @@ describe("DescentView", () => {
 
     await click(buttonNamed(buildMenu, "Categories"));
     await click(buttonNamed(buildMenu, "Cultivation"));
+    // Unlocked Cultivation Hall renders as a full card; locked Citadel tier
+    // collapses into a single teaser row until Preview is clicked.
+    expect(
+      buildMenu.querySelectorAll(
+        'li[data-building-type] img[src^="/descent/building-icons/"]',
+      ),
+    ).toHaveLength(1);
+    expect(buildMenu.textContent).toContain(
+      "Lets trained units attempt cultivation breakthroughs.",
+    );
+    expect(buildMenu.textContent).toContain("Spirit Vein");
+    expect(buildMenu.querySelector('li[title*="Spirit Vein"]')).not.toBeNull();
+    expect(buildMenu.textContent).toContain("Show all tiers");
+
+    await click(buttonNamed(buildMenu, "Show all tiers"));
     expect(
       buildMenu.querySelectorAll(
         'li[data-building-type] img[src^="/descent/building-icons/"]',
       ),
     ).toHaveLength(2);
     expect(buildMenu.textContent).toContain(
-      "Lets trained units attempt cultivation breakthroughs.",
-    );
-    expect(buildMenu.textContent).toContain(
       "Summons one powerful Calamity after reaching the Citadel.",
     );
-    expect(buildMenu.textContent).toContain("Spirit Vein");
-    expect(buildMenu.querySelector('li[title*="Spirit Vein"]')).not.toBeNull();
     expect(buildMenu.textContent).toContain("Citadel tier");
     expect(buttonNamed(buildMenu, "Calamity Altar").disabled).toBe(true);
 

@@ -6,26 +6,49 @@ import { useMemo, useState } from "react";
 import {
   evaluateTutorialProgress,
   type TutorialStepId,
+  type TutorialTargetHint,
 } from "../logic/tutorial";
 import type { SimSnapshot } from "../logic/types";
 import styles from "./tutorialGuide.module.scss";
 
-/** Props for the interactive co-op tutorial HUD overlay. */
+/** Props for the interactive Descent tutorial HUD overlay. */
 export interface TutorialGuideProps {
+  /** Optional callback to dismiss the tutorial guide for the current run. */
+  onDismiss?: () => void;
+  /** Optional callback to focus or select the active step's target entity or menu. */
+  onFocusTarget?: (hint: TutorialTargetHint) => void;
   /** Current deterministic sim snapshot used to evaluate step completion. */
   snapshot: SimSnapshot;
+  /** When true, displays a calm badge noting that the next wave is paused. */
+  waveHeld?: boolean;
 }
 
+/** Button label for each tutorial target hint. */
+const FOCUS_ACTION_LABELS: Readonly<Record<TutorialTargetHint, string>> = {
+  barracks: "Select Barracks",
+  boss: "Focus Cinderjaw",
+  build_barracks: "Open Build Menu",
+  camp: "Select Camp",
+  cultivator: "Select Cultivator",
+  idle_villagers: "Select Villagers",
+  soldiers: "Select Soldiers",
+};
+
 /**
- * Live, collapsible co-op tutorial HUD panel for Descent. Tracks all 7
- * collaborative objectives against the simulation snapshot, highlights the
- * active step with hotkeys and strategy tips, and lets players inspect any
- * step in the checklist.
- * @param props - Current sim snapshot
+ * Live, collapsible guided checklist HUD panel for Descent (solo and co-op).
+ * Tracks all 7 objectives against the simulation snapshot, highlights the
+ * active step with an optional focus action, and lets players inspect any step
+ * or dismiss the guide.
+ * @param props - Snapshot and optional focus, dismiss, and wave-hold controls
  * @returns The tutorial guide overlay
  */
-export function TutorialGuide({ snapshot }: TutorialGuideProps) {
-  const [collapsed, setCollapsed] = useState(true);
+export function TutorialGuide({
+  onDismiss,
+  onFocusTarget,
+  snapshot,
+  waveHeld = false,
+}: TutorialGuideProps) {
+  const [collapsed, setCollapsed] = useState(false);
   const [inspectedId, setInspectedId] = useState<TutorialStepId | null>(null);
 
   const progress = useMemo(
@@ -33,10 +56,13 @@ export function TutorialGuide({ snapshot }: TutorialGuideProps) {
     [snapshot],
   );
 
-  const focusedStep =
-    (inspectedId === null
+  const inspectedStep =
+    inspectedId === null
       ? null
-      : progress.steps.find((step) => step.id === inspectedId)) ??
+      : (progress.steps.find((step) => step.id === inspectedId) ?? null);
+
+  const focusedStep =
+    inspectedStep ??
     progress.activeStep ??
     progress.steps[progress.steps.length - 1] ??
     null;
@@ -49,51 +75,78 @@ export function TutorialGuide({ snapshot }: TutorialGuideProps) {
   if (collapsed) {
     return (
       <aside
-        aria-label="Co-op tutorial guide"
+        aria-label="Descent tutorial guide"
         className={styles.guideCollapsed}
         data-testid="descent-tutorial-guide"
       >
         <div className={styles.collapsedInfo}>
           <span className={styles.eyebrow}>
-            Co-op Tutorial · {progress.completedCount}/{progress.totalCount}
+            Guide · {progress.completedCount}/{progress.totalCount}
           </span>
           <strong className={styles.collapsedTitle}>
             {progress.allComplete
               ? "All objectives complete!"
               : (progress.activeStep?.title ?? "Follow the guide")}
           </strong>
+          {waveHeld ? (
+            <span className={styles.waveHeldCompact}>Wave paused</span>
+          ) : null}
         </div>
-        <button
-          className={styles.toggleButton}
-          onClick={() => setCollapsed(false)}
-          type="button"
-        >
-          Show Guide
-        </button>
+        <div className={styles.headerActions}>
+          <button
+            className={styles.toggleButton}
+            onClick={() => setCollapsed(false)}
+            type="button"
+          >
+            Show
+          </button>
+          {onDismiss ? (
+            <button
+              aria-label="Skip tutorial guide"
+              className={styles.dismissButton}
+              onClick={onDismiss}
+              type="button"
+            >
+              Skip
+            </button>
+          ) : null}
+        </div>
       </aside>
     );
   }
 
   return (
     <aside
-      aria-label="Co-op tutorial guide"
+      aria-label="Descent tutorial guide"
       className={styles.guide}
       data-testid="descent-tutorial-guide"
     >
       <header className={styles.header}>
         <div>
-          <span className={styles.eyebrow}>Co-op Tutorial</span>
+          <span className={styles.eyebrow}>Hold Guide</span>
           <h2 className={styles.heading}>
             {progress.completedCount} / {progress.totalCount} Complete
           </h2>
         </div>
-        <button
-          className={styles.toggleButton}
-          onClick={() => setCollapsed(true)}
-          type="button"
-        >
-          Hide
-        </button>
+        <div className={styles.headerActions}>
+          <button
+            className={styles.toggleButton}
+            onClick={() => setCollapsed(true)}
+            type="button"
+          >
+            Hide
+          </button>
+          {onDismiss ? (
+            <button
+              aria-label="Skip tutorial guide"
+              className={styles.dismissButton}
+              onClick={onDismiss}
+              type="button"
+            >
+              Skip
+            </button>
+          ) : null}
+        </div>
       </header>
 
       <div
@@ -110,12 +163,19 @@ export function TutorialGuide({ snapshot }: TutorialGuideProps) {
         />
       </div>
 
+      {waveHeld ? (
+        <div className={styles.waveHeldBadge} role="status">
+          <span aria-hidden="true" className={styles.waveHeldDot} />
+          <span>Next wave paused until you&apos;re ready</span>
+        </div>
+      ) : null}
+
       {progress.allComplete ? (
         <div className={styles.completeBanner}>
-          <strong>Allied Hold Mastered!</strong>
+          <strong>Hold Mastered!</strong>
           <p>
-            You&apos;ve completed every co-op tutorial step. Ready to test your
-            squad in full-intensity Ashen Crucible!
+            Every guided objective is complete. You&apos;re ready to push deeper
+            into the Ashen Gate.
           </p>
         </div>
       ) : null}
@@ -136,17 +196,28 @@ export function TutorialGuide({ snapshot }: TutorialGuideProps) {
           </div>
           <h3 className={styles.activeTitle}>{focusedStep.title}</h3>
           <p className={styles.activeDetail}>{focusedStep.detail}</p>
-          {focusedStep.hotkeys.length > 0 ? (
-            <div className={styles.hotkeys}>
-              {focusedStep.hotkeys.map((key) => (
-                <kbd className={styles.keycap} key={key}>
-                  {key}
-                </kbd>
-              ))}
-            </div>
-          ) : null}
+          <div className={styles.actionRow}>
+            {onFocusTarget && !focusedStep.completed ? (
+              <button
+                className={styles.focusButton}
+                onClick={() => onFocusTarget(focusedStep.targetHint)}
+                type="button"
+              >
+                {FOCUS_ACTION_LABELS[focusedStep.targetHint]}
+              </button>
+            ) : null}
+            {focusedStep.hotkeys.length > 0 ? (
+              <div className={styles.hotkeys}>
+                {focusedStep.hotkeys.map((key) => (
+                  <kbd className={styles.keycap} key={key}>
+                    {key}
+                  </kbd>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <p className={styles.tip}>
-            <strong>Co-op tip:</strong> {focusedStep.tip}
+            <strong>Tip:</strong> {focusedStep.tip}
           </p>
         </section>
       )}

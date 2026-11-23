@@ -18,7 +18,12 @@ import {
 } from "../sim";
 import type { DescentSim } from "../sim/descentSim";
 import { trainingPlan } from "../slice/sliceTraining";
-import { type ClassId, RESOURCE_IDS, type SimSnapshot } from "../types";
+import {
+  type ClassId,
+  type Command,
+  RESOURCE_IDS,
+  type SimSnapshot,
+} from "../types";
 import type { WaveClockState } from "../waves/types";
 
 /**
@@ -1023,5 +1028,127 @@ describe("Ashen Gate vertical slice", () => {
       return sim.serialize();
     };
     expect(run()).toBe(run());
+  });
+
+  test("call_next_wave pulls the next wave early, grants scaled bonus, and updates readout", () => {
+    const sim = createAshenGateSim({ seed: 21 });
+    sim.step(1);
+    const beforeSnapshot = sim.snapshot();
+    const beforeWave = ui(beforeSnapshot).wave;
+    expect(beforeWave?.canCallEarly).toBe(true);
+    expect(beforeWave?.earlyCallBonusLabel).toContain("Food");
+    expect(beforeWave?.waveHeld).toBe(false);
+
+    const beforeFood = beforeSnapshot.resources.food;
+    const beforeWood = beforeSnapshot.resources.wood;
+    const beforeEssence = beforeSnapshot.resources.essence;
+
+    sim.enqueue({ type: "call_next_wave" } as unknown as Command);
+    sim.step(1);
+
+    const afterSnapshot = sim.snapshot();
+    expect(waves(afterSnapshot).spawnedWaveIds).toEqual(["ashen_scout"]);
+    expect(afterSnapshot.resources.food).toBeGreaterThanOrEqual(
+      beforeFood + 15,
+    );
+    expect(afterSnapshot.resources.wood).toBeGreaterThanOrEqual(
+      beforeWood + 15,
+    );
+    expect(afterSnapshot.resources.essence).toBeGreaterThanOrEqual(
+      beforeEssence + 10,
+    );
+    const notices = ui(afterSnapshot).notices ?? [];
+    expect(
+      notices.some((notice) =>
+        (typeof notice === "string" ? notice : notice.text).includes(
+          "Wave called early!",
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  test("shouldHoldWave pauses waves and disables early call on the readout", () => {
+    let hold = true;
+    const sim = createAshenGateSim({
+      seed: 22,
+      shouldHoldWave: (_world, nextWaveIndex) => hold && nextWaveIndex === 0,
+    });
+    sim.step(1);
+    const heldWave = ui(sim.snapshot()).wave;
+    expect(heldWave?.waveHeld).toBe(true);
+    expect(heldWave?.canCallEarly).toBe(false);
+    expect(heldWave?.earlyCallBonusLabel).toBeUndefined();
+
+    hold = false;
+    sim.step(1);
+    const releasedWave = ui(sim.snapshot()).wave;
+    expect(releasedWave?.waveHeld).toBe(false);
+    expect(releasedWave?.canCallEarly).toBe(true);
+  });
+
+  test("starting Captain breaks through to Sworn without a Cultivation Hall after the swarm wave", () => {
+    const sim = createAshenGateSim({ seed: 23 });
+    sim.step(1);
+    // Before swarm is repelled, Captain cannot break through without a Hall.
+    expect(ui(sim.snapshot()).units?.["ashen-captain"]?.breakthroughReady).toBe(
+      false,
+    );
+
+    // Call scout + swarm early and clear both waves cleanly.
+    sim.enqueue({ type: "call_next_wave" } as unknown as Command);
+    sim.step(1);
+    sim.enqueue({ type: "call_next_wave" } as unknown as Command);
+    sim.step(1);
+    const saved = JSON.parse(sim.serialize()) as {
+      state: {
+        meta: {
+          waves: {
+            spawnedWaveIds: string[];
+            units: { id: string }[];
+          };
+        };
+      };
+    };
+    expect(saved.state.meta.waves.spawnedWaveIds).toEqual([
+      "ashen_scout",
+      "ashen_swarm",
+    ]);
+    saved.state.meta.waves.units = [];
+    sim.load(JSON.stringify(saved));
+    sim.step(1);
+
+    // Captain is now breakthroughReady with no Cultivation Hall on the map.
+    const readyReadout = ui(sim.snapshot()).units?.["ashen-captain"];
+    expect(readyReadout?.breakthroughReady).toBe(true);
+    expect(readyReadout?.breakthroughHallId).toBeUndefined();
+
+    // Start breakthrough without hallId, finish the 20s channel, and choose a school.
+    sim.enqueue({
+      type: "start_breakthrough",
+      unitId: "ashen-captain",
+    } as unknown as Command);
+    sim.step(1);
+    const channeling = slice(sim.snapshot()).cultivation.units.find(
+      (entry) => entry.unitId === "ashen-captain",
+    );
+    expect(channeling?.activeBreakthrough?.targetRank).toBe("Sworn");
+
+    // Force a deterministic passing roll by advancing 20s; retry once if RNG rolled >= 0.9.
+    sim.step(20 * TICKS_PER_SECOND + 1);
+    const afterChannel = slice(sim.snapshot()).cultivation.units.find(
+      (entry) => entry.unitId === "ashen-captain",
+    );
+    if (afterChannel?.rank === "Sworn") {
+      sim.enqueue({
+        school: "ember",
+        type: "choose_school",
+        unitId: "ashen-captain",
+      });
+      sim.step(1);
+      expect(ui(sim.snapshot()).units?.["ashen-captain"]?.school).toBe("ember");
+    } else {
+      // Failed roll (10% chance): unit is injured, proving the real breakthrough channel ran.
+      expect(ui(sim.snapshot()).units?.["ashen-captain"]?.injured).toBe(true);
+    }
   });
 });

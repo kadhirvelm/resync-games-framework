@@ -6,6 +6,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { footprintCovers, footprintSide } from "../logic/economy/footprint";
 import type { SimSpeed } from "../logic/sim/constants";
 import { isTrainingBuilding } from "../logic/slice/sliceTraining";
+import type { TutorialTargetHint } from "../logic/tutorial";
 import type { Command, FormationId, SimSnapshot } from "../logic/types";
 import { BuildMenu } from "./BuildMenu";
 import { CommandCard } from "./CommandCard";
@@ -67,10 +68,12 @@ import {
 import { buildShellModel, type ShellModel } from "./shellModel";
 import {
   growingCrops,
+  modelHoldTier,
   ResourceBar,
   StrategicStatus,
   TrainingTracker,
 } from "./status";
+import { TierUnlockBanner } from "./TierUnlockBanner";
 import { TutorialGuide } from "./TutorialGuide";
 import type { ResourceSelectionId } from "./text";
 import { type HoldUpgradeProgress, UnitPanel } from "./UnitPanel";
@@ -128,6 +131,8 @@ export interface DescentViewProps {
   onRevive?: (heroId: string, hallId: string) => void;
   /** Fired when the player dismisses an Ashen Gate coach mark. */
   onDismissCoach?: (mark: CoachMarkId) => void;
+  /** Fired when the player dismisses the tutorial checklist. */
+  onDismissTutorial?: () => void;
   /** Player action. The parent enqueues it; this view does not apply it. */
   onCommand?: (command: Command) => void;
   /**
@@ -227,6 +232,7 @@ export function DescentView({
   multiplayer,
   onCommand,
   onDismissCoach,
+  onDismissTutorial,
   onLoaded,
   onRevive,
   onRestart,
@@ -753,6 +759,97 @@ export function DescentView({
   };
 
   /**
+   * Focuses or selects the entity or menu for the active tutorial step.
+   * @param hint - Target hint from the active tutorial step
+   */
+  const focusTutorialTarget = (hint: TutorialTargetHint) => {
+    const owned = (ownerId?: string) =>
+      localPlayerId === undefined ||
+      ownerId === undefined ||
+      ownerId === localPlayerId;
+    if (hint === "idle_villagers") {
+      selectIdleVillager();
+      return;
+    }
+    if (hint === "build_barracks") {
+      setBuildOpen(true);
+      return;
+    }
+    if (hint === "barracks" || hint === "camp") {
+      const building = model.buildings.find(
+        (entry) =>
+          entry.factionId === "hold" &&
+          entry.buildingType === hint &&
+          owned(entry.ownerId),
+      );
+      if (building === undefined) {
+        pushToast(
+          hint === "barracks" ? "Build a Barracks first." : "No Camp found.",
+        );
+        return;
+      }
+      selectBuilding(building.id);
+      focusOnPoint({ x: building.x, y: building.y });
+      return;
+    }
+    if (hint === "soldiers") {
+      const soldiers = model.units.filter(
+        (unit) =>
+          unit.factionId === "hold" &&
+          unit.classId !== "villager" &&
+          owned(unit.ownerId),
+      );
+      if (soldiers.length === 0) {
+        pushToast("No soldiers available.");
+        return;
+      }
+      setRallying(null);
+      setPlacing(null);
+      setInspected(null);
+      setSelection({
+        buildingId: null,
+        unitIds: soldiers.map((unit) => unit.id),
+      });
+      const lead = soldiers[0];
+      if (lead !== undefined) focusOnPoint({ x: lead.x, y: lead.y });
+      return;
+    }
+    if (hint === "cultivator") {
+      const candidate =
+        model.units.find(
+          (unit) =>
+            unit.factionId === "hold" &&
+            unit.breakthroughReady &&
+            owned(unit.ownerId),
+        ) ??
+        model.units.find(
+          (unit) =>
+            unit.factionId === "hold" &&
+            unit.classId !== "villager" &&
+            owned(unit.ownerId),
+        );
+      if (candidate === undefined) {
+        pushToast("No cultivator ready.");
+        return;
+      }
+      setRallying(null);
+      setPlacing(null);
+      setInspected(null);
+      setSelection({ buildingId: null, unitIds: [candidate.id] });
+      focusOnPoint({ x: candidate.x, y: candidate.y });
+      return;
+    }
+    if (hint === "boss") {
+      const boss = model.units.find((unit) => unit.boss);
+      if (boss !== undefined) {
+        focusOnPoint({ x: boss.x, y: boss.y });
+        return;
+      }
+      focusOnPoint({ x: model.map.width - 2, y: model.map.height / 2 });
+    }
+  };
+
+  /**
    * @param option - Building the player chose from the menu
    */
   const chooseBuilding = (option: BuildReadout) => {
@@ -837,7 +934,15 @@ export function DescentView({
             players={model.players}
           />
         </div>
-        {tutorialMode ? <TutorialGuide snapshot={snapshot} /> : null}
+        {tutorialMode ? (
+          <TutorialGuide
+            onDismiss={onDismissTutorial}
+            onFocusTarget={focusTutorialTarget}
+            snapshot={snapshot}
+            waveHeld={model.wave?.waveHeld === true}
+          />
+        ) : null}
+        <TierUnlockBanner holdTier={modelHoldTier(model)} />
         <DescentBabylonViewport
           camera={camera}
           focusRequest={focusRequest}
@@ -907,6 +1012,7 @@ export function DescentView({
           />
           <StrategicStatus
             model={model}
+            onCallWaveEarly={() => onCommand?.({ type: "call_next_wave" })}
             onGlossary={() => setGlossaryOpen(true)}
           />
         </aside>

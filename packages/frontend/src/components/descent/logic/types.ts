@@ -105,12 +105,13 @@ export type Command = (
   | { type: "brew_pill"; furnaceId: string; pillId: string }
   | { type: "feed_pill"; unitId: string; pillId: string }
   | { type: "equip_treasure"; unitId: string; treasureId: string }
-  | { type: "start_breakthrough"; unitId: string; hallId: string }
+  | { type: "start_breakthrough"; unitId: string; hallId?: string }
   | { type: "choose_school"; unitId: string; school: SchoolId }
   | { type: "summon_calamity"; altarId: string; calamityId: string }
   | { type: "issue_rations"; messHallId: string; unitIds: string[] }
   | { type: "market_trade"; sell: ResourceId; buy: ResourceId; amount: number }
   | { type: "upgrade_hold" }
+  | { type: "call_next_wave" }
   | { type: "recall_villagers" }
   | { type: "descend" }
   // Hold verbs the integrated game needs beyond the illustrative contract.

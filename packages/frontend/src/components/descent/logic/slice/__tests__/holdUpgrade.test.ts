@@ -69,10 +69,10 @@ describe("Hold upgrade progress", () => {
     }
     sim.load(JSON.stringify(save));
 
-    // Step past the first scout wave (90s) + travel time so raiders reach Camp.
+    // Step past the first scout wave (120s) + travel time so raiders reach Camp.
     let sawProjectile = false;
     let sawKills = false;
-    for (let tick = 0; tick < 3_600; tick += 1) {
+    for (let tick = 0; tick < 4_200; tick += 1) {
       sim.step(1);
       const model = buildShellModel(sim.snapshot());
       if (model.fx.some((effect) => effect.kind === "projectile")) {

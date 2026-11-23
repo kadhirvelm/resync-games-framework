@@ -190,7 +190,7 @@ describe("boss gate", () => {
       buildingId: "gatehouse",
       type: "building_fell",
     });
-    stepTo(director, 90);
+    stepTo(director, waveAt("ashen_scout"));
     expect(director.getUnits().length).toBeGreaterThan(0);
   });
 });

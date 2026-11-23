@@ -27,6 +27,7 @@ const COMMAND_SCHEMAS: Readonly<Record<string, CommandSchema>> = {
     required: { nodeId: IDS(), unitIds: IDS("stringArray") },
   },
   brew_pill: { required: { furnaceId: IDS(), pillId: IDS() } },
+  call_next_wave: {},
   cancel_training: { required: { buildingId: IDS(), jobId: IDS() } },
   choose_school: { required: { school: IDS(), unitId: IDS() } },
   descend: {},
@@ -66,7 +67,10 @@ const COMMAND_SCHEMAS: Readonly<Record<string, CommandSchema>> = {
       y: IDS("number"),
     },
   },
-  start_breakthrough: { required: { hallId: IDS(), unitId: IDS() } },
+  start_breakthrough: {
+    optional: { hallId: IDS() },
+    required: { unitId: IDS() },
+  },
   summon_calamity: { required: { altarId: IDS(), calamityId: IDS() } },
   train_hero: { required: { hallId: IDS(), heroId: IDS() } },
   train_unit: {

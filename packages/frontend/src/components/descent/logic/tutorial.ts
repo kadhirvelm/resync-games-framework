@@ -1,29 +1,42 @@
 import { asBuilding, isEconomyUnit } from "./economy/records";
 import {
   ASHEN_GATE_SLICE_MODULE_ID,
+  type AshenGateSliceState,
   isAshenGateSliceState,
 } from "./slice/sliceState";
 import type { SimSnapshot } from "./types";
 import { isWaveClockState } from "./waves/clock";
 
-/** Stable identifiers for each co-op tutorial step, in teaching order. */
+/** Stable identifiers for each Descent tutorial step, in teaching order. */
 export type TutorialStepId =
   | "gather"
   | "build_barracks"
   | "train_soldiers"
-  | "build_tower"
   | "defend_wave"
+  | "build_tower"
   | "cultivate"
   | "defeat_boss";
 
-/** Static teaching copy for one co-op tutorial step. */
+/** UI target hint used to focus or highlight the relevant game entity or menu. */
+export type TutorialTargetHint =
+  | "idle_villagers"
+  | "build_barracks"
+  | "barracks"
+  | "soldiers"
+  | "camp"
+  | "cultivator"
+  | "boss";
+
+/** Static teaching copy for one tutorial step. */
 export interface TutorialStepDefinition {
-  /** Actionable step-by-step instructions. */
+  /** Single-line actionable instruction. */
   detail: string;
   /** Keycap badges highlighted beside the instructions. */
   hotkeys: readonly string[];
   id: TutorialStepId;
-  /** Co-op strategy tip for surviving Descent. */
+  /** Target hint for focusing the relevant unit, building, or menu. */
+  targetHint: TutorialTargetHint;
+  /** Short strategy tip relevant to both solo and co-op play. */
   tip: string;
   /** Short objective title shown in the checklist. */
   title: string;
@@ -38,7 +51,7 @@ export interface TutorialStepProgress extends TutorialStepDefinition {
   progressLabel: string;
 }
 
-/** Complete evaluated progress of the co-op tutorial for one snapshot. */
+/** Complete evaluated progress of the tutorial for one snapshot. */
 export interface TutorialProgress {
   /** First incomplete step, or `null` once every step is complete. */
   activeStep: TutorialStepProgress | null;
@@ -48,63 +61,70 @@ export interface TutorialProgress {
   totalCount: number;
 }
 
-/** Ordered curriculum for the Descent co-op multiplayer tutorial. */
+/** Ordered curriculum for the Descent first-run solo and co-op tutorial. */
 export const DESCENT_TUTORIAL_STEPS: readonly TutorialStepDefinition[] = [
   {
     detail:
-      "Select your Villagers (click, drag-box, or press . for idle villagers), then right-click a nearby Dead Tree, Rock Vein, Fungus Grove, or Spirit Spring.",
+      "Select your Villagers and right-click a nearby Tree, Rock Vein, Grove, or Spring.",
     hotkeys: [".", "Right-Click"],
     id: "gather",
-    tip: "All commanders share one stockpile. Split gathering duties so one player covers Wood & Stone while another grabs Food & Water.",
+    targetHint: "idle_villagers",
+    tip: "Split villagers across Wood, Food, and Stone to fund your early Hold.",
     title: "Put Villagers to Work",
   },
   {
     detail:
-      "Press B (or click Build), choose Barracks, and click open ground near your Camp. Nearby villagers will walk over and construct it.",
+      "Press B, pick Barracks, and place it on open ground near your Camp.",
     hotkeys: ["B", "Left-Click"],
     id: "build_barracks",
-    tip: "Building a Training Yard beside your Barracks grants bonus recruit XP, and placing on a glowing Spirit Vein adds +15% train speed.",
+    targetHint: "build_barracks",
+    tip: "Placing on a glowing Spirit Vein adds +15% training speed.",
     title: "Build a Barracks",
   },
   {
     detail:
-      "Select a completed Barracks and train at least 2 Wardens. Right-click ground with the Barracks selected to set a Rally Point.",
+      "Select your Barracks, train 2 Wardens, and right-click ground to set a Rally Point.",
     hotkeys: ["Click Barracks", "Right-Click"],
     id: "train_soldiers",
-    tip: "Every commander starts with 1 Captain Warden. Upgrading your Camp to an Outpost unlocks Hunters and Riders at the Barracks.",
+    targetHint: "barracks",
+    tip: "Upgrading your Camp to an Outpost unlocks Hunters and Riders.",
     title: "Train Reinforcements",
   },
   {
     detail:
-      "Select your Camp and upgrade to Outpost, then open Build (B) and construct a Ward Tower east of your Camps facing the approaching lanes.",
-    hotkeys: ["Click Camp", "B", "Ward Tower"],
-    id: "build_tower",
-    tip: "Fight beside your Ward Towers for free covering fire, and pull wounded soldiers back behind them to stay alive.",
-    title: "Upgrade to Outpost & Build a Ward Tower",
-  },
-  {
-    detail:
-      "Select your soldiers, press A, and click east to Attack-Move into the first Horde scout wave. Wipe out every raider in the wave!",
+      "Select your soldiers, press A, and left-click east to Attack-Move into the scout wave.",
     hotkeys: ["A", "Left-Click"],
     id: "defend_wave",
-    tip: "Allied players cannot harm each other. Coordinate flanks and use Formations (Ranks, Wedge, Line) so tanks stay in front.",
+    targetHint: "soldiers",
+    tip: "Use Formations so melee Wardens hold the front line.",
     title: "Repel the First Scout Wave",
   },
   {
     detail:
-      "Select your Camp and click Upgrade Hold to reach Stronghold tier, then open Build (B) and construct a Cultivation Hall to unlock soldier Breakthroughs.",
+      "Upgrade your Camp to Outpost, then press B to build a Ward Tower guarding the east lane.",
     hotkeys: ["Click Camp", "B"],
-    id: "cultivate",
-    tip: "Slaying Horde enemies grants Merit and Essence. Once a soldier fills both, select them and click Breakthrough to ascend and pick Ember, Rime, or Blood!",
-    title: "Upgrade Hold & Build Cultivation Hall",
+    id: "build_tower",
+    targetHint: "camp",
+    tip: "Fight near Ward Towers for covering fire and pull wounded units behind them.",
+    title: "Upgrade to Outpost & Build a Ward Tower",
   },
   {
     detail:
-      "Keep training soldiers, expand to mid-field Iron and Essence deposits, defeat Cinderjaw when the boss arrives from the east, and click Descend!",
+      "Promote a ready soldier to Sworn and choose a school, or build a Cultivation Hall.",
+    hotkeys: ["Click Unit", "B"],
+    id: "cultivate",
+    targetHint: "cultivator",
+    tip: "Combat earns Merit and Essence—choose Ember, Rime, or Blood when ascending.",
+    title: "Reach a Breakthrough",
+  },
+  {
+    detail:
+      "Grow your army, defeat Cinderjaw when it arrives from the east, and click Descend.",
     hotkeys: ["Space", "1×–4×"],
     id: "defeat_boss",
-    tip: "Press Space anytime to pause in co-op and plan together, or speed up between waves. Watch out for glowing Ember Vents during the boss fight!",
-    title: "Slay Cinderjaw Together",
+    targetHint: "boss",
+    tip: "Press Space anytime to pause and issue orders; dodge glowing Ember Vents.",
+    title: "Slay Cinderjaw",
   },
 ] as const;
 
@@ -114,14 +134,20 @@ const REQUIRED_WORKING_VILLAGERS = 2;
 /** Additional soldiers beyond starting Captains required for Step 3. */
 const REQUIRED_EXTRA_SOLDIERS = 2;
 
+/** Minimal world/snapshot view required to evaluate tutorial progress. */
+export type TutorialWorldView = Pick<
+  SimSnapshot,
+  "buildings" | "meta" | "units"
+>;
+
 /**
  * Counts how many completed buildings of a given type exist in the world.
- * @param snapshot - Current sim snapshot
+ * @param snapshot - Current sim snapshot or world state
  * @param buildingType - Economy building id
  * @returns Completed building count
  */
 function countCompletedBuildings(
-  snapshot: SimSnapshot,
+  snapshot: TutorialWorldView,
   buildingType: string,
 ): number {
   let count = 0;
@@ -134,10 +160,10 @@ function countCompletedBuildings(
 
 /**
  * Counts how many living villagers are currently assigned to a task.
- * @param snapshot - Current sim snapshot
+ * @param snapshot - Current sim snapshot or world state
  * @returns Active (non-idle) villager count
  */
-function countWorkingVillagers(snapshot: SimSnapshot): number {
+function countWorkingVillagers(snapshot: TutorialWorldView): number {
   let count = 0;
   for (const unit of snapshot.units) {
     if (!isEconomyUnit(unit)) continue;
@@ -149,10 +175,10 @@ function countWorkingVillagers(snapshot: SimSnapshot): number {
 
 /**
  * Counts all living allied combat soldiers (excluding villagers).
- * @param snapshot - Current sim snapshot
+ * @param snapshot - Current sim snapshot or world state
  * @returns Living soldier count
  */
-function countLivingSoldiers(snapshot: SimSnapshot): number {
+function countLivingSoldiers(snapshot: TutorialWorldView): number {
   let count = 0;
   for (const unit of snapshot.units) {
     if (!isEconomyUnit(unit)) continue;
@@ -163,11 +189,26 @@ function countLivingSoldiers(snapshot: SimSnapshot): number {
 }
 
 /**
+ * Checks whether any Hold unit has ascended past Ashborn or chosen a school.
+ * @param slice - Ashen Gate slice state, if initialized
+ * @returns True when any cultivated Hold unit reached Sworn+ or picked a school
+ */
+function hasBreakthroughUnit(slice: AshenGateSliceState | null): boolean {
+  const units = slice?.cultivation?.units;
+  if (!Array.isArray(units)) return false;
+  for (const unit of units) {
+    if (unit.rank !== "Ashborn") return true;
+    if (unit.school !== undefined) return true;
+  }
+  return false;
+}
+
+/**
  * Reads the current Hold tier from `meta.economy`, defaulting to `"Camp"`.
  * @param snapshot - Current sim snapshot
  * @returns Current Hold tier string
  */
-function readHoldTier(snapshot: SimSnapshot): string {
+function readHoldTier(snapshot: TutorialWorldView): string {
   const economy = snapshot.meta.economy;
   if (
     typeof economy === "object" &&
@@ -181,14 +222,67 @@ function readHoldTier(snapshot: SimSnapshot): string {
 }
 
 /**
- * Evaluates live co-op tutorial progress purely from one simulation snapshot.
- * Steps can be completed collaboratively by any allied commander and may
- * check off in any order.
+ * Formats the live progress label for the first scout wave step.
+ * @param firstWaveRepelled - Whether wave 0 has been cleared
+ * @param spawnedWaves - Number of waves spawned so far
+ * @param livingHorde - Number of living horde units
+ * @returns Human-readable progress badge text
+ */
+function formatDefendWaveLabel(
+  firstWaveRepelled: boolean,
+  spawnedWaves: number,
+  livingHorde: number,
+): string {
+  if (firstWaveRepelled) return "Scout wave cleared";
+  if (spawnedWaves === 0) return "Waiting for first scout wave";
+  const noun = livingHorde === 1 ? "raider" : "raiders";
+  return `${livingHorde} ${noun} remaining`;
+}
+
+/**
+ * Formats the live progress label for the breakthrough / cultivation step.
+ * @param breakthroughReached - Whether a unit has reached Sworn or chosen a school
+ * @param hallCount - Completed Cultivation Hall count
+ * @param strongholdReached - Whether the Hold has reached Stronghold+
+ * @returns Human-readable progress badge text
+ */
+function formatCultivateLabel(
+  breakthroughReached: boolean,
+  hallCount: number,
+  strongholdReached: boolean,
+): string {
+  if (breakthroughReached) return "Breakthrough reached";
+  if (hallCount >= 1) return "Cultivation Hall ready";
+  if (strongholdReached) return "Stronghold ready · Build Cultivation Hall";
+  return "Promote a soldier or build a Cultivation Hall";
+}
+
+/**
+ * Formats the live progress label for the Cinderjaw boss step.
+ * @param bossDefeated - Whether Cinderjaw has been defeated
+ * @param spawnedWaves - Number of waves spawned so far
+ * @param livingHorde - Number of living horde units
+ * @returns Human-readable progress badge text
+ */
+function formatDefeatBossLabel(
+  bossDefeated: boolean,
+  spawnedWaves: number,
+  livingHorde: number,
+): string {
+  if (bossDefeated) return "Cinderjaw defeated!";
+  const activeWaveOffset = livingHorde > 0 ? 1 : 0;
+  const survived = Math.max(0, spawnedWaves - activeWaveOffset);
+  return `Waves survived: ${survived} / 5`;
+}
+
+/**
+ * Evaluates live tutorial progress purely from one simulation snapshot.
+ * Works for both solo runs and co-op matches; steps may check off in any order.
  * @param snapshot - Current deterministic sim snapshot
  * @returns Evaluated tutorial checklist, counts, and active step
  */
 export function evaluateTutorialProgress(
-  snapshot: SimSnapshot,
+  snapshot: TutorialWorldView,
 ): TutorialProgress {
   const slice = isAshenGateSliceState(snapshot.meta[ASHEN_GATE_SLICE_MODULE_ID])
     ? snapshot.meta[ASHEN_GATE_SLICE_MODULE_ID]
@@ -202,6 +296,7 @@ export function evaluateTutorialProgress(
   const barracksCount = countCompletedBuildings(snapshot, "barracks");
   const towerCount = countCompletedBuildings(snapshot, "ward_tower");
   const hallCount = countCompletedBuildings(snapshot, "cultivation_hall");
+  const breakthroughReached = hasBreakthroughUnit(slice);
   const holdTier = readHoldTier(snapshot);
   const strongholdReached = holdTier === "Stronghold" || holdTier === "Citadel";
 
@@ -231,27 +326,28 @@ export function evaluateTutorialProgress(
         towerCount >= 1 ? "Ward Tower active" : "0 / 1 Ward Tower built",
     },
     cultivate: {
-      completed: hallCount >= 1,
-      progressLabel:
-        hallCount >= 1
-          ? "Cultivation Hall ready"
-          : strongholdReached
-            ? "Stronghold ready · Build Cultivation Hall"
-            : "Upgrade Camp to Stronghold first",
+      completed: hallCount >= 1 || breakthroughReached,
+      progressLabel: formatCultivateLabel(
+        breakthroughReached,
+        hallCount,
+        strongholdReached,
+      ),
     },
     defeat_boss: {
       completed: bossDefeated,
-      progressLabel: bossDefeated
-        ? "Cinderjaw defeated!"
-        : `Waves survived: ${Math.max(0, spawnedWaves - (livingHorde > 0 ? 1 : 0))} / 5`,
+      progressLabel: formatDefeatBossLabel(
+        bossDefeated,
+        spawnedWaves,
+        livingHorde,
+      ),
     },
     defend_wave: {
       completed: firstWaveRepelled,
-      progressLabel: firstWaveRepelled
-        ? "Scout wave cleared"
-        : spawnedWaves === 0
-          ? "Waiting for first scout wave"
-          : `${livingHorde} raider${livingHorde === 1 ? "" : "s"} remaining`,
+      progressLabel: formatDefendWaveLabel(
+        firstWaveRepelled,
+        spawnedWaves,
+        livingHorde,
+      ),
     },
     gather: {
       completed: workingVillagers >= REQUIRED_WORKING_VILLAGERS,
@@ -281,4 +377,26 @@ export function evaluateTutorialProgress(
     steps,
     totalCount: steps.length,
   };
+}
+
+/**
+ * Determines whether the wave director should pause before spawning the next
+ * wave so tutorial players can finish key preparation steps without being rushed.
+ * - Wave 0 (first scout wave) waits until `train_soldiers` is completed.
+ * - Wave 1 (swarm wave) waits until `build_tower` is completed.
+ * - Waves 2+ are never held.
+ * @param snapshot - Current deterministic sim snapshot
+ * @param nextWaveIndex - Zero-based index of the next wave due to spawn
+ * @returns True when the wave should be held back
+ */
+export function shouldHoldWaveForTutorial(
+  snapshot: TutorialWorldView,
+  nextWaveIndex: number,
+): boolean {
+  if (nextWaveIndex !== 0 && nextWaveIndex !== 1) return false;
+  const requiredStepId: TutorialStepId =
+    nextWaveIndex === 0 ? "train_soldiers" : "build_tower";
+  const progress = evaluateTutorialProgress(snapshot);
+  const step = progress.steps.find((entry) => entry.id === requiredStepId);
+  return step !== undefined && !step.completed;
 }

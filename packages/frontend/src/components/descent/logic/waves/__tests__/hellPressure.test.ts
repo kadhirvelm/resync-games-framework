@@ -23,7 +23,10 @@ describe("Hell Pressure", () => {
     stepTo(director, waveAt("ashen_boss"));
     const locked = director.getHellPressure();
     expect(locked).toBeCloseTo(
-      HELL_PRESSURE_PER_MINUTE * Math.floor(waveAt("ashen_boss") / 60),
+      Math.min(
+        1,
+        HELL_PRESSURE_PER_MINUTE * Math.floor(waveAt("ashen_boss") / 60),
+      ),
     );
     const boss = director.getUnits().find((unit) => unit.role === "boss");
     if (!boss) throw new Error("Cinderjaw did not spawn");
@@ -57,16 +60,21 @@ describe("Hell Pressure", () => {
     expect(director.getHellPressure()).toBeCloseTo(1);
 
     const pressured = boot("ashen_gate", false);
-    stepTo(pressured.director, 90);
+    const scoutAt = waveAt("ashen_scout");
+    stepTo(pressured.director, scoutAt);
     const raider = getUnitDefinition("raider");
     const spawned = pressured.director.getUnits()[0];
     const scoutScale =
       getSchedule("ashen_gate").waves[0]?.composition[0]?.statScale ?? 1;
+    const expectedPressure = Math.min(
+      1,
+      HELL_PRESSURE_PER_MINUTE * Math.floor(scoutAt / 60),
+    );
     expect(spawned?.maxHitPoints).toBeCloseTo(
       raider.maxHitPoints *
         scoutScale *
         wavePowerMultiplier(0, 1) *
-        pressureStatMultiplier(HELL_PRESSURE_PER_MINUTE),
+        pressureStatMultiplier(expectedPressure),
     );
   });
 

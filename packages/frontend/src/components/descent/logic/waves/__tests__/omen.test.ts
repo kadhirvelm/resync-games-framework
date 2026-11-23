@@ -6,7 +6,8 @@ describe("Omen timing", () => {
   test("shows the next wave's class mix 60 sim-seconds ahead", () => {
     expect(OMEN_LEAD_SECONDS).toBe(60);
     const { director } = boot("ashen_gate");
-    const openTick = secondsToWaveTicks(30);
+    const scoutAt = waveAt("ashen_scout");
+    const openTick = secondsToWaveTicks(scoutAt - OMEN_LEAD_SECONDS);
 
     director.step(openTick - 1);
     expect(director.getOmen()).toBeNull();
@@ -19,7 +20,7 @@ describe("Omen timing", () => {
       etaSeconds: 60,
     });
 
-    stepTo(director, 90);
+    stepTo(director, scoutAt);
     expect(director.getOmen()).toBeNull();
 
     stepTo(director, waveAt("ashen_swarm") - 60);
@@ -47,7 +48,7 @@ describe("Omen timing", () => {
 
   test("stays dark without an Omen Tower", () => {
     const { director } = boot("ashen_gate", false);
-    stepTo(director, 30);
+    stepTo(director, waveAt("ashen_scout") - OMEN_LEAD_SECONDS);
     expect(director.getOmen()).toBeNull();
     expect(
       director
@@ -58,7 +59,7 @@ describe("Omen timing", () => {
 
   test("horns when the tower is finished inside the window", () => {
     const { director } = boot("ashen_gate", false);
-    stepTo(director, 30);
+    stepTo(director, waveAt("ashen_scout") - OMEN_LEAD_SECONDS);
     director.setOmenTowerPresent(true);
     expect(director.getOmen()).toEqual({
       bossId: null,

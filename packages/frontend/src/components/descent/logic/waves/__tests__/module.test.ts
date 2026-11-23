@@ -1,10 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { LayerRuntime } from "../../layers/layerRuntime";
 import { createDescentSim } from "../../sim/descentSim";
-import { getWave } from "../catalog";
-import { damageWaveUnit } from "../clock";
+import { getSchedule, getWave } from "../catalog";
+import { callNextWaveEarly, damageWaveUnit, ticksUntilWave } from "../clock";
 import { secondsToWaveTicks } from "../constants";
-import { createWavesModule, getOmenFromMeta, wavesModule } from "../module";
+import {
+  callWorldNextWaveEarly,
+  createWavesModule,
+  getOmenFromMeta,
+  wavesModule,
+} from "../module";
+import type { WaveClockState } from "../types";
 import { bodiesIn, clockOf, probeModule, waveAt } from "./support";
 
 const BOSS_TICK = secondsToWaveTicks(getWave("ashen_boss").spawnAtSeconds);
@@ -94,7 +100,7 @@ describe("waves module", () => {
       modules: [wavesModule, unmarked],
       seed: 6,
     });
-    legacy.step(secondsToWaveTicks(40));
+    legacy.step(secondsToWaveTicks(70));
     expect(getOmenFromMeta(legacy.snapshot().meta)).toBeNull();
 
     const finisher = probeModule((world) => {
@@ -107,7 +113,7 @@ describe("waves module", () => {
       modules: [wavesModule, builder, { ...finisher, id: "finisher" }],
       seed: 6,
     });
-    finished.step(secondsToWaveTicks(40));
+    finished.step(secondsToWaveTicks(70));
     expect(getOmenFromMeta(finished.snapshot().meta)?.etaSeconds).toBe(50);
   });
 
@@ -158,5 +164,87 @@ describe("waves module", () => {
     const after = sim.snapshot().meta.waves as { trackedUnitIds: string[] };
     expect(after.trackedUnitIds).toEqual([]);
     expect(sim.snapshot().units).toHaveLength(0);
+  });
+
+  test("ashen_gate schedule stretches Cinderjaw to 15 minutes (900s)", () => {
+    const times = getSchedule("ashen_gate").waves.map((wave) => ({
+      id: wave.id,
+      spawnAtSeconds: wave.spawnAtSeconds,
+    }));
+    expect(times).toEqual([
+      { id: "ashen_scout", spawnAtSeconds: 120 },
+      { id: "ashen_swarm", spawnAtSeconds: 285 },
+      { id: "ashen_elite_summoner", spawnAtSeconds: 480 },
+      { id: "ashen_elite_armored", spawnAtSeconds: 690 },
+      { id: "ashen_boss", spawnAtSeconds: 900 },
+    ]);
+  });
+
+  test("shouldHoldWave pauses the next wave until the condition clears", () => {
+    let hold = true;
+    const heldIndices: number[] = [];
+    const sim = createDescentSim({
+      layerId: "ashen_gate",
+      modules: [
+        createWavesModule(undefined, {
+          shouldHoldWave: (_world, nextWaveIndex) => {
+            heldIndices.push(nextWaveIndex);
+            return hold;
+          },
+        }),
+      ],
+      seed: 12,
+    });
+    sim.step(SCOUT_TICK + 20);
+    const heldClock = sim.snapshot().meta.waves as WaveClockState;
+    expect(heldClock.waveHeld).toBe(true);
+    expect(heldClock.spawnedWaveIds).toEqual([]);
+    expect(heldIndices[0]).toBe(0);
+
+    hold = false;
+    sim.step(SCOUT_TICK);
+    const releasedClock = sim.snapshot().meta.waves as WaveClockState;
+    expect(releasedClock.waveHeld).toBe(false);
+    expect(releasedClock.spawnedWaveIds).toEqual(["ashen_scout"]);
+  });
+
+  test("callNextWaveEarly spawns the next wave on the next tick and shifts later waves", () => {
+    let earlyResult: ReturnType<typeof callWorldNextWaveEarly> | null = null;
+    const caller = probeModule((world) => {
+      if (world.tick === secondsToWaveTicks(20)) {
+        earlyResult = callWorldNextWaveEarly(world);
+      }
+    });
+    const sim = createDescentSim({
+      layerId: "ashen_gate",
+      modules: [wavesModule, caller],
+      seed: 13,
+    });
+    sim.step(secondsToWaveTicks(20) + 1);
+    expect(earlyResult).toEqual({
+      called: true,
+      secondsSkipped: 100,
+      waveIndex: 0,
+    });
+
+    // The probe ran before waves.clock, so wave 0 spawned on that tick.
+    const afterSpawn = sim.snapshot().meta.waves as WaveClockState;
+    expect(afterSpawn.spawnedWaveIds).toEqual(["ashen_scout"]);
+
+    // Subsequent wave (ashen_swarm: 285s - 120s = 165s after scout) keeps spacing.
+    const swarmWave = getSchedule("ashen_gate").waves[1];
+    if (!swarmWave) throw new Error("Missing swarm wave");
+    expect(ticksUntilWave(afterSpawn, swarmWave)).toBe(secondsToWaveTicks(165));
+
+    // Calling directly on a clock with no remaining waves returns called: false.
+    const emptyClock = {
+      ...afterSpawn,
+      spawnedWaveIds: getSchedule("ashen_gate").waves.map((wave) => wave.id),
+    };
+    expect(callNextWaveEarly(emptyClock)).toEqual({
+      called: false,
+      secondsSkipped: 0,
+      waveIndex: -1,
+    });
   });
 });

@@ -24,6 +24,8 @@ export interface QiArtReadout {
 export interface UnitReadout {
   /** Elite affix on a horde body. */
   affix?: string | null;
+  /** Completed Cultivation Hall id for breakthrough, omitted for Captain battlefield breakthrough. */
+  breakthroughHallId?: string;
   /** Whether this unit currently satisfies every breakthrough requirement. */
   breakthroughReady?: boolean;
   calamity?: boolean;
@@ -194,6 +196,10 @@ export type FxReadout =
 
 /** The next scheduled wave. The countdown is public; the mix needs an Omen. */
 export interface WaveReadout {
+  /** Whether the player may call the next wave early for a supply bonus. */
+  canCallEarly: boolean;
+  /** Formatted resource bonus awarded when calling the next wave early now. */
+  earlyCallBonusLabel?: string;
   /** Seconds until it spawns, or null once every wave has spawned. */
   etaSeconds: number | null;
   /** 1-based number of the next wave. */
@@ -203,6 +209,8 @@ export interface WaveReadout {
   live: number;
   total: number;
   type: "boss" | "elite" | "scout" | "swarm";
+  /** Whether the wave clock is paused by an external hold (e.g. tutorial). */
+  waveHeld?: boolean;
 }
 
 /** The living boss, for the boss bar. */

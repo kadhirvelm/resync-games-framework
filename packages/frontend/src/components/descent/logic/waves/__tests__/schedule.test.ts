@@ -34,8 +34,8 @@ describe("wave schedule", () => {
     const poor = boot("ashen_gate", false);
     const rich = boot("ashen_gate", false);
     rich.director.setCollectedEssence(10_000);
-    stepTo(poor.director, 90);
-    stepTo(rich.director, 90);
+    stepTo(poor.director, waveAt("ashen_scout"));
+    stepTo(rich.director, waveAt("ashen_scout"));
     const poorHp = poor.director.getUnits()[0]?.maxHitPoints ?? 0;
     const richHp = rich.director.getUnits()[0]?.maxHitPoints ?? 0;
     expect(richHp / poorHp).toBeCloseTo(1.6);

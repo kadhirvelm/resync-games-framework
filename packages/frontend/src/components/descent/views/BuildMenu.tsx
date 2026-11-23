@@ -10,12 +10,15 @@ import {
   Warehouse,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import type { HoldTier } from "../logic/economy/model";
+import hudStyles from "./bottomHud.module.scss";
 import { buildingIconSrc } from "./buildingIcons";
 import { buildMenuKeyAction, buildMenuKeyFor } from "./buildMenuHotkeys";
 import { CostRow } from "./CostRow";
 import { type CostStock, costLineFrom, costLineText } from "./costLine";
 import styles from "./descentView.module.scss";
 import type { BuildReadout } from "./presentation";
+import { HOLD_TIER_ORDER, holdTierRank } from "./tierUnlocks";
 import { isTypingTarget } from "./useHotkeys";
 
 type BuildingTone = "defense" | "economy" | "mystic" | "war";
@@ -214,6 +217,77 @@ function buildingGuide(option: BuildReadout): BuildingGuide {
 }
 
 /**
+ * Checks whether a string matches a known Hold tier.
+ * @param value - Candidate tier name
+ * @returns True when `value` is a valid HoldTier
+ */
+function isHoldTier(value: string): value is HoldTier {
+  return HOLD_TIER_ORDER.includes(value as HoldTier);
+}
+
+/**
+ * Infers the current Hold tier from the highest unlocked build option when
+ * the caller does not pass `holdTier` explicitly.
+ * @param options - Build options published by the simulation
+ * @returns Inferred Hold tier (defaults to `"Camp"`)
+ */
+function inferCurrentTier(options: readonly BuildReadout[]): HoldTier {
+  let highest: HoldTier = "Camp";
+  for (const option of options) {
+    if (!option.unlocked || !isHoldTier(option.tier)) continue;
+    if (holdTierRank(option.tier) > holdTierRank(highest)) {
+      highest = option.tier;
+    }
+  }
+  return highest;
+}
+
+/**
+ * Returns the Hold tier immediately following `tier`, or `null` at Citadel.
+ * @param tier - Current Hold tier
+ * @returns Next Hold tier, or null
+ */
+function nextTierAfter(tier: HoldTier): HoldTier | null {
+  const index = holdTierRank(tier);
+  if (index < 0) return null;
+  return HOLD_TIER_ORDER[index + 1] ?? null;
+}
+
+interface PartitionedBuildOptions {
+  laterTierLocked: readonly BuildReadout[];
+  nextTierLocked: readonly BuildReadout[];
+  unlocked: readonly BuildReadout[];
+}
+
+/**
+ * Splits build options into unlocked buildings, locked buildings from the
+ * immediate next Hold tier, and locked buildings from tiers beyond that.
+ * @param options - Candidate build options
+ * @param nextTier - The immediate next Hold tier, or null at max tier
+ * @returns Partitioned build lists
+ */
+function partitionBuildOptions(
+  options: readonly BuildReadout[],
+  nextTier: HoldTier | null,
+): PartitionedBuildOptions {
+  const unlocked: BuildReadout[] = [];
+  const nextTierLocked: BuildReadout[] = [];
+  const laterTierLocked: BuildReadout[] = [];
+  for (const option of options) {
+    if (option.unlocked) {
+      unlocked.push(option);
+      continue;
+    }
+    if (nextTier !== null && option.tier === nextTier) {
+      nextTierLocked.push(option);
+      continue;
+    }
+    laterTierLocked.push(option);
+  }
+  return { laterTierLocked, nextTierLocked, unlocked };
+}
+
+/**
  * Category choices shown before individual structures.
  * @param props - Available categories, build options, and selection callback
  * @returns The first level of the build menu
@@ -233,9 +307,14 @@ function BuildCategoryPicker({
         const hotkey = buildMenuKeyFor("categories", index);
         const guide = BUILD_CATEGORY_GUIDES[category];
         const CategoryIcon = guide.icon;
-        const count = options.filter(
+        const categoryOptions = options.filter(
           (option) => buildingGuide(option).category === category,
+        );
+        const unlockedCount = categoryOptions.filter(
+          (option) => option.unlocked,
         ).length;
+        const count =
+          unlockedCount > 0 ? unlockedCount : categoryOptions.length;
         return (
           <li key={category}>
             <button
@@ -272,15 +351,18 @@ function BuildCategoryPicker({
 }
 
 /**
- * Individual structures inside one selected category.
- * @param props - Visible build options, placement callback, and stock
- * @returns The second level of the build menu
+ * Individual structures inside one selected category or preview group.
+ * @param props - Visible build options, hotkey flag, placement callback, and stock
+ * @returns The building option grid
  */
 function BuildOptionGrid({
+  allowHotkeys = true,
   onChoose,
   options,
   stock,
 }: {
+  /** Whether to attach keyboard grid hotkeys to these cards. */
+  allowHotkeys?: boolean;
   onChoose: (option: BuildReadout) => void;
   options: readonly BuildReadout[];
   stock: CostStock;
@@ -288,7 +370,9 @@ function BuildOptionGrid({
   return (
     <ul className={styles.buildGrid}>
       {options.map((option, index) => {
-        const hotkey = buildMenuKeyFor("buildings", index);
+        const hotkey = allowHotkeys
+          ? buildMenuKeyFor("buildings", index)
+          : undefined;
         const cost =
           option.cost === undefined ? undefined : costLineFrom(option.cost);
         const costText =
@@ -366,18 +450,114 @@ function BuildOptionGrid({
 }
 
 /**
- * Tier-gated build list. Hints are the strings the snapshot published.
- * Grid hotkeys pick a category and then a building; Backspace goes back.
- * @param props - Options, actions, and what the player can spend
+ * Compact footer showing a one-line teaser for the next Hold tier's unlocks
+ * (with an expandable preview) and a subtle toggle for tiers beyond that.
+ * @param props - Next-tier and later-tier locked lists, toggle states, and stock
+ * @returns The teaser footer, or null when no locked buildings exist
+ */
+function LockedTierFooter({
+  laterTierLocked,
+  nextTier,
+  nextTierLocked,
+  onChoose,
+  onTogglePreview,
+  onToggleShowAllTiers,
+  previewNextTier,
+  showAllTiers,
+  stock,
+}: {
+  laterTierLocked: readonly BuildReadout[];
+  nextTier: HoldTier | null;
+  nextTierLocked: readonly BuildReadout[];
+  onChoose: (option: BuildReadout) => void;
+  onTogglePreview: () => void;
+  onToggleShowAllTiers: () => void;
+  previewNextTier: boolean;
+  showAllTiers: boolean;
+  stock: CostStock;
+}) {
+  const hasNextTier = nextTier !== null && nextTierLocked.length > 0;
+  const hasLaterTiers = laterTierLocked.length > 0;
+  if (!hasNextTier && !hasLaterTiers) return null;
+
+  const nextTierNames = nextTierLocked.map((option) => option.name).join(", ");
+  return (
+    <div className={hudStyles.buildTierFooter}>
+      {hasNextTier ? (
+        <div
+          className={hudStyles.buildTierTeaser}
+          data-testid="build-next-tier-teaser"
+        >
+          <p className={hudStyles.buildTierTeaserText}>
+            <strong>{`Next tier · ${nextTier}`}</strong>
+            {` unlocks: ${nextTierNames}`}
+          </p>
+          <button
+            aria-expanded={previewNextTier}
+            className={hudStyles.buildTierToggle}
+            onClick={onTogglePreview}
+            type="button"
+          >
+            {previewNextTier ? "Hide preview" : "Preview"}
+          </button>
+        </div>
+      ) : null}
+      {hasNextTier && previewNextTier ? (
+        <div className={hudStyles.buildPreviewSection}>
+          <BuildOptionGrid
+            allowHotkeys={false}
+            onChoose={onChoose}
+            options={nextTierLocked}
+            stock={stock}
+          />
+        </div>
+      ) : null}
+      {hasLaterTiers ? (
+        <div className={hudStyles.buildLaterRow}>
+          <button
+            aria-expanded={showAllTiers}
+            className={hudStyles.buildLaterToggle}
+            data-testid="build-show-all-tiers"
+            onClick={onToggleShowAllTiers}
+            type="button"
+          >
+            {showAllTiers ? "Hide later tiers" : "Show all tiers"}
+          </button>
+        </div>
+      ) : null}
+      {hasLaterTiers && showAllTiers ? (
+        <div className={hudStyles.buildPreviewSection}>
+          <p className={hudStyles.buildPreviewHeading}>Later tiers</p>
+          <BuildOptionGrid
+            allowHotkeys={false}
+            onChoose={onChoose}
+            options={laterTierLocked}
+            stock={stock}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Tier-gated build list. Shows unlocked buildings as clickable options,
+ * summarizes the next Hold tier's unlocks in one compact teaser row with an
+ * optional preview, and hides tiers beyond that behind a subtle toggle.
+ * Grid hotkeys pick a category and then an unlocked building; Backspace goes back.
+ * @param props - Options, optional Hold tier, actions, and what the player can spend
  * @returns The build menu
  */
 export function BuildMenu({
+  holdTier,
   onChoose,
   onClose,
   onGlossary,
   options,
   stock,
 }: {
+  /** Current Hold tier override; inferred from unlocked options when omitted. */
+  holdTier?: HoldTier;
   onChoose: (option: BuildReadout) => void;
   onClose: () => void;
   onGlossary: () => void;
@@ -387,33 +567,52 @@ export function BuildMenu({
 }) {
   const [selectedCategory, setSelectedCategory] =
     useState<BuildCategory | null>(null);
-  const availableCategories = BUILD_CATEGORIES.filter((category) =>
+  const [previewNextTier, setPreviewNextTier] = useState(false);
+  const [showAllTiers, setShowAllTiers] = useState(false);
+
+  const currentTier = holdTier ?? inferCurrentTier(options);
+  const nextTier = nextTierAfter(currentTier);
+
+  const unlockedCategories = BUILD_CATEGORIES.filter((category) =>
+    options.some(
+      (option) =>
+        option.unlocked && buildingGuide(option).category === category,
+    ),
+  );
+  const allCategories = BUILD_CATEGORIES.filter((category) =>
     options.some((option) => buildingGuide(option).category === category),
   );
-  const activeCategory = availableCategories.includes(
-    selectedCategory ?? "economy",
-  )
-    ? selectedCategory
-    : null;
+  const availableCategories =
+    showAllTiers || unlockedCategories.length === 0
+      ? allCategories
+      : unlockedCategories;
+
+  const activeCategory =
+    selectedCategory !== null && availableCategories.includes(selectedCategory)
+      ? selectedCategory
+      : null;
   const activeGuide =
     activeCategory === null ? null : BUILD_CATEGORY_GUIDES[activeCategory];
-  const visibleOptions =
+
+  const scopedOptions =
     activeCategory === null
-      ? []
+      ? options
       : options.filter(
           (option) => buildingGuide(option).category === activeCategory,
         );
+  const partitioned = partitionBuildOptions(scopedOptions, nextTier);
+
   const keyState = useRef({
     activeCategory,
     availableCategories,
     onChoose,
-    visibleOptions,
+    unlockedOptions: partitioned.unlocked,
   });
   keyState.current = {
     activeCategory,
     availableCategories,
     onChoose,
-    visibleOptions,
+    unlockedOptions: partitioned.unlocked,
   };
   useEffect(() => {
     /**
@@ -428,7 +627,7 @@ export function BuildMenu({
       const count =
         level === "categories"
           ? state.availableCategories.length
-          : state.visibleOptions.length;
+          : state.unlockedOptions.length;
       const action = buildMenuKeyAction(event, level, count);
       if (action === null) return;
       event.preventDefault();
@@ -443,7 +642,7 @@ export function BuildMenu({
         if (category !== undefined) setSelectedCategory(category);
         return;
       }
-      const option = state.visibleOptions[action.index];
+      const option = state.unlockedOptions[action.index];
       if (option !== undefined) state.onChoose(option);
     };
     window.addEventListener("keydown", onKeyDown, { capture: true });
@@ -502,10 +701,24 @@ export function BuildMenu({
           options={options}
         />
       )}
-      {activeCategory === null ? null : (
+      {activeCategory === null || partitioned.unlocked.length === 0 ? null : (
         <BuildOptionGrid
+          allowHotkeys={true}
           onChoose={onChoose}
-          options={visibleOptions}
+          options={partitioned.unlocked}
+          stock={stock}
+        />
+      )}
+      {options.length === 0 ? null : (
+        <LockedTierFooter
+          laterTierLocked={partitioned.laterTierLocked}
+          nextTier={nextTier}
+          nextTierLocked={partitioned.nextTierLocked}
+          onChoose={onChoose}
+          onTogglePreview={() => setPreviewNextTier((open) => !open)}
+          onToggleShowAllTiers={() => setShowAllTiers((open) => !open)}
+          previewNextTier={previewNextTier}
+          showAllTiers={showAllTiers}
           stock={stock}
         />
       )}

@@ -148,6 +148,11 @@ export interface PlayerScoreProgress {
 /** JSON-safe integration state stored with the sim save. */
 export interface AshenGateSliceState {
   bossIntroShown: boolean;
+  /**
+   * Whether the opening swarm wave has been repelled, unlocking a starting
+   * Captain's battlefield breakthrough to Sworn without a Cultivation Hall.
+   */
+  captainBreakthroughUnlocked?: boolean;
   combat: {
     /** Per-body combat records: cooldowns, statuses, and orders survive ticks. */
     bodies: Record<string, CombatUnit>;
