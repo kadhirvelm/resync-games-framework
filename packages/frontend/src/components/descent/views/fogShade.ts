@@ -46,13 +46,18 @@ export function fogShadeGrid(fog: FogOfWarState, margin = 0): FogShadeGrid {
   return { alpha, height, width };
 }
 
+/** Reused `ImageData` per canvas so steady-state fog paints allocate nothing. */
+const fogImageCache = new WeakMap<HTMLCanvasElement, ImageData>();
+
 /**
- * Expands an opacity grid into RGBA pixels in the fog color.
+ * Writes fog RGBA pixels directly into a caller-provided pixel buffer.
+ * @param pixels - Target RGBA buffer of length `grid.width * grid.height * 4`
  * @param grid - Opacity grid
- * @returns Pixel data for `ImageData`
  */
-export function fogShadePixels(grid: FogShadeGrid): Uint8ClampedArray {
-  const pixels = new Uint8ClampedArray(grid.width * grid.height * 4);
+function writeFogShadePixels(
+  pixels: Uint8ClampedArray,
+  grid: FogShadeGrid,
+): void {
   for (let index = 0; index < grid.alpha.length; index += 1) {
     const offset = index * 4;
     pixels[offset] = FOG_COLOR.r;
@@ -60,6 +65,16 @@ export function fogShadePixels(grid: FogShadeGrid): Uint8ClampedArray {
     pixels[offset + 2] = FOG_COLOR.b;
     pixels[offset + 3] = grid.alpha[index] ?? 255;
   }
+}
+
+/**
+ * Expands an opacity grid into RGBA pixels in the fog color.
+ * @param grid - Opacity grid
+ * @returns Pixel data for `ImageData`
+ */
+export function fogShadePixels(grid: FogShadeGrid): Uint8ClampedArray {
+  const pixels = new Uint8ClampedArray(grid.width * grid.height * 4);
+  writeFogShadePixels(pixels, grid);
   return pixels;
 }
 
@@ -78,8 +93,16 @@ export function paintFogShade(
   if (canvas.height !== grid.height) canvas.height = grid.height;
   const context = canvas.getContext("2d");
   if (context === null) return false;
-  const image = context.createImageData(grid.width, grid.height);
-  image.data.set(fogShadePixels(grid));
+  let image = fogImageCache.get(canvas);
+  if (
+    image === undefined ||
+    image.width !== grid.width ||
+    image.height !== grid.height
+  ) {
+    image = context.createImageData(grid.width, grid.height);
+    fogImageCache.set(canvas, image);
+  }
+  writeFogShadePixels(image.data, grid);
   context.putImageData(image, 0, 0);
   return true;
 }

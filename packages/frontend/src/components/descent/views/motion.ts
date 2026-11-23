@@ -34,6 +34,7 @@ export type CharacterClip =
   | "death"
   | "hit"
   | "idle"
+  | "meditate"
   | "run"
   | "walk"
   | "work";
@@ -67,14 +68,19 @@ export function isVillagerWorkingActivity(activity?: string): boolean {
  */
 export function selectCharacterLoopClip(input: {
   activity?: string;
+  hasMeditateClip?: boolean;
   hasRunClip?: boolean;
   hasWorkClip: boolean;
   locomoting: boolean;
+  meditating?: boolean;
   role: string;
-}): "idle" | "run" | "walk" | "work" {
+}): "idle" | "meditate" | "run" | "walk" | "work" {
   if (input.locomoting) {
     if (input.role === "rider" && input.hasRunClip) return "run";
     return "walk";
+  }
+  if (input.meditating && input.hasMeditateClip) {
+    return "meditate";
   }
   if (
     input.role === "villager" &&
@@ -118,7 +124,25 @@ export function unitMotionPhase(id: string): number {
 
 /** Shortest and longest gaps, in ms, accepted as one sim movement step. */
 export const MIN_STEP_INTERVAL_MS = 40;
-export const MAX_STEP_INTERVAL_MS = 700;
+export const MAX_STEP_INTERVAL_MS = 1200;
+
+/** Default glide duration in ms for units that step on combat ticks. */
+export const DEFAULT_STEP_INTERVAL_MS = 100;
+
+/** Default glide duration in ms for villagers, which step on economy ticks. */
+export const VILLAGER_DEFAULT_STEP_INTERVAL_MS = 500;
+
+/**
+ * Initial step glide duration for a unit role so its very first step
+ * matches its simulation cadence instead of dashing and pausing.
+ * @param role - Unit asset role (e.g. "villager", "warden")
+ * @returns Initial step interval in milliseconds
+ */
+export function defaultStepInterval(role: string): number {
+  return role === "villager"
+    ? VILLAGER_DEFAULT_STEP_INTERVAL_MS
+    : DEFAULT_STEP_INTERVAL_MS;
+}
 
 /**
  * Updates the running estimate of how often the sim moves a unit. Villagers

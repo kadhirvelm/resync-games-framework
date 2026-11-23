@@ -15,6 +15,7 @@ import type { HoldTier } from "../logic/economy/model";
 import { SIM_SPEEDS, type SimSpeed } from "../logic/sim/constants";
 import type { ResourceId } from "../logic/types";
 import styles from "./descentView.module.scss";
+import { isLocalPlayerOwned } from "./selection";
 import type { ShellBuilding, ShellModel } from "./shellModel";
 import {
   CLASS_LABEL,
@@ -46,17 +47,24 @@ function isHoldTier(value: string | null | undefined): value is HoldTier {
 }
 
 /**
- * Reads the Hold's current tier from the shell model, falling back to Camp.
+ * Reads the local Hold's current tier from the shell model, falling back to Camp.
  * @param model - Shell model
+ * @param localPlayerId - Local co-op owner, or undefined in solo play
  * @returns Current Hold tier
  */
-export function modelHoldTier(model: ShellModel): HoldTier {
+export function modelHoldTier(
+  model: ShellModel,
+  localPlayerId?: string,
+): HoldTier {
+  if (isHoldTier(model.holdTier)) return model.holdTier;
   if (isHoldTier(model.holdUpgrade?.currentTier)) {
     return model.holdUpgrade.currentTier;
   }
   const camp = model.buildings.find(
     (building) =>
-      building.buildingType === "camp" && building.factionId === "hold",
+      building.buildingType === "camp" &&
+      building.factionId === "hold" &&
+      isLocalPlayerOwned(building, localPlayerId),
   );
   if (isHoldTier(camp?.tier)) return camp.tier;
   return "Camp";
@@ -71,6 +79,7 @@ export function ResourceBar({
   discoveredResourceIds,
   fullscreen = false,
   holdTier,
+  localPlayerId,
   model,
   onSelectResource,
   onSetPaused,
@@ -86,6 +95,8 @@ export function ResourceBar({
   fullscreen?: boolean;
   /** Current Hold tier override; defaults to the tier inferred from `model`. */
   holdTier?: HoldTier;
+  /** Local co-op owner used for the Camp fallback at Citadel. */
+  localPlayerId?: string;
   model: ShellModel;
   onSelectResource?: (resource: ResourceSelectionId) => void;
   onSetPaused?: (paused: boolean) => void;
@@ -97,7 +108,7 @@ export function ResourceBar({
   soundEnabled?: boolean;
 }) {
   const pop = model.pop === null ? "—" : `${model.pop.used}/${model.pop.cap}`;
-  const resolvedTier = holdTier ?? modelHoldTier(model);
+  const resolvedTier = holdTier ?? modelHoldTier(model, localPlayerId);
   const resolvedDiscovered = useMemo(() => {
     if (discoveredResourceIds !== undefined) return discoveredResourceIds;
     return new Set(model.nodes.map((node) => node.resource));
@@ -407,10 +418,13 @@ function trainingBuildingName(building: ShellBuilding): string {
  */
 export function TrainingTracker({
   buildings,
+  localPlayerId,
   onSelectBuilding,
   upgrade = null,
 }: {
   buildings: readonly ShellBuilding[];
+  /** Local co-op owner whose Camp is upgrading; omitted in solo play. */
+  localPlayerId?: string;
   onSelectBuilding: (id: string) => void;
   /** A paid-for Hold upgrade that is under way. */
   upgrade?: HoldUpgradeProgress | null;
@@ -420,7 +434,9 @@ export function TrainingTracker({
   );
   const camp = buildings.find(
     (building) =>
-      building.buildingType === "camp" && building.factionId === "hold",
+      building.buildingType === "camp" &&
+      building.factionId === "hold" &&
+      isLocalPlayerOwned(building, localPlayerId),
   );
   const crops = growingCrops(buildings);
   const trainingCount = active.length + (upgrade === null ? 0 : 1);

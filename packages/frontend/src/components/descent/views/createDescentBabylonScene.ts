@@ -5,6 +5,7 @@ import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 // returns null (every click lands on map 0,0) or throws.
 import "@babylonjs/core/Culling/ray";
 import type { Bone } from "@babylonjs/core/Bones/bone";
+import type { Skeleton } from "@babylonjs/core/Bones/skeleton";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { GlowLayer } from "@babylonjs/core/Layers/glowLayer";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
@@ -14,6 +15,7 @@ import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import { Material } from "@babylonjs/core/Materials/material";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Plane } from "@babylonjs/core/Maths/math.plane";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
@@ -72,6 +74,7 @@ import {
   advancePresentationTime,
   animationClipMatches,
   type CharacterClip,
+  defaultStepInterval,
   estimateStepInterval,
   type Gait,
   gaitMotion,
@@ -94,7 +97,11 @@ import {
   type ShellUnit,
   unitDisplayScale,
 } from "./shellModel";
-import { buildTerrainLandmark, createTerrainMaterials } from "./terrainMeshes";
+import {
+  buildTerrainLandmark,
+  createTerrainMaterials,
+  riverBankRockPlacements,
+} from "./terrainMeshes";
 import {
   SILHOUETTE_OUTLINE_COLOR,
   selectionRingDiameter,
@@ -153,6 +160,13 @@ export interface DescentBabylonSceneHandle {
     footprint?: number,
     valid?: boolean | null,
   ) => void;
+  /**
+   * Shows a row of ghost pieces for a wall being dragged out, or hides them
+   * when given null.
+   */
+  setPlacementLine: (
+    cells: { valid: boolean; x: number; y: number }[] | null,
+  ) => void;
   showOrderMarker: (marker: OrderMarker) => void;
   unitsInScreenBox: (box: DescentScreenBox) => string[];
   update: (
@@ -177,6 +191,7 @@ interface EntityVisual {
   actionUntil: number;
   activity?: string;
   animations: AnimationGroup[];
+  clips: Partial<Record<CharacterClip, AnimationGroup>>;
   construction: TransformNode | null;
   currentClip: string;
   factionId: "hold" | "horde";
@@ -186,6 +201,12 @@ interface EntityVisual {
   generated: TransformNode | null;
   /** Lazily cached arm bones for the procedural gather swing. */
   workBones?: { left: Bone[]; right: Bone[] } | null;
+  channelFill: AbstractMesh | null;
+  channelProgress: number | null;
+  channelTrack: AbstractMesh | null;
+  hasMeditateClip: boolean;
+  hasRunClip: boolean;
+  hasWorkClip: boolean;
   health: AbstractMesh | null;
   healthInitialized: boolean;
   healthRatio: number;
@@ -194,11 +215,16 @@ interface EntityVisual {
   kind: "building" | "unit";
   /** When the sim last moved this unit. */
   lastStepAt: number;
+  meditating?: boolean;
+  /** Cached per-entity animation phase offset in radians. */
+  motionPhase: number;
+  outlined: boolean;
   presentation: TransformNode;
   removeAt: number | null;
   role: AshenGateAssetRole;
   root: TransformNode;
   selection: AbstractMesh;
+  skeletons: Skeleton[];
   /** Width a building is drawn at, in map cells; 0 for units. */
   span: number;
   /** How long the current glide lasts; zero snaps. */
@@ -224,17 +250,23 @@ interface DecorationMotion {
 }
 
 interface TransientEffect {
+  animationGroups?: AnimationGroup[];
   duration: number;
   from: Vector3;
-  kind: "marker" | "pulse" | "travel";
+  kind: "marker" | "pulse" | "qi_nova" | "travel";
   mesh: TransformNode;
+  onUpdate?: (progress: number, deltaMs: number) => void;
   orientAlongFlight?: boolean;
+  skeletons?: Skeleton[];
   startedAt: number;
   to: Vector3;
 }
 
-/** Sim cadence of a villager hop: VILLAGER_STEP_TICKS × TICK_MS at 1× speed. */
-const DEFAULT_STEP_INTERVAL_MS = 100;
+/** Maximum number of live transient combat/order effects kept at once. */
+const MAX_CONCURRENT_TRANSIENT_EFFECTS = 64;
+
+/** Threshold above which seen sim FX ids are pruned to the current snapshot. */
+const MAX_SEEN_EFFECTS = 512;
 
 /** A position change larger than this (map cells) snaps instead of gliding. */
 const TELEPORT_DISTANCE = 4;
@@ -446,11 +478,26 @@ function sceneryPlacementId(node: Node | null): string | null {
 /** Applies pick metadata to the meshes below one entity root. */
 function markEntity(root: TransformNode, metadata: EntityMetadata): void {
   root.metadata = metadata;
+  // Units are hit-tested on screen via `unitAtScreenPoint`, so their skinned
+  // GLB meshes stay non-pickable to avoid CPU ray-triangle intersection work.
+  const pickable = metadata.kind !== "unit";
   for (const mesh of root.getChildMeshes()) {
     mesh.metadata = metadata;
-    mesh.isPickable = true;
+    mesh.isPickable = pickable;
   }
 }
+
+/** Canonical character animation clips indexed once per instantiated model. */
+const CHARACTER_CLIPS: readonly CharacterClip[] = [
+  "attack",
+  "death",
+  "hit",
+  "idle",
+  "meditate",
+  "run",
+  "walk",
+  "work",
+];
 
 /** Finds a canonical clip after Babylon has prefixed its instance name. */
 function findClip(
@@ -462,29 +509,44 @@ function findClip(
   );
 }
 
+/**
+ * Indexes canonical character clips once when a model is instantiated so
+ * per-frame updates avoid scanning and normalizing animation group names.
+ * @param animations - Instantiated animation groups for one visual
+ * @returns Lookup map from canonical clip names to animation groups
+ */
+function indexCharacterClips(
+  animations: readonly AnimationGroup[],
+): Partial<Record<CharacterClip, AnimationGroup>> {
+  const clips: Partial<Record<CharacterClip, AnimationGroup>> = {};
+  for (const clip of CHARACTER_CLIPS) {
+    const match = findClip(animations, clip);
+    if (match !== undefined) clips[clip] = match;
+  }
+  return clips;
+}
+
 /** Starts a looping generated clip only when its desired state changed. */
 function playClip(
   visual: EntityVisual,
-  name: "idle" | "run" | "walk" | "work",
+  name: "idle" | "meditate" | "run" | "walk" | "work",
 ): void {
-  const requested = findClip(visual.animations, name);
-  let resolvedName: "idle" | "run" | "walk" | "work" = name;
+  if (visual.currentClip === name) return;
+  const requested = visual.clips[name];
+  let resolvedName: "idle" | "meditate" | "run" | "walk" | "work" = name;
   if (requested === undefined) {
-    if (name === "work") resolvedName = "idle";
+    if (name === "work" || name === "meditate") resolvedName = "idle";
     else if (name === "run") resolvedName = "walk";
   }
   if (visual.currentClip === resolvedName) return;
-  const clip = requested ?? findClip(visual.animations, resolvedName);
+  const clip = requested ?? visual.clips[resolvedName];
   if (clip === undefined) return;
   for (const animation of visual.animations) animation.stop();
-  const speed =
-    resolvedName === "run"
-      ? 1.15
-      : resolvedName === "walk"
-        ? 1.12
-        : resolvedName === "work"
-          ? 1.0
-          : 0.88;
+  let speed = 0.88;
+  if (resolvedName === "run") speed = 1.15;
+  else if (resolvedName === "walk") speed = 1.12;
+  else if (resolvedName === "work") speed = 1.0;
+  else if (resolvedName === "meditate") speed = 0.85;
   clip.start(true, speed);
   visual.currentClip = resolvedName;
 }
@@ -557,7 +619,7 @@ function playAction(
   duration: number,
   now: number,
 ): void {
-  const clip = findClip(visual.animations, name);
+  const clip = visual.clips[name];
   if (clip === undefined) return;
   for (const animation of visual.animations) animation.stop();
   clip.start(false);
@@ -589,8 +651,11 @@ export function createDescentBabylonScene(
     { preserveDrawingBuffer: false, stencil: true },
     true,
   );
+  const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+  if (dpr > 1.5) engine.setHardwareScalingLevel(dpr / 1.5);
   try {
     const scene = new Scene(engine);
+    scene.skipPointerMovePicking = true;
     const void_ = Color3.FromHexString(ASHEN_VOID);
     scene.clearColor = new Color4(void_.r, void_.g, void_.b, 1);
     scene.ambientColor = Color3.FromHexString("#262a36");
@@ -716,6 +781,8 @@ export function createDescentBabylonScene(
     shadows.bias = 0.001;
     shadows.normalBias = 0.03;
     shadows.usePercentageCloserFiltering = true;
+    const shadowMap = shadows.getShadowMap();
+    if (shadowMap !== null) shadowMap.refreshRate = 2;
     const glow = new GlowLayer("ashen-glow", scene, {
       blurKernelSize: 24,
     });
@@ -753,30 +820,39 @@ export function createDescentBabylonScene(
     const terrainMaterials = createTerrainMaterials(scene);
 
     const holdMaterial = material(scene, "hold-bronze", "#d0aa66");
+    holdMaterial.freeze();
     const holdDarkMaterial = material(scene, "hold-dark", "#473126");
+    holdDarkMaterial.freeze();
     const hordeMaterial = material(scene, "horde-cinder", "#a93627");
+    hordeMaterial.freeze();
     const hordeDarkMaterial = material(scene, "horde-dark", "#351516");
+    hordeDarkMaterial.freeze();
     const constructionTimberMaterial = material(
       scene,
       "construction-timber",
       "#bc8247",
     );
+    constructionTimberMaterial.freeze();
     const constructionFoundationMaterial = material(
       scene,
       "construction-foundation",
       "#594136",
     );
+    constructionFoundationMaterial.freeze();
     const selectedMaterial = material(scene, "selected-gold", "#fff6d4", true);
+    selectedMaterial.freeze();
     const holdMarkerMaterial = createUnitMarkerMaterial(
       scene,
       "hold-foot-marker",
       UNIT_MARKER_RING.hold,
     );
+    holdMarkerMaterial.freeze();
     const hordeMarkerMaterial = createUnitMarkerMaterial(
       scene,
       "horde-foot-marker",
       UNIT_MARKER_RING.horde,
     );
+    hordeMarkerMaterial.freeze();
     const playerMarkerMaterials = new Map<string, StandardMaterial>();
     /** Returns a cached colored foot-marker material for one co-op player. */
     const markerMaterialFor = (
@@ -793,6 +869,7 @@ export function createDescentBabylonScene(
           unitOwnerRingColor(factionId, ownerColor),
           true,
         );
+        cached.freeze();
         playerMarkerMaterials.set(ownerColor, cached);
       }
       return cached;
@@ -814,34 +891,150 @@ export function createDescentBabylonScene(
           unitOwnerRingColor(factionId, ownerColor),
           true,
         );
+        cached.freeze();
         playerSelectionMaterials.set(ownerColor, cached);
       }
       return cached;
     };
     const healthMaterial = material(scene, "health", "#67c977", true);
+    healthMaterial.freeze();
+    const channelTrackMaterial = material(
+      scene,
+      "channel-track",
+      "#1c140d",
+      false,
+    );
+    channelTrackMaterial.freeze();
+    const channelFillMaterial = material(
+      scene,
+      "channel-fill",
+      "#f3cf73",
+      true,
+    );
+    channelFillMaterial.freeze();
     const veinMaterial = material(scene, "spirit-vein", "#36a9c4", true);
     veinMaterial.alpha = 0.34;
+    veinMaterial.freeze();
     const ventMaterial = material(scene, "ember-vent", "#f05e2f", true);
     ventMaterial.alpha = 0.7;
+    ventMaterial.freeze();
     const telegraphMaterial = material(
       scene,
       "boss-telegraph",
       "#ffc45d",
       true,
     );
+    telegraphMaterial.freeze();
     const projectileMaterial = material(
       scene,
       "projectile-ember",
       "#ffb34e",
       true,
     );
+    projectileMaterial.freeze();
     const healMaterial = material(scene, "healing-aether", "#7dffad", true);
+    healMaterial.freeze();
     const markerMaterials: Record<OrderMarker["kind"], StandardMaterial> = {
       attack: material(scene, "order-attack", "#ff5a3c", true),
       build: material(scene, "order-build", "#ffd36b", true),
       gather: material(scene, "order-gather", "#ffd36b", true),
       move: material(scene, "order-move", "#7dff9a", true),
     };
+    for (const orderMaterial of Object.values(markerMaterials)) {
+      orderMaterial.freeze();
+    }
+    const markerTemplates = new Map<StandardMaterial, Mesh>();
+    /**
+     * Returns a hidden unit-sized ground marker template for one material so
+     * every unit shares geometry via `createInstance`.
+     * @param markerMat - Foot marker material
+     * @returns Disabled source template mesh
+     */
+    const markerTemplateFor = (markerMat: StandardMaterial): Mesh => {
+      let template = markerTemplates.get(markerMat);
+      if (template !== undefined) return template;
+      template = CreateGround(
+        `template-unit-marker-${markerMat.name}`,
+        { height: 1, subdivisions: 1, width: 1 },
+        scene,
+      );
+      template.material = markerMat;
+      template.isPickable = false;
+      template.setEnabled(false);
+      glow.addExcludedMesh(template);
+      markerTemplates.set(markerMat, template);
+      return template;
+    };
+    const ownerRingTemplates = new Map<StandardMaterial, Mesh>();
+    /**
+     * Returns a hidden unit-diameter owner ring template (tessellation 16) for
+     * one material so co-op units share geometry via `createInstance`.
+     * @param ringMat - Owner ring material
+     * @returns Disabled source template mesh
+     */
+    const ownerRingTemplateFor = (ringMat: StandardMaterial): Mesh => {
+      let template = ownerRingTemplates.get(ringMat);
+      if (template !== undefined) return template;
+      template = CreateTorus(
+        `template-owner-ring-${ringMat.name}`,
+        { diameter: 1, tessellation: 16, thickness: 0.06 },
+        scene,
+      );
+      template.material = ringMat;
+      template.isPickable = false;
+      template.setEnabled(false);
+      glow.addExcludedMesh(template);
+      ownerRingTemplates.set(ringMat, template);
+      return template;
+    };
+    const selectionRingTemplates = new Map<StandardMaterial, Mesh>();
+    /**
+     * Returns a hidden unit-diameter selection ring template (tessellation 16)
+     * for one material so units share geometry via `createInstance`.
+     * @param ringMat - Selection ring material
+     * @returns Disabled source template mesh
+     */
+    const selectionRingTemplateFor = (ringMat: StandardMaterial): Mesh => {
+      let template = selectionRingTemplates.get(ringMat);
+      if (template !== undefined) return template;
+      template = CreateTorus(
+        `template-selection-ring-${ringMat.name}`,
+        { diameter: 1, tessellation: 16, thickness: 0.04 },
+        scene,
+      );
+      template.material = ringMat;
+      template.isPickable = false;
+      template.setEnabled(false);
+      selectionRingTemplates.set(ringMat, template);
+      return template;
+    };
+    const unitHealthTemplate = CreateBox(
+      "template-unit-health",
+      { depth: 0.055, height: 0.07, width: 0.9 },
+      scene,
+    );
+    unitHealthTemplate.material = healthMaterial;
+    unitHealthTemplate.billboardMode = Mesh.BILLBOARDMODE_ALL;
+    unitHealthTemplate.isPickable = false;
+    unitHealthTemplate.setEnabled(false);
+    const channelTrackTemplate = CreateBox(
+      "template-channel-track",
+      { depth: 0.05, height: 0.075, width: 0.94 },
+      scene,
+    );
+    channelTrackTemplate.material = channelTrackMaterial;
+    channelTrackTemplate.billboardMode = Mesh.BILLBOARDMODE_ALL;
+    channelTrackTemplate.isPickable = false;
+    channelTrackTemplate.setEnabled(false);
+    const channelFillTemplate = CreateBox(
+      "template-channel-fill",
+      { depth: 0.06, height: 0.055, width: 0.9 },
+      scene,
+    );
+    channelFillTemplate.material = channelFillMaterial;
+    channelFillTemplate.billboardMode = Mesh.BILLBOARDMODE_ALL;
+    channelFillTemplate.isPickable = false;
+    channelFillTemplate.setEnabled(false);
     const routeRoot = new TransformNode("unit-route", scene);
     let routeFlagRoot: TransformNode | null = null;
     let routeLine: Mesh | null = null;
@@ -864,6 +1057,7 @@ export function createDescentBabylonScene(
     placementPreview.isPickable = false;
     placementPreview.setEnabled(false);
     const rallyMaterial = material(scene, "rally-point", "#ffd978", true);
+    rallyMaterial.freeze();
     const rallyMarker = new TransformNode("rally-point", scene);
     const rallyRing = CreateTorus(
       "rally-point-ring",
@@ -906,11 +1100,14 @@ export function createDescentBabylonScene(
       { assetId: string; done: Promise<void> }
     >();
     const decorationMotions: DecorationMotion[] = [];
+    const telegraphMotions: DecorationMotion[] = [];
     const transientEffects: TransientEffect[] = [];
     const seenEffects = new Set<number>();
     let decorationRoot = new TransformNode("map-decoration", scene);
+    let telegraphRoot = new TransformNode("map-telegraphs", scene);
     let decorationAssetsDirty = false;
     let decorationSignature = "";
+    let telegraphSignature = "";
     let sceneryRoot: TransformNode | null = null;
     const sceneryNodes = new Map<string, TransformNode>();
     let revealedScenery = revealedSceneryIds(
@@ -977,6 +1174,7 @@ export function createDescentBabylonScene(
     const inspectMaterial = material(scene, "inspect-ring", "#b8ffe0", true);
     inspectMaterial.emissiveColor = Color3.FromHexString("#7fe8b8");
     inspectMaterial.disableLighting = true;
+    inspectMaterial.freeze();
     const inspectMarker = CreateTorus(
       "inspect-ring",
       { diameter: 2, tessellation: 48, thickness: 0.09 },
@@ -1031,6 +1229,51 @@ export function createDescentBabylonScene(
         mapYToWorldZ(Math.round(point.y), currentModel.map.height),
       );
       placementPreview.setEnabled(true);
+    };
+
+    const lineGhosts: Mesh[] = [];
+    const lineMaterials = new Map<boolean, StandardMaterial>();
+    /**
+     * Draws one ghost per wall cell, reusing a pool of boxes.
+     * @param cells - Snapped cells with ground validity, or null to hide all
+     */
+    const setPlacementLine = (
+      cells: { valid: boolean; x: number; y: number }[] | null,
+    ): void => {
+      const shown = cells ?? [];
+      while (lineGhosts.length < shown.length) {
+        const ghost = placementPreview.clone(
+          `placement-line-${lineGhosts.length}`,
+        );
+        ghost.isPickable = false;
+        lineGhosts.push(ghost);
+      }
+      lineGhosts.forEach((ghost, index) => {
+        const cell = shown[index];
+        if (cell === undefined) {
+          ghost.setEnabled(false);
+          return;
+        }
+        let ghostMaterial = lineMaterials.get(cell.valid);
+        if (ghostMaterial === undefined) {
+          ghostMaterial = placementMaterial.clone(
+            `placement-line-${cell.valid}`,
+          );
+          const tint = Color3.FromHexString(placementPreviewTint(cell.valid));
+          ghostMaterial.diffuseColor.copyFrom(tint);
+          ghostMaterial.emissiveColor.copyFrom(tint.scale(0.55));
+          ghostMaterial.freeze();
+          lineMaterials.set(cell.valid, ghostMaterial);
+        }
+        ghost.material = ghostMaterial;
+        ghost.position.set(
+          cell.x,
+          0.04,
+          mapYToWorldZ(cell.y, currentModel.map.height),
+        );
+        ghost.setEnabled(true);
+      });
+      if (cells !== null) placementPreview.setEnabled(false);
     };
 
     /** Creates the low-cost silhouette shown until its generated GLB is ready. */
@@ -1240,14 +1483,141 @@ export function createDescentBabylonScene(
       return role;
     };
 
+    /**
+     * Returns whether an entity should cast dynamic directional shadows.
+     * Regular units use ground foot markers instead to keep shadow passes fast.
+     * @param kind - Entity kind
+     * @param role - Asset role
+     * @returns True for buildings and bosses
+     */
+    const castsShadow = (
+      kind: "building" | "unit",
+      role: AshenGateAssetRole,
+    ): boolean => kind === "building" || role === "cinderjaw";
+
+    /**
+     * Toggles the silhouette outline on one entity's presentation meshes only
+     * when its desired outline state changes.
+     * @param visual - Entity visual to update
+     * @param enabled - Whether the silhouette outline should be rendered
+     */
+    const setVisualOutline = (visual: EntityVisual, enabled: boolean): void => {
+      if (visual.outlined === enabled) return;
+      visual.outlined = enabled;
+      const width = enabled ? currentOutlineWidth() : 0;
+      for (const mesh of visual.presentation.getChildMeshes()) {
+        if (enabled) {
+          markSilhouette(mesh, width);
+        } else {
+          mesh.renderOutline = false;
+        }
+      }
+    };
+
+    /**
+     * Disposes a building's timber construction frame and removes its child
+     * meshes from the shadow map once construction finishes or is canceled.
+     * @param visual - Building visual whose frame should be released
+     */
+    const disposeConstructionFrame = (visual: EntityVisual): void => {
+      if (visual.construction === null) return;
+      for (const mesh of visual.construction.getChildMeshes()) {
+        shadows.removeShadowCaster(mesh);
+      }
+      visual.construction.dispose();
+      visual.construction = null;
+    };
+
+    /**
+     * Releases every GPU and scene resource owned by one entity visual:
+     * animation groups, skeletons, shadow-caster/glow registrations, carried
+     * loads, and the root transform hierarchy.
+     * @param visual - Entity visual being removed or replaced
+     */
+    const disposeEntityVisual = (visual: EntityVisual): void => {
+      for (const animation of visual.animations) animation.dispose();
+      visual.animations = [];
+      visual.clips = {};
+      visual.hasWorkClip = false;
+      visual.hasMeditateClip = false;
+      visual.hasRunClip = false;
+      for (const skeleton of visual.skeletons) skeleton.dispose();
+      visual.skeletons = [];
+      disposeConstructionFrame(visual);
+      for (const mesh of visual.root.getChildMeshes()) {
+        shadows.removeShadowCaster(mesh);
+        if (mesh instanceof Mesh) glow.removeExcludedMesh(mesh);
+      }
+      carryIcons.remove(visual.id);
+      visual.root.dispose();
+    };
+
+    /**
+     * Lazily instantiates a unit's overhead health bar from the shared box
+     * template only when the unit is damaged or selected.
+     * @param visual - Unit visual
+     * @returns The unit's health bar instance
+     */
+    const ensureUnitHealthBar = (visual: EntityVisual): AbstractMesh => {
+      if (visual.health !== null) return visual.health;
+      const health = unitHealthTemplate.createInstance(`health-${visual.id}`);
+      health.parent = visual.root;
+      health.position.set(-(1 - visual.healthRatio) * 0.45, 1.75, 0);
+      health.scaling.x = visual.healthRatio;
+      health.billboardMode = Mesh.BILLBOARDMODE_ALL;
+      health.isPickable = false;
+      visual.health = health;
+      return health;
+    };
+
+    /**
+     * Lazily instantiates a unit's channeling progress bar pair from the
+     * shared box templates only when the unit is actively channeling.
+     * @param visual - Unit visual
+     */
+    const ensureChannelBars = (visual: EntityVisual): void => {
+      if (visual.channelTrack === null) {
+        const track = channelTrackTemplate.createInstance(
+          `channel-track-${visual.id}`,
+        );
+        track.parent = visual.root;
+        track.position.set(0, 1.92, 0);
+        track.billboardMode = Mesh.BILLBOARDMODE_ALL;
+        track.isPickable = false;
+        visual.channelTrack = track;
+      }
+      if (visual.channelFill === null) {
+        const fill = channelFillTemplate.createInstance(
+          `channel-fill-${visual.id}`,
+        );
+        fill.parent = visual.root;
+        fill.position.set(0, 1.92, 0);
+        fill.billboardMode = Mesh.BILLBOARDMODE_ALL;
+        fill.isPickable = false;
+        visual.channelFill = fill;
+      }
+    };
+
     /** Adds a model instance to a gameplay visual and retires its stand-in. */
     const instantiateModel = (
       visual: EntityVisual,
       asset: ThreeDAsset,
       container: AssetContainer,
     ): void => {
-      visual.generated?.dispose();
+      if (visual.generated !== null) {
+        for (const mesh of visual.generated.getChildMeshes()) {
+          shadows.removeShadowCaster(mesh);
+        }
+        visual.generated.dispose();
+      }
       for (const animation of visual.animations) animation.dispose();
+      visual.animations = [];
+      visual.clips = {};
+      visual.hasWorkClip = false;
+      visual.hasMeditateClip = false;
+      visual.hasRunClip = false;
+      for (const skeleton of visual.skeletons) skeleton.dispose();
+      visual.skeletons = [];
       const generated = new TransformNode(`generated-${visual.id}`, scene);
       generated.parent = visual.presentation;
       const instance = container.instantiateModelsToScene(
@@ -1277,20 +1647,31 @@ export function createDescentBabylonScene(
         -(min[1] ?? 0) * scale,
         -(((max[2] ?? 0) + (min[2] ?? 0)) / 2) * scale,
       );
+      const shouldCastShadow = castsShadow(visual.kind, visual.role);
+      const outlineWidth = visual.outlined ? currentOutlineWidth() : 0;
       for (const mesh of generated.getChildMeshes()) {
         mesh.receiveShadows = true;
-        shadows.addShadowCaster(mesh);
-        markSilhouette(mesh, currentOutlineWidth());
+        if (shouldCastShadow) shadows.addShadowCaster(mesh);
+        if (visual.outlined) markSilhouette(mesh, outlineWidth);
       }
       visual.generated = generated;
       visual.workBones = null;
       visual.animations = instance.animationGroups;
+      visual.clips = indexCharacterClips(instance.animationGroups);
+      visual.hasWorkClip = visual.clips.work !== undefined;
+      visual.hasMeditateClip = visual.clips.meditate !== undefined;
+      visual.hasRunClip = visual.clips.run !== undefined;
+      visual.skeletons = instance.skeletons;
       // Crossfade from the current pose instead of snapping between clips.
       for (const animation of visual.animations) {
         animation.enableBlending = true;
         animation.blendingSpeed = 0.08;
       }
       visual.currentClip = "";
+      for (const mesh of visual.fallback.getChildMeshes()) {
+        shadows.removeShadowCaster(mesh);
+        mesh.dispose();
+      }
       visual.fallback.setEnabled(false);
       markEntity(visual.root, {
         buildingId: visual.kind === "building" ? visual.id : undefined,
@@ -1423,6 +1804,19 @@ export function createDescentBabylonScene(
         (name) => `${id}-${name}`,
         false,
       );
+      if (
+        instance.animationGroups.length > 0 ||
+        instance.skeletons.length > 0
+      ) {
+        generated.onDisposeObservable.addOnce(() => {
+          for (const animation of instance.animationGroups) {
+            animation.dispose();
+          }
+          for (const skeleton of instance.skeletons) {
+            skeleton.dispose();
+          }
+        });
+      }
       for (const rootNode of instance.rootNodes) rootNode.parent = generated;
       const { min, max } = asset.validation.bounds;
       const width = Math.max(0.01, (max[0] ?? 1) - (min[0] ?? 0));
@@ -1524,7 +1918,12 @@ export function createDescentBabylonScene(
             if (visual.role === role)
               instantiateModel(visual, asset, container);
           }
-          if (isResourceAssetRole(role) || role === "emberVent") {
+          if (
+            isResourceAssetRole(role) ||
+            role === "emberVent" ||
+            role === "plankBridge" ||
+            role === "riverRocks"
+          ) {
             decorationAssetsDirty = true;
           }
           placeScenery(role, asset, container);
@@ -1599,86 +1998,94 @@ export function createDescentBabylonScene(
         presentation,
       );
       const construction =
-        kind === "building" ? createConstructionFrame(entity.id, root) : null;
+        kind === "building" && (entity as ShellBuilding).constructing
+          ? createConstructionFrame(entity.id, root)
+          : null;
       if (kind === "building") fallback.scaling.setAll(buildingScale);
-      construction?.scaling.setAll(buildingScale);
+      if (construction !== null) {
+        construction.scaling.setAll(buildingScale);
+        construction.setEnabled(true);
+      }
+      const shouldCastShadow = castsShadow(kind, role);
+      const initialOutlined = role === "cinderjaw";
+      const initialOutlineWidth = initialOutlined ? currentOutlineWidth() : 0;
       for (const mesh of fallback.getChildMeshes()) {
         mesh.receiveShadows = true;
-        shadows.addShadowCaster(mesh);
-        markSilhouette(mesh, currentOutlineWidth());
+        if (shouldCastShadow) shadows.addShadowCaster(mesh);
+        if (initialOutlined) markSilhouette(mesh, initialOutlineWidth);
       }
       const markerDiameter = kind === "unit" ? unitMarkerDiameter(role) : 0;
       const marker =
         kind === "unit"
-          ? CreateGround(
-              `unit-marker-${entity.id}`,
-              {
-                height: markerDiameter,
-                subdivisions: 1,
-                width: markerDiameter,
-              },
-              scene,
-            )
+          ? markerTemplateFor(
+              markerMaterialFor(factionId, entity.ownerColor),
+            ).createInstance(`unit-marker-${entity.id}`)
           : null;
       if (marker !== null) {
         marker.parent = root;
         marker.position.y = 0.01;
-        marker.material = markerMaterialFor(factionId, entity.ownerColor);
+        marker.scaling.set(markerDiameter, 1, markerDiameter);
         marker.isPickable = false;
-        glow.addExcludedMesh(marker);
       }
       if (kind === "unit" && factionId === "hold" && entity.ownerColor) {
-        const ownerRing = CreateTorus(
-          `owner-marker-${entity.id}`,
+        const ownerRing = ownerRingTemplateFor(
+          selectionMaterialFor(factionId, entity.ownerColor),
+        ).createInstance(`owner-marker-${entity.id}`);
+        ownerRing.parent = root;
+        ownerRing.position.y = 0.018;
+        ownerRing.scaling.set(markerDiameter, 1, markerDiameter);
+        ownerRing.isPickable = false;
+      }
+      let ring: AbstractMesh;
+      if (kind === "unit") {
+        const ringDiameter = selectionRingDiameter(role);
+        ring = selectionRingTemplateFor(
+          selectionMaterialFor(factionId, entity.ownerColor),
+        ).createInstance(`selection-${entity.id}`);
+        ring.parent = root;
+        ring.position.y = 0.022;
+        ring.scaling.set(ringDiameter, 1, ringDiameter);
+        ring.isPickable = false;
+        ring.setEnabled(false);
+      } else {
+        ring = CreateTorus(
+          `selection-${entity.id}`,
           {
-            diameter: markerDiameter,
-            tessellation: 32,
-            thickness: 0.06,
+            diameter: span + 0.5,
+            tessellation: 48,
+            thickness: 0.08,
           },
           scene,
         );
-        ownerRing.parent = root;
-        ownerRing.position.y = 0.018;
-        ownerRing.material = selectionMaterialFor(factionId, entity.ownerColor);
-        ownerRing.isPickable = false;
-        glow.addExcludedMesh(ownerRing);
+        ring.parent = root;
+        ring.position.y = 0.025;
+        ring.material = selectionMaterialFor(factionId, entity.ownerColor);
+        ring.isPickable = false;
+        ring.setEnabled(false);
       }
-      const ring = CreateTorus(
-        `selection-${entity.id}`,
-        {
-          diameter: kind === "unit" ? selectionRingDiameter(role) : span + 0.5,
-          tessellation: kind === "unit" ? 32 : 48,
-          thickness: kind === "unit" ? 0.04 : 0.08,
-        },
-        scene,
-      );
-      ring.parent = root;
-      ring.position.y = kind === "unit" ? 0.022 : 0.025;
-      ring.material = selectionMaterialFor(factionId, entity.ownerColor);
-      ring.isPickable = false;
-      ring.setEnabled(false);
-      const health = CreateBox(
-        `health-${entity.id}`,
-        {
-          depth: 0.055,
-          height: kind === "unit" ? 0.07 : 0.1,
-          width: kind === "unit" ? 0.9 : healthBarWidth(span),
-        },
-        scene,
-      );
-      health.parent = root;
-      health.position.set(
-        0,
-        kind === "unit"
-          ? 1.75
-          : BUILDING_STAND_IN_HEIGHT * buildingScale +
-              BUILDING_HEALTH_CLEARANCE,
-        0,
-      );
-      health.material = healthMaterial;
-      health.billboardMode = Mesh.BILLBOARDMODE_ALL;
-      health.isPickable = false;
-      health.setEnabled(false);
+      let health: AbstractMesh | null = null;
+      if (kind === "building") {
+        health = CreateBox(
+          `health-${entity.id}`,
+          {
+            depth: 0.055,
+            height: 0.1,
+            width: healthBarWidth(span),
+          },
+          scene,
+        );
+        health.parent = root;
+        health.position.set(
+          0,
+          BUILDING_STAND_IN_HEIGHT * buildingScale + BUILDING_HEALTH_CLEARANCE,
+          0,
+        );
+        health.material = healthMaterial;
+        health.billboardMode = Mesh.BILLBOARDMODE_ALL;
+        health.isPickable = false;
+        health.setEnabled(false);
+      }
+      const motionPhase = unitMotionPhase(entity.id);
       const visual: EntityVisual = {
         actionUntil: 0,
         activity:
@@ -1686,28 +2093,38 @@ export function createDescentBabylonScene(
             ? ((entity as ShellUnit).activity ?? undefined)
             : undefined,
         animations: [],
+        channelFill: null,
+        channelProgress: null,
+        channelTrack: null,
+        clips: {},
         construction,
         currentClip: "",
         facing: 0,
         factionId,
         fallback,
-        gait: { phase: unitMotionPhase(entity.id), weight: 0 },
+        gait: { phase: motionPhase, weight: 0 },
         generated: null,
+        hasMeditateClip: false,
+        hasRunClip: false,
+        hasWorkClip: false,
         health,
         healthInitialized: false,
         healthRatio: 1,
         id: entity.id,
         kind,
         lastStepAt: Number.NEGATIVE_INFINITY,
+        motionPhase,
+        outlined: initialOutlined,
         presentation,
         removeAt: null,
         role,
         root,
         selection: ring,
+        skeletons: [],
         span,
         stepDuration: 0,
         stepFrom: new Vector3(entity.x, 0, worldZ),
-        stepInterval: DEFAULT_STEP_INTERVAL_MS,
+        stepInterval: defaultStepInterval(role),
         stepStartedAt: 0,
         target: new Vector3(entity.x, 0, worldZ),
         targetHealthRatio: 1,
@@ -1736,15 +2153,12 @@ export function createDescentBabylonScene(
       hitPoints: number | null,
       maxHitPoints: number | null,
     ): void => {
-      if (visual.health === null) return;
       if (hitPoints === null || maxHitPoints === null || !(maxHitPoints > 0)) {
-        visual.health.setEnabled(false);
+        visual.health?.setEnabled(false);
         visual.targetHealthRatio = 1;
         return;
       }
       const ratio = Math.max(0.03, Math.min(1, hitPoints / maxHitPoints));
-      // Like AoE2, a selected unit always shows its health, even at full HP.
-      visual.health.setEnabled(ratio < 0.999 || visual.selection.isEnabled());
       if (
         visual.healthInitialized &&
         ratio < visual.targetHealthRatio - 0.015 &&
@@ -1755,42 +2169,134 @@ export function createDescentBabylonScene(
       if (!visual.healthInitialized) visual.healthRatio = ratio;
       visual.healthInitialized = true;
       visual.targetHealthRatio = ratio;
+      // Like AoE2, a selected unit always shows its health, even at full HP.
+      const shouldShow = ratio < 0.999 || visual.selection.isEnabled();
+      if (!shouldShow) {
+        visual.health?.setEnabled(false);
+        return;
+      }
+      if (visual.kind === "unit" && visual.health === null) {
+        ensureUnitHealthBar(visual);
+      }
+      visual.health?.setEnabled(true);
     };
 
-    /** Rebuilds non-interactive veins, vents, terrain landmarks, nodes, and warning rings. */
+    /**
+     * Computes a compact structural signature for static and semi-static map
+     * decorations (nodes, terrain, veins, vents) without JSON serialization.
+     * @param model - Latest shell model
+     * @returns Signature string that changes only when decoration features change
+     */
+    const buildDecorationSignature = (model: ShellModel): string => {
+      let signature = `n${model.nodes.length}:`;
+      for (const node of model.nodes) {
+        signature += `${node.id},${node.resource},${node.x},${node.y};`;
+      }
+      signature += `|t${model.terrain.length}:`;
+      for (const feature of model.terrain) {
+        signature += `${feature.id},${feature.kind},${feature.x},${feature.y},${feature.radius},${feature.angle ?? ""};`;
+      }
+      signature += `|v${model.veins.length}:`;
+      for (const vein of model.veins) {
+        signature += `${vein.id},${vein.x},${vein.y},${vein.radius};`;
+      }
+      signature += `|e${model.vents.length}:`;
+      for (const vent of model.vents) {
+        signature += `${vent.id},${vent.x},${vent.y},${vent.radius};`;
+      }
+      return signature;
+    };
+
+    /** Rebuilds non-interactive veins, vents, terrain landmarks, and resource nodes. */
     const syncDecorations = (model: ShellModel): void => {
-      const signature = JSON.stringify({
-        nodes: model.nodes.map((node) => ({
-          id: node.id,
-          resource: node.resource,
-          x: node.x,
-          y: node.y,
-        })),
-        telegraphs: model.telegraphs,
-        terrain: model.terrain.map((feature) => ({
-          id: feature.id,
-          kind: feature.kind,
-          radius: feature.radius,
-          x: feature.x,
-          y: feature.y,
-        })),
-        veins: model.veins,
-        vents: model.vents,
-      });
+      const signature = buildDecorationSignature(model);
       if (signature === decorationSignature) return;
       decorationSignature = signature;
       decorationRoot.dispose();
       decorationMotions.length = 0;
       decorationRoot = new TransformNode("map-decoration", scene);
+      const bridgeAsset = currentAssets.plankBridge;
+      const bridgeContainer = containers.get("plankBridge");
+      const riverRocksAsset = currentAssets.riverRocks;
+      const riverRocksContainer = containers.get("riverRocks");
+      const useGeneratedRiverRocks =
+        riverRocksAsset !== undefined && riverRocksContainer !== undefined;
       for (const feature of model.terrain) {
+        const worldZ = mapYToWorldZ(feature.y, model.map.height);
+        const useGeneratedBridge =
+          feature.kind === "bridge" &&
+          bridgeAsset !== undefined &&
+          bridgeContainer !== undefined;
+        if (useGeneratedBridge) {
+          const bridgeRoot = new TransformNode(`terrain-${feature.id}`, scene);
+          bridgeRoot.parent = decorationRoot;
+          bridgeRoot.position.set(feature.x, 0, worldZ);
+          bridgeRoot.rotation.y = feature.angle ?? 0;
+          // The model is one short, roughly square span whose rails run along
+          // its z axis: turn it 90° and tile it along the crossing.
+          const deckWidth = feature.width ?? 3.6;
+          const spans = Math.max(
+            1,
+            Math.round((feature.radius * 2) / deckWidth),
+          );
+          const spacing = (feature.radius * 2) / spans;
+          for (let span = 0; span < spans; span += 1) {
+            const spanRoot = new TransformNode(
+              `terrain-${feature.id}-span-${span}`,
+              scene,
+            );
+            spanRoot.parent = bridgeRoot;
+            spanRoot.position.x = -feature.radius + spacing * (span + 0.5);
+            spanRoot.rotation.y = Math.PI / 2;
+            instantiateDecorationProp(
+              `${feature.id}-${span}`,
+              bridgeAsset,
+              bridgeContainer,
+              spanRoot,
+              Math.max(deckWidth, spacing),
+              2.2,
+            );
+          }
+          continue;
+        }
         buildTerrainLandmark(
           scene,
           decorationRoot,
           feature,
-          mapYToWorldZ(feature.y, model.map.height),
+          worldZ,
           terrainMaterials,
           decorationMotions,
+          {
+            allTerrain: model.terrain,
+            skipProceduralRocks: useGeneratedRiverRocks,
+          },
         );
+        if (feature.kind === "deep_water" && useGeneratedRiverRocks) {
+          const rocks = riverBankRockPlacements(feature, model.terrain);
+          for (let i = 0; i < rocks.length; i += 1) {
+            const rock = rocks[i];
+            if (rock === undefined) continue;
+            const rockRoot = new TransformNode(
+              `terrain-${feature.id}-rock-${i}`,
+              scene,
+            );
+            rockRoot.parent = decorationRoot;
+            rockRoot.position.set(
+              rock.x,
+              0,
+              mapYToWorldZ(rock.y, model.map.height),
+            );
+            rockRoot.rotation.y = rock.angle;
+            instantiateDecorationProp(
+              `${feature.id}-rock-${i}`,
+              riverRocksAsset,
+              riverRocksContainer,
+              rockRoot,
+              0.9 * rock.scale,
+              0.65 * rock.scale,
+            );
+          }
+        }
       }
       for (const vein of model.veins) {
         const marker = CreateTorus(
@@ -1917,6 +2423,7 @@ export function createDescentBabylonScene(
             colors[node.resource] ?? "#bbb19a",
             true,
           );
+          nodeMaterial.freeze();
           nodeMaterials.set(node.resource, nodeMaterial);
         }
         // A colored plate keeps the exact resource readable even when two
@@ -1951,6 +2458,23 @@ export function createDescentBabylonScene(
           createResourceStandIn(role, resourceRoot, nodeMaterial);
         }
       }
+    };
+
+    /**
+     * Rebuilds only the transient boss telegraph warning rings when they change,
+     * leaving static map decorations untouched.
+     * @param model - Latest shell model
+     */
+    const syncTelegraphs = (model: ShellModel): void => {
+      let signature = "";
+      for (const warning of model.telegraphs) {
+        signature += `${warning.id}:${warning.x},${warning.y},${warning.radius};`;
+      }
+      if (signature === telegraphSignature) return;
+      telegraphSignature = signature;
+      telegraphRoot.dispose();
+      telegraphMotions.length = 0;
+      telegraphRoot = new TransformNode("map-telegraphs", scene);
       for (const warning of model.telegraphs) {
         const ring = CreateTorus(
           `telegraph-${warning.id}`,
@@ -1961,7 +2485,7 @@ export function createDescentBabylonScene(
           },
           scene,
         );
-        ring.parent = decorationRoot;
+        ring.parent = telegraphRoot;
         ring.position.set(
           warning.x,
           0.05,
@@ -1969,7 +2493,7 @@ export function createDescentBabylonScene(
         );
         ring.material = telegraphMaterial;
         ring.isPickable = false;
-        decorationMotions.push({
+        telegraphMotions.push({
           amplitude: 0.025,
           baseY: ring.position.y,
           mesh: ring,
@@ -1978,6 +2502,34 @@ export function createDescentBabylonScene(
           spin: -0.2,
         });
       }
+    };
+
+    /**
+     * Disposes one transient effect along with any animation groups or
+     * skeletons instantiated for it from a model container.
+     * @param effect - Transient effect to release
+     */
+    const disposeTransientEffect = (effect: TransientEffect): void => {
+      if (effect.animationGroups !== undefined) {
+        for (const group of effect.animationGroups) group.dispose();
+      }
+      if (effect.skeletons !== undefined) {
+        for (const skeleton of effect.skeletons) skeleton.dispose();
+      }
+      effect.mesh.dispose();
+    };
+
+    /**
+     * Appends a transient effect while enforcing the concurrent cap by
+     * disposing the oldest effect first when full.
+     * @param effect - New transient effect
+     */
+    const pushTransientEffect = (effect: TransientEffect): void => {
+      while (transientEffects.length >= MAX_CONCURRENT_TRANSIENT_EFFECTS) {
+        const oldest = transientEffects.shift();
+        if (oldest !== undefined) disposeTransientEffect(oldest);
+      }
+      transientEffects.push(effect);
     };
 
     /**
@@ -2008,7 +2560,7 @@ export function createDescentBabylonScene(
       pin.position.y = 0.55;
       pin.material = ring.material;
       pin.isPickable = false;
-      transientEffects.push({
+      pushTransientEffect({
         duration: reducedMotion ? 500 : 900,
         from: position.clone(),
         kind: "marker",
@@ -2044,9 +2596,15 @@ export function createDescentBabylonScene(
      * orienting its longest axis along +Z so `lookAt` points it downrange.
      * Falls back to `null` when the model is not loaded yet.
      * @param effectId - Unique sim FX id
-     * @returns Projectile root node, or null for the procedural sphere stand-in
+     * @returns Instantiated projectile root and owned animations/skeletons, or null
      */
-    const createEmberBoltNode = (effectId: number): TransformNode | null => {
+    const createEmberBoltNode = (
+      effectId: number,
+    ): {
+      animationGroups: AnimationGroup[];
+      node: TransformNode;
+      skeletons: Skeleton[];
+    } | null => {
       const container = containers.get("emberBolt");
       const asset = currentAssets.emberBolt;
       if (container === undefined || asset === undefined) return null;
@@ -2090,6 +2648,115 @@ export function createDescentBabylonScene(
       glow.parent = root;
       glow.material = projectileMaterial;
       glow.isPickable = false;
+      return {
+        animationGroups: instance.animationGroups,
+        node: root,
+        skeletons: instance.skeletons,
+      };
+    };
+
+    /**
+     * Instantiates a generated Qi combat prop (`qiSword` or `qiLotus`) normalized
+     * to `targetSize`, optionally aligning its longest axis along +Z.
+     * @param role - Generated prop role (`qiSword` or `qiLotus`)
+     * @param namePrefix - Unique mesh prefix
+     * @param targetSize - Longest dimension in world units
+     * @param alignLongAxisToZ - True for flying swords so `lookAt` points tip-first
+     * @returns Normalized root node with owned animations/skeletons, or null
+     */
+    const createQiPropNode = (
+      role: "qiSword" | "qiLotus",
+      namePrefix: string,
+      targetSize: number,
+      alignLongAxisToZ: boolean,
+    ): {
+      animationGroups: AnimationGroup[];
+      node: TransformNode;
+      skeletons: Skeleton[];
+    } | null => {
+      const container = containers.get(role);
+      const asset = currentAssets[role];
+      if (container === undefined || asset === undefined) return null;
+      const root = new TransformNode(namePrefix, scene);
+      const instance = container.instantiateModelsToScene(
+        (name) => `${namePrefix}-${name}`,
+        false,
+      );
+      const modelRoot = new TransformNode(`${namePrefix}-model`, scene);
+      modelRoot.parent = root;
+      for (const node of instance.rootNodes) node.parent = modelRoot;
+      const { min, max } = asset.validation.bounds;
+      const width = Math.max(0.01, (max[0] ?? 1) - (min[0] ?? 0));
+      const height = Math.max(0.01, (max[1] ?? 1) - (min[1] ?? 0));
+      const depth = Math.max(0.01, (max[2] ?? 1) - (min[2] ?? 0));
+      const longest = Math.max(width, height, depth);
+      const scale = targetSize / longest;
+      modelRoot.scaling.setAll(scale);
+      const centerX = ((min[0] ?? 0) + (max[0] ?? 0)) / 2;
+      const centerY = ((min[1] ?? 0) + (max[1] ?? 0)) / 2;
+      const centerZ = ((min[2] ?? 0) + (max[2] ?? 0)) / 2;
+      modelRoot.position.set(
+        -centerX * scale,
+        -centerY * scale,
+        -centerZ * scale,
+      );
+      if (alignLongAxisToZ) {
+        if (width >= height && width >= depth) {
+          modelRoot.rotation.y = Math.PI / 2;
+        } else if (height >= width && height >= depth) {
+          modelRoot.rotation.x = Math.PI / 2;
+        }
+      }
+      for (const child of root.getChildMeshes()) {
+        child.isPickable = false;
+      }
+      return {
+        animationGroups: instance.animationGroups,
+        node: root,
+        skeletons: instance.skeletons,
+      };
+    };
+
+    /**
+     * Picks the emissive material matching a Qi Art school.
+     * @param school - Cultivator school id, if chosen
+     * @returns Scene material for the school's Qi aura
+     */
+    const qiSchoolMaterial = (school?: string): StandardMaterial => {
+      if (school === "ember" || school === "blood") return ventMaterial;
+      if (school === "rime") return veinMaterial;
+      return healMaterial;
+    };
+
+    /**
+     * Builds a procedural glowing flying-sword stand-in when the Meshy
+     * `qiSword` asset is still loading or unavailable.
+     * @param namePrefix - Unique mesh prefix
+     * @param mat - School aura material
+     * @returns Sleek blade node oriented along +Z
+     */
+    const createFallbackQiSword = (
+      namePrefix: string,
+      mat: StandardMaterial,
+    ): TransformNode => {
+      const root = new TransformNode(namePrefix, scene);
+      const blade = CreateBox(
+        `${namePrefix}-blade`,
+        { depth: 1.05, height: 0.06, width: 0.16 },
+        scene,
+      );
+      blade.parent = root;
+      blade.material = mat;
+      blade.isPickable = false;
+      const guard = CreateBox(
+        `${namePrefix}-guard`,
+        { depth: 0.08, height: 0.09, width: 0.34 },
+        scene,
+      );
+      guard.parent = root;
+      guard.position.z = -0.32;
+      guard.material = telegraphMaterial;
+      guard.isPickable = false;
       return root;
     };
 
@@ -2105,12 +2772,33 @@ export function createDescentBabylonScene(
           effect.kind === "melee" ||
           effect.kind === "heal"
         ) {
+          const magicProjectile =
+            effect.kind === "projectile" && effect.sound === "magic";
+          const qiSword = magicProjectile
+            ? createQiPropNode(
+                "qiSword",
+                `fx-qi-sword-${effect.id}`,
+                1.35,
+                true,
+              )
+            : null;
           const bolt =
-            effect.kind === "projectile"
+            qiSword ??
+            (effect.kind === "projectile"
               ? createEmberBoltNode(effect.id)
-              : null;
+              : null);
           if (bolt !== null) {
-            mesh = bolt;
+            if (qiSword !== null) {
+              const aura = CreateSphere(
+                `fx-qi-sword-aura-${effect.id}`,
+                { diameter: 0.28, segments: 8 },
+                scene,
+              );
+              aura.parent = qiSword.node;
+              aura.material = healMaterial;
+              aura.isPickable = false;
+            }
+            mesh = bolt.node;
           } else {
             const sphere = CreateSphere(
               `fx-${effect.id}`,
@@ -2137,12 +2825,14 @@ export function createDescentBabylonScene(
           );
           mesh.position.copyFrom(from);
           if (bolt !== null) mesh.lookAt(to);
-          transientEffects.push({
+          pushTransientEffect({
+            animationGroups: bolt?.animationGroups,
             duration: effect.kind === "melee" ? 180 : 340,
             from,
             kind: "travel",
             mesh,
             orientAlongFlight: bolt !== null,
+            skeletons: bolt?.skeletons,
             startedAt: now,
             to,
           });
@@ -2155,38 +2845,195 @@ export function createDescentBabylonScene(
             playAction(target, "hit", 280, presentationNow);
           }
         } else if (effect.kind === "qi_nova") {
-          const ring = CreateTorus(
-            `fx-${effect.id}`,
-            {
-              diameter: Math.max(2.4, effect.radius * 1.15),
-              tessellation: 28,
-              thickness: 0.16,
-            },
-            scene,
-          );
-          ring.position.set(
+          const centerPos = new Vector3(
             effect.x,
             0.22,
             mapYToWorldZ(effect.y, model.map.height),
           );
-          ring.material =
-            effect.school === "ember" || effect.school === "blood"
-              ? ventMaterial
-              : healMaterial;
-          ring.scaling.setAll(0.18);
-          ring.isPickable = false;
-          mesh = ring;
-          transientEffects.push({
-            duration: 680,
-            from: ring.position.clone(),
-            kind: "pulse",
-            mesh: ring,
+          const root = new TransformNode(`fx-qi-nova-${effect.id}`, scene);
+          root.position.copyFrom(centerPos);
+          const schoolMat = qiSchoolMaterial(effect.school);
+          const burstRadius = Math.max(2.2, effect.radius * 0.95);
+          const effectAnimationGroups: AnimationGroup[] = [];
+          const effectSkeletons: Skeleton[] = [];
+
+          // 1. Center blooming Spirit Lotus (Meshy prop or procedural petals)
+          const lotus = createQiPropNode(
+            "qiLotus",
+            `fx-qi-lotus-${effect.id}`,
+            1.65,
+            false,
+          );
+          const lotusRoot = new TransformNode(
+            `fx-qi-lotus-wrap-${effect.id}`,
+            scene,
+          );
+          lotusRoot.parent = root;
+          if (lotus !== null) {
+            lotus.node.parent = lotusRoot;
+            effectAnimationGroups.push(...lotus.animationGroups);
+            effectSkeletons.push(...lotus.skeletons);
+          } else {
+            for (let petalIndex = 0; petalIndex < 6; petalIndex += 1) {
+              const angle = (petalIndex / 6) * Math.PI * 2;
+              const petal = CreateBox(
+                `fx-qi-petal-${effect.id}-${petalIndex}`,
+                { depth: 0.52, height: 0.12, width: 0.22 },
+                scene,
+              );
+              petal.parent = lotusRoot;
+              petal.position.set(
+                Math.sin(angle) * 0.35,
+                0,
+                Math.cos(angle) * 0.35,
+              );
+              petal.rotation.y = angle;
+              petal.rotation.x = -0.35;
+              petal.material = schoolMat;
+              petal.isPickable = false;
+            }
+          }
+          lotusRoot.scaling.setAll(0.25);
+
+          // 2. Dual shockwave rings (outer school ring + inner golden ring)
+          const outerRing = CreateTorus(
+            `fx-qi-outer-${effect.id}`,
+            {
+              diameter: Math.max(2.4, effect.radius * 1.15),
+              tessellation: 32,
+              thickness: 0.16,
+            },
+            scene,
+          );
+          outerRing.parent = root;
+          outerRing.material = schoolMat;
+          outerRing.scaling.setAll(0.18);
+          outerRing.isPickable = false;
+
+          const innerRing = CreateTorus(
+            `fx-qi-inner-${effect.id}`,
+            {
+              diameter: Math.max(1.5, effect.radius * 0.72),
+              tessellation: 24,
+              thickness: 0.11,
+            },
+            scene,
+          );
+          innerRing.parent = root;
+          innerRing.position.y = 0.25;
+          innerRing.material = telegraphMaterial;
+          innerRing.scaling.setAll(0.12);
+          innerRing.isPickable = false;
+
+          // 3. Six flying swords spiraling outward in a radial volley
+          const swordCount = 6;
+          const swords: { angle: number; node: TransformNode }[] = [];
+          for (let i = 0; i < swordCount; i += 1) {
+            const angle = (i / swordCount) * Math.PI * 2;
+            const swordProp = createQiPropNode(
+              "qiSword",
+              `fx-qi-volley-${effect.id}-${i}`,
+              1.2,
+              true,
+            );
+            if (swordProp !== null) {
+              effectAnimationGroups.push(...swordProp.animationGroups);
+              effectSkeletons.push(...swordProp.skeletons);
+            }
+            const swordNode =
+              swordProp?.node ??
+              createFallbackQiSword(
+                `fx-qi-volley-${effect.id}-${i}`,
+                schoolMat,
+              );
+            swordNode.parent = root;
+            swordNode.position.set(
+              Math.sin(angle) * 0.45,
+              0.55,
+              Math.cos(angle) * 0.45,
+            );
+            swordNode.rotation.y = angle;
+            swords.push({ angle, node: swordNode });
+          }
+
+          // 4. Six rising Qi motes spiraling around the caster
+          const motes: { angle: number; node: AbstractMesh }[] = [];
+          for (let i = 0; i < 6; i += 1) {
+            const angle = (i / 6) * Math.PI * 2 + Math.PI / 6;
+            const mote = CreateSphere(
+              `fx-qi-mote-${effect.id}-${i}`,
+              { diameter: 0.22, segments: 8 },
+              scene,
+            );
+            mote.parent = root;
+            mote.material = i % 2 === 0 ? schoolMat : telegraphMaterial;
+            mote.isPickable = false;
+            motes.push({ angle, node: mote });
+          }
+
+          mesh = root;
+          pushTransientEffect({
+            animationGroups: effectAnimationGroups,
+            duration: 900,
+            from: centerPos.clone(),
+            kind: "qi_nova",
+            mesh: root,
+            onUpdate: (progress, deltaMs) => {
+              const easeOut = 1 - (1 - progress) ** 3;
+              // Lotus rises, blooms, and spins
+              lotusRoot.position.y = 0.08 + easeOut * 0.95;
+              lotusRoot.scaling.setAll(0.28 + easeOut * 1.35);
+              lotusRoot.rotation.y += (deltaMs / 1000) * 5.2;
+
+              // Rings expand and spin
+              outerRing.scaling.setAll(0.2 + easeOut * 1.35);
+              outerRing.rotation.y += deltaMs / 240;
+              innerRing.scaling.setAll(0.15 + progress * 1.75);
+              innerRing.position.y = 0.22 + Math.sin(progress * Math.PI) * 0.55;
+
+              // Flying swords spiral outward, arc up, and bank
+              for (const sword of swords) {
+                const spiralAngle = sword.angle + progress * 1.45;
+                const dist = 0.45 + easeOut * burstRadius;
+                sword.node.position.set(
+                  Math.sin(spiralAngle) * dist,
+                  0.55 + Math.sin(progress * Math.PI) * 1.15,
+                  Math.cos(spiralAngle) * dist,
+                );
+                sword.node.rotation.y = spiralAngle + 0.35;
+                sword.node.rotation.z = progress * Math.PI * 2;
+                const sScale =
+                  progress > 0.78 ? Math.max(0.05, (1 - progress) / 0.22) : 1;
+                sword.node.scaling.setAll(sScale);
+              }
+
+              // Motes spiral upward
+              for (const mote of motes) {
+                const moteAngle = mote.angle - progress * 3.4;
+                const moteDist = 0.6 + progress * (burstRadius * 0.55);
+                mote.node.position.set(
+                  Math.sin(moteAngle) * moteDist,
+                  0.2 + progress * 2.1,
+                  Math.cos(moteAngle) * moteDist,
+                );
+                const mScale = Math.max(0.05, 1 - progress * 0.85);
+                mote.node.scaling.setAll(mScale);
+              }
+
+              // Fade out near the end of the burst
+              const alpha =
+                progress > 0.7 ? Math.max(0, (1 - progress) / 0.3) : 1;
+              for (const child of root.getChildMeshes()) {
+                child.visibility = alpha;
+              }
+            },
+            skeletons: effectSkeletons,
             startedAt: now,
-            to: ring.position.clone(),
+            to: centerPos.clone(),
           });
           const caster = closestUnit({ x: effect.x, y: effect.y });
           if (caster !== null) {
-            playAction(caster, "attack", 480, presentationNow);
+            playAction(caster, "attack", 520, presentationNow);
           }
         } else {
           const ring = CreateTorus(
@@ -2206,7 +3053,7 @@ export function createDescentBabylonScene(
           ring.scaling.setAll(0.25);
           ring.isPickable = false;
           mesh = ring;
-          transientEffects.push({
+          pushTransientEffect({
             duration: effect.kind === "death" ? 620 : 440,
             from: ring.position.clone(),
             kind: "pulse",
@@ -2224,7 +3071,10 @@ export function createDescentBabylonScene(
           }
         }
       }
-      if (seenEffects.size > 2_000) seenEffects.clear();
+      if (seenEffects.size > MAX_SEEN_EFFECTS) {
+        seenEffects.clear();
+        for (const effect of model.fx) seenEffects.add(effect.id);
+      }
     };
 
     /** Keeps the camera focus point inside the current map bounds. */
@@ -2253,8 +3103,12 @@ export function createDescentBabylonScene(
       clampCameraTarget();
     };
 
+    let lastPublishedCameraView: MinimapView | null = null;
+    const CAMERA_VIEW_EPSILON = 0.01;
+
     /**
-     * Publishes an approximate ground footprint for the strategic minimap.
+     * Publishes an approximate ground footprint for the strategic minimap when
+     * the camera view has meaningfully changed.
      * @param now - Current animation timestamp
      */
     const publishCameraView = (now: number): void => {
@@ -2266,13 +3120,30 @@ export function createDescentBabylonScene(
         Math.min(3, canvas.clientWidth / canvasHeight),
       );
       const footprint = camera.radius * 1.3;
-      onCameraView({
+      const nextView: MinimapView = {
         centerX: camera.target.x,
         centerY: worldZToMapY(camera.target.z, currentModel.map.height),
         height: Math.min(currentModel.map.height, footprint),
         rotation: cameraAlphaToMinimapRotation(camera.alpha),
         width: Math.min(currentModel.map.width, footprint * aspect),
-      });
+      };
+      if (
+        lastPublishedCameraView !== null &&
+        Math.abs(nextView.centerX - lastPublishedCameraView.centerX) <=
+          CAMERA_VIEW_EPSILON &&
+        Math.abs(nextView.centerY - lastPublishedCameraView.centerY) <=
+          CAMERA_VIEW_EPSILON &&
+        Math.abs(nextView.width - lastPublishedCameraView.width) <=
+          CAMERA_VIEW_EPSILON &&
+        Math.abs(nextView.height - lastPublishedCameraView.height) <=
+          CAMERA_VIEW_EPSILON &&
+        Math.abs(nextView.rotation - lastPublishedCameraView.rotation) <=
+          CAMERA_VIEW_EPSILON
+      ) {
+        return;
+      }
+      lastPublishedCameraView = nextView;
+      onCameraView(nextView);
     };
 
     /**
@@ -2441,8 +3312,11 @@ export function createDescentBabylonScene(
               .join("|");
       if (lineSignature === routeLineSignature) return;
       routeLineSignature = lineSignature;
-      routeLine?.dispose();
-      routeLine = null;
+      if (routeLine !== null) {
+        glow.removeExcludedMesh(routeLine);
+        routeLine.dispose();
+        routeLine = null;
+      }
       if (lineSignature === "") return;
       const points = plan.path.map(
         (point) =>
@@ -2490,7 +3364,10 @@ export function createDescentBabylonScene(
       setPresentationPaused(model.paused);
       fogOverlay.update(model.fog);
       syncSceneryFog(model);
-      if (!placing) setPlacementPoint(null);
+      if (!placing) {
+        setPlacementPoint(null);
+        setPlacementLine(null);
+      }
       // Re-evaluate the ghost every model tick: the camera can scroll the map
       // under a stationary pointer, and queued placements change the ground.
       if (placing && placement !== undefined) {
@@ -2500,13 +3377,14 @@ export function createDescentBabylonScene(
           placement.valid,
         );
       }
+      const selectedUnitIds = new Set(selection.unitIds);
       const live = new Set<string>();
       for (const unit of model.units) {
         live.add(unit.id);
         let visual = entities.get(unit.id);
         const role = assetRoleForUnit(unit);
         if (visual !== undefined && visual.role !== role) {
-          visual.root.dispose();
+          disposeEntityVisual(visual);
           entities.delete(unit.id);
           visual = undefined;
         }
@@ -2516,17 +3394,19 @@ export function createDescentBabylonScene(
         }
         visual.removeAt = null;
         visual.activity = unit.activity ?? undefined;
+        visual.meditating = unit.meditating === true;
+        visual.channelProgress = unit.breakthroughProgress;
+        const channeling = unit.breakthroughProgress !== null;
+        if (channeling) ensureChannelBars(visual);
+        visual.channelTrack?.setEnabled(channeling);
+        visual.channelFill?.setEnabled(channeling);
         beginStep(visual, unit.x, unit.y);
         visual.targetScale.setAll(unitDisplayScale(unit));
         visual.targetPresentationScale.setAll(1);
-        visual.selection.setEnabled(selection.unitIds.includes(unit.id));
+        const isSelected = selectedUnitIds.has(unit.id);
+        visual.selection.setEnabled(isSelected);
+        setVisualOutline(visual, isSelected || visual.role === "cinderjaw");
         updateHealth(visual, unit.hitPoints, unit.maxHitPoints);
-        // Selecting a healthy unit reveals its bar without a later HP change.
-        if (selection.unitIds.includes(unit.id)) {
-          visual.health?.setEnabled(true);
-        } else if (visual.targetHealthRatio >= 0.999) {
-          visual.health?.setEnabled(false);
-        }
         carryIcons.sync(unit.id, visual.root, unit.carrying?.resource ?? null);
       }
       for (const building of model.buildings) {
@@ -2534,7 +3414,7 @@ export function createDescentBabylonScene(
         let visual = entities.get(building.id);
         const role = roleForBuilding(building);
         if (visual !== undefined && visual.role !== role) {
-          visual.root.dispose();
+          disposeEntityVisual(visual);
           entities.delete(building.id);
           visual = undefined;
         }
@@ -2549,7 +3429,9 @@ export function createDescentBabylonScene(
           mapYToWorldZ(building.y, model.map.height),
         );
         visual.target.copyFrom(visual.root.position);
-        visual.selection.setEnabled(selection.buildingId === building.id);
+        const isSelected = selection.buildingId === building.id;
+        visual.selection.setEnabled(isSelected);
+        setVisualOutline(visual, isSelected);
         visual.targetScale.setAll(1);
         // Buildings rise out of their foundations as construction advances.
         visual.targetPresentationScale.set(
@@ -2559,7 +3441,16 @@ export function createDescentBabylonScene(
             : 1,
           1,
         );
-        visual.construction?.setEnabled(building.constructing);
+        if (building.constructing) {
+          if (visual.construction === null) {
+            const frame = createConstructionFrame(building.id, visual.root);
+            frame.scaling.setAll(visual.span / BUILDING_REFERENCE_SPAN);
+            visual.construction = frame;
+          }
+          visual.construction.setEnabled(true);
+        } else {
+          disposeConstructionFrame(visual);
+        }
         updateHealth(visual, building.hitPoints, building.maxHitPoints);
       }
       const selectedBuilding = model.buildings.find(
@@ -2589,35 +3480,42 @@ export function createDescentBabylonScene(
             x: visual.target.x,
             y: worldZToMapY(visual.target.z, model.map.height),
           });
-        // Corpses must not intercept picks meant for the living or the ground.
+        // Corpses must not intercept picks or stay in the shadow map.
         for (const mesh of visual.root.getChildMeshes()) {
           mesh.isPickable = false;
+          shadows.removeShadowCaster(mesh);
         }
-        // A body lingers on the field, then sinks away: the death has weight.
+        setVisualOutline(visual, false);
+        // A body lingers briefly on the field, then clears away.
         // Destroyed buildings clear quickly instead of standing as ghosts.
-        const lingerMs = visual.kind === "unit" ? 10000 : 700;
+        const lingerMs = visual.kind === "unit" ? 2500 : 700;
         visual.removeAt =
           presentationNow + (reducedMotion || lostInFog ? 0 : lingerMs);
         visual.target.copyFrom(visual.root.position);
         visual.stepFrom.copyFrom(visual.root.position);
         visual.health?.setEnabled(false);
         visual.selection.setEnabled(false);
-        visual.construction?.setEnabled(false);
+        disposeConstructionFrame(visual);
         carryIcons.remove(visual.id);
         if (visual.kind === "building") {
           visual.targetScale.set(1.02, 0.06, 1.02);
         }
-        if (visual.kind === "unit" && !lostInFog) {
-          playAction(visual, "death", 520, presentationNow);
-          if (!reducedMotion) {
-            // Lie the body down and let it sink into the ash before removal.
-            visual.targetPresentationScale.setAll(0.9);
-            visual.presentation.rotation.x = -Math.PI / 2.2;
+        if (visual.kind === "unit") {
+          for (const animation of visual.animations) animation.stop();
+          visual.currentClip = "";
+          if (!lostInFog) {
+            playAction(visual, "death", 520, presentationNow);
+            if (!reducedMotion) {
+              // Lie the body down and let it sink into the ash before removal.
+              visual.targetPresentationScale.setAll(0.9);
+              visual.presentation.rotation.x = -Math.PI / 2.2;
+            }
           }
         }
       }
       clampCameraTarget();
       syncDecorations(model);
+      syncTelegraphs(model);
       syncEffects(model);
       syncRoute(model, selection);
     };
@@ -2625,6 +3523,10 @@ export function createDescentBabylonScene(
     scene.onBeforeRenderObservable.add(() => {
       const deltaMs = Math.min(50, engine.getDeltaTime());
       backdrop.update(deltaMs);
+      if (waterTexture !== null && !reducedMotion) {
+        waterTexture.uOffset += deltaMs * 0.000018;
+        waterTexture.vOffset += deltaMs * 0.000011;
+      }
       cinders?.update(deltaMs);
       const cameraBlend = reducedMotion ? 1 : motionBlend(deltaMs, 155);
       if (decorationAssetsDirty) {
@@ -2656,8 +3558,7 @@ export function createDescentBabylonScene(
       const scaleBlend = reducedMotion ? 1 : motionBlend(deltaMs, 135);
       for (const [id, visual] of entities) {
         if (visual.removeAt !== null && now >= visual.removeAt) {
-          for (const animation of visual.animations) animation.dispose();
-          visual.root.dispose();
+          disposeEntityVisual(visual);
           entities.delete(id);
           continue;
         }
@@ -2680,6 +3581,11 @@ export function createDescentBabylonScene(
           visual.health.position.x =
             -(1 - visual.healthRatio) *
             (visual.kind === "unit" ? 0.45 : healthBarWidth(visual.span) / 2);
+        }
+        if (visual.channelFill !== null && visual.channelProgress !== null) {
+          const fill = Math.max(0.03, Math.min(1, visual.channelProgress));
+          visual.channelFill.scaling.x = fill;
+          visual.channelFill.position.x = -(1 - fill) * 0.45;
         }
         if (visual.kind !== "unit" || visual.removeAt !== null) continue;
         const progress = stepProgress(
@@ -2713,14 +3619,13 @@ export function createDescentBabylonScene(
           visual.presentation.rotation.x = 0;
           continue;
         }
-        const hasWorkClip = findClip(visual.animations, "work") !== undefined;
         const workPose = reducedMotion
           ? null
           : proceduralWorkPose({
               activity: visual.activity,
-              hasWorkClip,
+              hasWorkClip: visual.hasWorkClip,
               locomoting,
-              phase: unitMotionPhase(visual.id),
+              phase: visual.motionPhase,
               role: visual.role,
               timeMs: now,
             });
@@ -2737,9 +3642,11 @@ export function createDescentBabylonScene(
           visual,
           selectCharacterLoopClip({
             activity: visual.activity,
-            hasRunClip: findClip(visual.animations, "run") !== undefined,
-            hasWorkClip,
+            hasMeditateClip: visual.hasMeditateClip,
+            hasRunClip: visual.hasRunClip,
+            hasWorkClip: visual.hasWorkClip,
             locomoting,
+            meditating: visual.meditating,
             role: visual.role,
           }),
         );
@@ -2752,13 +3659,15 @@ export function createDescentBabylonScene(
           rallyCrown.position.y = 1.42 + Math.sin(seconds * 2.6) * 0.08;
           rallyMarker.rotation.y += deltaMs / 900;
         }
-        for (const motion of decorationMotions) {
-          if (motion.mesh.isDisposed()) continue;
-          const wave = Math.sin(seconds * motion.speed + motion.phase);
-          motion.mesh.position.y = motion.baseY + wave * motion.amplitude;
-          motion.mesh.rotation.y += motion.spin * (deltaMs / 1000);
-          const pulse = 1 + wave * 0.06;
-          motion.mesh.scaling.set(pulse, 1 + wave * 0.12, pulse);
+        for (const motionList of [decorationMotions, telegraphMotions]) {
+          for (const motion of motionList) {
+            if (motion.mesh.isDisposed()) continue;
+            const wave = Math.sin(seconds * motion.speed + motion.phase);
+            motion.mesh.position.y = motion.baseY + wave * motion.amplitude;
+            motion.mesh.rotation.y += motion.spin * (deltaMs / 1000);
+            const pulse = 1 + wave * 0.06;
+            motion.mesh.scaling.set(pulse, 1 + wave * 0.12, pulse);
+          }
         }
       }
       for (let index = transientEffects.length - 1; index >= 0; index -= 1) {
@@ -2796,12 +3705,14 @@ export function createDescentBabylonScene(
             const pulse = 0.8 + Math.sin(progress * Math.PI) * 0.65;
             effect.mesh.scaling.setAll(pulse);
           }
+        } else if (effect.kind === "qi_nova") {
+          effect.onUpdate?.(progress, deltaMs);
         } else {
           effect.mesh.scaling.setAll(0.25 + progress * 1.85);
           effect.mesh.rotation.y += deltaMs / 280;
         }
         if (progress < 1) continue;
-        effect.mesh.dispose();
+        disposeTransientEffect(effect);
         transientEffects.splice(index, 1);
       }
     });
@@ -2832,22 +3743,40 @@ export function createDescentBabylonScene(
       const rect = canvas.getBoundingClientRect();
       const x = clientX - rect.left;
       const y = clientY - rect.top;
-      const result = scene.pick(x, y, (mesh) => mesh.isPickable);
-      const metadata = entityMetadata(result?.pickedMesh ?? null);
-      const sceneryId = sceneryPlacementId(result?.pickedMesh ?? null);
       // Skinned GLB characters are picked against their bind pose, which need
-      // not match what is drawn, so units are hit-tested on screen instead.
+      // not match what is drawn, so units are hit-tested on screen first.
       const unitId = unitAtScreenPoint(
         { x: clientX, y: clientY },
         screenTargets(rect),
       );
-      // A unit's mesh hit sits up on its body; orders want the ground under it.
+      if (unitId !== null) {
+        const point = groundPoint(x, y);
+        return {
+          buildingId: null,
+          point: {
+            x: Math.max(0, Math.min(currentModel.map.width, point.x)),
+            y: Math.max(
+              0,
+              Math.min(
+                currentModel.map.height,
+                worldZToMapY(point.z, currentModel.map.height),
+              ),
+            ),
+          },
+          sceneryId: null,
+          unitId,
+        };
+      }
+      const result = scene.pick(x, y, (mesh) => mesh.isPickable);
+      const metadata = entityMetadata(result?.pickedMesh ?? null);
+      const sceneryId = sceneryPlacementId(result?.pickedMesh ?? null);
+      // A mesh hit sits above y = 0; orders want the ground plane under it.
       const point =
         metadata?.kind === "ground" && result?.pickedPoint
           ? result.pickedPoint
           : groundPoint(x, y);
       return {
-        buildingId: unitId === null ? (metadata?.buildingId ?? null) : null,
+        buildingId: metadata?.buildingId ?? null,
         point: {
           x: Math.max(0, Math.min(currentModel.map.width, point.x)),
           y: Math.max(
@@ -2858,8 +3787,8 @@ export function createDescentBabylonScene(
             ),
           ),
         },
-        sceneryId: unitId === null ? sceneryId : null,
-        unitId: unitId ?? metadata?.unitId ?? null,
+        sceneryId,
+        unitId: metadata?.unitId ?? null,
       };
     };
 
@@ -2946,6 +3875,50 @@ export function createDescentBabylonScene(
       return selected;
     };
 
+    let appliedWaterUrl: string | undefined;
+    let waterTexture: Texture | null = null;
+    const setTextures = async (
+      textures: AshenGateTextureSet,
+      track: TrackLoad = untrackedLoad,
+    ): Promise<void> => {
+      const tasks: Promise<void>[] = [backdrop.setTextures(textures, track)];
+      if (textures.water && textures.water !== appliedWaterUrl) {
+        appliedWaterUrl = textures.water;
+        const waterUrl = textures.water;
+        tasks.push(
+          track(
+            "Water texture",
+            new Promise<Texture>((resolve, reject) => {
+              const nextTexture = new Texture(waterUrl, scene, {
+                onError: (message) =>
+                  queueMicrotask(() => {
+                    nextTexture.dispose();
+                    reject(new Error(message ?? `Could not load ${waterUrl}`));
+                  }),
+                onLoad: () => queueMicrotask(() => resolve(nextTexture)),
+              });
+            }),
+          ).then(
+            (nextTexture) => {
+              if (disposed) {
+                nextTexture.dispose();
+                return;
+              }
+              nextTexture.wrapU = Texture.WRAP_ADDRESSMODE;
+              nextTexture.wrapV = Texture.WRAP_ADDRESSMODE;
+              nextTexture.uScale = 1.6;
+              nextTexture.vScale = 1.6;
+              waterTexture?.dispose();
+              waterTexture = nextTexture;
+              terrainMaterials.water.diffuseTexture = nextTexture;
+            },
+            () => undefined,
+          ),
+        );
+      }
+      await Promise.all(tasks);
+    };
+
     const disposeRuntime = attachBabylonRuntimeLifecycle(engine, scene, window);
     update(initialModel, initialSelection, false);
     void setAssets(initialAssets);
@@ -2959,19 +3932,28 @@ export function createDescentBabylonScene(
         window.removeEventListener("pointermove", onEdgeScrollPointerMove);
         canvas.removeEventListener("pointerleave", releaseEdgeScrollPointer);
         window.removeEventListener("blur", releaseEdgeScrollPointer);
-        for (const effect of transientEffects) effect.mesh.dispose();
+        for (const visual of entities.values()) disposeEntityVisual(visual);
+        entities.clear();
+        for (const effect of transientEffects) disposeTransientEffect(effect);
         transientEffects.length = 0;
         carryIcons.dispose();
         fogOverlay.dispose();
+        if (routeLine !== null) {
+          glow.removeExcludedMesh(routeLine);
+          routeLine.dispose();
+          routeLine = null;
+        }
         routeRoot.dispose();
+        telegraphRoot.dispose();
         disposeRuntime();
       },
       focusCamera,
       pick,
       setAssets,
       setInspectRing,
+      setPlacementLine,
       setPlacementPoint,
-      setTextures: backdrop.setTextures,
+      setTextures,
       showOrderMarker,
       unitsInScreenBox,
       update,

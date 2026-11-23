@@ -29,6 +29,7 @@ const COMMAND_SCHEMAS: Readonly<Record<string, CommandSchema>> = {
   brew_pill: { required: { furnaceId: IDS(), pillId: IDS() } },
   call_next_wave: {},
   cancel_training: { required: { buildingId: IDS(), jobId: IDS() } },
+  cast_qi_art: { required: { unitIds: IDS("stringArray") } },
   choose_school: { required: { school: IDS(), unitId: IDS() } },
   descend: {},
   equip_treasure: { required: { treasureId: IDS(), unitId: IDS() } },
@@ -72,6 +73,7 @@ const COMMAND_SCHEMAS: Readonly<Record<string, CommandSchema>> = {
     required: { unitId: IDS() },
   },
   summon_calamity: { required: { altarId: IDS(), calamityId: IDS() } },
+  toggle_meditate: { required: { unitIds: IDS("stringArray") } },
   train_hero: { required: { hallId: IDS(), heroId: IDS() } },
   train_unit: {
     optional: { count: IDS("number") },
@@ -84,9 +86,12 @@ const FORMATIONS = new Set(["column", "line", "ranks", "wedge"]);
 const TRAINABLE_CLASSES = new Set([
   "adept",
   "breaker",
+  "cultivator",
+  "formation_master",
   "hunter",
   "raider",
   "rider",
+  "sword_sage",
   "villager",
   "warden",
 ]);

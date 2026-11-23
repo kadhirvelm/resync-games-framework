@@ -3,6 +3,7 @@
  * `countedPop` omits them: the hero module adds that share itself.
  */
 
+import { getUnitDefinition } from "../combat/unitCatalog";
 import type { RealmId } from "../types";
 import type { EconomyUnit, PopKind } from "./model";
 
@@ -30,12 +31,17 @@ export const VILLAGER_POP = 1;
  * @returns Population the unit represents
  */
 export function populationWeight(
-  unit: Pick<EconomyUnit, "popKind" | "realmId">,
+  unit: Pick<EconomyUnit, "popKind" | "realmId"> &
+    Partial<Pick<EconomyUnit, "classId">>,
 ): number {
   if (unit.popKind === "villager") return VILLAGER_POP;
   if (unit.popKind === "hero") return HERO_POP;
   if (unit.popKind === "calamity") return CALAMITY_POP;
-  return SOLDIER_POP[unit.realmId ?? "qi_gathering"];
+  const classExtra =
+    unit.classId && unit.classId !== "villager"
+      ? getUnitDefinition(unit.classId).popCost - 1
+      : 0;
+  return SOLDIER_POP[unit.realmId ?? "qi_gathering"] + classExtra;
 }
 
 /**
@@ -44,7 +50,8 @@ export function populationWeight(
  * @returns 0 for heroes and Calamities, otherwise the contract weight
  */
 export function countedPop(
-  unit: Pick<EconomyUnit, "popKind" | "realmId">,
+  unit: Pick<EconomyUnit, "popKind" | "realmId"> &
+    Partial<Pick<EconomyUnit, "classId">>,
 ): number {
   if (unit.popKind === "hero" || unit.popKind === "calamity") return 0;
   return populationWeight(unit);

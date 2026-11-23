@@ -13,17 +13,21 @@
  *    with the best candidate in its distance band (Mitchell's best
  *    candidate). Near deposits spread around the Camp by angle; paired
  *    deposits take opposite flanks of the lane; everything else maximizes
- *    spacing. Constraints relax step by step if a band runs dry.
+ *    spacing. Constraints relax step by step if a band runs dry. Every
+ *    anchor then gains a matching nearby deposit, forming a rich two-node
+ *    cluster without changing the primary layout.
  * 5. Flood-fill from the Camp with villager movement rules to prove every
  *    deposit, vein, and the horde gate is reachable and that the opening
  *    deposits are a fair walk. A failed layout is rerolled.
  */
 
+import { getUnitDefinition } from "../../../logic/combat/unitCatalog";
 import type { UnitInit } from "../../../logic/economy";
 import { footprintRadius } from "../../../logic/economy/footprint";
 import type { ResourceNode, SpiritVein } from "../../../logic/economy/model";
 import type {
   CircleVolume,
+  TerrainBridge,
   TerrainFeature,
   TerrainFeatureKind,
 } from "../../../logic/layers";
@@ -38,6 +42,7 @@ import {
   type MapPoint,
   nearestDistance,
   pickBest,
+  placeWaterways,
   poissonDiskSample,
   polarOffset,
   randomBetween,
@@ -75,6 +80,10 @@ const BUILD_APRON = 6 + CAMP_EDGE;
 const EDGE_MARGIN = 3;
 /** Smallest gap between Poisson-disk candidates. */
 const CANDIDATE_SPACING = 3.5;
+/** Suffix for the second, equally rich deposit in each resource cluster. */
+const CLUSTER_SUFFIX = "-cluster";
+/** Farthest a cluster mate may sit from its original deposit. */
+const CLUSTER_MAX_DISTANCE = 7;
 /** Distance from the Camp to the vent line. */
 const CROSSING_DISTANCE = { max: 30, min: 24 } as const;
 /** Edge-to-edge gaps between neighboring vents. */
@@ -114,20 +123,25 @@ interface LayoutFrame {
 /**
  * Builds a reachable, fair Ashen Gate map for one run.
  * @param seed - Run seed
+ * @param options - `waterways: false` leaves the map dry (no rivers or pond)
  * @returns A complete map package; the same seed always returns the same map
  */
-export function generateAshenGateMap(seed: number): AshenGateMap {
+export function generateAshenGateMap(
+  seed: number,
+  options: { waterways?: boolean } = {},
+): AshenGateMap {
+  const waterways = options.waterways !== false;
   let best: AshenGateMap | null = null;
   let bestProblems = Number.POSITIVE_INFINITY;
   for (let attempt = 0; attempt < MAX_LAYOUT_ATTEMPTS; attempt += 1) {
-    const map = layoutAttempt(seed, attempt);
+    const map = layoutAttempt(seed, attempt, waterways);
     const problems = validateAshenGateMap(map).length;
     if (problems === 0) return map;
     if (problems >= bestProblems) continue;
     best = map;
     bestProblems = problems;
   }
-  return best ?? layoutAttempt(seed, 0);
+  return best ?? layoutAttempt(seed, 0, waterways);
 }
 
 /**
@@ -142,6 +156,9 @@ export function validateAshenGateMap(map: AshenGateMap): string[] {
   const size = { height: map.height, width: map.width };
   const nodeCells = new Set(map.nodes.map((node) => cellKey(node)));
   if (nodeCells.size !== map.nodes.length) problems.push("deposits overlap");
+  if (map.nodes.length !== ASHEN_GATE_NODE_SLOTS.length * 2) {
+    problems.push("resource clusters incomplete");
+  }
   const blocked = buildBlockedMask(map, camp);
   const field = floodDistances(
     size,
@@ -250,7 +267,9 @@ function depositProblems(
     problems.push(`${node.id} in terrain`);
   }
   if (steps < 0) problems.push(`${node.id} unreachable`);
-  const slot = ASHEN_GATE_NODE_SLOTS.find((entry) => entry.id === node.id);
+  const slot = ASHEN_GATE_NODE_SLOTS.find(
+    (entry) => node.id === entry.id || node.id === clusterNodeId(entry.id),
+  );
   if (slot?.band === "near" && steps > MAX_NEAR_STEPS) {
     problems.push(`${node.id} is ${steps} steps from the Camp`);
   }
@@ -261,9 +280,14 @@ function depositProblems(
  * One full layout from a derived seed.
  * @param seed - Run seed
  * @param attempt - Reroll index, mixed into the seed
+ * @param waterways - Whether to flood rivers and a pond
  * @returns An unvalidated map
  */
-function layoutAttempt(seed: number, attempt: number): AshenGateMap {
+function layoutAttempt(
+  seed: number,
+  attempt: number,
+  waterways: boolean,
+): AshenGateMap {
   const { height, width } = ASHEN_GATE_MAP_SIZE;
   const rng = createMapRng(seed, `ashen_gate:layout:${attempt}`);
   const spawn = { x: width - SPAWN_EAST_INSET, y: height / 2 };
@@ -281,11 +305,12 @@ function layoutAttempt(seed: number, attempt: number): AshenGateMap {
   );
   const vents = placeVents(rng, camp, heading, crossingDistance);
   const terrainRng = createMapRng(seed, `ashen_gate:terrain:${attempt}`);
-  const { extraChokes, obstacles } = placeTerrainObstacles(
+  const { bridges, extraChokes, obstacles } = placeTerrainObstacles(
     terrainRng,
     camp,
     spawn,
     vents,
+    waterways,
   );
   const frame = {
     camp,
@@ -299,6 +324,7 @@ function layoutAttempt(seed: number, attempt: number): AshenGateMap {
   const veins = placeVeins(frame);
   const nodes = placeNodes(frame, veins);
   return {
+    bridges,
     buildings: [
       { buildingType: "camp", completed: true, id: "ashen-camp", ...camp },
     ],
@@ -489,7 +515,77 @@ function placeNodes(
       ...cell,
     });
   }
-  return placed;
+  return placeResourceClusters(frame, candidates, placed);
+}
+
+/**
+ * Gives every original deposit a matching neighbor. Candidates stay in the
+ * anchor's band and near the anchor, so the map gains useful clusters rather
+ * than another thin scatter of isolated nodes.
+ * @param frame - Layout inputs
+ * @param candidates - Open candidate cells
+ * @param anchors - Fully placed original deposits
+ * @returns Each anchor followed by its cluster mate
+ */
+function placeResourceClusters(
+  frame: LayoutFrame,
+  candidates: readonly MapPoint[],
+  anchors: readonly ResourceNode[],
+): ResourceNode[] {
+  const clustered: ResourceNode[] = [];
+  const occupied = [...anchors];
+  for (const anchor of anchors) {
+    const slot = ASHEN_GATE_NODE_SLOTS.find((entry) => entry.id === anchor.id);
+    if (slot === undefined) {
+      clustered.push(anchor);
+      continue;
+    }
+    const cell = placeClusterMate(frame, candidates, occupied, slot, anchor);
+    clustered.push(anchor);
+    if (cell === null) continue;
+    const mate = { ...anchor, id: clusterNodeId(anchor.id), ...cell };
+    clustered.push(mate);
+    occupied.push(mate);
+  }
+  return clustered;
+}
+
+/**
+ * Chooses the closest-to-ideal neighbor for one resource cluster.
+ * @param frame - Layout inputs
+ * @param candidates - Open candidate cells
+ * @param occupied - Original deposits and mates already assigned
+ * @param slot - Anchor's original distance-band rules
+ * @param anchor - Original deposit
+ * @returns A nearby open cell, or null when this attempt has no valid mate
+ */
+function placeClusterMate(
+  frame: LayoutFrame,
+  candidates: readonly MapPoint[],
+  occupied: readonly ResourceNode[],
+  slot: AshenGateNodeSlot,
+  anchor: ResourceNode,
+): MapPoint | null {
+  const taken = new Set(occupied.map((node) => cellKey(node)));
+  const free = candidates.filter((cell) => !taken.has(cellKey(cell)));
+  for (let relax = 0; relax <= MAX_RELAX; relax += 1) {
+    const choice = pickBest(free, (cell) => {
+      const gap = distance(cell, anchor);
+      if (gap < 2 || gap > CLUSTER_MAX_DISTANCE) return null;
+      if (!inBand(frame, slot, cell, relax)) return null;
+      return -Math.abs(gap - CANDIDATE_SPACING) + frame.rng.next() * 0.35;
+    });
+    if (choice) return choice;
+  }
+  return null;
+}
+
+/**
+ * @param anchorId - Original deposit id
+ * @returns Stable id of its matching cluster deposit
+ */
+function clusterNodeId(anchorId: string): string {
+  return `${anchorId}${CLUSTER_SUFFIX}`;
 }
 
 /**
@@ -704,9 +800,8 @@ function openGround(
 }
 
 /**
- * The opening force: a first-level Cultivator a few steps toward the vents,
- * and the villagers in a column behind the Camp, both clear of the Camp's
- * square.
+ * The opening force: a Cultivator and Rider toward the vents, with villagers
+ * in a column behind the Camp. Every unit starts clear of the Camp's square.
  * @param camp - Camp cell
  * @param heading - Direction toward the horde
  * @returns Units to seed
@@ -725,6 +820,21 @@ function startingUnits(camp: MapPoint, heading: number): UnitInit[] {
       popKind: "soldier",
       realmId: "qi_gathering",
       ...insideMap(polarOffset(camp, heading, footprintRadius("camp") + 2), 1),
+    },
+    {
+      classId: "rider",
+      id: "ashen-rider",
+      maxHp: getUnitDefinition("rider").maxHitPoints,
+      popKind: "soldier",
+      realmId: "qi_gathering",
+      ...insideMap(
+        polarOffset(
+          polarOffset(camp, heading, footprintRadius("camp") + 2),
+          heading + Math.PI / 2,
+          2,
+        ),
+        1,
+      ),
     },
     ...Array.from(
       { length: ASHEN_GATE_STARTING_VILLAGERS },
@@ -807,14 +917,17 @@ function insideAnyObstacle(
  * @param camp - Camp cell
  * @param spawn - Horde Gate arrival cell
  * @param vents - Placed Ember vents
- * @returns Placed terrain obstacles and named choke points
+ * @param waterways - Whether to flood rivers and a pond
+ * @returns Placed terrain obstacles, bridges, and named choke points
  */
 function placeTerrainObstacles(
   rng: SimRng,
   camp: MapPoint,
   spawn: MapPoint,
   vents: readonly CircleVolume[],
+  waterways: boolean,
 ): {
+  bridges: TerrainBridge[];
   extraChokes: { id: string; label: string; x: number; y: number }[];
   obstacles: TerrainFeature[];
 } {
@@ -1030,7 +1143,67 @@ function placeTerrainObstacles(
     );
   }
 
-  return { extraChokes, obstacles };
+  if (!waterways) return { bridges: [], extraChokes, obstacles };
+
+  // 5. Rivers and a pond: water walls the lanes into bridge choke points.
+  const canFlood = (x: number, y: number, radius: number): boolean => {
+    const point = { x, y };
+    if (distance(point, camp) < BUILD_APRON + radius + 3) return false;
+    if (
+      vents.some((vent) => distance(point, vent) < vent.radius + radius + 2)
+    ) {
+      return false;
+    }
+    if (
+      obstacles.some(
+        (obstacle) => distance(point, obstacle) < obstacle.radius + radius,
+      )
+    ) {
+      return false;
+    }
+    return !(
+      x + radius >= width - SPAWN_CLEARING_COLUMNS - 2 &&
+      Math.abs(y - height / 2) <= SPAWN_CLEARING_ROWS + radius + 2
+    );
+  };
+  const pondSide = camp.y > height / 2 ? -1 : 1;
+  const { bridges, water } = placeWaterways({
+    canPlace: canFlood,
+    height,
+    idPrefix: "ashen",
+    laneRowAt: laneYAt,
+    ponds: [
+      {
+        x: width * 0.2,
+        y: clamp(laneYAt(width * 0.2) + pondSide * 38, 14, height - 14),
+      },
+    ],
+    rivers: [
+      { bridgeCount: 2, centerShare: 0.285 },
+      { bridgeCount: 2, centerShare: 0.565 },
+    ],
+    rng,
+    width,
+  });
+  for (const disk of water) {
+    obstacles.push({
+      height: disk.height,
+      id: disk.id,
+      kind: "deep_water",
+      radius: disk.radius,
+      x: disk.x,
+      y: disk.y,
+    });
+  }
+  bridges.forEach((bridge, index) => {
+    extraChokes.push({
+      id: `bridge-choke-${index + 1}`,
+      label: index % 2 === 0 ? "Ashfall Bridge" : "Mistwater Span",
+      ...insideMap(bridge, 2),
+    });
+  });
+
+  return { bridges, extraChokes, obstacles };
 }
 
 /**

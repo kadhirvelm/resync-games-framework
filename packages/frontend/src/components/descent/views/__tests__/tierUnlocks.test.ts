@@ -31,6 +31,7 @@ describe("tierUnlockSummary", () => {
       "Omen Tower",
       "Cultivator Sanctum",
       "Spirit Array",
+      "Cultivation Hall",
     ]);
     expect(summary?.headline).toContain("Outpost");
     expect(summary?.summary).toContain("Hunters");
@@ -41,11 +42,7 @@ describe("tierUnlockSummary", () => {
     expect(summary).not.toBeNull();
     expect(summary?.tier).toBe("Stronghold");
     expect(summary?.units).toEqual([]);
-    expect(summary?.buildings).toEqual([
-      "Hell Market",
-      "Cultivation Hall",
-      "Meditation Pavilion",
-    ]);
+    expect(summary?.buildings).toEqual(["Hell Market", "Meditation Pavilion"]);
   });
 
   test("returns Citadel buildings", () => {

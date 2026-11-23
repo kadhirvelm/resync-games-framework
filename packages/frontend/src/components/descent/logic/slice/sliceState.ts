@@ -149,7 +149,7 @@ export interface PlayerScoreProgress {
 export interface AshenGateSliceState {
   bossIntroShown: boolean;
   /**
-   * Whether the opening swarm wave has been repelled, unlocking a starting
+   * Whether the opening scout wave has been repelled, unlocking a starting
    * Captain's battlefield breakthrough to Sworn without a Cultivation Hall.
    */
   captainBreakthroughUnlocked?: boolean;

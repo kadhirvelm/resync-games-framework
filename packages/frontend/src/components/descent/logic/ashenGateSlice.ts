@@ -100,6 +100,11 @@ export {
 
 /** Options for a new playable Ashen Gate simulation. */
 export interface AshenGateSimOptions {
+  /**
+   * Whether the map floods rivers and a pond. Defaults to true; scripted
+   * scenarios that need a dry approach turn it off.
+   */
+  waterways?: boolean;
   seed: number;
   /** Optional predicate that pauses the next wave until ready (e.g. tutorial). */
   shouldHoldWave?: (world: SimWorldState, nextWaveIndex: number) => boolean;
@@ -149,7 +154,9 @@ export function createAshenGateSim(options: AshenGateSimOptions): DescentSim {
         stepEveryTicks: ECONOMY_STEP_TICKS,
       }),
       createWavesModule(undefined, waveOptions),
-      ashenGateSliceModule,
+      options.waterways === false
+        ? createSliceModule({ waterways: false })
+        : ashenGateSliceModule,
     ],
     seed: options.seed,
   });
@@ -276,6 +283,8 @@ function ownsUnit(
 interface SliceModuleConfig {
   players?: readonly AshenCruciblePlayer[];
   tutorial?: boolean;
+  /** Set false to generate the map without rivers or ponds. */
+  waterways?: boolean;
 }
 
 /**
@@ -513,8 +522,11 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
       const layout =
         config.players !== undefined && config.players.length > 0
           ? generateAshenCrucibleMap(world.seed, config.players)
-          : generateAshenGateMap(world.seed);
+          : generateAshenGateMap(world.seed, {
+              waterways: config.waterways,
+            });
       setLayerTerrain(world, {
+        bridges: [...layout.bridges],
         layerId: "ashen_gate",
         obstacles: [...layout.obstacles],
         ventVolumes: [...layout.vents],
@@ -538,6 +550,7 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
         buildings: [...layout.buildings],
         layerId: "ashen_gate",
         nodes: [...layout.nodes],
+        playerCount: config.players?.length ?? 1,
         stockpile,
         units: [...layout.units],
         veins: [...layout.veins],
@@ -597,7 +610,7 @@ function createSliceModule(config: SliceModuleConfig = {}): SimModule {
           if (unlockCaptainBattlefieldBreakthrough(context.world)) {
             pushNotice(
               context.world,
-              "Swarm repelled! Your Captain can break through to Sworn without a Cultivation Hall.",
+              "Scouts repelled! Your Captain can break through to Sworn without a Cultivation Hall.",
               "good",
             );
           }
@@ -821,6 +834,7 @@ function startBreakthrough(
   }
   const cultivation = openCultivation(world, {
     bypassHallMaterials: captainBattlefield,
+    hallId: hall?.id,
   });
   if (!cultivation.hasUnit(unitId)) return;
   const result = cultivation.startBreakthrough(unitId);

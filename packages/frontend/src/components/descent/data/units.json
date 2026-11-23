@@ -15,8 +15,8 @@
     "speed": 3.4,
     "structureDamageMultiplier": 1,
     "trainingCost": {
-      "food": 25,
-      "water": 25
+      "food": 50,
+      "water": 50
     },
     "vision": 10
   },
@@ -37,8 +37,8 @@
     "speed": 3.5,
     "structureDamageMultiplier": 0.9,
     "trainingCost": {
-      "food": 25,
-      "water": 30
+      "food": 50,
+      "water": 60
     },
     "vision": 11
   },
@@ -59,8 +59,8 @@
     "speed": 3.1,
     "structureDamageMultiplier": 0.9,
     "trainingCost": {
-      "food": 20,
-      "water": 35
+      "food": 40,
+      "water": 70
     },
     "vision": 12
   },
@@ -80,8 +80,8 @@
     "speed": 2.4,
     "structureDamageMultiplier": 1,
     "trainingCost": {
-      "food": 30,
-      "water": 15
+      "food": 60,
+      "water": 30
     },
     "vision": 8
   },
@@ -102,8 +102,8 @@
     "speed": 3.2,
     "structureDamageMultiplier": 1,
     "trainingCost": {
-      "food": 25,
-      "water": 20
+      "food": 50,
+      "water": 40
     },
     "vision": 10
   },
@@ -123,8 +123,8 @@
     "speed": 5.8,
     "structureDamageMultiplier": 0.75,
     "trainingCost": {
-      "food": 45,
-      "water": 25
+      "food": 90,
+      "water": 50
     },
     "vision": 15
   },
@@ -144,8 +144,8 @@
     "speed": 4,
     "structureDamageMultiplier": 1,
     "trainingCost": {
-      "food": 35,
-      "water": 10
+      "food": 70,
+      "water": 20
     },
     "vision": 9
   },
@@ -165,8 +165,8 @@
     "speed": 2,
     "structureDamageMultiplier": 2,
     "trainingCost": {
-      "food": 40,
-      "water": 20
+      "food": 80,
+      "water": 40
     },
     "vision": 7
   },
@@ -187,8 +187,8 @@
     "speed": 2.8,
     "structureDamageMultiplier": 1,
     "trainingCost": {
-      "food": 20,
-      "water": 30
+      "food": 40,
+      "water": 60
     },
     "vision": 10
   }

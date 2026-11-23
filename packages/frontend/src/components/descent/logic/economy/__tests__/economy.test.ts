@@ -27,9 +27,9 @@ function richStockpile(): Partial<ResourceStockpile> {
     food: 500,
     iron: 500,
     spirit_herbs: 500,
-    stone: 500,
+    stone: 1500,
     water: 500,
-    wood: 500,
+    wood: 1500,
   };
 }
 
@@ -198,6 +198,48 @@ describe("Descent economy", () => {
     expect(offVein.bonuses.vein).toBeNull();
     expect(onVein.hp).toBeLessThan(onVein.maxHp);
     expect(onVein.constructing).toBe(true);
+  });
+
+  test("Cultivation Hall success bonus grows from Outpost to Citadel", () => {
+    const outpost = createEconomy({
+      buildings: [
+        {
+          buildingType: "cultivation_hall",
+          completed: true,
+          id: "outpost-hall",
+          x: 4,
+          y: 4,
+        },
+      ],
+      tier: "Outpost",
+      veins: [{ id: "vein-1", x: 4, y: 4 }],
+    });
+    outpost.step();
+    expect(buildingAt(outpost.listBuildings(), 4, 4).bonuses.vein).toEqual({
+      amount: 0.15,
+      id: "breakthrough_success",
+      partnerId: null,
+    });
+
+    const citadel = createEconomy({
+      buildings: [
+        {
+          buildingType: "cultivation_hall",
+          completed: true,
+          id: "citadel-hall",
+          x: 4,
+          y: 4,
+        },
+      ],
+      tier: "Citadel",
+      veins: [{ id: "vein-1", x: 4, y: 4 }],
+    });
+    citadel.step();
+    expect(buildingAt(citadel.listBuildings(), 4, 4).bonuses.vein).toEqual({
+      amount: 0.25,
+      id: "breakthrough_success",
+      partnerId: null,
+    });
   });
 
   test("a furnace beside a Spirit Spring gains brew speed and finishes sooner", () => {
@@ -471,13 +513,13 @@ describe("Descent economy", () => {
   });
 
   test("a breakthrough pop check fails when the cap would be exceeded", () => {
-    const units = Array.from({ length: 100 }, (_, index) =>
+    const units = Array.from({ length: 8 }, (_, index) =>
       villager(`villager-${index}`, index % 40, Math.floor(index / 40)),
     );
     const full = createEconomy({ units });
     const delta = breakthroughPopDelta("foundation", "core_formation");
-    expect(full.getPopUsed()).toBe(100);
-    expect(full.getPopCap()).toBe(100);
+    expect(full.getPopUsed()).toBe(8);
+    expect(full.getPopCap()).toBe(8);
     expect(full.canAffordPop(delta)).toBe(false);
     expect(full.canAffordPop(0)).toBe(true);
 
@@ -487,7 +529,7 @@ describe("Descent economy", () => {
       ],
       units,
     });
-    expect(housed.getPopCap()).toBe(110);
+    expect(housed.getPopCap()).toBe(18);
     expect(housed.canAffordPop(delta)).toBe(true);
     expect(housed.canAffordPop(11)).toBe(false);
 
@@ -556,17 +598,11 @@ describe("Descent economy", () => {
       sim
         .listBuildings()
         .some((building) => building.buildingType === "cultivation_hall"),
-    ).toBe(false);
+    ).toBe(true);
 
     expect(sim.upgradeHold()).toBe(true);
     sim.step((holdTierDef("Stronghold")?.upgradeTicks ?? 0) + 1);
     expect(sim.getHoldTier()).toBe("Stronghold");
-    sim.enqueue({
-      buildingType: "cultivation_hall",
-      type: "place_building",
-      x: 10,
-      y: 2,
-    });
     sim.enqueue({
       buildingType: "alchemy_furnace",
       type: "place_building",
@@ -574,11 +610,6 @@ describe("Descent economy", () => {
       y: 1,
     });
     sim.step();
-    expect(
-      sim
-        .listBuildings()
-        .some((building) => building.buildingType === "cultivation_hall"),
-    ).toBe(true);
     expect(
       sim
         .listBuildings()
@@ -687,10 +718,10 @@ describe("Descent economy", () => {
           y: 0,
         },
       ],
-      stockpile: { food: 30, water: 15 },
+      stockpile: { food: 60, water: 30 },
     });
-    expect(sim.trySpend({ food: 5, water: 16 })).toBe(false);
-    expect(sim.getStockpile().food).toBe(30);
+    expect(sim.trySpend({ food: 5, water: 31 })).toBe(false);
+    expect(sim.getStockpile().food).toBe(60);
     expect(sim.tryPayTrainingCost("warden")).toBe(true);
     expect(sim.getStockpile()).toMatchObject({ food: 0, water: 0 });
     expect(sim.takePendingTraining()).toEqual(["warden"]);

@@ -3,22 +3,21 @@
 
 import {
   ArrowLeft,
+  CircleHelp,
   type LucideIcon,
   Shield,
   Sparkles,
   Swords,
   Warehouse,
+  X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import type { HoldTier } from "../logic/economy/model";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import hudStyles from "./bottomHud.module.scss";
 import { buildingIconSrc } from "./buildingIcons";
 import { buildMenuKeyAction, buildMenuKeyFor } from "./buildMenuHotkeys";
 import { CostRow } from "./CostRow";
 import { type CostStock, costLineFrom, costLineText } from "./costLine";
-import styles from "./descentView.module.scss";
 import type { BuildReadout } from "./presentation";
-import { HOLD_TIER_ORDER, holdTierRank } from "./tierUnlocks";
 import { isTypingTarget } from "./useHotkeys";
 
 type BuildingTone = "defense" | "economy" | "mystic" | "war";
@@ -48,7 +47,7 @@ const BUILD_CATEGORIES: readonly BuildCategory[] = [
 /** Visual identity and purpose of each villager build category. */
 const BUILD_CATEGORY_GUIDES: Record<BuildCategory, BuildCategoryGuide> = {
   cultivation: {
-    description: "Breakthroughs, crafting, omens, and late-game power.",
+    description: "Breakthroughs, crafting, omens, and growing power.",
     icon: Sparkles,
     label: "Cultivation",
     tone: "mystic",
@@ -98,7 +97,8 @@ const BUILDING_GUIDES: Record<string, BuildingGuide> = {
   },
   cultivation_hall: {
     category: "cultivation",
-    description: "Lets trained units attempt cultivation breakthroughs.",
+    description:
+      "Lets trained units attempt breakthroughs. The first needs no pill; Spirit Veins improve success.",
     tone: "mystic",
   },
   cultivator_sanctum: {
@@ -124,7 +124,8 @@ const BUILDING_GUIDES: Record<string, BuildingGuide> = {
   },
   forest: {
     category: "economy",
-    description: "Consumes Water to regrow a managed source of Wood.",
+    description:
+      "Free to build; one villager tends the grove and hauls Wood to a drop-off.",
     tone: "economy",
   },
   gate: {
@@ -179,6 +180,11 @@ const BUILDING_GUIDES: Record<string, BuildingGuide> = {
     description: "Consumes Water, then slowly grows Spirit Herbs.",
     tone: "economy",
   },
+  stone_quarry: {
+    category: "economy",
+    description: "Mines a renewable supply of Stone.",
+    tone: "economy",
+  },
   storehouse: {
     category: "economy",
     description: "A closer drop-off point that shortens villager haul trips.",
@@ -217,92 +223,182 @@ function buildingGuide(option: BuildReadout): BuildingGuide {
 }
 
 /**
- * Checks whether a string matches a known Hold tier.
- * @param value - Candidate tier name
- * @returns True when `value` is a valid HoldTier
+ * Explains why a building cannot be placed without conflating tier and cost.
+ * @param option - Building to inspect
+ * @returns The current blocker, or null when placement is available
  */
-function isHoldTier(value: string): value is HoldTier {
-  return HOLD_TIER_ORDER.includes(value as HoldTier);
+function buildOptionBlockReason(option: BuildReadout): string | null {
+  if (option.unlocked && option.affordable !== false) return null;
+  if (option.lockedReason !== undefined) return option.lockedReason;
+  if (!option.unlocked) return `Requires ${option.tier}`;
+  return "Not enough resources";
 }
 
-/**
- * Infers the current Hold tier from the highest unlocked build option when
- * the caller does not pass `holdTier` explicitly.
- * @param options - Build options published by the simulation
- * @returns Inferred Hold tier (defaults to `"Camp"`)
- */
-function inferCurrentTier(options: readonly BuildReadout[]): HoldTier {
-  let highest: HoldTier = "Camp";
-  for (const option of options) {
-    if (!option.unlocked || !isHoldTier(option.tier)) continue;
-    if (holdTierRank(option.tier) > holdTierRank(highest)) {
-      highest = option.tier;
+type BuildHint =
+  | {
+      available: number;
+      category: BuildCategory;
+      count: number;
+      kind: "category";
     }
-  }
-  return highest;
-}
+  | { kind: "option"; option: BuildReadout }
+  | { description: string; kind: "control"; title: string };
 
 /**
- * Returns the Hold tier immediately following `tier`, or `null` at Citadel.
- * @param tier - Current Hold tier
- * @returns Next Hold tier, or null
+ * Rebinds a remembered hint to the latest simulation readout. Resource and
+ * tier changes therefore update an open tooltip without clearing its focus.
+ * @param hint - Remembered hover or focus target
+ * @param options - Latest published build options
+ * @returns Fresh hint data, or null when the target no longer exists
  */
-function nextTierAfter(tier: HoldTier): HoldTier | null {
-  const index = holdTierRank(tier);
-  if (index < 0) return null;
-  return HOLD_TIER_ORDER[index + 1] ?? null;
-}
-
-interface PartitionedBuildOptions {
-  laterTierLocked: readonly BuildReadout[];
-  nextTierLocked: readonly BuildReadout[];
-  unlocked: readonly BuildReadout[];
-}
-
-/**
- * Splits build options into unlocked buildings, locked buildings from the
- * immediate next Hold tier, and locked buildings from tiers beyond that.
- * @param options - Candidate build options
- * @param nextTier - The immediate next Hold tier, or null at max tier
- * @returns Partitioned build lists
- */
-function partitionBuildOptions(
+function resolveBuildHint(
+  hint: BuildHint,
   options: readonly BuildReadout[],
-  nextTier: HoldTier | null,
-): PartitionedBuildOptions {
-  const unlocked: BuildReadout[] = [];
-  const nextTierLocked: BuildReadout[] = [];
-  const laterTierLocked: BuildReadout[] = [];
-  for (const option of options) {
-    if (option.unlocked) {
-      unlocked.push(option);
-      continue;
-    }
-    if (nextTier !== null && option.tier === nextTier) {
-      nextTierLocked.push(option);
-      continue;
-    }
-    laterTierLocked.push(option);
+): BuildHint | null {
+  if (hint.kind === "control") return hint;
+  if (hint.kind === "option") {
+    const option = options.find(
+      (candidate) => candidate.buildingType === hint.option.buildingType,
+    );
+    return option === undefined ? null : { kind: "option", option };
   }
-  return { laterTierLocked, nextTierLocked, unlocked };
+  const categoryOptions = options.filter(
+    (option) => buildingGuide(option).category === hint.category,
+  );
+  if (categoryOptions.length === 0) return null;
+  const available = categoryOptions.filter(
+    (option) => buildOptionBlockReason(option) === null,
+  ).length;
+  return { ...hint, available, count: categoryOptions.length };
+}
+
+interface TileInteraction {
+  onFocusHint: (hint: BuildHint | null) => void;
+  onHoverHint: (hint: BuildHint | null) => void;
+  tooltipId: string;
+}
+
+/**
+ * One square command-grid tile. Unavailable tiles use `aria-disabled` rather
+ * than a native disabled button so they remain hoverable, focusable, and able
+ * to explain themselves.
+ * @param props - Content, activation, accessibility, and tooltip callbacks
+ * @returns A build category, building, or utility tile
+ */
+function BuildTile({
+  blocked = false,
+  buildingType,
+  children,
+  hint,
+  hotkey,
+  label,
+  onActivate,
+  onFocusHint,
+  onHoverHint,
+  tone,
+  tooltipId,
+}: {
+  blocked?: boolean;
+  buildingType?: string;
+  children: ReactNode;
+  hint: BuildHint;
+  hotkey?: string;
+  label: string;
+  onActivate: () => void;
+  tone?: BuildingTone;
+} & TileInteraction) {
+  return (
+    <li className={hudStyles.buildTile} data-building-type={buildingType}>
+      <button
+        aria-describedby={tooltipId}
+        aria-disabled={blocked ? true : undefined}
+        aria-keyshortcuts={hotkey}
+        aria-label={label}
+        className={hudStyles.action}
+        data-blocked={blocked}
+        data-tone={tone}
+        onBlur={() => onFocusHint(null)}
+        onClick={onActivate}
+        onFocus={() => onFocusHint(hint)}
+        onPointerEnter={() => onHoverHint(hint)}
+        onPointerLeave={() => onHoverHint(null)}
+        type="button"
+      >
+        {children}
+        {hotkey === undefined ? null : (
+          <kbd className={hudStyles.actionHotkey}>{hotkey}</kbd>
+        )}
+        {blocked ? (
+          <span aria-hidden="true" className={hudStyles.actionLock}>
+            !
+          </span>
+        ) : null}
+      </button>
+    </li>
+  );
+}
+
+/**
+ * Utility tile for navigation, help, and closing the build command card.
+ * @param props - Icon, copy, action, and tooltip callbacks
+ * @returns A square utility action
+ */
+function BuildControl({
+  description,
+  icon: Icon,
+  label,
+  onActivate,
+  onFocusHint,
+  onHoverHint,
+  tooltipId,
+}: {
+  description: string;
+  icon: LucideIcon;
+  label: string;
+  onActivate: () => void;
+} & TileInteraction) {
+  return (
+    <BuildTile
+      hint={{ description, kind: "control", title: label }}
+      label={label}
+      onActivate={onActivate}
+      onFocusHint={onFocusHint}
+      onHoverHint={onHoverHint}
+      tooltipId={tooltipId}
+    >
+      <Icon aria-hidden="true" className={hudStyles.buildUtilityIcon} />
+      <span className={hudStyles.srOnly}>{label}</span>
+    </BuildTile>
+  );
 }
 
 /**
  * Category choices shown before individual structures.
- * @param props - Available categories, build options, and selection callback
- * @returns The first level of the build menu
+ * @param props - Categories, options, controls, and tooltip callbacks
+ * @returns The first level of the build command card
  */
 function BuildCategoryPicker({
   categories,
+  controls,
   onChoose,
+  onFocusHint,
+  onHoverHint,
   options,
+  tooltipId,
 }: {
   categories: readonly BuildCategory[];
+  controls: ReactNode;
   onChoose: (category: BuildCategory) => void;
   options: readonly BuildReadout[];
-}) {
+} & TileInteraction) {
   return (
-    <ul aria-label="Build categories" className={styles.buildCategoryGrid}>
+    <ul
+      aria-label="Build categories"
+      className={`${hudStyles.actionGrid} ${hudStyles.buildGrid}`}
+    >
+      {options.length === 0 ? (
+        <li className={hudStyles.buildEmpty}>No options</li>
+      ) : null}
       {categories.map((category, index) => {
         const hotkey = buildMenuKeyFor("categories", index);
         const guide = BUILD_CATEGORY_GUIDES[category];
@@ -310,309 +406,277 @@ function BuildCategoryPicker({
         const categoryOptions = options.filter(
           (option) => buildingGuide(option).category === category,
         );
-        const unlockedCount = categoryOptions.filter(
-          (option) => option.unlocked,
+        const available = categoryOptions.filter(
+          (option) => buildOptionBlockReason(option) === null,
         ).length;
-        const count =
-          unlockedCount > 0 ? unlockedCount : categoryOptions.length;
+        const count = categoryOptions.length;
+        const buildingLabel = count === 1 ? "building" : "buildings";
         return (
-          <li key={category}>
-            <button
-              aria-keyshortcuts={hotkey}
-              aria-label={`${guide.label}. ${guide.description} ${count} ${count === 1 ? "building" : "buildings"}.`}
-              className={styles.buildCategoryChoice}
-              data-build-category={category}
-              onClick={() => onChoose(category)}
-              type="button"
-            >
-              <span
-                aria-hidden="true"
-                className={styles.buildCategoryIcon}
-                data-tone={guide.tone}
-              >
-                <CategoryIcon size={36} strokeWidth={1.55} />
-              </span>
-              <span className={styles.buildCategoryCopy}>
-                <strong>{guide.label}</strong>
-                <span>{guide.description}</span>
-                <small>
-                  {count} {count === 1 ? "building" : "buildings"}
-                </small>
-              </span>
-              {hotkey === undefined ? null : (
-                <kbd className={styles.buildHotkey}>{hotkey}</kbd>
-              )}
-            </button>
-          </li>
+          <BuildTile
+            hint={{ available, category, count, kind: "category" }}
+            hotkey={hotkey}
+            key={category}
+            label={`${guide.label}. ${guide.description} ${count} ${buildingLabel}; ${available} available.`}
+            onActivate={() => onChoose(category)}
+            onFocusHint={onFocusHint}
+            onHoverHint={onHoverHint}
+            tone={guide.tone}
+            tooltipId={tooltipId}
+          >
+            <CategoryIcon
+              aria-hidden="true"
+              className={hudStyles.buildCategoryIcon}
+            />
+            <span className={hudStyles.srOnly}>{guide.label}</span>
+          </BuildTile>
         );
       })}
+      {controls}
     </ul>
   );
 }
 
 /**
- * Individual structures inside one selected category or preview group.
- * @param props - Visible build options, hotkey flag, placement callback, and stock
+ * Individual structures inside one selected category. Locked and unaffordable
+ * options stay in the grid and report their blocker through the shared tooltip.
+ * @param props - Options, controls, placement callback, and tooltip callbacks
  * @returns The building option grid
  */
 function BuildOptionGrid({
-  allowHotkeys = true,
+  controls,
   onChoose,
+  onFocusHint,
+  onHoverHint,
   options,
-  stock,
+  tooltipId,
 }: {
-  /** Whether to attach keyboard grid hotkeys to these cards. */
-  allowHotkeys?: boolean;
+  controls: ReactNode;
   onChoose: (option: BuildReadout) => void;
   options: readonly BuildReadout[];
-  stock: CostStock;
-}) {
+} & TileInteraction) {
   return (
-    <ul className={styles.buildGrid}>
+    <ul
+      aria-label="Buildings"
+      className={`${hudStyles.actionGrid} ${hudStyles.buildGrid}`}
+    >
       {options.map((option, index) => {
-        const hotkey = allowHotkeys
-          ? buildMenuKeyFor("buildings", index)
-          : undefined;
+        const hotkey = buildMenuKeyFor("buildings", index);
         const cost =
           option.cost === undefined ? undefined : costLineFrom(option.cost);
         const costText =
           cost === undefined ? option.costLabel : costLineText(cost);
         const guide = buildingGuide(option);
         const iconSrc = buildingIconSrc(option.buildingType);
+        const reason = buildOptionBlockReason(option);
+        const labelParts = [
+          option.name,
+          guide.description,
+          `Cost: ${costText}`,
+          reason === null ? undefined : `Unavailable: ${reason}`,
+        ].filter((part): part is string => part !== undefined);
         return (
-          <li
-            className={`${styles.buildOption} ${option.unlocked ? "" : styles.locked}`}
-            data-building-type={option.buildingType}
+          <BuildTile
+            blocked={reason !== null}
+            buildingType={option.buildingType}
+            hint={{ kind: "option", option }}
+            hotkey={hotkey}
             key={option.buildingType}
-            title={[option.tier, guide.description, ...option.hints].join(
-              " · ",
-            )}
+            label={labelParts.join(". ")}
+            onActivate={() => onChoose(option)}
+            onFocusHint={onFocusHint}
+            onHoverHint={onHoverHint}
+            tone={guide.tone}
+            tooltipId={tooltipId}
           >
-            <button
-              aria-keyshortcuts={hotkey}
-              aria-label={`${option.name}. ${guide.description} Cost: ${costText}.`}
-              className={styles.buildChoice}
-              disabled={!option.unlocked}
-              onClick={() => onChoose(option)}
-              type="button"
-            >
-              <span
+            {iconSrc === null ? (
+              <span aria-hidden="true" className={hudStyles.buildIconGlyph}>
+                {option.name.slice(0, 1)}
+              </span>
+            ) : (
+              // biome-ignore lint/performance/noImgElement: bundled game HUD icon
+              <img
+                alt=""
                 aria-hidden="true"
-                className={styles.buildIcon}
-                data-tone={guide.tone}
-              >
-                {iconSrc === null ? (
-                  <span className={styles.buildIconGlyph}>
-                    {option.name.slice(0, 1)}
-                  </span>
-                ) : (
-                  // biome-ignore lint/performance/noImgElement: bundled game HUD icon
-                  <img alt="" className={styles.buildIconImage} src={iconSrc} />
-                )}
-              </span>
-              <span className={styles.buildChoiceCopy}>
-                <span className={styles.buildChoiceHeader}>
-                  <strong>{option.name}</strong>
-                  <span className={styles.buildTier}>{option.tier}</span>
-                </span>
-                <span className={styles.buildDescription}>
-                  {guide.description}
-                </span>
-                {option.hints.length === 0 ? null : (
-                  <span className={styles.buildHints}>
-                    {option.hints.map((hint) => (
-                      <span className={styles.buildHint} key={hint}>
-                        {hint}
-                      </span>
-                    ))}
-                  </span>
-                )}
-                <span className={styles.buildCost}>
-                  {cost === undefined ? (
-                    option.costLabel
-                  ) : (
-                    <CostRow line={cost} size="full" stock={stock} />
-                  )}
-                </span>
-              </span>
-              {hotkey === undefined ? null : (
-                <kbd className={styles.buildHotkey}>{hotkey}</kbd>
-              )}
-            </button>
-            {option.lockedReason === undefined ? null : (
-              <p className={styles.lockReason}>{option.lockedReason}</p>
+                className={hudStyles.actionIcon}
+                src={iconSrc}
+              />
             )}
-          </li>
+            <span className={hudStyles.srOnly}>{option.name}</span>
+          </BuildTile>
         );
       })}
+      {controls}
     </ul>
   );
 }
 
 /**
- * Compact footer showing a one-line teaser for the next Hold tier's unlocks
- * (with an expandable preview) and a subtle toggle for tiers beyond that.
- * @param props - Next-tier and later-tier locked lists, toggle states, and stock
- * @returns The teaser footer, or null when no locked buildings exist
+ * Detailed tooltip for one building, including its price and placement hints.
+ * @param props - Published option and current stockpile
+ * @returns Building details and its current blocker, when present
  */
-function LockedTierFooter({
-  laterTierLocked,
-  nextTier,
-  nextTierLocked,
-  onChoose,
-  onTogglePreview,
-  onToggleShowAllTiers,
-  previewNextTier,
-  showAllTiers,
+function BuildOptionTooltip({
+  option,
   stock,
 }: {
-  laterTierLocked: readonly BuildReadout[];
-  nextTier: HoldTier | null;
-  nextTierLocked: readonly BuildReadout[];
-  onChoose: (option: BuildReadout) => void;
-  onTogglePreview: () => void;
-  onToggleShowAllTiers: () => void;
-  previewNextTier: boolean;
-  showAllTiers: boolean;
+  option: BuildReadout;
   stock: CostStock;
 }) {
-  const hasNextTier = nextTier !== null && nextTierLocked.length > 0;
-  const hasLaterTiers = laterTierLocked.length > 0;
-  if (!hasNextTier && !hasLaterTiers) return null;
-
-  const nextTierNames = nextTierLocked.map((option) => option.name).join(", ");
+  const guide = buildingGuide(option);
+  const cost =
+    option.cost === undefined ? undefined : costLineFrom(option.cost);
+  const reason = buildOptionBlockReason(option);
   return (
-    <div className={hudStyles.buildTierFooter}>
-      {hasNextTier ? (
-        <div
-          className={hudStyles.buildTierTeaser}
-          data-testid="build-next-tier-teaser"
-        >
-          <p className={hudStyles.buildTierTeaserText}>
-            <strong>{`Next tier · ${nextTier}`}</strong>
-            {` unlocks: ${nextTierNames}`}
-          </p>
-          <button
-            aria-expanded={previewNextTier}
-            className={hudStyles.buildTierToggle}
-            onClick={onTogglePreview}
-            type="button"
-          >
-            {previewNextTier ? "Hide preview" : "Preview"}
-          </button>
-        </div>
-      ) : null}
-      {hasNextTier && previewNextTier ? (
-        <div className={hudStyles.buildPreviewSection}>
-          <BuildOptionGrid
-            allowHotkeys={false}
-            onChoose={onChoose}
-            options={nextTierLocked}
-            stock={stock}
-          />
-        </div>
-      ) : null}
-      {hasLaterTiers ? (
-        <div className={hudStyles.buildLaterRow}>
-          <button
-            aria-expanded={showAllTiers}
-            className={hudStyles.buildLaterToggle}
-            data-testid="build-show-all-tiers"
-            onClick={onToggleShowAllTiers}
-            type="button"
-          >
-            {showAllTiers ? "Hide later tiers" : "Show all tiers"}
-          </button>
-        </div>
-      ) : null}
-      {hasLaterTiers && showAllTiers ? (
-        <div className={hudStyles.buildPreviewSection}>
-          <p className={hudStyles.buildPreviewHeading}>Later tiers</p>
-          <BuildOptionGrid
-            allowHotkeys={false}
-            onChoose={onChoose}
-            options={laterTierLocked}
-            stock={stock}
-          />
-        </div>
-      ) : null}
+    <div
+      className={hudStyles.tooltip}
+      data-blocked={reason !== null}
+      data-testid="build-tooltip"
+      role="tooltip"
+    >
+      <div className={hudStyles.tooltipHead}>
+        <strong>{option.name}</strong>
+        <span className={hudStyles.hintRole}>{option.tier}</span>
+      </div>
+      {cost === undefined ? (
+        <p className={hudStyles.hintCost}>{option.costLabel}</p>
+      ) : (
+        <CostRow line={cost} size="full" stock={stock} />
+      )}
+      <p className={hudStyles.tooltipText}>{guide.description}</p>
+      {option.hints.length === 0 ? null : (
+        <ul className={hudStyles.buildTooltipHints}>
+          {option.hints.map((hint) => (
+            <li key={hint}>{hint}</li>
+          ))}
+        </ul>
+      )}
+      {reason === null ? null : (
+        <section aria-label="Requirements" className={hudStyles.requirements}>
+          <h4 className={hudStyles.requirementsHeading}>Can't build yet</h4>
+          <span className={hudStyles.requirementProblem}>{reason}</span>
+        </section>
+      )}
     </div>
   );
 }
 
 /**
- * Tier-gated build list. Shows unlocked buildings as clickable options,
- * summarizes the next Hold tier's unlocks in one compact teaser row with an
- * optional preview, and hides tiers beyond that behind a subtle toggle.
- * Grid hotkeys pick a category and then an unlocked building; Backspace goes back.
- * @param props - Options, optional Hold tier, actions, and what the player can spend
+ * Tooltip for the currently hovered or focused build command tile.
+ * @param props - Hint target and current stockpile
+ * @returns Category, building, or utility details
+ */
+function BuildTooltip({ hint, stock }: { hint: BuildHint; stock: CostStock }) {
+  if (hint.kind === "option") {
+    return <BuildOptionTooltip option={hint.option} stock={stock} />;
+  }
+  if (hint.kind === "control") {
+    return (
+      <div
+        className={hudStyles.tooltip}
+        data-testid="build-tooltip"
+        role="tooltip"
+      >
+        <div className={hudStyles.tooltipHead}>
+          <strong>{hint.title}</strong>
+        </div>
+        <p className={hudStyles.tooltipText}>{hint.description}</p>
+      </div>
+    );
+  }
+  const guide = BUILD_CATEGORY_GUIDES[hint.category];
+  const buildingLabel = hint.count === 1 ? "building" : "buildings";
+  return (
+    <div
+      className={hudStyles.tooltip}
+      data-testid="build-tooltip"
+      role="tooltip"
+    >
+      <div className={hudStyles.tooltipHead}>
+        <strong>{guide.label}</strong>
+        <span className={hudStyles.hintRole}>
+          {hint.available}/{hint.count} available
+        </span>
+      </div>
+      <p className={hudStyles.tooltipText}>{guide.description}</p>
+      <p className={hudStyles.hintCost}>
+        {hint.count} {buildingLabel}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * AoE-style build command card. It occupies the same bottom-left slot as the
+ * ordinary command card and keeps every published building visible; blocked
+ * choices remain focusable so their tooltip can explain the requirement.
+ * @param props - Options, actions, and what the player can spend
  * @returns The build menu
  */
 export function BuildMenu({
-  holdTier,
   onChoose,
   onClose,
   onGlossary,
   options,
+  shortcutsSuspended = false,
   stock,
 }: {
-  /** Current Hold tier override; inferred from unlocked options when omitted. */
-  holdTier?: HoldTier;
   onChoose: (option: BuildReadout) => void;
   onClose: () => void;
   onGlossary: () => void;
   options: readonly BuildReadout[];
+  /** Whether a dialog above the command card should receive the keyboard. */
+  shortcutsSuspended?: boolean;
   /** What the player can spend, so short amounts draw in red. */
   stock: CostStock;
 }) {
   const [selectedCategory, setSelectedCategory] =
     useState<BuildCategory | null>(null);
-  const [previewNextTier, setPreviewNextTier] = useState(false);
-  const [showAllTiers, setShowAllTiers] = useState(false);
+  const [focusedHint, setFocusedHint] = useState<BuildHint | null>(null);
+  const [hoveredHint, setHoveredHint] = useState<BuildHint | null>(null);
+  const menuRef = useRef<HTMLElement>(null);
+  const tooltipId = useId();
 
-  const currentTier = holdTier ?? inferCurrentTier(options);
-  const nextTier = nextTierAfter(currentTier);
-
-  const unlockedCategories = BUILD_CATEGORIES.filter((category) =>
-    options.some(
-      (option) =>
-        option.unlocked && buildingGuide(option).category === category,
-    ),
-  );
-  const allCategories = BUILD_CATEGORIES.filter((category) =>
+  const availableCategories = BUILD_CATEGORIES.filter((category) =>
     options.some((option) => buildingGuide(option).category === category),
   );
-  const availableCategories =
-    showAllTiers || unlockedCategories.length === 0
-      ? allCategories
-      : unlockedCategories;
-
   const activeCategory =
     selectedCategory !== null && availableCategories.includes(selectedCategory)
       ? selectedCategory
       : null;
   const activeGuide =
     activeCategory === null ? null : BUILD_CATEGORY_GUIDES[activeCategory];
-
-  const scopedOptions =
+  const visibleOptions =
     activeCategory === null
-      ? options
+      ? []
       : options.filter(
           (option) => buildingGuide(option).category === activeCategory,
         );
-  const partitioned = partitionBuildOptions(scopedOptions, nextTier);
+  const activeHint = hoveredHint ?? focusedHint;
+  const liveHint =
+    activeHint === null ? null : resolveBuildHint(activeHint, options);
+
+  useEffect(() => {
+    const gridLabel =
+      activeCategory === null ? "Build categories" : "Buildings";
+    const firstTile = menuRef.current?.querySelector(
+      `[aria-label="${gridLabel}"] button`,
+    );
+    if (firstTile instanceof HTMLButtonElement) firstTile.focus();
+  }, [activeCategory]);
 
   const keyState = useRef({
     activeCategory,
     availableCategories,
     onChoose,
-    unlockedOptions: partitioned.unlocked,
+    shortcutsSuspended,
+    visibleOptions,
   });
   keyState.current = {
     activeCategory,
     availableCategories,
     onChoose,
-    unlockedOptions: partitioned.unlocked,
+    shortcutsSuspended,
+    visibleOptions,
   };
   useEffect(() => {
     /**
@@ -623,15 +687,17 @@ export function BuildMenu({
     const onKeyDown = (event: KeyboardEvent) => {
       if (isTypingTarget(event.target)) return;
       const state = keyState.current;
+      if (state.shortcutsSuspended) return;
       const level = state.activeCategory === null ? "categories" : "buildings";
       const count =
         level === "categories"
           ? state.availableCategories.length
-          : state.unlockedOptions.length;
+          : state.visibleOptions.length;
       const action = buildMenuKeyAction(event, level, count);
       if (action === null) return;
       event.preventDefault();
       event.stopImmediatePropagation();
+      setHoveredHint(null);
       if (action.type === "back") {
         setSelectedCategory(null);
         return;
@@ -642,84 +708,87 @@ export function BuildMenu({
         if (category !== undefined) setSelectedCategory(category);
         return;
       }
-      const option = state.unlockedOptions[action.index];
+      const option = state.visibleOptions[action.index];
       if (option !== undefined) state.onChoose(option);
     };
     window.addEventListener("keydown", onKeyDown, { capture: true });
     return () =>
       window.removeEventListener("keydown", onKeyDown, { capture: true });
   }, []);
-  let title = "Build";
-  let subtitle = "Choose a category for the selected villagers.";
-  if (activeGuide !== null) {
-    title = activeGuide.label;
-    subtitle = activeGuide.description;
-  }
+
+  const glossaryControl = (
+    <BuildControl
+      description="Look up building and cultivation terms."
+      icon={CircleHelp}
+      label="Open glossary from the build menu"
+      onActivate={onGlossary}
+      onFocusHint={setFocusedHint}
+      onHoverHint={setHoveredHint}
+      tooltipId={tooltipId}
+    />
+  );
+  const closeControl = (
+    <BuildControl
+      description="Return to the selected villagers' commands."
+      icon={X}
+      label="Close build menu"
+      onActivate={onClose}
+      onFocusHint={setFocusedHint}
+      onHoverHint={setHoveredHint}
+      tooltipId={tooltipId}
+    />
+  );
+  const title = activeGuide === null ? "Build" : activeGuide.label;
+
   return (
-    <section aria-label="Build menu" className={styles.menu}>
-      <header className={styles.buildMenuHeader}>
-        <div>
-          <h3 className={styles.panelTitle}>{title}</h3>
-          <p className={styles.buildMenuSubtitle}>{subtitle}</p>
-        </div>
-        <div className={styles.buildMenuActions}>
-          {activeCategory === null ? null : (
-            <button
-              aria-label="Back to build categories"
-              className={styles.buildBackButton}
-              onClick={() => setSelectedCategory(null)}
-              type="button"
-            >
-              <ArrowLeft aria-hidden="true" size={13} strokeWidth={2} />
-              Categories
-              <kbd className={styles.buildBackHotkey}>⌫</kbd>
-            </button>
-          )}
-          <button
-            aria-label="Open glossary from the build menu"
-            className={styles.intelButton}
-            onClick={onGlossary}
-            type="button"
-          >
-            ?
-          </button>
-          <button
-            aria-label="Close build menu"
-            className={styles.closeButton}
-            onClick={onClose}
-            type="button"
-          >
-            ×
-          </button>
-        </div>
-      </header>
-      {options.length === 0 ? <p>No options</p> : null}
-      {options.length === 0 || activeCategory !== null ? null : (
+    <section
+      aria-label="Build menu"
+      className={`${hudStyles.actions} ${hudStyles.buildMenu}`}
+      ref={menuRef}
+    >
+      <h3 className={hudStyles.srOnly}>{title}</h3>
+      <div className={hudStyles.tooltipDock} id={tooltipId}>
+        {liveHint === null ? null : (
+          <BuildTooltip hint={liveHint} stock={stock} />
+        )}
+      </div>
+      {activeCategory === null ? (
         <BuildCategoryPicker
           categories={availableCategories}
+          controls={
+            <>
+              {glossaryControl}
+              {closeControl}
+            </>
+          }
           onChoose={setSelectedCategory}
+          onFocusHint={setFocusedHint}
+          onHoverHint={setHoveredHint}
           options={options}
+          tooltipId={tooltipId}
         />
-      )}
-      {activeCategory === null || partitioned.unlocked.length === 0 ? null : (
+      ) : (
         <BuildOptionGrid
-          allowHotkeys={true}
+          controls={
+            <>
+              <BuildControl
+                description="Back to build categories (Backspace)."
+                icon={ArrowLeft}
+                label="Back to build categories"
+                onActivate={() => setSelectedCategory(null)}
+                onFocusHint={setFocusedHint}
+                onHoverHint={setHoveredHint}
+                tooltipId={tooltipId}
+              />
+              {glossaryControl}
+              {closeControl}
+            </>
+          }
           onChoose={onChoose}
-          options={partitioned.unlocked}
-          stock={stock}
-        />
-      )}
-      {options.length === 0 ? null : (
-        <LockedTierFooter
-          laterTierLocked={partitioned.laterTierLocked}
-          nextTier={nextTier}
-          nextTierLocked={partitioned.nextTierLocked}
-          onChoose={onChoose}
-          onTogglePreview={() => setPreviewNextTier((open) => !open)}
-          onToggleShowAllTiers={() => setShowAllTiers((open) => !open)}
-          previewNextTier={previewNextTier}
-          showAllTiers={showAllTiers}
-          stock={stock}
+          onFocusHint={setFocusedHint}
+          onHoverHint={setHoveredHint}
+          options={visibleOptions}
+          tooltipId={tooltipId}
         />
       )}
     </section>

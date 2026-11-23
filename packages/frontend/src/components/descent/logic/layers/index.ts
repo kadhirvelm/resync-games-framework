@@ -13,6 +13,7 @@ export {
   setLayerTerrain,
   ventBurnPerSecondAt,
   visionMultiplierAt,
+  worldTerrainBridges,
   worldTerrainObstacles,
   worldVentVolumes,
 } from "./hazards";

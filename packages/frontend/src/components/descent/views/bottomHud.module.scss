@@ -1,5 +1,6 @@
-// Bottom HUD: the selection panel on the left and the action panel on the
-// right. Theme variables (--bronze, --parchment, …) come from `.shell`.
+// Bottom HUD, laid out like AoE II DE: the command grid on the left, the
+// selection panel in the middle (the minimap well lives in the shell).
+// Theme variables (--bronze, --parchment, …) come from `.shell`.
 
 $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, sans-serif);
 
@@ -36,10 +37,10 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   --tone: var(--bronze);
 
   display: grid;
-  gap: 12px;
-  grid-template-columns: minmax(190px, 230px) minmax(0, 1fr) minmax(170px, 0.75fr);
+  gap: 14px;
+  grid-template-columns: minmax(200px, 250px) minmax(0, 1fr);
   overflow: hidden;
-  padding: 8px 10px;
+  padding: 10px 12px;
 }
 
 .selection[data-tone="horde"] {
@@ -58,8 +59,8 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   align-content: start;
   align-items: start;
   display: grid;
-  gap: 4px 9px;
-  grid-template-columns: 52px minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
   min-width: 0;
 }
 
@@ -72,15 +73,15 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   box-shadow: inset 0 0 10px rgb(0 0 0 / 55%);
   box-sizing: border-box;
   display: flex;
-  height: 52px;
+  height: 64px;
   justify-content: center;
-  width: 52px;
+  width: 64px;
 }
 
 .portraitIcon {
-  height: 40px;
+  height: 50px;
   object-fit: contain;
-  width: 40px;
+  width: 50px;
 }
 
 .portraitGlyph {
@@ -117,11 +118,6 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.identityTools {
-  display: grid;
-  gap: 4px;
 }
 
 .toolButton {
@@ -193,17 +189,41 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   align-content: start;
   border-left: 1px solid rgb(198 154 85 / 18%);
   display: grid;
-  gap: 7px;
+  gap: 8px;
   min-width: 0;
-  overflow: auto hidden;
-  padding-left: 12px;
+  overflow: hidden auto;
+  padding-left: 14px;
 }
 
+// One muted line; the full text is in the title tooltip.
 .summary {
-  color: #e2d3b6;
-  font-size: 13px;
+  color: #a8957a;
+  font-size: 12.5px;
   line-height: 1.35;
   margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusLine {
+  color: #cdbb98;
+  font-size: 12px;
+  font-weight: 650;
+  grid-column: 1 / -1;
+  margin: 0;
+
+  &[data-tone="ready"] {
+    color: #f3cf73;
+  }
+
+  &[data-tone="blocked"] {
+    color: #e3a08a;
+  }
+
+  &[data-tone="calm"] {
+    color: #9fc7b0;
+  }
 }
 
 .facts {
@@ -243,8 +263,9 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
 
 .bars {
   display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 520px;
 }
 
 .fillBar {
@@ -281,6 +302,33 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
 
 .fillMeter::-moz-meter-bar {
   background: linear-gradient(90deg, #8c642f, #e0b968);
+}
+
+.breakthroughBar {
+  display: grid;
+  gap: 3px;
+  grid-column: 1 / -1;
+}
+
+.breakthroughMeter {
+  appearance: none;
+  background: #120d09;
+  block-size: 8px;
+  border: 1px solid #8c6a32;
+  inline-size: 100%;
+}
+
+.breakthroughMeter::-webkit-meter-bar {
+  background: #120d09;
+  border: 0;
+}
+
+.breakthroughMeter::-webkit-meter-optimum-value {
+  background: linear-gradient(90deg, #4f9e7e, #f3cf73);
+}
+
+.breakthroughMeter::-moz-meter-bar {
+  background: linear-gradient(90deg, #4f9e7e, #f3cf73);
 }
 
 .groups {
@@ -496,94 +544,232 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   color: #cab893;
 }
 
-.tips {
-  border-left: 1px solid rgb(198 154 85 / 18%);
-  min-width: 0;
-  overflow: hidden auto;
-  padding-left: 12px;
-}
-
-.tipsHeading {
-  color: var(--bronze);
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: 0.1em;
-  margin: 0 0 4px;
-  text-transform: uppercase;
-}
-
-.tipList {
-  display: grid;
-  gap: 3px;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-
-  li {
-    color: #d6c6a6;
-    font-size: 12.5px;
-    line-height: 1.3;
-    padding-left: 11px;
-    position: relative;
-  }
-
-  li::before {
-    color: var(--bronze);
-    content: "›";
-    left: 0;
-    position: absolute;
-  }
-}
-
 // ── Action panel ─────────────────────────────────────────────────────────
+
+$tile: 46px;
+$tile-gap: 4px;
 
 .actions {
   @extend %hudPanel;
 
-  display: grid;
-  gap: 6px;
-  grid-template-rows: auto minmax(0, 1fr);
-  padding: 6px 8px 8px;
+  display: flex;
+  padding: 6px;
+  position: relative;
 }
 
-.hint {
-  align-items: center;
-  border-bottom: 1px solid rgb(198 154 85 / 16%);
-  color: #ddcca9;
-  display: flex;
-  font-size: 12.5px;
-  gap: 8px;
-  line-height: 1.3;
+.actionsEmpty {
+  align-self: center;
+  color: #6f604b;
+  font-size: 12px;
   margin: 0;
-  min-height: 18px;
-  overflow: hidden;
-  padding-bottom: 5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-align: center;
+  width: calc(#{$tile} * 5 + #{$tile-gap} * 4);
+}
+
+// Five columns of square tiles, three rows tall, like AoE's command grid.
+.actionGrid {
+  align-content: start;
+  display: grid;
+  gap: $tile-gap;
+  grid-auto-rows: $tile;
+  grid-template-columns: repeat(5, $tile);
+  overflow: hidden auto;
+  scrollbar-width: thin;
+}
+
+.action {
+  align-items: center;
+  background: linear-gradient(170deg, #3a2a1b, #1d150e);
+  border: 1px solid #6b4a2b;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 40%);
+  color: #eadcbe;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  padding: 0;
+  position: relative;
+
+  &:hover,
+  &:focus-visible {
+    background: linear-gradient(170deg, #4d3721, #281c12);
+    border-color: var(--bronze-bright);
+    outline: none;
+  }
+
+  &:active:not([data-blocked="true"]) {
+    transform: translateY(1px);
+  }
+
+  &[data-training="true"] {
+    border-color: #8a7440;
+  }
+
+  // Blocked: dimmed with a red mark, but still hoverable and clickable so it
+  // can explain itself.
+  &[data-blocked="true"] {
+    border-color: #5a2f22;
+    cursor: help;
+
+    .actionIcon {
+      filter: grayscale(0.85) brightness(0.6);
+    }
+  }
+
+  &[data-blocked="true"]:hover,
+  &[data-blocked="true"]:focus-visible {
+    border-color: #d0563e;
+  }
+
+  &[data-denied="true"] {
+    animation: action-denied 380ms ease-out;
+    border-color: #ff6a4d;
+    box-shadow: 0 0 0 2px rgb(255 106 77 / 45%);
+  }
+}
+
+@keyframes action-denied {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  20% {
+    transform: translateX(-3px);
+  }
+
+  40% {
+    transform: translateX(3px);
+  }
+
+  60% {
+    transform: translateX(-2px);
+  }
+
+  80% {
+    transform: translateX(2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action[data-denied="true"] {
+    animation: none;
+  }
+}
+
+.actionIcon {
+  height: 34px;
+  object-fit: contain;
+  pointer-events: none;
+  width: 34px;
+}
+
+.actionHotkey {
+  background: rgb(0 0 0 / 65%);
+  bottom: 1px;
+  color: #f2d48e;
+  font-family: inherit;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 1px 3px;
+  pointer-events: none;
+  position: absolute;
+  right: 1px;
+}
+
+.actionBatch {
+  background: rgb(0 0 0 / 70%);
+  color: #e0b968;
+  font-size: 9.5px;
+  font-weight: 800;
+  left: 1px;
+  line-height: 1;
+  padding: 1px 3px;
+  pointer-events: none;
+  position: absolute;
+  top: 1px;
+}
+
+.actionLock {
+  align-items: center;
+  background: #b74736;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 70%);
+  color: #fff;
+  display: flex;
+  font-size: 10px;
+  font-weight: 900;
+  height: 14px;
+  justify-content: center;
+  line-height: 1;
+  pointer-events: none;
+  position: absolute;
+  right: 2px;
+  top: 2px;
+  width: 14px;
+}
+
+// ── Tooltip ─────────────────────────────────────────────────────────────
+
+.tooltipDock {
+  bottom: calc(100% + 10px);
+  left: 0;
+  pointer-events: none;
+  position: absolute;
+  width: 360px;
+  z-index: 10;
+}
+
+.tooltip {
+  background:
+    linear-gradient(145deg, rgb(255 255 255 / 4%), transparent 40%),
+    rgb(22 17 11 / 97%);
+  border: 1px solid var(--bronze);
+  box-shadow: 0 14px 34px rgb(0 0 0 / 60%);
+  color: #e2d3b6;
+  display: grid;
+  font-size: 12.5px;
+  gap: 6px;
+  line-height: 1.4;
+  padding: 9px 11px;
+
+  &[data-blocked="true"] {
+    border-color: #b74736;
+  }
+}
+
+.tooltipHead {
+  align-items: center;
+  display: flex;
+  gap: 8px;
 
   strong {
     color: #f6e9ce;
+    font-size: 14px;
     font-weight: 700;
   }
 }
 
-.hintIdle {
-  color: #8f7f66;
+.tooltipText {
+  margin: 0;
 }
 
 .hintRole {
   color: var(--bronze-bright);
-  font-size: 11.5px;
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
+  margin-left: auto;
   text-transform: uppercase;
 }
 
 .hintCost,
 .hintBlocked {
   align-items: center;
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   gap: 1px;
+  margin: 0;
   min-width: 0;
 }
 
@@ -595,113 +781,6 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   color: #e08a70;
 }
 
-.actionGrid {
-  align-content: start;
-  display: grid;
-  gap: 6px;
-  grid-auto-rows: 100px;
-  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
-  overflow: hidden auto;
-}
-
-.action {
-  align-content: start;
-  background: linear-gradient(170deg, #34261a, #1f160f);
-  border: 1px solid #6b4a2b;
-  color: #eadcbe;
-  cursor: pointer;
-  display: grid;
-  gap: 2px;
-  justify-items: center;
-  min-width: 0;
-  overflow: hidden;
-  padding: 5px 4px 4px;
-  position: relative;
-  text-align: center;
-
-  &:hover:not(:disabled),
-  &:focus-visible {
-    background: linear-gradient(170deg, #45321f, #271b12);
-    border-color: var(--bronze-bright);
-    outline: none;
-  }
-
-  &:active:not(:disabled) {
-    transform: translateY(1px);
-  }
-
-  &:disabled {
-    cursor: not-allowed;
-    filter: grayscale(0.8);
-    opacity: 0.55;
-  }
-
-  &[data-training="true"] {
-    border-color: #7d6a3a;
-  }
-}
-
-.actionIcon {
-  height: 28px;
-  object-fit: contain;
-  width: 28px;
-}
-
-.actionLabel {
-  -webkit-box-orient: vertical;
-  display: -webkit-box;
-  font-size: 12px;
-  font-weight: 650;
-  -webkit-line-clamp: 2;
-  line-height: 1.2;
-  max-width: 100%;
-  overflow: hidden;
-}
-
-.actionRole {
-  color: var(--bronze-bright);
-  font-size: 10px;
-  font-weight: 750;
-  letter-spacing: 0.08em;
-  line-height: 1.2;
-  text-transform: uppercase;
-}
-
-.actionDetail {
-  align-items: center;
-  color: #a8957a;
-  display: flex;
-  font-size: 10.5px;
-  gap: 1px;
-  justify-content: center;
-  line-height: 1.2;
-  max-width: 100%;
-  overflow: hidden;
-  white-space: nowrap;
-
-  &[data-batch="true"] {
-    color: #e0b968;
-  }
-}
-
-.actionCost {
-  display: flex;
-  justify-content: center;
-  margin-top: auto;
-  max-width: 100%;
-  overflow: hidden;
-  padding-top: 2px;
-
-  // A Shift batch: a gold rule marks the price as the whole batch.
-  &[data-batch="true"] {
-    border-top: 1px solid rgb(224 185 104 / 45%);
-  }
-}
-
-.actionDetail[data-blocked="true"] {
-  color: #e08a70;
-}
-
 .hintHotkey {
   background: rgb(0 0 0 / 45%);
   border: 1px solid #6b4a2b;
@@ -710,6 +789,62 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   font-size: 11px;
   line-height: 1;
   padding: 2px 4px;
+}
+
+.requirements {
+  background: rgb(120 30 18 / 18%);
+  border-left: 2px solid #b74736;
+  display: grid;
+  gap: 4px;
+  padding: 6px 8px;
+}
+
+.requirementsHeading {
+  color: #ff9a80;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.requirementList {
+  display: grid;
+  gap: 5px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+
+  li {
+    display: grid;
+    gap: 1px;
+    padding-left: 14px;
+    position: relative;
+  }
+
+  li::before {
+    color: #e0604a;
+    content: "✕";
+    font-size: 10px;
+    font-weight: 900;
+    left: 0;
+    position: absolute;
+    top: 2px;
+  }
+}
+
+.requirementProblem {
+  color: #ffd2c4;
+  font-weight: 650;
+}
+
+.requirementFix {
+  color: #d8c08a;
+  font-size: 12px;
+
+  &::before {
+    content: "→ ";
+  }
 }
 
 .resourceToken {
@@ -724,31 +859,15 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   width: 14px;
 }
 
-.actionHotkey {
-  background: rgb(0 0 0 / 45%);
-  border: 1px solid #6b4a2b;
-  color: #e8d3a7;
-  font-family: inherit;
-  font-size: 10.5px;
-  line-height: 1;
-  padding: 2px 4px;
-  position: absolute;
-  right: 3px;
-  top: 3px;
-}
-
 @media (height <= 820px) {
   .actionGrid {
-    grid-auto-rows: 90px;
-  }
-
-  .action {
-    gap: 1px;
+    grid-auto-rows: 42px;
+    grid-template-columns: repeat(5, 42px);
   }
 
   .actionIcon {
-    height: 22px;
-    width: 22px;
+    height: 30px;
+    width: 30px;
   }
 }
 
@@ -757,99 +876,96 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
     grid-template-columns: minmax(170px, 200px) minmax(0, 1fr);
   }
 
-  .tips {
-    display: none;
+  .bars {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-// ── Build menu progressive tier teaser ───────────────────────────────────
+// ── Build command card ──────────────────────────────────────────────────
 
-.buildTierFooter {
-  border-top: 1px solid rgb(198 154 85 / 20%);
-  display: grid;
-  gap: 8px;
-  margin-top: 10px;
-  padding-top: 8px;
-}
-
-.buildTierTeaser {
-  align-items: center;
-  background: rgb(255 255 255 / 3%);
-  border: 1px solid rgb(198 154 85 / 26%);
-  display: flex;
-  gap: 10px;
-  justify-content: space-between;
-  padding: 7px 10px;
-}
-
-.buildTierTeaserText {
-  color: #c5b494;
-  font-size: 12px;
-  line-height: 1.35;
+.buildGrid {
+  flex: 1;
+  list-style: none;
   margin: 0;
+  padding: 0;
+  width: 100%;
+}
+
+.buildTile {
+  height: 100%;
   min-width: 0;
 
-  strong {
-    color: var(--bronze-bright, #efc977);
-    font-weight: 700;
+  .action {
+    height: 100%;
+    width: 100%;
+  }
+
+  .action[data-tone="economy"] {
+    border-color: #73743d;
+  }
+
+  .action[data-tone="mystic"] {
+    border-color: #477a83;
+  }
+
+  .action[data-tone="war"] {
+    border-color: #a16b36;
+  }
+
+  .action[data-tone="defense"] {
+    border-color: #985242;
+  }
+
+  .action[data-blocked="true"] {
+    border-color: #5a2f22;
   }
 }
 
-.buildTierToggle {
-  background: #2b1e14;
-  border: 1px solid #70502c;
-  color: #e6d1a6;
-  cursor: pointer;
-  flex: 0 0 auto;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 4px 8px;
-  white-space: nowrap;
-
-  &:hover,
-  &:focus-visible {
-    background: #422d1a;
-    border-color: var(--bronze-bright, #efc977);
-    color: #fff2d2;
-    outline: none;
-  }
+.buildCategoryIcon,
+.buildUtilityIcon {
+  height: 28px;
+  pointer-events: none;
+  width: 28px;
 }
 
-.buildLaterRow {
-  align-items: center;
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
+.buildUtilityIcon {
+  height: 23px;
+  width: 23px;
 }
 
-.buildLaterToggle {
-  background: transparent;
-  border: 1px solid rgb(198 154 85 / 24%);
-  color: #a8967a;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 11px;
-  padding: 3px 8px;
-
-  &:hover,
-  &:focus-visible {
-    border-color: var(--bronze, #c69a55);
-    color: #e6d1a6;
-    outline: none;
-  }
+.buildIconGlyph {
+  color: #f8dd9f;
+  font-family: $descent;
+  font-size: 22px;
+  line-height: 1;
+  pointer-events: none;
 }
 
-.buildPreviewSection {
+.buildTooltipHints {
+  color: #8fc7c2;
   display: grid;
-  gap: 6px;
+  font-size: 11.5px;
+  gap: 3px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+
+  li::before {
+    color: #56a5a7;
+    content: "✦ ";
+  }
 }
 
-.buildPreviewHeading {
-  color: #a8967a;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  margin: 0;
-  text-transform: uppercase;
+.buildEmpty {
+  align-self: center;
+  color: #a8957a;
+  grid-column: 1 / -1;
+  text-align: center;
+}
+
+@media (height <= 820px) {
+  .buildCategoryIcon {
+    height: 25px;
+    width: 25px;
+  }
 }

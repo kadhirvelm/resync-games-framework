@@ -1,6 +1,7 @@
 import { BUILDING_TOOLTIPS } from "../data/narrative/tooltips";
 import type { CultivationView } from "../logic/cultivation/types";
 import { footprintSide } from "../logic/economy/footprint";
+import { isFogVisible } from "../logic/fog";
 import type {
   BuildingState,
   ResourceId,
@@ -8,12 +9,7 @@ import type {
   UnitState,
 } from "../logic/types";
 import { BOSS_SIZE_SCALE } from "../logic/waves/constants";
-import {
-  cuesInSight,
-  effectsInSight,
-  exploredFeatures,
-  visibleToHold,
-} from "./fogFilter";
+import { cuesInSight, effectsInSight, exploredFeatures } from "./fogFilter";
 import {
   type BuildingReadout,
   type CropGrowthReadout,
@@ -39,8 +35,12 @@ export interface ShellUnit {
   activity: string | null;
   /** A layer boss, such as Cinderjaw. Drawn larger so it reads as a threat. */
   boss: boolean;
+  /** Breakthrough channel progress, 0 to 1, while channeling; otherwise null. */
+  breakthroughProgress: number | null;
   /** True when the unit satisfies every requirement to attempt a breakthrough. */
   breakthroughReady: boolean;
+  /** Remaining seconds on an active breakthrough channel; otherwise null. */
+  breakthroughRemainingSeconds: number | null;
   calamity: boolean;
   /** What a villager is carrying home, or null when empty-handed. */
   carrying: { amount: number; resource: ResourceId } | null;
@@ -124,7 +124,15 @@ export interface ShellBuilding {
 
 /** Everything the shell renders from one snapshot. */
 export interface ShellModel
-  extends Omit<ReadPresentation, "buildings" | "onboarding" | "units"> {
+  extends Omit<
+    ReadPresentation,
+    | "buildings"
+    | "buildOptionsByOwner"
+    | "holdTiers"
+    | "holdUpgrades"
+    | "onboarding"
+    | "units"
+  > {
   banner: LayerBannerCopy;
   buildings: readonly ShellBuilding[];
   map: SimSnapshot["map"];
@@ -138,6 +146,20 @@ export interface ShellModel
 }
 
 const TOOLTIPS: Record<string, { name: string }> = BUILDING_TOOLTIPS;
+const EMPTY_ROUTE: readonly RouteReadout[] = [];
+const EMPTY_TREASURES: readonly { id: string; name: string }[] = [];
+const EMPTY_TRAINING_QUEUE: readonly TrainingQueueReadout[] = [];
+const FIRST_RUN_ONBOARDING: OnboardingFlags = {
+  pill: true,
+  realmGate: true,
+  school: true,
+};
+const EMPTY_ONBOARDING: OnboardingFlags = {
+  pill: false,
+  realmGate: false,
+  school: false,
+};
+const DEFAULT_VENTS_CACHE = new Map<string, ReadPresentation["vents"]>();
 
 /**
  * Pixels per map unit. A 128-wide map is about 1024 pixels across.
@@ -160,8 +182,7 @@ function resolveOnboarding(
   layerName: string,
 ): OnboardingFlags {
   if (flags !== null) return flags;
-  const firstRun = layerName === "Ashen Gate";
-  return { pill: firstRun, realmGate: firstRun, school: firstRun };
+  return layerName === "Ashen Gate" ? FIRST_RUN_ONBOARDING : EMPTY_ONBOARDING;
 }
 
 /**
@@ -176,6 +197,7 @@ function buildingName(
 ): string {
   if (readout?.name !== undefined && readout.name.length > 0)
     return readout.name;
+  if (buildingType === "stone_quarry") return "Stone Quarry";
   return TOOLTIPS[buildingType]?.name ?? buildingType;
 }
 
@@ -184,15 +206,21 @@ function buildingName(
  * @param route - Published route, if any
  * @returns Finite route points in walking order
  */
-function readRoute(route: unknown): RouteReadout[] {
-  if (!Array.isArray(route)) return [];
-  return route.filter(
-    (point): point is RouteReadout =>
+function readRoute(route: unknown): readonly RouteReadout[] {
+  if (!Array.isArray(route) || route.length === 0) return EMPTY_ROUTE;
+  const result: RouteReadout[] = [];
+  for (let i = 0; i < route.length; i += 1) {
+    const point = route[i] as RouteReadout | null;
+    if (
       typeof point === "object" &&
       point !== null &&
-      Number.isFinite((point as RouteReadout).x) &&
-      Number.isFinite((point as RouteReadout).y),
-  );
+      Number.isFinite(point.x) &&
+      Number.isFinite(point.y)
+    ) {
+      result.push(point);
+    }
+  }
+  return result.length === 0 ? EMPTY_ROUTE : result;
 }
 
 /**
@@ -205,10 +233,18 @@ function decorateUnit(
   unit: UnitState,
   readout: UnitReadout | undefined,
 ): ShellUnit {
-  return {
+  const result: ShellUnit = {
     activity: typeof readout?.task === "string" ? readout.task : null,
     boss: readout?.role === "boss",
+    breakthroughProgress:
+      typeof readout?.channel === "number"
+        ? Math.max(0, Math.min(1, readout.channel))
+        : null,
     breakthroughReady: readout?.breakthroughReady === true,
+    breakthroughRemainingSeconds:
+      typeof readout?.breakthroughRemainingSeconds === "number"
+        ? Math.max(0, Math.ceil(readout.breakthroughRemainingSeconds))
+        : null,
     calamity: readout?.calamity === true,
     carrying: carriedLoad(readout),
     classId: unit.classId,
@@ -225,24 +261,26 @@ function decorateUnit(
     maxQi: typeof readout?.maxQi === "number" ? readout.maxQi : null,
     meditating: readout?.meditating === true,
     name: readout?.name ?? CLASS_LABEL[unit.classId],
-    ...(readout?.ownerColor === undefined
-      ? {}
-      : { ownerColor: readout.ownerColor }),
-    ...(unit.ownerId === undefined && readout?.ownerId === undefined
-      ? {}
-      : { ownerId: unit.ownerId ?? readout?.ownerId }),
-    ...(readout?.ownerName === undefined
-      ? {}
-      : { ownerName: readout.ownerName }),
     qi: typeof readout?.qi === "number" ? readout.qi : null,
     qiArt: readout?.qiArt ?? null,
     route: readRoute(readout?.route),
     surgeActive: readout?.surgeActive === true,
     treasureSlots: readout?.treasureSlots ?? 0,
-    treasures: readout?.treasures ?? [],
+    treasures: readout?.treasures ?? EMPTY_TREASURES,
     x: unit.x,
     y: unit.y,
   };
+  if (readout?.ownerColor !== undefined) {
+    result.ownerColor = readout.ownerColor;
+  }
+  const ownerId = unit.ownerId ?? readout?.ownerId;
+  if (ownerId !== undefined) {
+    result.ownerId = ownerId;
+  }
+  if (readout?.ownerName !== undefined) {
+    result.ownerName = readout.ownerName;
+  }
+  return result;
 }
 
 /**
@@ -268,13 +306,11 @@ function decorateBuilding(
   building: BuildingState,
   readout: BuildingReadout | undefined,
 ): ShellBuilding {
-  let hitPoints: number | null = null;
-  if (typeof readout?.hitPoints === "number") hitPoints = readout.hitPoints;
-  let maxHitPoints: number | null = null;
-  if (typeof readout?.maxHitPoints === "number") {
-    maxHitPoints = readout.maxHitPoints;
-  }
-  return {
+  const hitPoints =
+    typeof readout?.hitPoints === "number" ? readout.hitPoints : null;
+  const maxHitPoints =
+    typeof readout?.maxHitPoints === "number" ? readout.maxHitPoints : null;
+  const result: ShellBuilding = {
     activity: typeof readout?.activity === "string" ? readout.activity : null,
     activityProgress:
       typeof readout?.progress === "number" ? readout.progress : null,
@@ -287,21 +323,23 @@ function decorateBuilding(
     id: building.id,
     maxHitPoints,
     name: buildingName(building.buildingType, readout),
-    ...(readout?.ownerColor === undefined
-      ? {}
-      : { ownerColor: readout.ownerColor }),
-    ...(building.ownerId === undefined && readout?.ownerId === undefined
-      ? {}
-      : { ownerId: building.ownerId ?? readout?.ownerId }),
-    ...(readout?.ownerName === undefined
-      ? {}
-      : { ownerName: readout.ownerName }),
     rallyPoint: readout?.rallyPoint ?? null,
     tier: readout?.tier ?? null,
-    trainingQueue: readout?.trainingQueue ?? [],
+    trainingQueue: readout?.trainingQueue ?? EMPTY_TRAINING_QUEUE,
     x: building.x,
     y: building.y,
   };
+  if (readout?.ownerColor !== undefined) {
+    result.ownerColor = readout.ownerColor;
+  }
+  const ownerId = building.ownerId ?? readout?.ownerId;
+  if (ownerId !== undefined) {
+    result.ownerId = ownerId;
+  }
+  if (readout?.ownerName !== undefined) {
+    result.ownerName = readout.ownerName;
+  }
+  return result;
 }
 
 /**
@@ -315,39 +353,92 @@ function ventsFor(
   published: ReadPresentation["vents"],
 ): ReadPresentation["vents"] {
   if (published.length > 0) return published;
+  if (layerId === null) return [];
+  const cached = DEFAULT_VENTS_CACHE.get(layerId);
+  if (cached !== undefined) return cached;
   const layer = findLayer(layerId);
   if (layer === undefined) return [];
   const label = layer.hazards.includes("ember_vents") ? "Ember vent" : "Vent";
-  return layer.ventVolumes.map((vent, index) => ({
+  const vents = layer.ventVolumes.map((vent, index) => ({
     id: `${layer.id}-vent-${index}`,
     label,
     radius: vent.radius,
     x: vent.x,
     y: vent.y,
   }));
+  DEFAULT_VENTS_CACHE.set(layerId, vents);
+  return vents;
 }
 
 /**
  * Reads one sim snapshot into the shell model. Numbers stay as published.
  * Fog of war is applied here, so every renderer, panel, and the minimap
- * only ever sees what the Hold has discovered.
+ * only ever sees what the Hold has discovered. In co-op, Hold-specific
+ * readouts are selected for the local owner without hiding allied entities.
  * @param snapshot - Frozen sim snapshot
+ * @param localPlayerId - Local co-op owner, or undefined in solo play
  * @returns The render model
  */
-export function buildShellModel(snapshot: SimSnapshot): ShellModel {
+export function buildShellModel(
+  snapshot: SimSnapshot,
+  localPlayerId?: string,
+): ShellModel {
   const presentation = readPresentation(snapshot.meta);
+  const { buildOptionsByOwner, holdTiers, holdUpgrades, ...shared } =
+    presentation;
+  const holdTier =
+    localPlayerId !== undefined && Object.hasOwn(holdTiers, localPlayerId)
+      ? (holdTiers[localPlayerId] ?? shared.holdTier)
+      : shared.holdTier;
+  const holdUpgrade =
+    localPlayerId !== undefined && Object.hasOwn(holdUpgrades, localPlayerId)
+      ? (holdUpgrades[localPlayerId] ?? null)
+      : shared.holdUpgrade;
+  const buildOptions =
+    localPlayerId === undefined
+      ? shared.buildOptions
+      : (buildOptionsByOwner[localPlayerId] ?? shared.buildOptions);
   const banner = layerBannerFor(snapshot.layerId);
-  const { fog } = presentation;
+  const { fog } = shared;
+
+  const buildings: ShellBuilding[] = [];
+  for (let i = 0; i < snapshot.buildings.length; i += 1) {
+    const building = snapshot.buildings[i];
+    if (building === undefined) continue;
+    const readout = presentation.buildings[building.id];
+    if (
+      fog !== null &&
+      readout?.factionId === "horde" &&
+      !isFogVisible(fog, building)
+    ) {
+      continue;
+    }
+    buildings.push(decorateBuilding(building, readout));
+  }
+
+  const units: ShellUnit[] = [];
+  for (let i = 0; i < snapshot.units.length; i += 1) {
+    const unit = snapshot.units[i];
+    if (unit === undefined) continue;
+    const readout = presentation.units[unit.id];
+    if (
+      fog !== null &&
+      readout?.factionId === "horde" &&
+      !isFogVisible(fog, unit)
+    ) {
+      continue;
+    }
+    units.push(decorateUnit(unit, readout));
+  }
+
   return {
-    ...presentation,
+    ...shared,
     banner,
-    buildings: visibleToHold(
-      snapshot.buildings.map((building) =>
-        decorateBuilding(building, presentation.buildings[building.id]),
-      ),
-      fog,
-    ),
+    buildings,
+    buildOptions,
     fx: effectsInSight(presentation.fx, fog),
+    holdTier,
+    holdUpgrade,
     map: snapshot.map,
     nodes: exploredFeatures(presentation.nodes, fog),
     onboarding: resolveOnboarding(presentation.onboarding, banner.name),
@@ -358,12 +449,7 @@ export function buildShellModel(snapshot: SimSnapshot): ShellModel {
     telegraphs: cuesInSight(presentation.telegraphs, fog),
     terrain: exploredFeatures(presentation.terrain, fog),
     tick: snapshot.tick,
-    units: visibleToHold(
-      snapshot.units.map((unit) =>
-        decorateUnit(unit, presentation.units[unit.id]),
-      ),
-      fog,
-    ),
+    units,
     veins: exploredFeatures(presentation.veins, fog),
     vents: exploredFeatures(
       ventsFor(snapshot.layerId, presentation.vents),

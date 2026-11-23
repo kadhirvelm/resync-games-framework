@@ -51,6 +51,35 @@ export function readFogOfWar(world: SimWorldState): FogOfWarState | null {
 }
 
 /**
+ * Caches the exact sight sources that produced a given frozen `FogOfWarState`
+ * so unchanged sight lists can skip `revealFogOfWar` completely.
+ */
+const lastSightSourcesByFog = new WeakMap<
+  FogOfWarState,
+  readonly SightSource[]
+>();
+
+/**
+ * Checks whether two sight source lists are bit-for-bit identical in order,
+ * position, and radius.
+ * @param previous - Previously stamped sight sources
+ * @param next - Current sight sources
+ * @returns True when every source has the exact same coordinates and radius
+ */
+function sameSightSources(
+  previous: readonly SightSource[],
+  next: readonly SightSource[],
+): boolean {
+  if (previous.length !== next.length) return false;
+  for (let index = 0; index < previous.length; index += 1) {
+    const a = previous[index] as SightSource;
+    const b = next[index] as SightSource;
+    if (a.x !== b.x || a.y !== b.y || a.radius !== b.radius) return false;
+  }
+  return true;
+}
+
+/**
  * Recomputes what the Hold sees. Runs every `FOG_UPDATE_TICKS`, or at once
  * when forced or when no grid exists yet (a new run or an older save).
  * @param world - Sim world
@@ -64,10 +93,18 @@ export function updateFogOfWar(
   const current = readFogOfWar(world);
   const due = force || world.tick % FOG_UPDATE_TICKS === 0;
   if (current !== null && !due) return current;
-  const next = revealFogOfWar(
-    current ?? createFogOfWar(world.map),
-    holdSightSources(world),
-  );
+  const sources = holdSightSources(world);
+  const previousSources =
+    current === null ? undefined : lastSightSourcesByFog.get(current);
+  if (
+    current !== null &&
+    previousSources !== undefined &&
+    sameSightSources(previousSources, sources)
+  ) {
+    return current;
+  }
+  const next = revealFogOfWar(current ?? createFogOfWar(world.map), sources);
+  lastSightSourcesByFog.set(next, sources);
   world.meta[FOG_OF_WAR_META_KEY] = next;
   return next;
 }

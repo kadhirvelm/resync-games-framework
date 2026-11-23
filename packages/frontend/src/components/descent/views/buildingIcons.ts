@@ -28,6 +28,7 @@ export const BUILDING_ICON_SRC = {
   root_cellar: "/descent/building-icons/root_cellar.png",
   spirit_array: "/descent/building-icons/spirit_array.svg",
   spirit_herb_garden: "/descent/building-icons/spirit_herb_garden.svg",
+  stone_quarry: "/descent/building-icons/deep_mine.png",
   storehouse: "/descent/building-icons/storehouse.png",
   training_yard: "/descent/building-icons/training_yard.png",
   trap: "/descent/building-icons/trap.png",

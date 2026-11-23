@@ -139,7 +139,7 @@ describe("Descent tutorial curriculum & rules", () => {
     const expectedHints: Record<TutorialStepId, TutorialTargetHint> = {
       build_barracks: "build_barracks",
       build_tower: "camp",
-      cultivate: "cultivator",
+      cultivate: "camp",
       defeat_boss: "boss",
       defend_wave: "soldiers",
       gather: "idle_villagers",
@@ -148,10 +148,33 @@ describe("Descent tutorial curriculum & rules", () => {
 
     for (const step of DESCENT_TUTORIAL_STEPS) {
       expect(step.targetHint).toBe(expectedHints[step.id]);
+      expect(step.instructions.length).toBeGreaterThanOrEqual(3);
+      expect(
+        step.instructions.every((instruction) => instruction.length > 0),
+      ).toBe(true);
       expect(step.detail.includes("\n")).toBe(false);
       expect(step.detail.length).toBeLessThanOrEqual(110);
       expect(step.tip.toLowerCase()).not.toContain("all commanders");
       expect(step.tip.toLowerCase()).not.toContain("in co-op");
+    }
+  });
+
+  it("teaches the real movement controls and complete build menu paths", () => {
+    const instructions = (id: TutorialStepId) =>
+      DESCENT_TUTORIAL_STEPS.find((step) => step.id === id)?.instructions.join(
+        " ",
+      ) ?? "";
+    expect(instructions("build_barracks")).toContain("Military");
+    expect(instructions("build_tower")).toContain("Defense");
+    expect(instructions("build_tower")).toContain("confirm Upgrade Hold");
+    expect(instructions("cultivate")).toContain(
+      "Cultivation, then Cultivation Hall",
+    );
+    expect(instructions("defend_wave")).toContain("Right-click an enemy");
+    expect(instructions("defeat_boss")).toContain("right-click ground");
+    for (const step of DESCENT_TUTORIAL_STEPS) {
+      expect(step.hotkeys).not.toContain("A");
+      expect(step.instructions.join(" ")).not.toContain("press A");
     }
   });
 
@@ -169,6 +192,7 @@ describe("Descent tutorial curriculum & rules", () => {
         makeVillager("v1", true),
         makeVillager("v2", true),
         makeSoldier("cap-1"),
+        makeSoldier("rider-1"),
       ],
     });
     expect(evaluateTutorialProgress(gathered).activeStep?.id).toBe(
@@ -182,6 +206,7 @@ describe("Descent tutorial curriculum & rules", () => {
         makeVillager("v1", true),
         makeVillager("v2", true),
         makeSoldier("cap-1"),
+        makeSoldier("rider-1"),
       ],
     });
     expect(evaluateTutorialProgress(unfinishedBarracks).activeStep?.id).toBe(
@@ -194,19 +219,21 @@ describe("Descent tutorial curriculum & rules", () => {
         makeVillager("v1", true),
         makeVillager("v2", true),
         makeSoldier("cap-1"),
+        makeSoldier("rider-1"),
       ],
     });
     expect(evaluateTutorialProgress(builtBarracks).activeStep?.id).toBe(
       "train_soldiers",
     );
 
-    // Step 3: train_soldiers (1 starting captain + 2 trained in solo = 3)
+    // Step 3: train_soldiers (Captain + Rider + 2 trained in solo = 4)
     const trained = makeSnapshot({
       buildings: [makeBuilding("b1", "barracks", true)],
       units: [
         makeVillager("v1", true),
         makeVillager("v2", true),
         makeSoldier("cap-1"),
+        makeSoldier("rider-1"),
         makeSoldier("s1"),
         makeSoldier("s2"),
       ],
@@ -222,6 +249,7 @@ describe("Descent tutorial curriculum & rules", () => {
         makeVillager("v1", true),
         makeVillager("v2", true),
         makeSoldier("cap-1"),
+        makeSoldier("rider-1"),
         makeSoldier("s1"),
         makeSoldier("s2"),
       ],
@@ -255,6 +283,7 @@ describe("Descent tutorial curriculum & rules", () => {
         makeVillager("v1", true),
         makeVillager("v2", true),
         makeSoldier("cap-1"),
+        makeSoldier("rider-1"),
         makeSoldier("s1"),
         makeSoldier("s2"),
       ],
@@ -278,6 +307,7 @@ describe("Descent tutorial curriculum & rules", () => {
         makeVillager("v1", true),
         makeVillager("v2", true),
         makeSoldier("cap-1"),
+        makeSoldier("rider-1"),
         makeSoldier("s1"),
         makeSoldier("s2"),
       ],
@@ -362,6 +392,7 @@ describe("Descent tutorial curriculum & rules", () => {
         makeVillager("v1", true),
         makeVillager("v2", true),
         makeSoldier("cap-1"),
+        makeSoldier("rider-1"),
         makeSoldier("s1"),
         makeSoldier("s2"),
       ],
@@ -389,7 +420,12 @@ describe("Descent tutorial curriculum & rules", () => {
 
     // Once 2 reinforcements are trained, wave 0 is released but wave 1 stays held.
     const trained = makeSnapshot({
-      units: [makeSoldier("cap-1"), makeSoldier("s1"), makeSoldier("s2")],
+      units: [
+        makeSoldier("cap-1"),
+        makeSoldier("rider-1"),
+        makeSoldier("s1"),
+        makeSoldier("s2"),
+      ],
     });
     expect(shouldHoldWaveForTutorial(trained, 0)).toBe(false);
     expect(shouldHoldWaveForTutorial(trained, 1)).toBe(true);
@@ -398,7 +434,12 @@ describe("Descent tutorial curriculum & rules", () => {
     // Once a Ward Tower is built, wave 1 is also released.
     const fortified = makeSnapshot({
       buildings: [makeBuilding("t1", "ward_tower", true)],
-      units: [makeSoldier("cap-1"), makeSoldier("s1"), makeSoldier("s2")],
+      units: [
+        makeSoldier("cap-1"),
+        makeSoldier("rider-1"),
+        makeSoldier("s1"),
+        makeSoldier("s2"),
+      ],
     });
     expect(shouldHoldWaveForTutorial(fortified, 0)).toBe(false);
     expect(shouldHoldWaveForTutorial(fortified, 1)).toBe(false);

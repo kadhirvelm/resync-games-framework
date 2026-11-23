@@ -347,3 +347,35 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.basics {
+  color: #dfd0b8;
+  font-size: 12px;
+  line-height: 1.5;
+
+  summary {
+    color: #e8bf6a;
+    cursor: pointer;
+    padding: 5px 0;
+  }
+
+  p {
+    margin: 6px 0;
+  }
+}
+
+.instructions {
+  color: #f0e2cc;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  gap: 8px;
+  line-height: 1.5;
+  margin: 4px 0;
+  padding-left: 20px;
+
+  li::marker {
+    color: #e8bf6a;
+    font-weight: 700;
+  }
+}

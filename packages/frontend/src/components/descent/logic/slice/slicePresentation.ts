@@ -23,10 +23,12 @@ import { getUnitDefinition } from "../combat/unitCatalog";
 import type { CultivationSystem } from "../cultivation/cultivationSystem";
 import { PILLS } from "../cultivation/data";
 import type { CultivationView } from "../cultivation/types";
+import { footprintDistance } from "../economy/footprint";
 import { growthFraction } from "../economy/harvest";
 import type { EconomyUnit, HoldTier } from "../economy/model";
 import {
   getHoldTier,
+  getHoldUpgrade,
   getItemCount,
   getPopCap,
   getPopUsed,
@@ -41,8 +43,11 @@ import {
   marketRates,
   workerSlots,
 } from "../economy/tables";
-import { activeWorkers } from "../economy/villagers";
-import { worldTerrainObstacles, worldVentVolumes } from "../layers/hazards";
+import {
+  worldTerrainBridges,
+  worldTerrainObstacles,
+  worldVentVolumes,
+} from "../layers/hazards";
 import { calculatePlayerScores } from "../scoring";
 import { TICKS_PER_SECOND } from "../sim/constants";
 import type { SimWorldState } from "../sim/world";
@@ -52,10 +57,12 @@ import { readOmen, ticksUntilWave } from "../waves/clock";
 import type { WaveClockState, WaveDefinition } from "../waves/types";
 import { TOWER_PREFIX } from "./sliceCombat";
 import {
+  type CompletedHallIndex,
   canUseCaptainBattlefieldBreakthrough,
-  completedHall,
+  indexCompletedHalls,
   layerSchoolModifier,
   openCultivation,
+  resolveCompletedHall,
 } from "./sliceCultivation";
 import {
   describeQiArt,
@@ -134,19 +141,31 @@ export function publishPresentation(world: SimWorldState): void {
   const waves = waveState(world);
   const host = economyHost(world, ECONOMY_STEP_TICKS);
   const cultivation = openCultivation(world);
+  const completedHalls = indexCompletedHalls(world);
   const gatherers = gathererCounts(world.units);
   const rationOptions = rationReadouts(world);
+  const ownerIds = holdOwnerIds(world, state);
   world.meta.ui = {
     boss: bossReadout(waves),
     bossGateCleared: waves.bossGateCleared,
     brewOptions: brewOptions(world),
     buildings: buildingReadouts(world, state),
     buildOptions: buildOptions(world),
+    buildOptionsByOwner: Object.fromEntries(
+      ownerIds.map((ownerId) => [ownerId, buildOptions(world, ownerId)]),
+    ),
     calamities: [],
     fog: readFogOfWar(world),
     fx: state.fx,
     hellPressure: waves.hellPressure,
+    holdTier: getHoldTier(host),
+    holdTiers: Object.fromEntries(
+      ownerIds.map((ownerId) => [ownerId, getHoldTier(host, ownerId)]),
+    ),
     holdUpgrade: holdUpgrade(world),
+    holdUpgrades: Object.fromEntries(
+      ownerIds.map((ownerId) => [ownerId, holdUpgrade(world, ownerId)]),
+    ),
     marketRates: marketReadouts(world),
     nodes: host.economy.nodes
       .filter((node) => node.remaining > 0)
@@ -176,10 +195,23 @@ export function publishPresentation(world: SimWorldState): void {
       lost: state.stats.lost,
     },
     telegraphs: telegraphs(waves),
-    terrain: worldTerrainObstacles(world).map((obstacle) => ({ ...obstacle })),
+    terrain: [
+      ...worldTerrainObstacles(world).map((obstacle) => ({ ...obstacle })),
+      ...worldTerrainBridges(world).map((bridge) => ({
+        angle: bridge.angle,
+        height: 0.35,
+        id: bridge.id,
+        kind: "bridge" as const,
+        label: "Plank bridge",
+        radius: bridge.length / 2,
+        width: bridge.width,
+        x: bridge.x,
+        y: bridge.y,
+      })),
+    ],
     trainOptions: trainOptions(world),
     treasures: [],
-    units: unitReadouts(world, state, waves, cultivation),
+    units: unitReadouts(world, state, waves, cultivation, completedHalls),
     veins: host.economy.veins.map((vein) => ({ ...vein, radius: 0.5 })),
     vents: worldVentVolumes(world).map((vent, index) => ({
       ...vent,
@@ -188,6 +220,28 @@ export function publishPresentation(world: SimWorldState): void {
     })),
     wave: waveReadout(waves),
   } satisfies DescentPresentation;
+}
+
+/**
+ * Lists co-op owners who need personalized Hold readouts. The roster keeps
+ * readouts available after a Camp falls; owned Camps cover loaded test worlds
+ * that predate the roster.
+ * @param world - Sim world
+ * @param state - Slice state with the optional multiplayer roster
+ * @returns Sorted unique owner ids
+ */
+function holdOwnerIds(
+  world: SimWorldState,
+  state: AshenGateSliceState,
+): string[] {
+  const ownerIds = new Set(Object.keys(state.players ?? {}));
+  for (const building of world.buildings) {
+    const record = asBuilding(building);
+    if (record.buildingType === "camp" && record.ownerId !== undefined) {
+      ownerIds.add(record.ownerId);
+    }
+  }
+  return [...ownerIds].sort();
 }
 
 /**
@@ -209,11 +263,61 @@ function gathererCounts(units: SimWorldState["units"]): Map<string, number> {
 }
 
 /**
+ * Per-tick cache of open `CultivationSystem` instances keyed by Hall id,
+ * avoiding O(S^2) `openCultivation` cloning across soldiers.
+ */
+interface CultivationSystemCache {
+  bypass?: CultivationSystem;
+  byHallId: Map<string, CultivationSystem>;
+  defaultSystem: CultivationSystem;
+}
+
+/**
+ * Returns a cached `CultivationSystem` for a completed Hall, or the shared
+ * default system when no Hall is present.
+ * @param world - Sim world
+ * @param cache - Per-tick cultivation system cache
+ * @param hallId - Completed Hall id, if any
+ * @returns Reusable cultivation system
+ */
+function cachedHallCultivation(
+  world: SimWorldState,
+  cache: CultivationSystemCache,
+  hallId: string | undefined,
+): CultivationSystem {
+  if (hallId === undefined) return cache.defaultSystem;
+  let system = cache.byHallId.get(hallId);
+  if (system === undefined) {
+    system = openCultivation(world, { hallId });
+    cache.byHallId.set(hallId, system);
+  }
+  return system;
+}
+
+/**
+ * Returns a lazily opened `CultivationSystem` with Hall materials bypassed
+ * for the starting Captain's battlefield breakthrough.
+ * @param world - Sim world
+ * @param cache - Per-tick cultivation system cache
+ * @returns Reusable cultivation system with `bypassHallMaterials: true`
+ */
+function cachedBypassCultivation(
+  world: SimWorldState,
+  cache: CultivationSystemCache,
+): CultivationSystem {
+  if (cache.bypass === undefined) {
+    cache.bypass = openCultivation(world, { bypassHallMaterials: true });
+  }
+  return cache.bypass;
+}
+
+/**
  * Hold and horde unit decorations.
  * @param world - Sim world
  * @param state - Slice state
  * @param waves - Wave clock
  * @param cultivation - Open cultivation system
+ * @param completedHalls - Precomputed completed Cultivation Hall lookup
  * @returns Readouts keyed by unit id
  */
 function unitReadouts(
@@ -221,12 +325,23 @@ function unitReadouts(
   state: AshenGateSliceState,
   waves: WaveClockState,
   cultivation: CultivationSystem,
+  completedHalls: CompletedHallIndex,
 ): Record<string, UnitReadout> {
   const units: Record<string, UnitReadout> = {};
   const waveUnits = new Map(waves.units.map((unit) => [unit.id, unit]));
+  const cultivationCache: CultivationSystemCache = {
+    byHallId: new Map(),
+    defaultSystem: cultivation,
+  };
   for (const unit of world.units) {
     if (isEconomyUnit(unit)) {
-      units[unit.id] = holdUnitReadout(world, state, unit, cultivation);
+      units[unit.id] = holdUnitReadout(
+        world,
+        state,
+        unit,
+        cultivationCache,
+        completedHalls,
+      );
       continue;
     }
     const horde = waveUnits.get(unit.id);
@@ -252,15 +367,18 @@ function unitReadouts(
  * @param world - Sim world
  * @param state - Slice state
  * @param unit - Economy record
- * @param cultivation - Open cultivation system
+ * @param cultivationCache - Per-tick reusable cultivation systems
+ * @param completedHalls - Precomputed completed Cultivation Hall lookup
  * @returns Readout
  */
 function holdUnitReadout(
   world: SimWorldState,
   state: AshenGateSliceState,
   unit: EconomyUnit,
-  cultivation: CultivationSystem,
+  cultivationCache: CultivationSystemCache,
+  completedHalls: CompletedHallIndex,
 ): UnitReadout {
+  const cultivation = cultivationCache.defaultSystem;
   const fed = unit.modifiers.some((modifier) => modifier.healthBonus > 0);
   const owner =
     unit.ownerId !== undefined ? state.players?.[unit.ownerId] : undefined;
@@ -301,17 +419,20 @@ function holdUnitReadout(
   };
   if (!cultivation.hasUnit(unit.id)) return readout;
   const record = cultivation.getUnitState(unit.id);
-  const hall = completedHall(world, unit.ownerId);
+  const hall = resolveCompletedHall(completedHalls, unit.ownerId);
   const captainBattlefield =
     hall === null && canUseCaptainBattlefieldBreakthrough(world, unit.id);
   const view = captainBattlefield
-    ? openCultivation(world, { bypassHallMaterials: true }).getCultivationView(
+    ? cachedBypassCultivation(world, cultivationCache).getCultivationView(
         unit.id,
       )
     : withHallRequirement(
-        world,
-        cultivation.getCultivationView(unit.id),
-        unit.ownerId,
+        cachedHallCultivation(
+          world,
+          cultivationCache,
+          hall?.id,
+        ).getCultivationView(unit.id),
+        hall !== null,
       );
   const active = record.activeBreakthrough;
   const cultivatorFields = isCultivatorClass(unit.classId)
@@ -341,8 +462,17 @@ function holdUnitReadout(
     ...(hall !== null ? { breakthroughHallId: hall.id } : {}),
     breakthroughReady:
       view.meritToNext > 0 && view.missingRequirements.length === 0,
+    breakthroughRemainingSeconds: active
+      ? Math.max(0, Math.ceil(active.remainingSeconds))
+      : undefined,
     channel: active
-      ? 1 - active.remainingSeconds / channelSeconds(active.sourceRank)
+      ? Math.max(
+          0,
+          Math.min(
+            1,
+            1 - active.remainingSeconds / channelSeconds(active.sourceRank),
+          ),
+        )
       : undefined,
     cultivation: view,
     injured: (state.injuries[unit.id] ?? 0) > 0,
@@ -369,18 +499,16 @@ function routeField(
 
 /**
  * Adds the "build a Cultivation Hall" gate the cultivation system cannot see.
- * @param world - Sim world
  * @param view - Cultivation view
- * @param ownerId - Unit owner whose completed Hall satisfies the gate
+ * @param hasHall - Whether the unit's owner already has a completed Hall
  * @returns The view with the Hall requirement when missing
  */
 function withHallRequirement(
-  world: SimWorldState,
   view: CultivationView,
-  ownerId?: string,
+  hasHall: boolean,
 ): CultivationView {
   if (view.meritToNext === 0) return view;
-  if (completedHall(world, ownerId) !== null) return view;
+  if (hasHall) return view;
   return {
     ...view,
     missingRequirements: [
@@ -472,6 +600,29 @@ function buildingReadouts(
     if (queue === undefined) trainingByBuilding.set(job.buildingId, [job]);
     else queue.push(job);
   }
+  const buildingById = new Map<string, ReturnType<typeof asBuilding>>();
+  for (const building of world.buildings) {
+    const record = asBuilding(building);
+    buildingById.set(record.id, record);
+  }
+  const activeWorkerCounts = new Map<string, number>();
+  const harvesterBuildings = new Set<string>();
+  for (const unit of world.units) {
+    if (!isEconomyUnit(unit)) continue;
+    if (unit.task?.kind === "harvest") {
+      harvesterBuildings.add(unit.task.buildingId);
+      continue;
+    }
+    if (unit.hp <= 0 || unit.popKind !== "villager") continue;
+    if (unit.task?.kind !== "work") continue;
+    const building = buildingById.get(unit.task.buildingId);
+    if (building === undefined) continue;
+    if (footprintDistance(building, unit) > 1) continue;
+    activeWorkerCounts.set(
+      building.id,
+      (activeWorkerCounts.get(building.id) ?? 0) + 1,
+    );
+  }
   for (const building of world.buildings) {
     const record = asBuilding(building);
     const owner =
@@ -492,7 +643,10 @@ function buildingReadouts(
             ownerId: record.ownerId,
             ownerName: owner?.name,
           }),
-      tier: record.buildingType === "camp" ? host.economy.tier : record.tier,
+      tier:
+        record.buildingType === "camp"
+          ? getHoldTier(host, record.ownerId)
+          : record.tier,
     };
     if (record.constructing) {
       readout.progress = record.buildTicksDone / Math.max(1, record.buildTicks);
@@ -530,7 +684,7 @@ function buildingReadouts(
         record.buildingType,
         record.production !== null,
         growth,
-        harvesterAssigned(world, record.id),
+        harvesterBuildings.has(record.id),
       );
     } else if (
       production !== null &&
@@ -539,17 +693,25 @@ function buildingReadouts(
     ) {
       readout.progress =
         (record.production?.progress ?? 0) / Math.max(1, production.everyTicks);
+      const slots = workerSlots(record.buildingType);
+      const workers =
+        slots === 0
+          ? 0
+          : Math.min(slots, activeWorkerCounts.get(record.id) ?? 0);
       readout.activity = productionActivity(
         record.buildingType,
         record.production !== null,
-        activeWorkers(host, record),
+        workers,
       );
     }
-    if (record.buildingType === "camp" && host.economy.upgrade) {
-      const total = holdTierDef(host.economy.upgrade.target)?.upgradeTicks ?? 1;
-      readout.progress =
-        1 - host.economy.upgrade.ticksLeft / Math.max(1, total);
-      readout.activity = `Raising ${host.economy.upgrade.target}`;
+    const upgrade =
+      record.buildingType === "camp"
+        ? getHoldUpgrade(host, record.ownerId)
+        : null;
+    if (upgrade !== null) {
+      const total = holdTierDef(upgrade.target)?.upgradeTicks ?? 1;
+      readout.progress = 1 - upgrade.ticksLeft / Math.max(1, total);
+      readout.activity = `Raising ${upgrade.target}`;
     }
     buildings[record.id] = readout;
   }
@@ -557,21 +719,21 @@ function buildingReadouts(
 }
 
 /**
- * Tier-gated building choices with placement hints. Only buildings unlocked
- * at the Hold's current tier are published so the menu grows gradually as the
- * Hold upgrades.
+ * Every Ashen Gate building with independent tier and resource availability.
+ * Keeping locked entries in the readout lets the command card explain an
+ * unavailable building instead of making it disappear.
  * @param world - Sim world
+ * @param ownerId - Multiplayer owner, or undefined for the solo/default Hold
  * @returns Build menu entries
  */
-function buildOptions(world: SimWorldState): BuildReadout[] {
-  const tier = getHoldTier(economyHost(world, ECONOMY_STEP_TICKS));
+function buildOptions(world: SimWorldState, ownerId?: string): BuildReadout[] {
+  const tier = getHoldTier(economyHost(world, ECONOMY_STEP_TICKS), ownerId);
   return listBuildingDefs()
-    .filter(
-      (definition) =>
-        (ASHEN_GATE_BUILDINGS as readonly string[]).includes(definition.id) &&
-        tierIndex(tier) >= tierIndex(definition.tier),
+    .filter((definition) =>
+      (ASHEN_GATE_BUILDINGS as readonly string[]).includes(definition.id),
     )
     .map((definition) => {
+      const tierUnlocked = tierIndex(tier) >= tierIndex(definition.tier);
       const affordable = canAfford(world.resources, definition.cost);
       const hints: string[] = [];
       if (definition.veinBonus) hints.push("Bonus on a Spirit Vein.");
@@ -597,8 +759,11 @@ function buildOptions(world: SimWorldState): BuildReadout[] {
           hints.push("Grows on its own; a villager harvests it when ripe.");
         }
       }
-      const lockedReason = affordable ? undefined : "Not enough resources";
+      let lockedReason: string | undefined;
+      if (!tierUnlocked) lockedReason = `Requires ${definition.tier}`;
+      if (tierUnlocked && !affordable) lockedReason = "Not enough resources";
       return {
+        affordable,
         buildingType: definition.id,
         cost: { ...definition.cost },
         costLabel: costLabel(definition.cost),
@@ -607,7 +772,7 @@ function buildOptions(world: SimWorldState): BuildReadout[] {
         lockedReason,
         name: definition.name,
         tier: definition.tier,
-        unlocked: affordable,
+        unlocked: tierUnlocked,
       };
     });
 }
@@ -620,9 +785,10 @@ function buildOptions(world: SimWorldState): BuildReadout[] {
  * @returns Train options
  */
 function trainOptions(world: SimWorldState): TrainReadout[] {
-  const tier = getHoldTier(economyHost(world, ECONOMY_STEP_TICKS));
+  const host = economyHost(world, ECONOMY_STEP_TICKS);
   return world.buildings.flatMap((building) => {
     const record = asBuilding(building);
+    const tier = getHoldTier(host, record.ownerId);
     let classes: readonly ClassId[] = [];
     if (record.buildingType === "barracks") classes = BARRACKS_CLASSES;
     if (record.buildingType === "cultivator_sanctum") {
@@ -792,16 +958,21 @@ function tierUnlockSummary(targetTier: HoldTier): string | undefined {
 /**
  * The next Hold tier upgrade.
  * @param world - Sim world
+ * @param ownerId - Multiplayer owner, or undefined for the solo/default Hold
  * @returns Readout, or null at Citadel
  */
-function holdUpgrade(world: SimWorldState): HoldUpgradeReadout | null {
+function holdUpgrade(
+  world: SimWorldState,
+  ownerId?: string,
+): HoldUpgradeReadout | null {
   const host = economyHost(world, ECONOMY_STEP_TICKS);
-  const tier = getHoldTier(host);
+  const tier = getHoldTier(host, ownerId);
   const target = TIER_ORDER[tierIndex(tier) + 1];
   if (!target) return null;
   const definition = holdTierDef(target);
   if (!definition) return null;
-  const pending = host.economy.upgrade !== null;
+  const upgrade = getHoldUpgrade(host, ownerId);
+  const pending = upgrade !== null;
   const affordable = canAfford(world.resources, definition.upgradeCost);
   let reason: string | undefined;
   if (pending) reason = `${target} is already rising`;
@@ -811,7 +982,7 @@ function holdUpgrade(world: SimWorldState): HoldUpgradeReadout | null {
     cost: { ...definition.upgradeCost },
     costLabel: costLabel(definition.upgradeCost),
     currentTier: tier,
-    inProgress: upgradeProgress(host.economy.upgrade, definition.upgradeTicks),
+    inProgress: upgradeProgress(upgrade, definition.upgradeTicks),
     reason,
     shortfall: !pending && !affordable,
     targetTier: target,
@@ -966,7 +1137,16 @@ function objectives(
   const soldiers = world.units.filter(
     (unit) => isEconomyUnit(unit) && unit.popKind === "soldier",
   ).length;
-  const tier = getHoldTier(economyHost(world, ECONOMY_STEP_TICKS));
+  const host = economyHost(world, ECONOMY_STEP_TICKS);
+  const tiers = [
+    getHoldTier(host),
+    ...Object.keys(host.economy.ownerTiers).map((ownerId) =>
+      getHoldTier(host, ownerId),
+    ),
+  ];
+  const tier = tiers.reduce((highest, candidate) =>
+    tierIndex(candidate) > tierIndex(highest) ? candidate : highest,
+  );
   const sworn = state.cultivation.units.some((unit) => unit.rank !== "Ashborn");
   const villagers = world.units.filter(
     (unit) => isEconomyUnit(unit) && unit.popKind === "villager",
@@ -1004,14 +1184,14 @@ function objectives(
       label: "Raise an Omen Tower to read waves",
     },
     {
-      done: tier === "Stronghold" || tier === "Citadel",
-      id: "stronghold",
-      label: "Upgrade the Hold to Stronghold",
-    },
-    {
       done: has("cultivation_hall"),
       id: "hall",
-      label: "Build a Cultivation Hall",
+      label: "Build a Cultivation Hall at Outpost",
+    },
+    {
+      done: tier === "Stronghold" || tier === "Citadel",
+      id: "stronghold",
+      label: "Upgrade to Stronghold for faster meditation",
     },
     { done: sworn, id: "sworn", label: "Promote a soldier to Sworn" },
     {
@@ -1132,7 +1312,7 @@ function productionActivity(
   const slots = workerSlots(buildingType);
   if (slots > 0 && workers === 0) return "Needs a villager to work it";
   const crew = slots > 1 ? ` (${workers}/${slots} workers)` : "";
-  if (running || buildingType === "well") {
+  if (running || buildingType === "well" || buildingType === "stone_quarry") {
     return `${producingLabel(buildingType)}${crew}`;
   }
   return "Waiting for Water";
@@ -1160,20 +1340,6 @@ function cropActivity(
 }
 
 /**
- * @param world - Sim world
- * @param buildingId - Harvested producer
- * @returns Whether a villager holds its harvest job
- */
-function harvesterAssigned(world: SimWorldState, buildingId: string): boolean {
-  return world.units.some(
-    (unit) =>
-      isEconomyUnit(unit) &&
-      unit.task?.kind === "harvest" &&
-      unit.task.buildingId === buildingId,
-  );
-}
-
-/**
  * @param buildingType - Producer building id
  * @returns What the producer is doing while its timer runs
  */
@@ -1181,6 +1347,7 @@ function producingLabel(buildingType: string): string {
   if (buildingType === "well") return "Drawing Water";
   if (buildingType === "farm") return "Growing Food";
   if (buildingType === "forest") return "Growing Wood";
+  if (buildingType === "stone_quarry") return "Mining Stone";
   return "Growing Spirit Herbs";
 }
 

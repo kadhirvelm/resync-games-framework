@@ -125,8 +125,11 @@ export const HOTKEY_ROWS = [
   { action: "Place multiple buildings", key: "Shift+click" },
   { action: "Unleash Cultivator Qi Art", key: "C" },
   { action: "Toggle Cultivator Meditation", key: "M" },
-  { action: "Build category", key: "Q W / A S" },
-  { action: "Building (key on its button)", key: "Q W E / A S D / Z X C" },
+  { action: "Build category", key: "Q W E R" },
+  {
+    action: "Building (key on its button)",
+    key: "Q W E R T / A S D F G / Z X C V",
+  },
   { action: "Back to categories", key: "Backspace" },
   { action: "Idle villager", key: "." },
   { action: "Camp", key: "H" },

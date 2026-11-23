@@ -1,7 +1,12 @@
 /** Timed building production for renewable Ashen Gate resources. */
 
 import { growCrop } from "./harvest";
-import type { EconomyBuilding, EconomyHost, ProductionJob } from "./model";
+import type {
+  CarryLoad,
+  EconomyBuilding,
+  EconomyHost,
+  ProductionJob,
+} from "./model";
 import { asBuilding } from "./records";
 import { addDeposit, trySpend } from "./stockpile";
 import { type BuildingProductionDef, buildingDef } from "./tables";
@@ -35,8 +40,12 @@ export function stepProduction(host: EconomyHost): void {
     }
     record.production.progress += progress;
     if (record.production.progress < production.everyTicks) continue;
-    addDeposit(host.resources, production.output);
     record.production = null;
+    if (production.workers === null) {
+      addDeposit(host.resources, production.output);
+      continue;
+    }
+    stackReadyOutput(record, production);
   }
 }
 
@@ -67,4 +76,27 @@ function normalizeProductionJob(value: unknown): ProductionJob | null {
   const progress = (value as Partial<ProductionJob>).progress;
   if (typeof progress !== "number" || !Number.isFinite(progress)) return null;
   return { progress: Math.max(0, progress) };
+}
+
+/**
+ * Leaves a worked producer's finished output beside it for a worker to carry
+ * to a drop-off, stacking with any output already waiting.
+ * @param building - Producer that finished a cycle
+ * @param production - Its production row
+ */
+function stackReadyOutput(
+  building: EconomyBuilding,
+  production: BuildingProductionDef,
+): void {
+  for (const [resourceId, amount] of Object.entries(production.output)) {
+    const waiting = building.ready;
+    if (waiting && waiting.resourceId === resourceId) {
+      waiting.amount += amount ?? 0;
+      continue;
+    }
+    building.ready = {
+      amount: amount ?? 0,
+      resourceId: resourceId as CarryLoad["resourceId"],
+    };
+  }
 }

@@ -223,4 +223,91 @@ describe("Meshy provider adapter", () => {
       globalThis.fetch = original;
     }
   });
+
+  test("reuses an existing Meshy rig task id without re-rigging when adding extra animations", async () => {
+    const io = new NodeIO();
+    const doc = await io.readBinary(
+      await compileThreeDDesign(demoThreeDDesign("character"), "character"),
+    );
+    const baseClip = doc.getRoot().listAnimations()[0];
+    if (baseClip) {
+      const extra = doc.createAnimation("extra");
+      for (const channel of baseClip.listChannels()) {
+        const sampler = channel.getSampler();
+        const targetNode = channel.getTargetNode();
+        const targetPath = channel.getTargetPath();
+        if (!sampler || !targetNode || !targetPath) continue;
+        const clonedSampler = doc
+          .createAnimationSampler()
+          .setInput(sampler.getInput())
+          .setOutput(sampler.getOutput())
+          .setInterpolation(sampler.getInterpolation());
+        extra.addSampler(clonedSampler);
+        extra.addChannel(
+          doc
+            .createAnimationChannel()
+            .setSampler(clonedSampler)
+            .setTargetNode(targetNode)
+            .setTargetPath(targetPath),
+        );
+      }
+    }
+    const providerBytes = await io.writeBinary(doc);
+    const original = globalThis.fetch;
+    const posts: { body: Record<string, unknown>; url: string }[] = [];
+    globalThis.fetch = (async (
+      url: string | URL | Request,
+      init?: RequestInit,
+    ) => {
+      const target = String(url);
+      if (init?.method === "POST" && typeof init.body === "string") {
+        posts.push({ body: JSON.parse(init.body), url: target });
+      }
+      if (target.includes("assets.meshy.ai"))
+        return new Response(providerBytes);
+      if (target.endsWith("/v1/animations"))
+        return Response.json({ result: "reused-anim-id" });
+      if (target.includes("/animations/reused-anim-id"))
+        return Response.json({
+          result: {
+            animation_glb_url: "https://assets.meshy.ai/character-meditate.glb",
+          },
+          status: "SUCCEEDED",
+        });
+      return Response.json({ status: "SUCCEEDED" });
+    }) as unknown as typeof fetch;
+    try {
+      const provider = new MeshyProvider({ get: () => "test-key" } as never);
+      const result = await provider.generateCharacter(
+        "Cultivator with meditation animation",
+        new AbortController().signal,
+        async () => undefined,
+        [],
+        async () => undefined,
+        {
+          extraAnimations: [{ actionId: 363, clipName: "meditate" }],
+          sourceRigTaskId: "existing-rig-id",
+        },
+      );
+      expect(result.jobIds).toEqual(["existing-rig-id", "reused-anim-id"]);
+      expect(posts.map((post) => new URL(post.url).pathname)).toEqual([
+        "/openapi/v1/animations",
+      ]);
+      expect(posts[0]?.body).toEqual({
+        action_ids: [0, 30, 99, 178, 189, 363],
+        rig_task_id: "existing-rig-id",
+      });
+      const validation = await validateGlb(result.bytes, "character");
+      expect(validation.animations.map((clip) => clip.name)).toEqual([
+        "idle",
+        "walk",
+        "attack",
+        "hit",
+        "death",
+        "meditate",
+      ]);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
 });

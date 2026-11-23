@@ -195,7 +195,10 @@ export function addAshenBackdrop(
   return {
     hideStandIns: (role) => {
       replacedRoles.add(role);
-      for (const node of standIns.get(role) ?? []) node.setEnabled(false);
+      const nodes = standIns.get(role);
+      if (nodes === undefined) return;
+      for (const node of nodes) node.dispose();
+      standIns.delete(role);
     },
     placements,
     revealStandIns: (revealedIds) => {
@@ -557,23 +560,28 @@ function addEmbers(scene: Scene, mapWidth: number, mapHeight: number): void {
   embers.emitter = new Vector3(mapWidth / 2, -ABYSS_DEPTH, mapHeight / 2);
   const halfWidth = mapWidth / 2 + PLATEAU_RIM;
   const halfDepth = mapHeight / 2 + PLATEAU_RIM;
-  embers.startPositionFunction = (worldMatrix, position) => {
+  embers.startPositionFunction = (worldMatrix, positionToUpdate) => {
     const reach = 1 + Math.random() * 14;
     const side = Math.floor(Math.random() * 4);
     const along = Math.random() * 2 - 1;
-    const local =
-      side < 2
-        ? new Vector3(
-            along * (halfWidth + reach),
-            Math.random() * 4,
-            (side === 0 ? -1 : 1) * (halfDepth + reach),
-          )
-        : new Vector3(
-            (side === 2 ? -1 : 1) * (halfWidth + reach),
-            Math.random() * 4,
-            along * (halfDepth + reach),
-          );
-    Vector3.TransformCoordinatesToRef(local, worldMatrix, position);
+    if (side < 2) {
+      positionToUpdate.set(
+        along * (halfWidth + reach),
+        Math.random() * 4,
+        (side === 0 ? -1 : 1) * (halfDepth + reach),
+      );
+    } else {
+      positionToUpdate.set(
+        (side === 2 ? -1 : 1) * (halfWidth + reach),
+        Math.random() * 4,
+        along * (halfDepth + reach),
+      );
+    }
+    Vector3.TransformCoordinatesToRef(
+      positionToUpdate,
+      worldMatrix,
+      positionToUpdate,
+    );
   };
   embers.direction1 = new Vector3(-0.6, 4, -0.6);
   embers.direction2 = new Vector3(0.6, 7, 0.6);

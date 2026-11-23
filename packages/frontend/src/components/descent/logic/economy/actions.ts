@@ -21,7 +21,7 @@ import type {
   SpiritVein,
 } from "./model";
 import { SOLDIER_POP } from "./pop";
-import { canAffordPop } from "./queries";
+import { canAffordPop, getHoldTier, getHoldUpgrade } from "./queries";
 import {
   asBuilding,
   asUnit,
@@ -65,7 +65,7 @@ export function placeBuilding(
   const y = Math.round(request.y);
   const def = buildingDef(request.buildingType);
   if (!def) return "That building is not in the Hold's plans.";
-  if (!tierAllows(host.economy.tier, def.tier)) {
+  if (!tierAllows(getHoldTier(host, request.ownerId), def.tier)) {
     return `${def.name} needs a ${def.tier}.`;
   }
   const site = { buildingType: def.id, x, y };
@@ -229,22 +229,26 @@ export function stepBrewing(host: EconomyHost): void {
 }
 
 /**
- * Pays for the next hold tier and starts its timer.
+ * Pays for the next hold tier and starts its timer. Co-op owners have
+ * independent tiers and may run upgrades concurrently.
  * @param host - World whose tier will change after the timer
+ * @param ownerId - Multiplayer owner, or undefined for the solo/default Hold
  * @returns Whether the upgrade started
  */
-export function upgradeHold(host: EconomyHost): boolean {
-  if (host.economy.upgrade) return false;
-  const target = nextHoldTier(host.economy.tier);
+export function upgradeHold(host: EconomyHost, ownerId?: string): boolean {
+  if (getHoldUpgrade(host, ownerId) !== null) return false;
+  const target = nextHoldTier(getHoldTier(host, ownerId));
   if (!target) return false;
   const def = holdTierDef(target);
   if (!def) return false;
   if (!trySpend(host, def.upgradeCost)) return false;
-  host.economy.upgrade = {
+  const upgrade = {
     startedTick: host.tick(),
     target,
     ticksLeft: def.upgradeTicks,
   };
+  if (ownerId === undefined) host.economy.upgrade = upgrade;
+  else host.economy.ownerUpgrades[ownerId] = upgrade;
   return true;
 }
 
@@ -257,21 +261,37 @@ const HOLD_TIER_MAX_HP: Readonly<Record<HoldTier, number>> = {
 };
 
 /**
- * Finishes a tier upgrade that was started on an earlier tick.
- * @param host - World whose tier may advance
+ * Finishes solo and co-op tier upgrades started on earlier ticks.
+ * @param host - World whose tiers may advance
  */
 export function advanceUpgrade(host: EconomyHost): void {
-  const upgrade = host.economy.upgrade;
-  if (!upgrade) return;
-  if (upgrade.startedTick === host.tick()) return;
+  advanceOneUpgrade(host);
+  const ownerIds = Object.keys(host.economy.ownerUpgrades).sort();
+  for (const ownerId of ownerIds) advanceOneUpgrade(host, ownerId);
+}
+
+/**
+ * Advances one solo or owner-scoped upgrade and promotes only its own Camps.
+ * @param host - World whose selected upgrade may advance
+ * @param ownerId - Multiplayer owner, or undefined for the solo/default Hold
+ */
+function advanceOneUpgrade(host: EconomyHost, ownerId?: string): void {
+  const upgrade = getHoldUpgrade(host, ownerId);
+  if (upgrade === null || upgrade.startedTick === host.tick()) return;
   upgrade.ticksLeft -= 1;
   if (upgrade.ticksLeft > 0) return;
-  host.economy.tier = upgrade.target;
-  host.economy.upgrade = null;
+  if (ownerId === undefined) {
+    host.economy.tier = upgrade.target;
+    host.economy.upgrade = null;
+  } else {
+    host.economy.ownerTiers[ownerId] = upgrade.target;
+    delete host.economy.ownerUpgrades[ownerId];
+  }
   const nextMaxHp = HOLD_TIER_MAX_HP[upgrade.target];
   for (const building of host.buildings) {
     const record = asBuilding(building);
     if (record.buildingType !== "camp") continue;
+    if (ownerId !== undefined && record.ownerId !== ownerId) continue;
     const hpGain = Math.max(0, nextMaxHp - record.maxHp);
     record.tier = upgrade.target;
     record.maxHp = nextMaxHp;

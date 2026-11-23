@@ -49,6 +49,10 @@ interface CoarseGrid {
 }
 
 const GRID_CACHE = new Map<string, CoarseGrid>();
+const GRID_REF_CACHE = new WeakMap<
+  readonly HurtDisk[],
+  Map<string, CoarseGrid>
+>();
 
 /**
  * Reports whether the closed segment from `from` to `to` intersects any disk.
@@ -69,8 +73,20 @@ export function segmentHitsObstacles(
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const lengthSq = dx * dx + dy * dy;
+  const minX = from.x < to.x ? from.x : to.x;
+  const maxX = from.x > to.x ? from.x : to.x;
+  const minY = from.y < to.y ? from.y : to.y;
+  const maxY = from.y > to.y ? from.y : to.y;
   for (const disk of disks) {
     const limit = disk.radius + clearance;
+    if (
+      disk.x + limit < minX ||
+      disk.x - limit > maxX ||
+      disk.y + limit < minY ||
+      disk.y - limit > maxY
+    ) {
+      continue;
+    }
     const t =
       lengthSq > 1e-9
         ? Math.max(
@@ -163,9 +179,11 @@ export function pushOutOfObstacles(
   let x = point.x;
   let y = point.y;
   for (const obstacle of obstacles) {
-    const dx = x - obstacle.x;
-    const dy = y - obstacle.y;
     const minDistance = obstacle.radius + bodyRadius;
+    const dx = x - obstacle.x;
+    if (dx >= minDistance || dx <= -minDistance) continue;
+    const dy = y - obstacle.y;
+    if (dy >= minDistance || dy <= -minDistance) continue;
     const distSq = dx * dx + dy * dy;
     if (distSq >= minDistance * minDistance) continue;
     const dist = Math.sqrt(distSq);
@@ -187,9 +205,21 @@ function getCoarseGrid(
   obstacles: readonly HurtDisk[],
   mapSize: NavGridSize,
 ): CoarseGrid {
+  const sizeKey = `${mapSize.width}x${mapSize.height}`;
+  let bySize = GRID_REF_CACHE.get(obstacles);
+  const refHit = bySize?.get(sizeKey);
+  if (refHit !== undefined) return refHit;
+
   const key = gridSignature(obstacles, mapSize);
   const existing = GRID_CACHE.get(key);
-  if (existing !== undefined) return existing;
+  if (existing !== undefined) {
+    if (bySize === undefined) {
+      bySize = new Map();
+      GRID_REF_CACHE.set(obstacles, bySize);
+    }
+    bySize.set(sizeKey, existing);
+    return existing;
+  }
 
   const cols = Math.max(1, Math.ceil(mapSize.width / CELL_SIZE));
   const rows = Math.max(1, Math.ceil(mapSize.height / CELL_SIZE));
@@ -214,6 +244,11 @@ function getCoarseGrid(
     if (oldest !== undefined) GRID_CACHE.delete(oldest);
   }
   GRID_CACHE.set(key, grid);
+  if (bySize === undefined) {
+    bySize = new Map();
+    GRID_REF_CACHE.set(obstacles, bySize);
+  }
+  bySize.set(sizeKey, grid);
   return grid;
 }
 

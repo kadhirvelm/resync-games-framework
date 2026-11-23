@@ -9,6 +9,7 @@ import type {
   EconomyHost,
   EconomyUnit,
   HoldTier,
+  HoldUpgrade,
   ResourceNode,
   SpiritVein,
 } from "./model";
@@ -41,12 +42,12 @@ export function getPopUsed(host: EconomyHost): number {
 }
 
 /**
- * Base cap plus the bonus of every finished housing building.
+ * One base allowance per allied Hold plus every finished housing bonus.
  * @param host - World to score
  * @returns The population cap
  */
 export function getPopCap(host: EconomyHost): number {
-  let cap = basePopCap();
+  let cap = basePopCap() * host.economy.playerCount;
   for (const building of host.buildings) {
     const record = asBuilding(building);
     if (!record.completed) continue;
@@ -156,11 +157,29 @@ export function listVeins(host: EconomyHost): SpiritVein[] {
 }
 
 /**
+ * Reads the solo Hold tier or one co-op owner's independent tier. An owner
+ * without an override inherits the scenario's default tier.
  * @param host - World to read
- * @returns The current hold tier
+ * @param ownerId - Multiplayer owner, or undefined for the solo/default Hold
+ * @returns The selected Hold's current tier
  */
-export function getHoldTier(host: EconomyHost): HoldTier {
-  return host.economy.tier;
+export function getHoldTier(host: EconomyHost, ownerId?: string): HoldTier {
+  if (ownerId === undefined) return host.economy.tier;
+  return host.economy.ownerTiers[ownerId] ?? host.economy.tier;
+}
+
+/**
+ * Reads the solo Hold upgrade or one co-op owner's independent timer.
+ * @param host - World to read
+ * @param ownerId - Multiplayer owner, or undefined for the solo/default Hold
+ * @returns The selected Hold's running upgrade, or null when idle
+ */
+export function getHoldUpgrade(
+  host: EconomyHost,
+  ownerId?: string,
+): HoldUpgrade | null {
+  if (ownerId === undefined) return host.economy.upgrade;
+  return host.economy.ownerUpgrades[ownerId] ?? null;
 }
 
 /**

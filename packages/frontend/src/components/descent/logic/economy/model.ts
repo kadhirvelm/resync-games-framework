@@ -104,6 +104,8 @@ export interface EconomyBuilding extends BuildingState {
   onSpiritVein: boolean;
   placeholder: boolean;
   production: ProductionJob | null;
+  /** Finished output of a worked producer, waiting for a worker to carry it to a drop-off. */
+  ready?: CarryLoad | null;
   tier: HoldTier;
 }
 
@@ -169,8 +171,17 @@ export interface DeepWorkView {
   shaftHead: boolean;
 }
 
+/** One Hold tier upgrade running for the solo Hold or one co-op owner. */
+export interface HoldUpgrade {
+  startedTick: number;
+  target: HoldTier;
+  ticksLeft: number;
+}
+
 /** Saved economy bag under `world.meta.economy`. */
 export interface EconomyMeta {
+  /** Number of allied Holds sharing the base population allowance. */
+  playerCount: number;
   items: Record<string, number>;
   /** Mercenaries hired so far; the next hire's id uses this serial. */
   mercenarySerial: number;
@@ -180,7 +191,11 @@ export interface EconomyMeta {
   /** Why the last placement failed, or null after a success. */
   rejection: string | null;
   tier: HoldTier;
-  upgrade: { startedTick: number; target: HoldTier; ticksLeft: number } | null;
+  upgrade: HoldUpgrade | null;
+  /** Co-op tier overrides; the shared `tier` remains the solo/default value. */
+  ownerTiers: Record<string, HoldTier>;
+  /** Independent co-op upgrade timers keyed by owning player id. */
+  ownerUpgrades: Record<string, HoldUpgrade>;
   veins: SpiritVein[];
   works: DeepWorkRuntime[];
 }
@@ -235,6 +250,8 @@ export interface UnitInit {
 
 /** Scenario data for a headless economy. Omitted collections start empty. */
 export interface EconomyInit {
+  /** Allied Holds; each contributes one base population allowance. */
+  playerCount?: number;
   buildings?: BuildingInit[];
   height?: number;
   layerId?: string;

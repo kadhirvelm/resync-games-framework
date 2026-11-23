@@ -20,3 +20,17 @@ export {
   stepsTo,
   stepsToBeside,
 } from "./reachability";
+export {
+  BRIDGE_HALF_GAP,
+  carvePond,
+  carveRiver,
+  pickBridgeRows,
+  placeWaterways,
+  type River,
+  type RiverBridge,
+  type RiverSpec,
+  type WaterDisk,
+  type WaterwayPlan,
+  type WaterwaySpec,
+  type Waterways,
+} from "./rivers";

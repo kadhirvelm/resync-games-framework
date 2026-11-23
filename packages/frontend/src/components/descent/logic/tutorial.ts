@@ -31,6 +31,8 @@ export type TutorialTargetHint =
 export interface TutorialStepDefinition {
   /** Single-line actionable instruction. */
   detail: string;
+  /** Ordered, click-by-click actions shown for the current objective. */
+  instructions: readonly string[];
   /** Keycap badges highlighted beside the instructions. */
   hotkeys: readonly string[];
   id: TutorialStepId;
@@ -65,65 +67,96 @@ export interface TutorialProgress {
 export const DESCENT_TUTORIAL_STEPS: readonly TutorialStepDefinition[] = [
   {
     detail:
-      "Select your Villagers and right-click a nearby Tree, Rock Vein, Grove, or Spring.",
+      "Villagers bring supplies back to your Camp. Give two of them a gathering job.",
     hotkeys: [".", "Right-Click"],
     id: "gather",
+    instructions: [
+      "Click Select Idle Villager below to find and select one worker.",
+      "Right-click a nearby Tree for Wood or Rock Vein for Stone. The worker walks there and gathers automatically.",
+      "Click Select Idle Villager again, then right-click another resource. Keep two villagers gathering.",
+    ],
     targetHint: "idle_villagers",
-    tip: "Split villagers across Wood, Food, and Stone to fund your early Hold.",
+    tip: "If nothing is moving, press Space to unpause. Right-click the resource itself, not the ground beside it.",
     title: "Put Villagers to Work",
   },
   {
-    detail:
-      "Press B, pick Barracks, and place it on open ground near your Camp.",
+    detail: "A Barracks trains your army. Build one near your Camp.",
     hotkeys: ["B", "Left-Click"],
     id: "build_barracks",
+    instructions: [
+      "Click Open Build Menu below (or press B), choose Military, then Barracks.",
+      "Move the building preview onto clear ground near Camp. Left-click when placement is valid; Esc cancels.",
+      "Let a villager finish construction. If work stalls, select a Villager and right-click the foundation. Keep the game unpaused.",
+    ],
     targetHint: "build_barracks",
-    tip: "Placing on a glowing Spirit Vein adds +15% training speed.",
+    tip: "If you cannot afford it, gather Wood and Stone. A placed foundation is not a finished building.",
     title: "Build a Barracks",
   },
   {
-    detail:
-      "Select your Barracks, train 2 Wardens, and right-click ground to set a Rally Point.",
+    detail: "Train two Wardens: these are your first extra soldiers.",
     hotkeys: ["Click Barracks", "Right-Click"],
     id: "train_soldiers",
+    instructions: [
+      "Click Select Barracks below. Its commands appear in the bottom panel.",
+      "Click Warden twice to queue two recruits. Wait for both to finish training.",
+      "Optional: with the Barracks selected, right-click clear ground near Camp to send future recruits there.",
+    ],
     targetHint: "barracks",
-    tip: "Upgrading your Camp to an Outpost unlocks Hunters and Riders.",
+    tip: "Each Camp starts at 6/8 population: the Cultivator, Rider (2 population), and 3 villagers leave 2 slots. If you trained workers first, build Housing (+10) from the Economy menu before more soldiers. Gather Wood from nearby groves and Stone from rocks.",
     title: "Train Reinforcements",
   },
   {
-    detail:
-      "Select your soldiers, press A, and left-click east to Attack-Move into the scout wave.",
-    hotkeys: ["A", "Left-Click"],
+    detail: "Keep your Camp safe by defeating the first group of enemies.",
+    hotkeys: ["Right-Click"],
     id: "defend_wave",
+    instructions: [
+      "Click Select Soldiers below to select your fighting units, not your villagers.",
+      "Right-click clear ground a short distance east (right) of Camp to move there. Soldiers fight nearby enemies automatically.",
+      "Right-click an enemy to focus attacks on it. Stay near Camp until all scouts are defeated.",
+    ],
     targetHint: "soldiers",
-    tip: "Use Formations so melee Wardens hold the front line.",
+    tip: "Space pauses so you can plan orders. Avoid chasing enemies far from Camp; your villagers need protection.",
     title: "Repel the First Scout Wave",
   },
   {
-    detail:
-      "Upgrade your Camp to Outpost, then press B to build a Ward Tower guarding the east lane.",
+    detail: "Upgrade your base to unlock a defensive tower, then build one.",
     hotkeys: ["Click Camp", "B"],
     id: "build_tower",
+    instructions: [
+      "Click Select Camp below, click Upgrade to Outpost in its bottom commands, then confirm Upgrade Hold.",
+      "Wait for the upgrade to finish. Select a Villager, press B, choose Defense, then Ward Tower.",
+      "Place it on clear ground on the right side of Camp. If work stalls, select a Villager and right-click the foundation. A finished tower fires automatically.",
+    ],
     targetHint: "camp",
-    tip: "Fight near Ward Towers for covering fire and pull wounded units behind them.",
+    tip: "If an upgrade or building is unavailable, read its cost and requirements in the command panel. Gather missing supplies first.",
     title: "Upgrade to Outpost & Build a Ward Tower",
   },
   {
     detail:
-      "Promote a ready soldier to Sworn and choose a school, or build a Cultivation Hall.",
-    hotkeys: ["Click Unit", "B"],
+      "Cultivation makes soldiers stronger. For this lesson, build a Cultivation Hall.",
+    hotkeys: ["B"],
     id: "cultivate",
-    targetHint: "cultivator",
-    tip: "Combat earns Merit and Essence—choose Ember, Rime, or Blood when ascending.",
-    title: "Reach a Breakthrough",
+    instructions: [
+      "Select your Camp to check your base. After the Outpost upgrade, you can build a Cultivation Hall.",
+      "Select a Villager, press B, choose Cultivation, then Cultivation Hall. Place it near your base and finish construction.",
+      "Later, select a soldier and inspect Breakthrough to learn its requirements for advancing rank.",
+    ],
+    targetHint: "camp",
+    tip: "A soldier who already advanced also completes this lesson. You do not need to learn schools or attempt a breakthrough right now.",
+    title: "Build a Cultivation Hall",
   },
   {
     detail:
-      "Grow your army, defeat Cinderjaw when it arrives from the east, and click Descend.",
+      "Survive the remaining waves and defeat Cinderjaw, the final enemy.",
     hotkeys: ["Space", "1×–4×"],
     id: "defeat_boss",
+    instructions: [
+      "Keep training soldiers from your Barracks and collecting supplies with villagers.",
+      "Fight near your Ward Tower. Drag to select soldiers, right-click ground to move, or right-click an enemy to focus attacks.",
+      "When Cinderjaw arrives, defend Camp until it falls. Defeating the boss completes this lesson.",
+    ],
     targetHint: "boss",
-    tip: "Press Space anytime to pause and issue orders; dodge glowing Ember Vents.",
+    tip: "You can pause with Space at any time. Keep units out of glowing Ember Vents; they are dangerous ground.",
     title: "Slay Cinderjaw",
   },
 ] as const;
@@ -131,7 +164,7 @@ export const DESCENT_TUTORIAL_STEPS: readonly TutorialStepDefinition[] = [
 /** Number of working villagers required to complete Step 1. */
 const REQUIRED_WORKING_VILLAGERS = 2;
 
-/** Additional soldiers beyond starting Captains required for Step 3. */
+/** Additional soldiers beyond starting Captains and Riders required for Step 3. */
 const REQUIRED_EXTRA_SOLDIERS = 2;
 
 /** Minimal world/snapshot view required to evaluate tutorial progress. */
@@ -204,19 +237,21 @@ function hasBreakthroughUnit(slice: AshenGateSliceState | null): boolean {
 }
 
 /**
- * Reads the current Hold tier from `meta.economy`, defaulting to `"Camp"`.
+ * Reads the highest solo or co-op Hold tier from `meta.economy`. Multiplayer
+ * tutorial goals are shared, so one player's upgrade satisfies the team step.
  * @param snapshot - Current sim snapshot
- * @returns Current Hold tier string
+ * @returns Highest current Hold tier, defaulting to `"Camp"`
  */
 function readHoldTier(snapshot: TutorialWorldView): string {
   const economy = snapshot.meta.economy;
-  if (
-    typeof economy === "object" &&
-    economy !== null &&
-    "tier" in economy &&
-    typeof (economy as { tier?: unknown }).tier === "string"
-  ) {
-    return (economy as { tier: string }).tier;
+  if (typeof economy !== "object" || economy === null) return "Camp";
+  const bag = economy as { ownerTiers?: unknown; tier?: unknown };
+  const tiers = [bag.tier];
+  if (typeof bag.ownerTiers === "object" && bag.ownerTiers !== null) {
+    tiers.push(...Object.values(bag.ownerTiers));
+  }
+  for (const tier of ["Citadel", "Stronghold", "Outpost"]) {
+    if (tiers.includes(tier)) return tier;
   }
   return "Camp";
 }
@@ -243,17 +278,17 @@ function formatDefendWaveLabel(
  * Formats the live progress label for the breakthrough / cultivation step.
  * @param breakthroughReached - Whether a unit has reached Sworn or chosen a school
  * @param hallCount - Completed Cultivation Hall count
- * @param strongholdReached - Whether the Hold has reached Stronghold+
+ * @param outpostReached - Whether the Hold has reached Outpost+
  * @returns Human-readable progress badge text
  */
 function formatCultivateLabel(
   breakthroughReached: boolean,
   hallCount: number,
-  strongholdReached: boolean,
+  outpostReached: boolean,
 ): string {
   if (breakthroughReached) return "Breakthrough reached";
   if (hallCount >= 1) return "Cultivation Hall ready";
-  if (strongholdReached) return "Stronghold ready · Build Cultivation Hall";
+  if (outpostReached) return "Outpost ready · Build Cultivation Hall";
   return "Promote a soldier or build a Cultivation Hall";
 }
 
@@ -298,11 +333,12 @@ export function evaluateTutorialProgress(
   const hallCount = countCompletedBuildings(snapshot, "cultivation_hall");
   const breakthroughReached = hasBreakthroughUnit(slice);
   const holdTier = readHoldTier(snapshot);
-  const strongholdReached = holdTier === "Stronghold" || holdTier === "Citadel";
+  const outpostReached = holdTier !== "Camp";
 
   const livingSoldiers = countLivingSoldiers(snapshot);
-  const targetSoldiers = playerCount + REQUIRED_EXTRA_SOLDIERS;
-  const trainedDelta = Math.max(0, livingSoldiers - playerCount);
+  const startingSoldiers = playerCount * 2;
+  const targetSoldiers = startingSoldiers + REQUIRED_EXTRA_SOLDIERS;
+  const trainedDelta = Math.max(0, livingSoldiers - startingSoldiers);
 
   const spawnedWaves = waves?.spawnedWaveIds.length ?? 0;
   const livingHorde = waves?.units.length ?? 0;
@@ -330,7 +366,7 @@ export function evaluateTutorialProgress(
       progressLabel: formatCultivateLabel(
         breakthroughReached,
         hallCount,
-        strongholdReached,
+        outpostReached,
       ),
     },
     defeat_boss: {

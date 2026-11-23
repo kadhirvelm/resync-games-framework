@@ -3,6 +3,8 @@ import {
   advanceGait,
   advancePresentationTime,
   animationClipMatches,
+  DEFAULT_STEP_INTERVAL_MS,
+  defaultStepInterval,
   estimateStepInterval,
   gaitMotion,
   MAX_STEP_INTERVAL_MS,
@@ -11,6 +13,7 @@ import {
   smoothAngle,
   stepProgress,
   unitMotionPhase,
+  VILLAGER_DEFAULT_STEP_INTERVAL_MS,
 } from "../motion";
 
 describe("descent presentation motion", () => {
@@ -35,6 +38,39 @@ describe("descent presentation motion", () => {
     expect(animationClipMatches("warden-1-walk", "walk")).toBe(true);
     expect(animationClipMatches("warden-1-idle", "walk")).toBe(false);
     expect(animationClipMatches("villager-1-work", "work")).toBe(true);
+  });
+
+  test("selects meditate for stationary meditating cultivators and falls back cleanly", () => {
+    expect(animationClipMatches("cultivator-1-meditate", "meditate")).toBe(
+      true,
+    );
+    expect(
+      selectCharacterLoopClip({
+        hasMeditateClip: true,
+        hasWorkClip: false,
+        locomoting: false,
+        meditating: true,
+        role: "cultivator",
+      }),
+    ).toBe("meditate");
+    expect(
+      selectCharacterLoopClip({
+        hasMeditateClip: true,
+        hasWorkClip: false,
+        locomoting: true,
+        meditating: true,
+        role: "cultivator",
+      }),
+    ).toBe("walk");
+    expect(
+      selectCharacterLoopClip({
+        hasMeditateClip: false,
+        hasWorkClip: false,
+        locomoting: false,
+        meditating: true,
+        role: "cultivator",
+      }),
+    ).toBe("idle");
   });
 
   test("selects work for stationary working villagers and falls back cleanly", () => {
@@ -120,12 +156,28 @@ describe("descent presentation motion", () => {
     expect(Math.abs(after.bob - before.bob)).toBeLessThan(0.005);
   });
 
+  test("starts villagers at the economy step cadence and combat units at the fast cadence", () => {
+    expect(defaultStepInterval("villager")).toBe(
+      VILLAGER_DEFAULT_STEP_INTERVAL_MS,
+    );
+    expect(defaultStepInterval("villager")).toBe(500);
+    expect(defaultStepInterval("warden")).toBe(DEFAULT_STEP_INTERVAL_MS);
+    expect(defaultStepInterval("raider")).toBe(100);
+  });
+
   test("learns the sim's step cadence and ignores standing pauses", () => {
     let estimate = 500;
     for (let step = 0; step < 20; step += 1) {
       estimate = estimateStepInterval(estimate, 250);
     }
     expect(estimate).toBeCloseTo(250, 0);
+
+    let slowEstimate = 500;
+    for (let step = 0; step < 20; step += 1) {
+      slowEstimate = estimateStepInterval(slowEstimate, 1_000);
+    }
+    expect(slowEstimate).toBeCloseTo(1_000, 0);
+
     expect(estimateStepInterval(250, MAX_STEP_INTERVAL_MS + 1)).toBe(250);
     expect(estimateStepInterval(250, 0)).toBe(250);
   });

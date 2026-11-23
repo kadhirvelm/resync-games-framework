@@ -27,10 +27,14 @@ export interface TerrainMaterials {
   readonly magmaCore: StandardMaterial;
   readonly magmaCrust: StandardMaterial;
   readonly obsidian: StandardMaterial;
+  readonly plank: StandardMaterial;
+  readonly plankDark: StandardMaterial;
   readonly obsidianVein: StandardMaterial;
   readonly ruinStone: StandardMaterial;
   readonly ruinTrim: StandardMaterial;
   readonly shadowSkirt: StandardMaterial;
+  readonly water: StandardMaterial;
+  readonly waterBank: StandardMaterial;
 }
 
 /**
@@ -120,6 +124,10 @@ export function createTerrainMaterials(scene: Scene): TerrainMaterials {
       emissiveScale: 0.9,
       specular: 0.35,
     }),
+    plank: makeMaterial(scene, "terrain-plank", "#8b6a45", { specular: 0.05 }),
+    plankDark: makeMaterial(scene, "terrain-plank-dark", "#4f3a27", {
+      specular: 0.04,
+    }),
     ruinStone: makeMaterial(scene, "terrain-ruin-stone", "#594e4a", {
       specular: 0.1,
     }),
@@ -132,7 +140,75 @@ export function createTerrainMaterials(scene: Scene): TerrainMaterials {
       alpha: 0.58,
       specular: 0,
     }),
+    water: makeMaterial(scene, "terrain-water", "#2d7d99", {
+      alpha: 0.94,
+      emissiveHex: "#164f68",
+      emissiveScale: 0.45,
+      specular: 0.7,
+    }),
+    waterBank: makeMaterial(scene, "terrain-water-bank", "#1a2429", {
+      specular: 0.22,
+    }),
   };
+}
+
+/** Options controlling terrain landmark construction. */
+export interface BuildTerrainLandmarkOptions {
+  /** All terrain features on the map, used to keep river rocks off overlaps and bridges. */
+  allTerrain?: readonly TerrainReadout[];
+  /** Skip procedural bank rocks when a generated river-rock model is used. */
+  skipProceduralRocks?: boolean;
+}
+
+/** Deterministic shoreline rock placement in map coordinates. */
+export interface RiverRockPlacement {
+  angle: number;
+  scale: number;
+  x: number;
+  y: number;
+}
+
+/**
+ * Computes shoreline rock positions along the outer bank of a `deep_water` disk,
+ * skipping spots inside neighboring water disks or near bridge crossings.
+ * @param feature - River or pond disk
+ * @param allTerrain - All terrain features on the map
+ * @returns Shoreline rock placements in map space
+ */
+export function riverBankRockPlacements(
+  feature: TerrainReadout,
+  allTerrain: readonly TerrainReadout[] = [],
+): RiverRockPlacement[] {
+  const count = Math.max(2, Math.min(5, Math.round(feature.radius * 1.1)));
+  const placements: RiverRockPlacement[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const theta =
+      (i / count) * Math.PI * 2 +
+      seedFraction(feature.x, feature.y, i + 10) * 1.1;
+    const bankDist =
+      feature.radius *
+      (1.03 + seedFraction(feature.x, feature.y, i + 20) * 0.1);
+    const rx = feature.x + Math.cos(theta) * bankDist;
+    const ry = feature.y + Math.sin(theta) * bankDist;
+    const blocked = allTerrain.some((other) => {
+      if (other.id === feature.id) return false;
+      if (other.kind === "deep_water") {
+        return Math.hypot(rx - other.x, ry - other.y) <= other.radius * 0.98;
+      }
+      if (other.kind === "bridge") {
+        return Math.hypot(rx - other.x, ry - other.y) <= other.radius + 1.15;
+      }
+      return false;
+    });
+    if (blocked) continue;
+    placements.push({
+      angle: seedFraction(feature.x, feature.y, i + 30) * Math.PI * 2,
+      scale: 0.45 + seedFraction(feature.x, feature.y, i + 40) * 0.45,
+      x: rx,
+      y: ry,
+    });
+  }
+  return placements;
 }
 
 /**
@@ -144,6 +220,7 @@ export function createTerrainMaterials(scene: Scene): TerrainMaterials {
  * @param worldZ - Converted Babylon Z coordinate
  * @param materials - Shared terrain material palette
  * @param motions - Array receiving gentle ambient accent animations
+ * @param options - Optional map context and procedural rock toggle
  * @returns The landmark's root transform
  */
 export function buildTerrainLandmark(
@@ -153,11 +230,23 @@ export function buildTerrainLandmark(
   worldZ: number,
   materials: TerrainMaterials,
   motions: TerrainAccentMotion[],
+  options?: BuildTerrainLandmarkOptions,
 ): TransformNode {
   const root = new TransformNode(`terrain-${feature.id}`, scene);
   root.parent = parent;
   root.position.set(feature.x, 0, worldZ);
   root.rotation.y = seedFraction(feature.x, feature.y, 1) * Math.PI * 2;
+
+  if (feature.kind === "deep_water") {
+    root.rotation.y = 0;
+    buildWaterDisk(scene, root, feature, materials, options);
+    return root;
+  }
+  if (feature.kind === "bridge") {
+    root.rotation.y = feature.angle ?? 0;
+    buildPlankBridge(scene, root, feature, materials);
+    return root;
+  }
 
   // Ground-contact shadow skirt anchors the formation onto the flat plateau.
   const skirt = CreateDisc(
@@ -465,4 +554,122 @@ function buildMagmaFissure(
     speed: 2.6,
     spin: 0.3,
   });
+}
+
+/**
+ * One flat water disk over a darker wet bank. Neighboring surfaces share one
+ * material and overlap into a continuous river without a separate rim layer.
+ * @param scene - Babylon scene
+ * @param root - Feature root transform
+ * @param feature - River or pond disk
+ * @param materials - Shared terrain materials
+ * @param options - Map context and procedural rock settings
+ */
+function buildWaterDisk(
+  scene: Scene,
+  root: TransformNode,
+  feature: TerrainReadout,
+  materials: TerrainMaterials,
+  options?: BuildTerrainLandmarkOptions,
+): void {
+  const bank = CreateDisc(
+    `water-bank-${feature.id}`,
+    { radius: feature.radius * 1.15, tessellation: 24 },
+    scene,
+  );
+  bank.parent = root;
+  bank.rotation.x = Math.PI / 2;
+  bank.position.y = 0.015;
+  bank.material = materials.waterBank;
+  bank.isPickable = false;
+
+  const surface = CreateDisc(
+    `water-surface-${feature.id}`,
+    { radius: feature.radius * 1.0, tessellation: 24 },
+    scene,
+  );
+  surface.parent = root;
+  surface.rotation.x = Math.PI / 2;
+  surface.position.y = 0.048;
+  surface.material = materials.water;
+  surface.isPickable = false;
+
+  if (options?.skipProceduralRocks) return;
+  const rocks = riverBankRockPlacements(feature, options?.allTerrain);
+  for (let i = 0; i < rocks.length; i += 1) {
+    const rock = rocks[i];
+    if (rock === undefined) continue;
+    const stone = CreatePolyhedron(
+      `water-rock-${feature.id}-${i}`,
+      { size: 0.28 * rock.scale, type: 1 },
+      scene,
+    );
+    stone.parent = root;
+    stone.position.set(
+      rock.x - feature.x,
+      0.1 * rock.scale,
+      -(rock.y - feature.y),
+    );
+    stone.scaling.set(1.25, 0.58, 1.05);
+    stone.rotation.y = rock.angle;
+    stone.material = i % 2 === 0 ? materials.basaltDark : materials.waterBank;
+    stone.isPickable = false;
+  }
+}
+
+/**
+ * Procedural plank bridge: a deck of cross planks between two rails, long axis
+ * along local +x. Used until a generated "Descent Plank Bridge" model loads.
+ * @param scene - Babylon scene
+ * @param root - Feature root transform, already rotated to the crossing
+ * @param feature - Bridge readout (`radius` is half the span)
+ * @param materials - Shared terrain materials
+ */
+export function buildPlankBridge(
+  scene: Scene,
+  root: TransformNode,
+  feature: TerrainReadout,
+  materials: TerrainMaterials,
+): void {
+  const length = feature.radius * 2;
+  const width = feature.width ?? 3.6;
+  const plankWidth = 0.7;
+  const count = Math.max(2, Math.floor(length / plankWidth));
+  for (let i = 0; i < count; i += 1) {
+    const plank = CreateBox(
+      `bridge-plank-${feature.id}-${i}`,
+      { depth: width, height: 0.14, width: plankWidth * 0.88 },
+      scene,
+    );
+    plank.parent = root;
+    plank.position.set(-length / 2 + plankWidth * (i + 0.5), 0.3, 0);
+    plank.material = i % 2 === 0 ? materials.plank : materials.plankDark;
+    plank.isPickable = false;
+  }
+  for (const side of [-1, 1] as const) {
+    const rail = CreateBox(
+      `bridge-rail-${feature.id}-${side}`,
+      { depth: 0.18, height: 0.14, width: length },
+      scene,
+    );
+    rail.parent = root;
+    rail.position.set(0, 0.82, side * (width / 2 - 0.1));
+    rail.material = materials.plankDark;
+    rail.isPickable = false;
+    for (const end of [-1, 0, 1] as const) {
+      const post = CreateBox(
+        `bridge-post-${feature.id}-${side}-${end}`,
+        { depth: 0.22, height: 0.9, width: 0.22 },
+        scene,
+      );
+      post.parent = root;
+      post.position.set(
+        (end * (length - 0.3)) / 2,
+        0.45,
+        side * (width / 2 - 0.1),
+      );
+      post.material = materials.plankDark;
+      post.isPickable = false;
+    }
+  }
 }

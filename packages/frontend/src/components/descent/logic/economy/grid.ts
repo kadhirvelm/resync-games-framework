@@ -5,12 +5,42 @@
 
 import type { Point } from "./model";
 
-const DIRS: readonly Point[] = [
-  { x: 0, y: -1 },
-  { x: 1, y: 0 },
-  { x: 0, y: 1 },
-  { x: -1, y: 0 },
-];
+const DIR_X = [0, 1, 0, -1] as const;
+const DIR_Y = [-1, 0, 1, 0] as const;
+
+/** Sentinel parent index for the BFS root cell. */
+const ROOT_PARENT = -1;
+
+/** Max unsigned 32-bit stamp before the visited array must be cleared. */
+const MAX_STAMP = 0xffffffff;
+
+let visitedStamp = new Uint32Array(0);
+let parentIndex = new Int32Array(0);
+let queue = new Int32Array(0);
+let currentStamp = 0;
+
+/**
+ * Ensures module-level BFS buffers can index every cell in a `size`-cell grid
+ * and returns a fresh stamp value in O(1) time.
+ * @param size - Total number of cells (`width * height`)
+ * @returns Non-zero stamp value unique to this search
+ */
+function acquireSearchStamp(size: number): number {
+  if (visitedStamp.length < size) {
+    visitedStamp = new Uint32Array(size);
+    parentIndex = new Int32Array(size);
+    queue = new Int32Array(size);
+    currentStamp = 1;
+    return currentStamp;
+  }
+  if (currentStamp === MAX_STAMP) {
+    visitedStamp.fill(0);
+    currentStamp = 1;
+    return currentStamp;
+  }
+  currentStamp += 1;
+  return currentStamp;
+}
 
 /**
  * @param left - First cell
@@ -56,110 +86,133 @@ export function nextStep(
   reach = 1,
 ): Point | null {
   if (chebyshev(from, goal) <= reach) return null;
-  const startKey = keyOf(from);
-  const previous = new Map<string, string | null>();
-  previous.set(startKey, null);
-  const queue: Point[] = [from];
+  if (width <= 0 || height <= 0) return null;
+
+  const size = width * height;
+  const stamp = acquireSearchStamp(size);
+  const goalX = goal.x;
+  const goalY = goal.y;
+
   let head = 0;
-  while (head < queue.length) {
-    const current = queue[head];
-    head += 1;
-    if (!current) continue;
-    const step = expand(
-      current,
-      { goal, height, passable, reach, width },
-      startKey,
-      previous,
-      queue,
+  let tail = 0;
+  let startIndex = ROOT_PARENT;
+
+  if (insideMap(from, width, height)) {
+    startIndex = from.y * width + from.x;
+    visitedStamp[startIndex] = stamp;
+    parentIndex[startIndex] = ROOT_PARENT;
+    queue[0] = startIndex;
+    tail = 1;
+  } else {
+    const seeded = seedOutOfBoundsStart(
+      from,
+      goalX,
+      goalY,
+      passable,
+      width,
+      height,
+      reach,
+      stamp,
     );
-    if (step) return step;
+    if (seeded.step) return seeded.step;
+    tail = seeded.tail;
+  }
+
+  while (head < tail) {
+    const currentIndex = queue[head] ?? -1;
+    head += 1;
+    if (currentIndex < 0) continue;
+    const cx = currentIndex % width;
+    const cy = (currentIndex - cx) / width;
+    for (let dir = 0; dir < 4; dir += 1) {
+      const nx = cx + (DIR_X[dir] ?? 0);
+      const ny = cy + (DIR_Y[dir] ?? 0);
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+      const nextIndex = ny * width + nx;
+      if (visitedStamp[nextIndex] === stamp) continue;
+      if (!passable(nx, ny)) continue;
+      visitedStamp[nextIndex] = stamp;
+      parentIndex[nextIndex] = currentIndex;
+      const dx = nx > goalX ? nx - goalX : goalX - nx;
+      const dy = ny > goalY ? ny - goalY : goalY - ny;
+      if (Math.max(dx, dy) <= reach) {
+        return firstStep(startIndex, nextIndex, width);
+      }
+      queue[tail] = nextIndex;
+      tail += 1;
+    }
   }
   return null;
 }
 
-/** Fixed inputs of one breadth-first search. */
-interface SearchFrame {
-  goal: Point;
-  height: number;
-  passable: (x: number, y: number) => boolean;
-  reach: number;
-  width: number;
-}
-
 /**
- * Adds the passable neighbors of `current` and returns a path when one of
- * them is already close enough to the goal.
- * @param current - Cell being expanded
- * @param frame - Goal, reach, passability, and map size
- * @param startKey - Key of the original cell
- * @param previous - Parent key of each visited cell
- * @param queue - Breadth-first queue, appended in place
- * @returns The first step of a finished path, or null to keep searching
+ * Seeds the BFS queue from an out-of-bounds start cell by testing its four
+ * orthogonal neighbors in cardinal order.
+ * @param from - Out-of-bounds start cell
+ * @param goalX - Target x coordinate
+ * @param goalY - Target y coordinate
+ * @param passable - Whether a cell can be entered
+ * @param width - Map width
+ * @param height - Map height
+ * @param reach - Arrival Chebyshev distance
+ * @param stamp - Active visited stamp
+ * @returns Immediate first step if reached, otherwise the number of queued neighbors
  */
-function expand(
-  current: Point,
-  frame: SearchFrame,
-  startKey: string,
-  previous: Map<string, string | null>,
-  queue: Point[],
-): Point | null {
-  const { goal, height, passable, reach, width } = frame;
-  for (const dir of DIRS) {
-    const next = { x: current.x + dir.x, y: current.y + dir.y };
-    if (!insideMap(next, width, height)) continue;
-    const nextKey = keyOf(next);
-    if (previous.has(nextKey)) continue;
-    if (!passable(next.x, next.y)) continue;
-    previous.set(nextKey, keyOf(current));
-    if (chebyshev(next, goal) <= reach)
-      return firstStep(previous, startKey, nextKey);
-    queue.push(next);
+function seedOutOfBoundsStart(
+  from: Point,
+  goalX: number,
+  goalY: number,
+  passable: (x: number, y: number) => boolean,
+  width: number,
+  height: number,
+  reach: number,
+  stamp: number,
+): { step: Point | null; tail: number } {
+  let tail = 0;
+  for (let dir = 0; dir < 4; dir += 1) {
+    const nx = from.x + (DIR_X[dir] ?? 0);
+    const ny = from.y + (DIR_Y[dir] ?? 0);
+    if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+    const nextIndex = ny * width + nx;
+    if (visitedStamp[nextIndex] === stamp) continue;
+    if (!passable(nx, ny)) continue;
+    visitedStamp[nextIndex] = stamp;
+    parentIndex[nextIndex] = ROOT_PARENT;
+    const dx = nx > goalX ? nx - goalX : goalX - nx;
+    const dy = ny > goalY ? ny - goalY : goalY - ny;
+    if (Math.max(dx, dy) <= reach) {
+      return { step: { x: nx, y: ny }, tail };
+    }
+    queue[tail] = nextIndex;
+    tail += 1;
   }
-  return null;
+  return { step: null, tail };
 }
 
 /**
- * @param previous - Parent key of each visited cell
- * @param startKey - Key of the start cell
- * @param endKey - Key of the cell that reached the goal
- * @returns The first cell on the path
+ * Walks parent indices back from the goal-reaching cell to the first step
+ * after `startIndex`.
+ * @param startIndex - Flat index of the start cell, or `ROOT_PARENT` if out of bounds
+ * @param endIndex - Flat index of the cell that reached the goal
+ * @param width - Map width in cells
+ * @returns The first cell on the path, or null if parent chain is broken
  */
 function firstStep(
-  previous: Map<string, string | null>,
-  startKey: string,
-  endKey: string,
+  startIndex: number,
+  endIndex: number,
+  width: number,
 ): Point | null {
-  let cursor = endKey;
-  let guard = 0;
-  while (guard < previous.size + 1) {
-    const parent = previous.get(cursor);
-    if (parent === undefined || parent === null) return null;
-    if (parent === startKey) return pointFromKey(cursor);
+  let cursor = endIndex;
+  const maxSteps = parentIndex.length;
+  for (let steps = 0; steps <= maxSteps; steps += 1) {
+    const parent = parentIndex[cursor];
+    if (parent === undefined) return null;
+    if (parent === startIndex) {
+      const x = cursor % width;
+      return { x, y: (cursor - x) / width };
+    }
+    if (parent < 0) return null;
     cursor = parent;
-    guard += 1;
   }
   return null;
-}
-
-/**
- * @param point - Cell to encode
- * @returns A stable map key
- */
-function keyOf(point: Point): string {
-  return `${point.x},${point.y}`;
-}
-
-/**
- * @param key - `x,y` map key
- * @returns The cell, or null when the key is malformed
- */
-function pointFromKey(key: string): Point | null {
-  const parts = key.split(",");
-  const xText = parts[0];
-  const yText = parts[1];
-  if (xText === undefined || yText === undefined) return null;
-  const x = Number(xText);
-  const y = Number(yText);
-  if (!Number.isInteger(x) || !Number.isInteger(y)) return null;
-  return { x, y };
 }

@@ -25,9 +25,9 @@ describe("generateAshenCrucibleMap", () => {
       expect(map.height).toBe(ASHEN_CRUCIBLE_MAP_SIZE.height);
       expect(validateAshenCrucibleMap(map)).toEqual([]);
 
-      // Each player gets their own Camp, Captain Warden, and 3 Villagers.
+      // Each player gets their own Camp, Cultivator, Rider, and 3 Villagers.
       expect(map.buildings).toHaveLength(playerCount);
-      expect(map.units).toHaveLength(playerCount * 4);
+      expect(map.units).toHaveLength(playerCount * 5);
       for (const player of players) {
         const ownedCamps = map.buildings.filter(
           (building) =>
@@ -37,7 +37,39 @@ describe("generateAshenCrucibleMap", () => {
         const ownedUnits = map.units.filter(
           (unit) => unit.ownerId === player.id,
         );
-        expect(ownedUnits).toHaveLength(4);
+        expect(ownedUnits).toHaveLength(5);
+        expect(
+          ownedUnits.filter((unit) => unit.classId === "rider"),
+        ).toHaveLength(1);
+        expect(
+          ownedUnits.filter((unit) => unit.classId === "cultivator"),
+        ).toHaveLength(1);
+      }
+    }
+  });
+
+  it("gives every Camp three accessible nearby wood patches", () => {
+    const cases = [1, 4].flatMap((playerCount) =>
+      [1, 8, 1337].map((seed) => ({ playerCount, seed })),
+    );
+    for (const { playerCount, seed } of cases) {
+      const players = makePlayers(playerCount);
+      const map = generateAshenCrucibleMap(seed, players);
+      expect(validateAshenCrucibleMap(map)).toEqual([]);
+      for (const player of players) {
+        const camp = map.buildings.find((entry) => entry.ownerId === player.id);
+        if (!camp) throw new Error("Missing player Camp");
+        const wood = map.nodes.filter((node) =>
+          node.id.startsWith(`crucible-p${player.slotIndex + 1}-wood`),
+        );
+        expect(wood).toHaveLength(3);
+        expect(wood.reduce((total, node) => total + node.remaining, 0)).toBe(
+          780,
+        );
+        for (const node of wood) {
+          expect(node.resourceId).toBe("wood");
+          expect(Math.hypot(node.x - camp.x, node.y - camp.y)).toBeLessThan(20);
+        }
       }
     }
   });

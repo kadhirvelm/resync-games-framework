@@ -92,6 +92,7 @@ export class GenerateThreeDModelToolService {
           "Meshy submission outcome is unknown. Inspect the provider dashboard before retrying with a new generation id.",
         );
       let sourceGlbBytes: Uint8Array | undefined;
+      let sourceRigTaskId: string | undefined;
       if (request.sourceAssetId) {
         if (request.kind !== "character")
           throw new BadRequestException(
@@ -101,12 +102,15 @@ export class GenerateThreeDModelToolService {
           request.kind,
           request.sourceAssetId,
         );
-        sourceGlbBytes = await readFile(
-          THREE_D_STORAGE[request.kind].filePath(
-            request.sourceAssetId,
-            "model.glb",
-          ),
-        );
+        sourceRigTaskId = resolveMeshyRigTaskId(sourceAsset);
+        if (!sourceRigTaskId) {
+          sourceGlbBytes = await readFile(
+            THREE_D_STORAGE[request.kind].filePath(
+              request.sourceAssetId,
+              "model.glb",
+            ),
+          );
+        }
         assetNameOverride = sourceAsset.name;
         design = design ?? sourceAsset.design;
       }
@@ -133,6 +137,7 @@ export class GenerateThreeDModelToolService {
               {
                 extraAnimations: request.extraAnimations,
                 sourceGlbBytes,
+                sourceRigTaskId,
               },
             )
           : await this.meshy.generate(
@@ -219,4 +224,17 @@ export class GenerateThreeDModelToolService {
     const rigAndAnim = 5 + (5 + extraClipCount) * 3;
     return reusedMesh ? rigAndAnim : 30 + rigAndAnim;
   }
+}
+
+/**
+ * Extracts a reusable Meshy rigging task id from an existing character asset.
+ * @param asset - Persisted source character asset
+ * @returns Meshy rig task id when available, otherwise undefined
+ */
+function resolveMeshyRigTaskId(asset: ThreeDAsset): string | undefined {
+  if (asset.provenance?.provider !== "meshy") return undefined;
+  const jobIds = asset.provenance.jobIds ?? [];
+  if (jobIds.length === 4) return jobIds[2];
+  if (jobIds.length === 2) return jobIds[0];
+  return undefined;
 }

@@ -28,6 +28,8 @@ export interface UnitReadout {
   breakthroughHallId?: string;
   /** Whether this unit currently satisfies every breakthrough requirement. */
   breakthroughReady?: boolean;
+  /** Seconds remaining on an active breakthrough channel, when channeling. */
+  breakthroughRemainingSeconds?: number;
   calamity?: boolean;
   /** Resource a villager is carrying home. */
   carrying?: ResourceId | null;
@@ -236,17 +238,21 @@ export interface StatsReadout {
   lost: number;
 }
 
-/** A building the build menu may offer. Unlock and hints are already decided. */
+/** A building the build menu offers, including disabled tier/resource states. */
 export interface BuildReadout {
+  /** Whether the current stockpile pays for it; omitted by older previews. */
+  affordable?: boolean;
   buildingType: string;
   /** Resource amounts, for icon cost rows. */
   cost?: Partial<ResourceStockpile>;
   costLabel: string;
   hints: readonly string[];
   job: string;
+  /** Player-facing tier or resource blocker, when one applies. */
   lockedReason?: string;
   name: string;
   tier: string;
+  /** Whether the Hold tier allows it, independent of affordability. */
   unlocked: boolean;
 }
 
@@ -387,13 +393,18 @@ export interface VentReadout {
   y: number;
 }
 
-/** Impassable battlefield terrain landmark (ridge, spire, ruin wall, or fissure). */
+/** Battlefield terrain landmark: an impassable ridge, spire, wall, fissure, or river, or a walkable bridge. */
 export interface TerrainReadout {
+  /** Bridges only: deck rotation in radians from the map's +x axis. */
+  angle?: number;
   height: number;
   id: string;
-  kind: TerrainFeatureKind;
+  /** Terrain obstacles, plus the walkable "bridge" laid across rivers. */
+  kind: TerrainFeatureKind | "bridge";
   label?: string;
+  /** Bridges only: `radius` is half the span; this is the deck width. */
   radius: number;
+  width?: number;
   x: number;
   y: number;
 }
@@ -451,13 +462,21 @@ export interface DescentPresentation {
   bossGateCleared?: boolean;
   brewOptions?: readonly BrewReadout[];
   buildOptions?: readonly BuildReadout[];
+  /** Co-op build menus keyed by owner; `buildOptions` remains the solo default. */
+  buildOptionsByOwner?: Readonly<Record<string, readonly BuildReadout[]>>;
   buildings?: Readonly<Record<string, BuildingReadout>>;
   calamities?: readonly CalamityReadout[];
   /** What the Hold has explored and can see now; null shows everything. */
   fog?: FogOfWarState | null;
   fx?: readonly FxReadout[];
   hellPressure?: number;
+  /** Current tier even at Citadel, where there is no next upgrade readout. */
+  holdTier?: string;
+  /** Current co-op tiers keyed by owner, including owners without a Camp. */
+  holdTiers?: Readonly<Record<string, string>>;
   holdUpgrade?: HoldUpgradeReadout | null;
+  /** Independent co-op upgrade readouts keyed by owner. */
+  holdUpgrades?: Readonly<Record<string, HoldUpgradeReadout | null>>;
   marketRates?: readonly MarketReadout[];
   nodes?: readonly NodeReadout[];
   notices?: readonly (NoticeReadout | string)[];
@@ -489,12 +508,16 @@ export interface ReadPresentation {
   bossGateCleared: boolean;
   brewOptions: readonly BrewReadout[];
   buildOptions: readonly BuildReadout[];
+  buildOptionsByOwner: Readonly<Record<string, readonly BuildReadout[]>>;
   buildings: Readonly<Record<string, BuildingReadout>>;
   calamities: readonly CalamityReadout[];
   fog: FogOfWarState | null;
   fx: readonly FxReadout[];
   hellPressure: number;
+  holdTier: string | null;
+  holdTiers: Readonly<Record<string, string>>;
   holdUpgrade: HoldUpgradeReadout | null;
+  holdUpgrades: Readonly<Record<string, HoldUpgradeReadout | null>>;
   marketRates: readonly MarketReadout[];
   nodes: readonly NodeReadout[];
   notices: readonly NoticeReadout[];
@@ -696,6 +719,17 @@ export function readPresentation(
       : [parsedRations];
   const holdUpgrade = ui.holdUpgrade;
   const outcome = ui.outcome;
+  const buildOptionsByOwner = isRecord(ui.buildOptionsByOwner)
+    ? (ui.buildOptionsByOwner as Readonly<
+        Record<string, readonly BuildReadout[]>
+      >)
+    : {};
+  const holdUpgrades = isRecord(ui.holdUpgrades)
+    ? (ui.holdUpgrades as Readonly<Record<string, HoldUpgradeReadout | null>>)
+    : {};
+  const holdTiers = isRecord(ui.holdTiers)
+    ? (ui.holdTiers as Readonly<Record<string, string>>)
+    : {};
   return {
     boss: readObject<BossReadout>(ui.boss),
     bossGateCleared,
@@ -704,14 +738,18 @@ export function readPresentation(
       ? (ui.buildings as Readonly<Record<string, BuildingReadout>>)
       : {},
     buildOptions: readArray<BuildReadout>(ui.buildOptions),
+    buildOptionsByOwner,
     calamities: readArray<CalamityReadout>(ui.calamities),
     fog: isFogOfWarState(ui.fog) ? ui.fog : null,
     fx: readArray<FxReadout>(ui.fx),
     hellPressure,
+    holdTier: typeof ui.holdTier === "string" ? ui.holdTier : null,
+    holdTiers,
     holdUpgrade:
       holdUpgrade === null || !isRecord(holdUpgrade)
         ? null
         : (holdUpgrade as unknown as HoldUpgradeReadout),
+    holdUpgrades,
     marketRates: readArray<MarketReadout>(ui.marketRates),
     nodes: readArray<NodeReadout>(ui.nodes),
     notices: readNotices(ui.notices),
@@ -740,4 +778,16 @@ export function readPresentation(
     vents: readArray<VentReadout>(ui.vents),
     wave: readObject<WaveReadout>(ui.wave),
   };
+}
+
+/**
+ * Width of a terrain marker across its long axis: a bridge is a narrow deck,
+ * every other feature is a disk.
+ * @param feature - Terrain readout
+ * @returns Marker extent perpendicular to its length, in map tiles
+ */
+export function terrainAcross(feature: TerrainReadout): number {
+  return feature.kind === "bridge"
+    ? (feature.width ?? 3.6)
+    : feature.radius * 2;
 }

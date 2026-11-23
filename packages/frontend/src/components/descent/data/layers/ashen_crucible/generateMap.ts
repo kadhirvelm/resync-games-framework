@@ -2,16 +2,18 @@
  * Seeded Ashen Crucible multiplayer co-op map generator.
  *
  * Places 1–4 allied player Camps along a western crescent, each with its own
- * Captain Warden, three Villagers, and four nearby starter resource deposits.
+ * Cultivator, Rider, three Villagers, and six nearby starter resource deposits.
  * Across the center sits a staggered ridge of Ember Vents carving three
  * defensive lanes between the allied Holds and the eastern Horde Gate.
  */
 
+import { getUnitDefinition } from "../../../logic/combat/unitCatalog";
 import type { BuildingInit, UnitInit } from "../../../logic/economy";
 import { footprintRadius } from "../../../logic/economy/footprint";
 import type { ResourceNode, SpiritVein } from "../../../logic/economy/model";
 import type {
   CircleVolume,
+  TerrainBridge,
   TerrainFeature,
   TerrainFeatureKind,
 } from "../../../logic/layers";
@@ -24,6 +26,7 @@ import {
   type MapPoint,
   nearestDistance,
   pickBest,
+  placeWaterways,
   poissonDiskSample,
   polarOffset,
   randomBetween,
@@ -161,7 +164,11 @@ function layoutAttempt(
   const placements = placeCamps(rng, players, spawn);
   const vents = placeCrucibleVents(rng);
   const terrainRng = createMapRng(seed, `ashen_crucible:terrain:${attempt}`);
-  const obstacles = placeCrucibleObstacles(terrainRng, placements, vents);
+  const { bridges, obstacles } = placeCrucibleObstacles(
+    terrainRng,
+    placements,
+    vents,
+  );
   const veins = placeCrucibleVeins(rng, placements, vents, obstacles, spawn);
   const nodes = placeCrucibleNodes(rng, placements, vents, obstacles, veins);
 
@@ -179,8 +186,10 @@ function layoutAttempt(
   );
 
   return {
+    bridges,
     buildings,
     chokePoints: [
+      ...bridgeChokes(bridges),
       {
         id: "north-crucible",
         label: "North Crucible",
@@ -289,7 +298,7 @@ function placeCrucibleObstacles(
   rng: SimRng,
   placements: readonly CampPlacement[],
   vents: readonly CircleVolume[],
-): TerrainFeature[] {
+): { bridges: TerrainBridge[]; obstacles: TerrainFeature[] } {
   const { height, width } = ASHEN_CRUCIBLE_MAP_SIZE;
   const obstacles: TerrainFeature[] = [];
   let serial = 0;
@@ -361,7 +370,78 @@ function placeCrucibleObstacles(
     add("basalt_ridge", eastX + 2, baseY + sign * 24, 4.6, 4.6);
   }
 
-  return obstacles;
+  // Two rivers: one between the Holds and the Crucible, one before the gate.
+  // Every bridge is a choke point the allied Holds can share.
+  const canFlood = (x: number, y: number, radius: number): boolean => {
+    const point = { x, y };
+    if (
+      placements.some(
+        (entry) => distance(point, entry.camp) < BUILD_APRON + radius + 3,
+      )
+    ) {
+      return false;
+    }
+    if (
+      vents.some((vent) => distance(point, vent) < vent.radius + radius + 2)
+    ) {
+      return false;
+    }
+    if (
+      obstacles.some(
+        (obstacle) => distance(point, obstacle) < obstacle.radius + radius,
+      )
+    ) {
+      return false;
+    }
+    return !(
+      x + radius >= width - SPAWN_CLEARING_COLUMNS - 2 &&
+      Math.abs(y - height / 2) <= SPAWN_CLEARING_ROWS + radius + 2
+    );
+  };
+  const { bridges, water } = placeWaterways({
+    canPlace: canFlood,
+    height,
+    idPrefix: "crucible",
+    laneRowAt: () => height / 2,
+    ponds: [
+      { x: width * 0.2, y: height * 0.12 },
+      { x: width * 0.2, y: height * 0.88 },
+    ],
+    rivers: [
+      { bridgeCount: 3, centerShare: 0.255 },
+      { bridgeCount: 2, centerShare: 0.775 },
+    ],
+    rng,
+    width,
+  });
+  for (const disk of water) {
+    obstacles.push({
+      height: disk.height,
+      id: disk.id,
+      kind: "deep_water",
+      radius: disk.radius,
+      x: disk.x,
+      y: disk.y,
+    });
+  }
+
+  return { bridges, obstacles };
+}
+
+/**
+ * Names each bridge as a choke point for the minimap and coach.
+ * @param bridges - Bridges across the rivers
+ * @returns One choke point per bridge
+ */
+function bridgeChokes(
+  bridges: readonly TerrainBridge[],
+): AshenCrucibleMap["chokePoints"] {
+  return bridges.map((bridge, index) => ({
+    id: `bridge-choke-${index + 1}`,
+    label: index % 2 === 0 ? "Ashfall Bridge" : "Mistwater Span",
+    x: Math.round(bridge.x),
+    y: Math.round(bridge.y),
+  }));
 }
 
 /**
@@ -463,7 +543,7 @@ function placeCrucibleNodes(
   };
 
   // 1. Starter deposits around every player's Camp.
-  const baseAngles = [-2.2, -0.85, 0.85, 2.2];
+  const baseAngles = [-2.2, -0.85, 0.85, 2.2, 0, Math.PI];
   for (const entry of placements) {
     const angleShift = randomBetween(rng, -0.2, 0.2);
     for (
@@ -591,7 +671,7 @@ function pickSharedCell(
 }
 
 /**
- * Creates a player's starting first-level Cultivator and three Villagers beside their Camp.
+ * Creates a player's Cultivator, Rider and three Villagers beside their Camp.
  * @param entry - Player and camp placement
  * @returns Starting unit records owned by this player
  */
@@ -612,6 +692,22 @@ function startingUnitsForPlayer(entry: CampPlacement): UnitInit[] {
       popKind: "soldier",
       realmId: "qi_gathering",
       ...insideMap(polarOffset(camp, heading, footprintRadius("camp") + 2), 2),
+    },
+    {
+      classId: "rider",
+      id: `crucible-rider-${slot}`,
+      maxHp: getUnitDefinition("rider").maxHitPoints,
+      ownerId: player.id,
+      popKind: "soldier",
+      realmId: "qi_gathering",
+      ...insideMap(
+        polarOffset(
+          polarOffset(camp, heading, footprintRadius("camp") + 2),
+          heading + Math.PI / 2,
+          2,
+        ),
+        2,
+      ),
     },
     ...Array.from(
       { length: ASHEN_CRUCIBLE_STARTING_VILLAGERS },

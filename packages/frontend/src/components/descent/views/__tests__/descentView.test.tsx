@@ -8,9 +8,10 @@ import { act } from "react";
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
 import { createRoot, type Root } from "react-dom/client";
+import { createAshenGateSim } from "../../logic/ashenGateSlice";
 import type { Command } from "../../logic/types";
 import { DescentView } from "../DescentView";
-import { TOAST_DISMISS_MS, ToastList } from "../dialogs";
+import { ERROR_TOAST_DISMISS_MS, ToastList } from "../dialogs";
 import { GLOSSARY, REQUIRED_GLOSSARY_TERMS } from "../glossary";
 import type { DescentPresentation } from "../presentation";
 import { createAshenGatePreview } from "../preview";
@@ -61,6 +62,16 @@ async function mount(snapshot = createAshenGatePreview()): Promise<Mounted> {
 async function click(button: HTMLElement) {
   await act(async () => {
     button.click();
+  });
+}
+
+/**
+ * Focuses a command tile so its tooltip is shown.
+ * @param element - Tile to focus
+ */
+async function focus(element: HTMLElement) {
+  await act(async () => {
+    element.focus();
   });
 }
 
@@ -138,6 +149,16 @@ describe("DescentView", () => {
     current.container.remove();
   });
 
+  test("shows the real starting roster at 6/8 population", async () => {
+    const snapshot = createAshenGateSim({ seed: 1 }).snapshot();
+    mounted = await mount(snapshot);
+    expect(
+      mounted.container.querySelector("[data-testid=pop]")?.textContent,
+    ).toContain("6/8");
+    expect(unit(mounted.container, "ashen-rider")).toBeDefined();
+    expect(unit(mounted.container, "ashen-captain")).toBeDefined();
+  });
+
   test("selects a unit, moves, attacks, and reads the stockpile", async () => {
     mounted = await mount();
     const { commands, container } = mounted;
@@ -170,7 +191,6 @@ describe("DescentView", () => {
     const resourcePanel = container.querySelector('[aria-label="Unit panel"]');
     expect(resourcePanel?.textContent).toContain("What it is");
     expect(resourcePanel?.textContent).toContain("Meals and preserved stores");
-    expect(resourcePanel?.textContent).toContain("What you can do");
     expect(resourcePanel?.textContent).toContain("Trains people");
     expect(resourcePanel?.textContent).toContain("Get more");
     expect(resourcePanel?.textContent).toContain("Right-click a grove");
@@ -256,6 +276,11 @@ describe("DescentView", () => {
     const buildMenu = container.querySelector('[aria-label="Build menu"]');
     if (!(buildMenu instanceof HTMLElement))
       throw new Error("Missing build menu");
+    const bottomHud = container.querySelector(
+      '[data-testid="descent-bottom-hud"]',
+    );
+    expect(buildMenu.parentElement).toBe(bottomHud);
+    expect(container.querySelector('[aria-label="Command card"]')).toBeNull();
     expect(
       buildMenu.querySelector('[aria-label="Build categories"]'),
     ).not.toBeNull();
@@ -276,6 +301,7 @@ describe("DescentView", () => {
         'img[src="/descent/building-icons/barracks.png"]',
       ),
     ).not.toBeNull();
+    await focus(buttonNamed(buildMenu, "Barracks"));
     expect(buildMenu.textContent).toContain(
       "Trains the Hold's soldiers; upgrading the Hold unlocks more classes.",
     );
@@ -283,37 +309,31 @@ describe("DescentView", () => {
       "Lets trained units attempt cultivation breakthroughs.",
     );
     expect(buildMenu.textContent).toContain("Adjacency");
-    expect(buildMenu.querySelector('li[title*="Adjacency"]')).not.toBeNull();
 
-    await click(buttonNamed(buildMenu, "Categories"));
+    await click(buttonNamed(buildMenu, "Back to build categories"));
     await click(buttonNamed(buildMenu, "Cultivation"));
-    // Unlocked Cultivation Hall renders as a full card; locked Citadel tier
-    // collapses into a single teaser row until Preview is clicked.
-    expect(
-      buildMenu.querySelectorAll(
-        'li[data-building-type] img[src^="/descent/building-icons/"]',
-      ),
-    ).toHaveLength(1);
-    expect(buildMenu.textContent).toContain(
-      "Lets trained units attempt cultivation breakthroughs.",
-    );
-    expect(buildMenu.textContent).toContain("Spirit Vein");
-    expect(buildMenu.querySelector('li[title*="Spirit Vein"]')).not.toBeNull();
-    expect(buildMenu.textContent).toContain("Show all tiers");
-
-    await click(buttonNamed(buildMenu, "Show all tiers"));
+    // Current and later-tier buildings share the grid; locked ones explain
+    // their tier instead of disappearing behind a separate preview.
     expect(
       buildMenu.querySelectorAll(
         'li[data-building-type] img[src^="/descent/building-icons/"]',
       ),
     ).toHaveLength(2);
+    await focus(buttonNamed(buildMenu, "Cultivation Hall"));
+    expect(buildMenu.textContent).toContain(
+      "Lets trained units attempt breakthroughs. The first needs no pill; Spirit Veins improve success.",
+    );
+    expect(buildMenu.textContent).toContain("Spirit Vein");
+
+    const altar = buttonNamed(buildMenu, "Calamity Altar");
+    expect(altar.getAttribute("aria-disabled")).toBe("true");
+    await focus(altar);
     expect(buildMenu.textContent).toContain(
       "Summons one powerful Calamity after reaching the Citadel.",
     );
     expect(buildMenu.textContent).toContain("Citadel tier");
-    expect(buttonNamed(buildMenu, "Calamity Altar").disabled).toBe(true);
 
-    await click(buttonNamed(buildMenu, "Categories"));
+    await click(buttonNamed(buildMenu, "Back to build categories"));
     await click(buttonNamed(buildMenu, "Military"));
     await click(buttonNamed(buildMenu, "Barracks"));
     const map = container.querySelector("[data-testid=descent-map]");
@@ -351,6 +371,90 @@ describe("DescentView", () => {
         y: 5,
       },
     ]);
+  });
+
+  test("keeps an unaffordable building visible with a tooltip explanation", async () => {
+    const snapshot = createAshenGatePreview();
+    const presentation = snapshot.meta.ui as DescentPresentation;
+    const barracks = presentation.buildOptions?.find(
+      (option) => option.buildingType === "barracks",
+    );
+    if (barracks === undefined) throw new Error("Missing Barracks preview");
+    barracks.affordable = false;
+    barracks.lockedReason = "Not enough resources";
+
+    mounted = await mount(snapshot);
+    const { commands, container } = mounted;
+    await click(unit(container, "villager-1"));
+    await click(buttonNamed(container, "Build"));
+    const buildMenu = container.querySelector('[aria-label="Build menu"]');
+    if (!(buildMenu instanceof HTMLElement)) {
+      throw new Error("Missing build menu");
+    }
+    await click(buttonNamed(buildMenu, "Military"));
+    const barracksTile = buttonNamed(buildMenu, "Barracks");
+    expect(barracksTile.getAttribute("aria-disabled")).toBe("true");
+    await focus(barracksTile);
+    expect(
+      buildMenu.querySelector('[data-testid="build-tooltip"]')?.textContent,
+    ).toContain("Not enough resources");
+
+    await click(barracksTile);
+    expect(commands).toHaveLength(0);
+    expect(buildMenu.isConnected).toBe(true);
+    expect(container.textContent).toContain("Not enough resources");
+    expect(
+      buildMenu.querySelector('[data-testid="build-tooltip"]')?.textContent,
+    ).toContain("Not enough resources");
+
+    await click(buttonNamed(buildMenu, "Close build menu"));
+    expect(document.activeElement?.getAttribute("data-command")).toBe("build");
+  });
+
+  test("updates an open build tooltip when resources change", async () => {
+    const snapshot = createAshenGatePreview();
+    const presentation = snapshot.meta.ui as DescentPresentation;
+    const barracks = presentation.buildOptions?.find(
+      (option) => option.buildingType === "barracks",
+    );
+    if (barracks === undefined) throw new Error("Missing Barracks preview");
+    barracks.affordable = false;
+    barracks.lockedReason = "Not enough resources";
+
+    mounted = await mount(snapshot);
+    const { container, root } = mounted;
+    await click(unit(container, "villager-1"));
+    await click(buttonNamed(container, "Build"));
+    const buildMenu = container.querySelector('[aria-label="Build menu"]');
+    if (!(buildMenu instanceof HTMLElement)) {
+      throw new Error("Missing build menu");
+    }
+    await click(buttonNamed(buildMenu, "Military"));
+    const barracksTile = buttonNamed(buildMenu, "Barracks");
+    await focus(barracksTile);
+    expect(barracksTile.getAttribute("aria-disabled")).toBe("true");
+    expect(buildMenu.textContent).toContain("Not enough resources");
+
+    const updated = createAshenGatePreview();
+    const updatedPresentation = updated.meta.ui as DescentPresentation;
+    const updatedBarracks = updatedPresentation.buildOptions?.find(
+      (option) => option.buildingType === "barracks",
+    );
+    if (updatedBarracks === undefined) {
+      throw new Error("Missing updated Barracks preview");
+    }
+    updatedBarracks.affordable = true;
+    updatedBarracks.lockedReason = undefined;
+    await act(async () => {
+      root.render(<DescentView snapshot={updated} />);
+    });
+
+    expect(barracksTile.getAttribute("aria-disabled")).toBeNull();
+    expect(buildMenu.textContent).not.toContain("Not enough resources");
+    expect(buildMenu.textContent).not.toContain("Can't build yet");
+    expect(
+      buildMenu.querySelector('[data-testid="build-tooltip"]'),
+    ).not.toBeNull();
   });
 
   test("shift-click keeps placing buildings and queues each site", async () => {
@@ -609,23 +713,30 @@ describe("DescentView", () => {
     ]);
     commands.length = 0;
     const wardenChoice = container.querySelector('[data-unit-class="warden"]');
-    expect(wardenChoice?.textContent).toContain("Frontline");
-    expect(wardenChoice?.textContent).toContain("anchors the front line");
+    expect(wardenChoice?.getAttribute("aria-label")).toContain("Frontline");
+    expect(wardenChoice?.getAttribute("aria-label")).toContain(
+      "anchors the front line",
+    );
     expect(
       wardenChoice?.querySelector('img[src="/descent/unit-icons/warden.svg"]'),
     ).not.toBeNull();
     const riderChoice = container.querySelector('[data-unit-class="rider"]');
-    expect(riderChoice?.textContent).toContain("Scout");
-    expect(riderChoice?.textContent).toContain("exceptional sight");
+    expect(riderChoice?.getAttribute("aria-label")).toContain("Scout");
+    expect(riderChoice?.getAttribute("aria-label")).toContain(
+      "exceptional sight",
+    );
     expect(
       riderChoice?.querySelector('img[src="/descent/unit-icons/rider.svg"]'),
     ).not.toBeNull();
     const breakerChoice = container.querySelector(
       '[data-unit-class="breaker"]',
     );
-    expect(breakerChoice?.textContent).toContain("Siege");
-    expect(breakerChoice?.textContent).toContain("double damage");
-    expect(breakerChoice?.hasAttribute("disabled")).toBe(true);
+    expect(breakerChoice?.getAttribute("aria-label")).toContain("Siege");
+    expect(breakerChoice?.getAttribute("aria-label")).toContain(
+      "double damage",
+    );
+    // Blocked tiles stay focusable so they can explain why.
+    expect(breakerChoice?.getAttribute("aria-disabled")).toBe("true");
     expect(container.textContent).toContain("Rally 26, 34");
     expect(
       container.querySelector('[data-testid="rally-point"]'),
@@ -688,24 +799,29 @@ describe("DescentView", () => {
     if (!(choice instanceof HTMLButtonElement)) {
       throw new Error("Missing warden training button");
     }
-    expect(choice.textContent).toContain("Food 30");
-    expect(choice.textContent).not.toContain("Food 120");
+    await act(async () => {
+      choice.focus();
+    });
+    const tooltip = () =>
+      container.querySelector("[data-testid=command-tooltip]");
+    expect(tooltip()?.textContent).toContain("Food 30");
+    expect(tooltip()?.textContent).not.toContain("Food 120");
     expect(
-      choice.querySelector('img[src="/descent/resource-icons/food.png"]'),
+      tooltip()?.querySelector('img[src="/descent/resource-icons/food.png"]'),
     ).not.toBeNull();
     expect(
-      choice.querySelector('img[src="/descent/resource-icons/water.png"]'),
+      tooltip()?.querySelector('img[src="/descent/resource-icons/water.png"]'),
     ).not.toBeNull();
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "Shift" }));
     });
     expect(choice.textContent).toContain("×4");
-    expect(choice.textContent).not.toContain("Food 30");
+    expect(tooltip()?.textContent).not.toContain("Food 30");
     expect(
-      choice.querySelector('[data-resource="food"]')?.textContent,
+      tooltip()?.querySelector('[data-resource="food"]')?.textContent,
     ).toContain("120");
     expect(
-      choice.querySelector('[data-resource="water"]')?.textContent,
+      tooltip()?.querySelector('[data-resource="water"]')?.textContent,
     ).toContain("60");
     await act(async () => {
       choice.dispatchEvent(
@@ -721,8 +837,9 @@ describe("DescentView", () => {
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent("keyup", { key: "Shift" }));
     });
-    expect(choice.textContent).toContain("Food 30");
-    expect(choice.textContent).not.toContain("Food 120");
+    expect(choice.textContent).not.toContain("×4");
+    expect(tooltip()?.textContent).toContain("Food 30");
+    expect(tooltip()?.textContent).not.toContain("Food 120");
   });
 
   test("shows a mixed selection as unit-group icons and narrows to one", async () => {
@@ -896,14 +1013,24 @@ describe("DescentView", () => {
     ]);
 
     await click(unit(container, "merit-1"));
-    await click(buttonNamed(container, "Breakthrough"));
-    expect(dialog(container).textContent).toContain("Merit incomplete");
+    const blocked = buttonNamed(container, "Breakthrough");
+    expect(blocked.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => {
+      blocked.focus();
+    });
+    const tooltip = container.querySelector("[data-testid=command-tooltip]");
+    expect(tooltip?.textContent).toContain("Can't do this yet");
+    expect(tooltip?.textContent).toContain("merit");
+    expect(tooltip?.textContent).toContain("earn Merit");
     const before = commands.length;
-    await click(buttonNamed(dialog(container), "Begin breakthrough"));
+    await click(blocked);
     expect(commands).toHaveLength(before);
-    expect(
-      container.querySelector("[data-testid=toasts]")?.textContent,
-    ).toContain("Merit incomplete");
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    const toast = container.querySelector(
+      "[data-testid=error-toasts]",
+    )?.textContent;
+    expect(toast).toContain("Can't Breakthrough");
+    expect(toast).toContain("earn Merit");
   });
 
   test("explains a blocked pill feed before it commits", async () => {
@@ -920,17 +1047,18 @@ describe("DescentView", () => {
     expect(commands).toEqual([]);
     await click(buttonNamed(open, "Feed pill"));
     expect(commands).toEqual([]);
-    const toast = container.querySelector("[data-testid=toasts]")?.textContent;
+    const toast = container.querySelector(
+      "[data-testid=error-toasts]",
+    )?.textContent;
     expect(toast).toContain("Toxicity");
     expect(toast).toContain("School mismatch");
   });
 
-  test("opens the glossary from the unit panel, Omen panel, and build menu", async () => {
+  test("opens the glossary from the Omen panel and build menu", async () => {
     mounted = await mount();
     const { container } = mounted;
     await showThreat(container);
     const labels = [
-      "Open glossary from the unit panel",
       "Open glossary from the Omen panel",
       "Open glossary from the build menu",
     ];
@@ -949,6 +1077,14 @@ describe("DescentView", () => {
         expect(glossary.textContent).toContain(term);
         expect(glossary.textContent).toContain(entry.meaning);
       }
+      await act(async () => {
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", { bubbles: true, key: "q" }),
+        );
+      });
+      expect(
+        container.querySelector('[aria-label="Build categories"]'),
+      ).not.toBeNull();
       await click(buttonNamed(glossary, "Close"));
     }
   });
@@ -1075,8 +1211,8 @@ describe("DescentView", () => {
     await click(buttonNamed(container, "Descend"));
     expect(commands).toEqual([]);
     expect(
-      container.querySelector("[data-testid=toasts]")?.textContent,
-    ).toContain("Boss still lives");
+      container.querySelector("[data-testid=error-toasts]")?.textContent,
+    ).toContain("boss still lives");
 
     await act(async () => {
       window.dispatchEvent(
@@ -1173,16 +1309,14 @@ describe("DescentView", () => {
     try {
       mounted = await mount();
       await click(buttonNamed(mounted.container, "Descend"));
-      expect(
-        mounted.container.querySelector("[data-testid=toasts]")?.textContent,
-      ).toContain("Boss still lives");
+      const errors = () =>
+        mounted?.container.querySelector("[data-testid=error-toasts]")
+          ?.textContent ?? "";
+      expect(errors()).toContain("boss still lives");
       await act(async () => {
-        jest.advanceTimersByTime(TOAST_DISMISS_MS);
+        jest.advanceTimersByTime(ERROR_TOAST_DISMISS_MS);
       });
-      expect(
-        mounted.container.querySelector("[data-testid=toasts]")?.textContent ??
-          "",
-      ).not.toContain("Boss still lives");
+      expect(errors()).not.toContain("boss still lives");
     } finally {
       jest.useRealTimers();
     }
@@ -1203,5 +1337,30 @@ describe("DescentView", () => {
     await click(unit(container, "sworn-1"));
     expect(container.textContent).toContain("Choose Ember");
     expect(buttonNamed(container, "Ember").tagName).toBe("BUTTON");
+  });
+
+  test("shows a breakthrough loading bar and time remaining while channeling", async () => {
+    const snap = createAshenGatePreview();
+    const uiMeta = snap.meta.ui as {
+      units?: Record<string, Record<string, unknown>>;
+    };
+    if (uiMeta.units?.["warden-1"] !== undefined) {
+      uiMeta.units["warden-1"].channel = 0.45;
+      uiMeta.units["warden-1"].breakthroughRemainingSeconds = 11;
+      uiMeta.units["warden-1"].breakthroughReady = false;
+    }
+    mounted = await mount(snap);
+    const { container } = mounted;
+    await click(unit(container, "warden-1"));
+    const panel = container.querySelector('[aria-label="Unit panel"]');
+    expect(panel?.textContent).toContain("Breaking through");
+    expect(panel?.textContent).toContain("45%");
+    expect(panel?.textContent).toContain("11s left");
+    expect(panel?.textContent).toContain("Breakthrough in progress");
+    expect(panel?.textContent).toContain("11s remaining");
+    const meter = panel?.querySelector(
+      'meter[aria-label="Breakthrough progress"]',
+    );
+    expect(meter?.getAttribute("value")).toBe("45");
   });
 });

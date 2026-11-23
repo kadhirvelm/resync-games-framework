@@ -33,6 +33,7 @@ function producer(
   return createEconomy({
     buildings: [
       { buildingType, completed: true, id: buildingType, x: 4, y: 4 },
+      { buildingType: "storehouse", completed: true, id: "store", x: 4, y: 9 },
     ],
     stockpile,
     units: cells.slice(0, workers).map((cell, index) => ({
@@ -54,8 +55,22 @@ function manualSim(id: string): DescentSim {
     init(world) {
       seedEconomyWorld(world, {
         buildings: [
+          {
+            buildingType: "storehouse",
+            completed: true,
+            id: "store",
+            x: 8,
+            y: 12,
+          },
           { buildingType: "well", completed: true, id: "well", x: 4, y: 4 },
           { buildingType: "farm", completed: true, id: "farm", x: 10, y: 4 },
+          {
+            buildingType: "stone_quarry",
+            completed: true,
+            id: "quarry",
+            x: 10,
+            y: 16,
+          },
           {
             buildingType: "forest",
             completed: true,
@@ -103,20 +118,38 @@ describe("worked economy buildings", () => {
     expect(workerSlots("well")).toBe(3);
     expect(workerSlots("farm")).toBe(1);
     expect(workerSlots("forest")).toBe(1);
+    expect(workerSlots("stone_quarry")).toBe(1);
     expect(workerSlots("spirit_herb_garden")).toBe(0);
   });
 
   test("an unworked Well, Farm, or Forest produces nothing", () => {
-    for (const type of ["well", "farm", "forest"]) {
+    for (const type of ["well", "farm", "forest", "stone_quarry"]) {
       const sim = producer(type, { water: 50 });
       sim.step(200);
       expect(sim.getStockpile()).toMatchObject({
         food: 0,
+        stone: 0,
         water: 50,
         wood: 0,
       });
       expect(sim.listBuildings()[0]?.production).toBeNull();
     }
+  });
+
+  test("a quarry worker repeatedly mines and delivers stone, capped at one worker", () => {
+    const one = producer("stone_quarry", {}, 1);
+    const two = producer("stone_quarry", {}, 2);
+    const ticks = buildingDef("stone_quarry")?.production?.everyTicks ?? 0;
+
+    one.step(ticks - 1);
+    expect(one.getStockpile().stone).toBe(0);
+    one.step(100);
+    two.step(ticks - 1 + 100);
+    expect(one.getStockpile().stone).toBeGreaterThan(6);
+    expect(two.getStockpile().stone).toBe(one.getStockpile().stone);
+    expect(
+      two.listUnits().filter((unit) => unit.task?.kind === "work"),
+    ).toHaveLength(1);
   });
 
   test("one villager working the Well draws Water", () => {
@@ -126,18 +159,19 @@ describe("worked economy buildings", () => {
     sim.step(ticks - 1);
     expect(sim.getStockpile().water).toBe(0);
     sim.step(1);
-    expect(sim.getStockpile().water).toBe(4);
-    sim.step(ticks);
-    expect(sim.getStockpile().water).toBe(8);
+    // The Water is drawn but still has to be carried to the storehouse.
+    expect(sim.getStockpile().water).toBe(0);
+    sim.step(20);
+    expect(sim.getStockpile().water).toBeGreaterThanOrEqual(4);
   });
 
   test("each extra Well worker speeds it up, up to three", () => {
     const one = producer("well", {}, 1);
     const three = producer("well", {}, 3);
     const four = producer("well", {}, 4);
-    one.step(48);
-    three.step(48);
-    four.step(48);
+    one.step(96);
+    three.step(96);
+    four.step(96);
     expect(three.getStockpile().water).toBeGreaterThan(
       one.getStockpile().water,
     );
@@ -147,27 +181,40 @@ describe("worked economy buildings", () => {
     ).toHaveLength(3);
   });
 
-  test("worked farms and forests pay Water before their timed harvest", () => {
+  test("worked farms pay Water before their timed harvest", () => {
     const farm = producer("farm", { water: 10 }, 1);
     const farmTicks = buildingDef("farm")?.production?.everyTicks ?? 0;
     farm.step(1);
     expect(farm.getStockpile()).toMatchObject({ food: 0, water: 5 });
-    farm.step(farmTicks - 1);
-    expect(farm.getStockpile()).toMatchObject({ food: 8, water: 5 });
+    farm.step(farmTicks + 20);
+    expect(farm.getStockpile().food).toBeGreaterThanOrEqual(8);
+    expect(farm.getStockpile().water).toBeLessThanOrEqual(5);
+  });
 
-    const forest = producer("forest", { water: 5 }, 1);
-    const forestTicks = buildingDef("forest")?.production?.everyTicks ?? 0;
-    forest.step(forestTicks);
-    expect(forest.getStockpile()).toMatchObject({ water: 0, wood: 6 });
+  test("a forest worker spends 5 water per cycle to haul renewable wood", () => {
+    expect(buildingDef("forest")?.production?.input).toEqual({ water: 5 });
+    const dry = producer("forest", { water: 4 }, 1);
+    dry.step(100);
+    expect(dry.getStockpile()).toMatchObject({ water: 4, wood: 0 });
+
+    const forest = producer("forest", { water: 10 }, 1);
+    const ticks = buildingDef("forest")?.production?.everyTicks ?? 0;
+    forest.step(1);
+    expect(forest.getStockpile()).toMatchObject({ water: 5, wood: 0 });
+    forest.step(ticks + 180);
+    expect(forest.getStockpile()).toMatchObject({ water: 0, wood: 12 });
+    expect(
+      forest.listUnits().filter((unit) => unit.task?.kind === "work"),
+    ).toHaveLength(1);
   });
 
   test("a second Farm villager does not take a slot or speed it up", () => {
     const sim = producer("farm", { water: 50 }, 2);
-    sim.step(24);
+    sim.step(44);
     expect(
       sim.listUnits().filter((unit) => unit.task?.kind === "work"),
     ).toHaveLength(1);
-    expect(sim.getStockpile().food).toBe(16);
+    expect(sim.getStockpile().food).toBeGreaterThanOrEqual(8);
   });
 
   test("a dry producer waits without advancing or creating resources", () => {
@@ -303,6 +350,20 @@ describe("harvesting Spirit Herb Gardens", () => {
 });
 
 describe("ordering villagers to producers", () => {
+  test("a manually assigned quarry worker continually delivers stone", () => {
+    const sim = manualSim("quarry-order");
+    sim.enqueue({
+      buildingId: "quarry",
+      type: "assign_build",
+      unitIds: ["v1", "v2"],
+    });
+    sim.step(1);
+    expect(workersOf(sim, "quarry").map((unit) => unit.id)).toEqual(["v1"]);
+    sim.step(120);
+    expect(sim.snapshot().resources.stone).toBeGreaterThan(6);
+    expect(workersOf(sim, "quarry").map((unit) => unit.id)).toEqual(["v1"]);
+  });
+
   test("only three of four villagers sent to a Well work it", () => {
     const sim = manualSim("well-order");
     sim.enqueue({
@@ -348,7 +409,7 @@ describe("ordering villagers to producers", () => {
     sim.step(20);
     expect(workersOf(sim, "farm")).toHaveLength(0);
     sim.enqueue({ type: "release_villagers" });
-    sim.step(2);
+    sim.step(30);
     expect(workersOf(sim, "farm").map((unit) => unit.id)).toEqual(["v1"]);
   });
 });

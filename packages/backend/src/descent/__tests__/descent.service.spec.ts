@@ -215,6 +215,59 @@ describe("DescentService", () => {
     expect(speed.ok).toBe(true);
   });
 
+  it("admits and replays cultivator commands while rejecting invalid payloads", async () => {
+    const store = createFakeStore(makeRoom(2));
+    const service = new DescentService(
+      store,
+      new MockRedisService() as unknown as RedisService,
+    );
+    services.push(service);
+    const started = await service.startMatch({ roomId: "ABC234" }, "sock-1");
+    expect(started.ok).toBe(true);
+    const matchId = started.ok
+      ? (started.room?.gameState as DescentRoomState | undefined)?.matchId
+      : null;
+    expect(matchId).toBeTruthy();
+    if (!matchId) return;
+
+    const commands = [
+      { type: "toggle_meditate", unitIds: ["unit-1"] },
+      { type: "cast_qi_art", unitIds: ["unit-1"] },
+      ...["cultivator", "sword_sage", "formation_master"].map((classId) => ({
+        buildingId: "sanctum-1",
+        classId,
+        type: "train_unit",
+      })),
+    ];
+    for (const command of commands) {
+      const result = await service.enqueueCommand(
+        { command, matchId, roomId: "ABC234" },
+        "sock-2",
+      );
+      expect(result.ok).toBe(true);
+    }
+    const invalid = await service.enqueueCommand(
+      {
+        command: { extra: true, type: "cast_qi_art", unitIds: ["unit-1"] },
+        matchId,
+        roomId: "ABC234",
+      },
+      "sock-2",
+    );
+    expect(invalid.ok).toBe(false);
+
+    await new Promise((resolve) => setTimeout(resolve, 140));
+    const sync = await service.sync(
+      { fromTick: 0, matchId, roomId: "ABC234" },
+      "sock-1",
+    );
+    expect(sync.ok).toBe(true);
+    expect(sync.commands.map((entry) => entry.command)).toEqual(commands);
+    expect(sync.commands.every((entry) => entry.playerId === "player-2")).toBe(
+      true,
+    );
+  });
+
   it("rejects malformed commands and stale match traffic", async () => {
     const store = createFakeStore(makeRoom(2));
     const service = new DescentService(

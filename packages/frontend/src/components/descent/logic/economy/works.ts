@@ -10,6 +10,7 @@ import type {
   EconomyBuilding,
   EconomyHost,
 } from "./model";
+import { getHoldTier } from "./queries";
 import { asBuilding, tierAllows } from "./records";
 import { addDeposit, emptyStockpile, trySpend } from "./stockpile";
 import { type DeepWorkDef, type DepthDef, deepWorkForBuilding } from "./tables";
@@ -68,7 +69,7 @@ export function startDig(host: EconomyHost, buildingId: string): boolean {
   if (!building) return false;
   const record = asBuilding(building);
   if (!record.completed) return false;
-  if (!tierAllows(host.economy.tier, record.tier)) return false;
+  if (!tierAllows(getHoldTier(host, record.ownerId), record.tier)) return false;
   const work = host.economy.works.find(
     (entry) => entry.buildingId === buildingId,
   );
