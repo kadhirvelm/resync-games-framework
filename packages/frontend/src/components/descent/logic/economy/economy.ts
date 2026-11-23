@@ -343,6 +343,7 @@ export function seedEconomyWorld(
 ): void {
   const host = economyHost(world);
   if (init.tier) host.economy.tier = init.tier;
+  host.economy.playerCount = Math.max(1, Math.floor(init.playerCount ?? 1));
   applyStockpile(host, init.stockpile);
   for (const vein of init.veins ?? []) host.economy.veins.push({ ...vein });
   for (const node of init.nodes ?? []) host.economy.nodes.push({ ...node });

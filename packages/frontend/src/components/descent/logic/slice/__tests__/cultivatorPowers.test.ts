@@ -94,7 +94,7 @@ describe("Cultivator powers, seclusion, and sect expansion", () => {
 
     expect(sanctum?.unlocked).toBe(true);
     expect(array?.unlocked).toBe(true);
-    expect(pavilion).toBeUndefined();
+    expect(pavilion?.unlocked).toBe(false);
   });
 
   test("meditation generates Essence and Merit and auto-cancels on move order", () => {

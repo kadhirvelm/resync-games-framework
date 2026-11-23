@@ -19,12 +19,13 @@ import type {
   EconomyMeta,
   EconomyUnit,
   HoldTier,
+  HoldUpgrade,
   ResourceNode,
   SpiritVein,
   UnitInit,
 } from "./model";
 import { emptyStockpile } from "./stockpile";
-import { buildingDef } from "./tables";
+import { buildingDef, holdTierDef } from "./tables";
 
 const HOLD_TIERS: readonly HoldTier[] = [
   "Camp",
@@ -45,7 +46,10 @@ export function createEconomyMeta(): EconomyMeta {
     items: {},
     mercenarySerial: 0,
     nodes: [],
+    ownerTiers: {},
+    ownerUpgrades: {},
     pendingTraining: [],
+    playerCount: 1,
     popReserved: 0,
     rejection: null,
     tier: "Camp",
@@ -66,6 +70,11 @@ export function ensureEconomyMeta(world: SimWorldState): EconomyMeta {
   const current = world.meta.economy;
   if (isPlainObject(current)) {
     if (NORMALIZED.has(current)) return current as unknown as EconomyMeta;
+    // Older co-op saves predate the explicit per-player allowance.
+    if (current.playerCount === undefined) {
+      current.playerCount = legacyPlayerCount(world);
+    }
+    cancelLegacyCoopUpgrade(world, current);
     const repaired = normalizeEconomyMeta(current);
     NORMALIZED.add(repaired);
     return repaired;
@@ -74,6 +83,51 @@ export function ensureEconomyMeta(world: SimWorldState): EconomyMeta {
   NORMALIZED.add(created);
   world.meta.economy = created;
   return created;
+}
+
+/**
+ * Cancels the ambiguous shared timer written by pre-owner-scoped co-op saves.
+ * Its cost returns to the shared stockpile because the initiating owner cannot
+ * be recovered; new co-op timers always live in `ownerUpgrades` instead.
+ * @param world - Saved world with owned co-op Camps and a resource stockpile
+ * @param bag - Economy save being normalized
+ */
+function cancelLegacyCoopUpgrade(
+  world: SimWorldState,
+  bag: Record<string, unknown>,
+): void {
+  if (!isUpgrade(bag.upgrade)) return;
+  const coop = (world.buildings ?? []).some(
+    (building) =>
+      building.buildingType === "camp" && building.ownerId !== undefined,
+  );
+  if (!coop) return;
+  const definition = holdTierDef(bag.upgrade.target);
+  if (definition !== undefined) {
+    for (const resourceId of RESOURCE_IDS) {
+      world.resources[resourceId] += definition.upgradeCost[resourceId] ?? 0;
+    }
+  }
+  bag.upgrade = null;
+}
+
+/**
+ * Recovers the original allied allowance, including eliminated owners.
+ * @param world - Legacy save without an explicit economy player count
+ * @returns Roster size, falling back to surviving Hold ownership or solo
+ */
+function legacyPlayerCount(world: SimWorldState): number {
+  const slice = world.meta.ashenGateSlice;
+  if (isPlainObject(slice) && isPlainObject(slice.players)) {
+    return Math.max(1, Object.keys(slice.players).length);
+  }
+  const owners = [...(world.units ?? []), ...(world.buildings ?? [])]
+    .filter(
+      (record) => !("factionId" in record) || record.factionId !== "horde",
+    )
+    .map((record) => record.ownerId)
+    .filter((ownerId) => ownerId !== undefined);
+  return Math.max(1, new Set(owners).size);
 }
 
 /**
@@ -94,10 +148,13 @@ export function normalizeEconomyMeta(
     bag.pendingTraining,
     (entry): entry is ClassId => typeof entry === "string",
   );
+  bag.playerCount = Math.max(1, Math.floor(nonNegative(bag.playerCount)));
   bag.popReserved = nonNegative(bag.popReserved);
   bag.mercenarySerial = Math.floor(nonNegative(bag.mercenarySerial));
   bag.rejection = typeof bag.rejection === "string" ? bag.rejection : null;
   bag.upgrade = isUpgrade(bag.upgrade) ? bag.upgrade : null;
+  bag.ownerTiers = holdTierRecord(bag.ownerTiers);
+  bag.ownerUpgrades = upgradeRecord(bag.ownerUpgrades);
   return bag as unknown as EconomyMeta;
 }
 
@@ -339,6 +396,34 @@ function numericRecord(value: unknown): Record<string, number> {
 }
 
 /**
+ * Repairs saved co-op tier overrides.
+ * @param value - Saved owner-to-tier record candidate
+ * @returns Only entries that name valid Hold tiers
+ */
+function holdTierRecord(value: unknown): Record<string, HoldTier> {
+  const result: Record<string, HoldTier> = {};
+  if (!isPlainObject(value)) return result;
+  for (const [ownerId, tier] of Object.entries(value)) {
+    if (isHoldTier(tier)) result[ownerId] = tier;
+  }
+  return result;
+}
+
+/**
+ * Repairs saved co-op upgrade timers.
+ * @param value - Saved owner-to-upgrade record candidate
+ * @returns Only entries with complete, valid upgrade state
+ */
+function upgradeRecord(value: unknown): Record<string, HoldUpgrade> {
+  const result: Record<string, HoldUpgrade> = {};
+  if (!isPlainObject(value)) return result;
+  for (const [ownerId, upgrade] of Object.entries(value)) {
+    if (isUpgrade(upgrade)) result[ownerId] = upgrade;
+  }
+  return result;
+}
+
+/**
  * @param value - Saved node candidate
  * @returns Whether it has every surface-node field
  */
@@ -393,7 +478,7 @@ function isDeepWork(value: unknown): value is DeepWorkRuntime {
  * @param value - Saved upgrade candidate
  * @returns Whether it is a running tier upgrade
  */
-function isUpgrade(value: unknown): value is EconomyMeta["upgrade"] {
+function isUpgrade(value: unknown): value is HoldUpgrade {
   if (!isPlainObject(value)) return false;
   return (
     isFiniteNumber(value.startedTick) &&

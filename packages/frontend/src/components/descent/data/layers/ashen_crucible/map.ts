@@ -4,7 +4,11 @@ import type {
   UnitInit,
 } from "../../../logic/economy";
 import type { ResourceNode, SpiritVein } from "../../../logic/economy/model";
-import type { CircleVolume, TerrainFeature } from "../../../logic/layers";
+import type {
+  CircleVolume,
+  TerrainBridge,
+  TerrainFeature,
+} from "../../../logic/layers";
 import { ASHEN_GATE_STOCKPILE } from "../ashen_gate/map";
 
 /** One co-op player assigned a Hold on the Ashen Crucible map. */
@@ -25,6 +29,8 @@ export interface AshenCrucibleChokePoint {
 
 /** Complete, data-only map package for a 1–4 player Ashen Crucible match. */
 export interface AshenCrucibleMap {
+  /** Walkable bridges across the rivers. */
+  bridges: readonly TerrainBridge[];
   buildings: readonly BuildingInit[];
   chokePoints: readonly AshenCrucibleChokePoint[];
   height: number;
@@ -89,6 +95,18 @@ export const ASHEN_CRUCIBLE_STARTER_NODES: readonly {
     nodeType: "rock_vein",
     remaining: 420,
     resourceId: "stone",
+  },
+  {
+    key: "wood-copse",
+    nodeType: "ash_grove",
+    remaining: 180,
+    resourceId: "wood",
+  },
+  {
+    key: "wood-thicket",
+    nodeType: "dead_tree",
+    remaining: 180,
+    resourceId: "wood",
   },
 ];
 

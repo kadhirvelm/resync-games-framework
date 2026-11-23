@@ -16,6 +16,7 @@ import type {
   StampedCombatCommand,
   UnitDefinition,
   UnitOrder,
+  UnitStatuses,
 } from "./types";
 
 /** Default fixed simulation step: the Descent sim's own tick length. */
@@ -92,6 +93,12 @@ export interface CombatSimulationOptions {
   obstacles?: readonly HurtDisk[];
   /** Projectiles still in flight, from a previous `exportState`. */
   pendingProjectiles?: PendingProjectile[];
+  /**
+   * When true, stores caller-supplied `units` and `buildings` directly without
+   * cloning them. Use only when the caller already constructed fresh objects
+   * for this tick and does not rely on them remaining immutable.
+   */
+  skipInputClone?: boolean;
   /** Tick counter to resume from, from a previous `exportState`. */
   startTick?: number;
   /** Static impassable terrain formations (ridges, spires, ruins, fissures). */
@@ -240,9 +247,79 @@ export function mergeBurn(
   };
 }
 
+/** Relative ULP margin for squared-distance pre-checks before `Math.hypot`. */
+const DIST_SQ_MARGIN = 1 + 1e-12;
+
+/**
+ * Clones a unit order without calling `structuredClone`.
+ * @param order - Optional unit order
+ * @returns Detached copy of the order
+ */
+function cloneOrder(order: UnitOrder | undefined): UnitOrder | undefined {
+  if (order === undefined) return undefined;
+  if (order.type === "attack_target") {
+    return { targetId: order.targetId, type: "attack_target" };
+  }
+  if (order.type === "move") {
+    const destination = { x: order.destination.x, y: order.destination.y };
+    if (order.pace === undefined) return { destination, type: "move" };
+    return { destination, pace: order.pace, type: "move" };
+  }
+  const cloned: Extract<UnitOrder, { type: "attack_move" }> = {
+    destination: { x: order.destination.x, y: order.destination.y },
+    type: "attack_move",
+  };
+  if (order.pace !== undefined) cloned.pace = order.pace;
+  if (order.targetId !== undefined) cloned.targetId = order.targetId;
+  return cloned;
+}
+
+/**
+ * Clones active status timers without calling `structuredClone`.
+ * @param statuses - Source status record
+ * @returns Detached status copy
+ */
+function cloneStatuses(statuses: UnitStatuses): UnitStatuses {
+  const result: UnitStatuses = {};
+  if (statuses.burn !== undefined) result.burn = { ...statuses.burn };
+  if (statuses.chill !== undefined) result.chill = { ...statuses.chill };
+  if (statuses.frozen !== undefined) result.frozen = { ...statuses.frozen };
+  return result;
+}
+
+/**
+ * Fast detached copy of a combat unit.
+ * @param unit - Source combat unit
+ * @returns Detached clone with copied position, statuses, and order
+ */
+function cloneCombatUnit(unit: CombatUnit): CombatUnit {
+  const cloned: CombatUnit = {
+    ...unit,
+    position: { x: unit.position.x, y: unit.position.y },
+    statuses: cloneStatuses(unit.statuses),
+  };
+  if (unit.order !== undefined) {
+    cloned.order = cloneOrder(unit.order);
+  }
+  return cloned;
+}
+
+/**
+ * Fast detached copy of a combat building.
+ * @param building - Source combat building
+ * @returns Detached clone with copied position
+ */
+function cloneCombatBuilding(building: CombatBuilding): CombatBuilding {
+  return {
+    ...building,
+    position: { x: building.position.x, y: building.position.y },
+  };
+}
+
 /** Pure, deterministic combat state advanced only through fixed ticks. */
 export class CombatSimulation {
   private readonly buildings = new Map<string, CombatBuilding>();
+  private readonly buildingsByFaction = new Map<string, CombatBuilding[]>();
   private readonly commandQueue = new CombatCommandQueue();
   private readonly events: CombatEvent[] = [];
   private factionVisionMultipliers = new Map<string, number>();
@@ -256,9 +333,11 @@ export class CombatSimulation {
   private readonly movementHazards: readonly HurtDisk[];
   private readonly obstacles: readonly HurtDisk[];
   private readonly pendingProjectiles: PendingProjectile[] = [];
+  private readonly sortedUnits: CombatUnit[] = [];
   private readonly terrainObstacles: readonly HurtDisk[];
   private readonly tickMs: number;
   private readonly units = new Map<string, CombatUnit>();
+  private readonly unitsByFaction = new Map<string, CombatUnit[]>();
   private currentTick = 0;
 
   /**
@@ -282,11 +361,40 @@ export class CombatSimulation {
       ...this.obstacles,
       ...this.terrainObstacles,
     ];
+    const skipInputClone = options.skipInputClone === true;
     for (const unit of options.units ?? []) {
-      this.units.set(unit.id, structuredClone(unit));
+      this.units.set(unit.id, skipInputClone ? unit : cloneCombatUnit(unit));
     }
+    for (const unit of this.units.values()) {
+      this.sortedUnits.push(unit);
+    }
+    this.sortedUnits.sort((left, right) => compareIds(left.id, right.id));
+    for (const unit of this.sortedUnits) {
+      let group = this.unitsByFaction.get(unit.factionId);
+      if (group === undefined) {
+        group = [];
+        this.unitsByFaction.set(unit.factionId, group);
+      }
+      group.push(unit);
+    }
+    const sortedBuildings: CombatBuilding[] = [];
     for (const building of options.buildings ?? []) {
-      this.buildings.set(building.id, structuredClone(building));
+      this.buildings.set(
+        building.id,
+        skipInputClone ? building : cloneCombatBuilding(building),
+      );
+    }
+    for (const building of this.buildings.values()) {
+      sortedBuildings.push(building);
+    }
+    sortedBuildings.sort((left, right) => compareIds(left.id, right.id));
+    for (const building of sortedBuildings) {
+      let group = this.buildingsByFaction.get(building.factionId);
+      if (group === undefined) {
+        group = [];
+        this.buildingsByFaction.set(building.factionId, group);
+      }
+      group.push(building);
     }
     for (const projectile of options.pendingProjectiles ?? []) {
       this.pendingProjectiles.push({ ...projectile });
@@ -301,14 +409,12 @@ export class CombatSimulation {
    */
   exportState(): CombatSimulationState {
     return {
-      buildings: [...this.buildings.values()].map((building) =>
-        structuredClone(building),
-      ),
+      buildings: [...this.buildings.values()].map(cloneCombatBuilding),
       pendingProjectiles: this.pendingProjectiles.map((projectile) => ({
         ...projectile,
       })),
       tick: this.currentTick,
-      units: [...this.units.values()].map((unit) => structuredClone(unit)),
+      units: [...this.units.values()].map(cloneCombatUnit),
     };
   }
 
@@ -323,7 +429,10 @@ export class CombatSimulation {
     const units = [...this.units.values()];
     const pendingProjectiles = this.pendingProjectiles.splice(0);
     this.buildings.clear();
+    this.buildingsByFaction.clear();
     this.units.clear();
+    this.unitsByFaction.clear();
+    this.sortedUnits.length = 0;
     return {
       buildings,
       pendingProjectiles,
@@ -358,9 +467,9 @@ export class CombatSimulation {
       this.executeCommand(command);
     }
     this.resolveReadyProjectiles();
-    for (const unitId of [...this.units.keys()].sort(compareIds)) {
-      const unit = this.units.get(unitId);
-      if (!unit || unit.hitPoints <= 0) {
+    for (let index = 0; index < this.sortedUnits.length; index += 1) {
+      const unit = this.sortedUnits[index] as CombatUnit;
+      if (unit.hitPoints <= 0) {
         continue;
       }
       this.advanceStatuses(unit);
@@ -846,25 +955,36 @@ export class CombatSimulation {
     source: CombatUnit,
     range: number,
   ): string | undefined {
+    if (range < 0) return undefined;
+    const sx = source.position.x;
+    const sy = source.position.y;
     let nearestId: string | undefined;
     let nearestDistance = Number.POSITIVE_INFINITY;
-    for (const candidate of this.units.values()) {
-      if (
-        candidate.hitPoints <= 0 ||
-        candidate.factionId === source.factionId
-      ) {
-        continue;
-      }
-      const candidateDistance = distance(source.position, candidate.position);
-      if (candidateDistance > range) continue;
-      if (
-        nearestId === undefined ||
-        candidateDistance < nearestDistance ||
-        (candidateDistance === nearestDistance &&
-          compareIds(candidate.id, nearestId) < 0)
-      ) {
-        nearestDistance = candidateDistance;
-        nearestId = candidate.id;
+    let limit = range;
+    let limitSq = range * range * DIST_SQ_MARGIN;
+    for (const [factionId, candidates] of this.unitsByFaction) {
+      if (factionId === source.factionId) continue;
+      for (let index = 0; index < candidates.length; index += 1) {
+        const candidate = candidates[index] as CombatUnit;
+        if (candidate.hitPoints <= 0) continue;
+        const dx = candidate.position.x - sx;
+        if (dx > limit || dx < -limit) continue;
+        const dy = candidate.position.y - sy;
+        if (dy > limit || dy < -limit) continue;
+        if (dx * dx + dy * dy > limitSq) continue;
+        const candidateDistance = Math.hypot(dx, dy);
+        if (candidateDistance > range) continue;
+        if (
+          nearestId === undefined ||
+          candidateDistance < nearestDistance ||
+          (candidateDistance === nearestDistance &&
+            compareIds(candidate.id, nearestId) < 0)
+        ) {
+          nearestDistance = candidateDistance;
+          nearestId = candidate.id;
+          limit = nearestDistance;
+          limitSq = nearestDistance * nearestDistance * DIST_SQ_MARGIN;
+        }
       }
     }
     return nearestId;
@@ -880,27 +1000,37 @@ export class CombatSimulation {
     source: CombatUnit,
     range: number,
   ): string | undefined {
+    if (range < 0 || this.buildingsByFaction.size === 0) return undefined;
+    const sx = source.position.x;
+    const sy = source.position.y;
     let nearestId: string | undefined;
     let nearestDistance = Number.POSITIVE_INFINITY;
-    for (const candidate of this.buildings.values()) {
-      if (
-        candidate.hitPoints <= 0 ||
-        candidate.factionId === source.factionId
-      ) {
-        continue;
-      }
-      const candidateDistance =
-        distance(source.position, candidate.position) -
-        (candidate.bodyRadius ?? 0);
-      if (candidateDistance > range) continue;
-      if (
-        nearestId === undefined ||
-        candidateDistance < nearestDistance ||
-        (candidateDistance === nearestDistance &&
-          compareIds(candidate.id, nearestId) < 0)
-      ) {
-        nearestDistance = candidateDistance;
-        nearestId = candidate.id;
+    let limit = range;
+    for (const [factionId, candidates] of this.buildingsByFaction) {
+      if (factionId === source.factionId) continue;
+      for (let index = 0; index < candidates.length; index += 1) {
+        const candidate = candidates[index] as CombatBuilding;
+        if (candidate.hitPoints <= 0) continue;
+        const radius = candidate.bodyRadius ?? 0;
+        const maxDist = limit + radius;
+        if (maxDist < 0) continue;
+        const dx = candidate.position.x - sx;
+        if (dx > maxDist || dx < -maxDist) continue;
+        const dy = candidate.position.y - sy;
+        if (dy > maxDist || dy < -maxDist) continue;
+        if (dx * dx + dy * dy > maxDist * maxDist * DIST_SQ_MARGIN) continue;
+        const candidateDistance = Math.hypot(dx, dy) - radius;
+        if (candidateDistance > range) continue;
+        if (
+          nearestId === undefined ||
+          candidateDistance < nearestDistance ||
+          (candidateDistance === nearestDistance &&
+            compareIds(candidate.id, nearestId) < 0)
+        ) {
+          nearestDistance = candidateDistance;
+          nearestId = candidate.id;
+          limit = nearestDistance;
+        }
       }
     }
     return nearestId;
@@ -946,18 +1076,30 @@ export class CombatSimulation {
    * @returns The ally to heal, if any
    */
   private findMostInjuredAlly(healer: CombatUnit): CombatUnit | undefined {
+    const range = healer.attackRange;
+    if (range < 0) return undefined;
+    const allies = this.unitsByFaction.get(healer.factionId);
+    if (allies === undefined) return undefined;
+    const hx = healer.position.x;
+    const hy = healer.position.y;
+    const rangeSq = range * range * DIST_SQ_MARGIN;
     let nearestAlly: CombatUnit | undefined;
     let lowestShare = Number.POSITIVE_INFINITY;
-    for (const candidate of this.units.values()) {
+    for (let index = 0; index < allies.length; index += 1) {
+      const candidate = allies[index] as CombatUnit;
       if (
         candidate.id === healer.id ||
         candidate.hitPoints <= 0 ||
-        candidate.factionId !== healer.factionId ||
-        candidate.hitPoints >= candidate.maxHitPoints * ADEPT_HEAL_THRESHOLD ||
-        distance(healer.position, candidate.position) > healer.attackRange
+        candidate.hitPoints >= candidate.maxHitPoints * ADEPT_HEAL_THRESHOLD
       ) {
         continue;
       }
+      const dx = candidate.position.x - hx;
+      if (dx > range || dx < -range) continue;
+      const dy = candidate.position.y - hy;
+      if (dy > range || dy < -range) continue;
+      if (dx * dx + dy * dy > rangeSq) continue;
+      if (Math.hypot(dx, dy) > range) continue;
       const share = candidate.hitPoints / candidate.maxHitPoints;
       if (
         nearestAlly === undefined ||
@@ -1097,22 +1239,29 @@ export class CombatSimulation {
    * Resolves projectiles whose deterministic travel ticks have elapsed.
    */
   private resolveReadyProjectiles(): void {
-    const ready = this.pendingProjectiles
-      .filter((projectile) => projectile.impactTick <= this.currentTick)
-      .sort(
+    if (this.pendingProjectiles.length === 0) return;
+    let ready: PendingProjectile[] | undefined;
+    let writeIndex = 0;
+    for (let index = 0; index < this.pendingProjectiles.length; index += 1) {
+      const projectile = this.pendingProjectiles[index] as PendingProjectile;
+      if (projectile.impactTick <= this.currentTick) {
+        if (ready === undefined) ready = [];
+        ready.push(projectile);
+      } else {
+        this.pendingProjectiles[writeIndex] = projectile;
+        writeIndex += 1;
+      }
+    }
+    if (ready === undefined) return;
+    this.pendingProjectiles.length = writeIndex;
+    if (ready.length > 1) {
+      ready.sort(
         (left, right) =>
           left.impactTick - right.impactTick ||
           compareIds(left.sourceId, right.sourceId) ||
           compareIds(left.targetId, right.targetId),
       );
-    const waiting = this.pendingProjectiles.filter(
-      (projectile) => projectile.impactTick > this.currentTick,
-    );
-    this.pendingProjectiles.splice(
-      0,
-      this.pendingProjectiles.length,
-      ...waiting,
-    );
+    }
     for (const projectile of ready) {
       const source = this.units.get(projectile.sourceId);
       if (!source) {
@@ -1358,20 +1507,35 @@ export class CombatSimulation {
     killed: CombatUnit,
     damagePerTick: number,
   ): void {
-    const nextTarget = [...this.units.values()]
-      .filter(
-        (candidate) =>
-          candidate.id !== killed.id &&
-          candidate.hitPoints > 0 &&
-          candidate.factionId === killed.factionId &&
-          distance(killed.position, candidate.position) <= BURN_SPREAD_RANGE,
-      )
-      .sort((left, right) => {
-        const distanceDifference =
-          distance(killed.position, left.position) -
-          distance(killed.position, right.position);
-        return distanceDifference || compareIds(left.id, right.id);
-      })[0];
+    const allies = this.unitsByFaction.get(killed.factionId);
+    if (allies === undefined) return;
+    const kx = killed.position.x;
+    const ky = killed.position.y;
+    let nextTarget: CombatUnit | undefined;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    let limit = BURN_SPREAD_RANGE;
+    let limitSq = BURN_SPREAD_RANGE * BURN_SPREAD_RANGE * DIST_SQ_MARGIN;
+    for (let index = 0; index < allies.length; index += 1) {
+      const candidate = allies[index] as CombatUnit;
+      if (candidate.id === killed.id || candidate.hitPoints <= 0) continue;
+      const dx = candidate.position.x - kx;
+      if (dx > limit || dx < -limit) continue;
+      const dy = candidate.position.y - ky;
+      if (dy > limit || dy < -limit) continue;
+      if (dx * dx + dy * dy > limitSq) continue;
+      const dist = Math.hypot(dx, dy);
+      if (dist > BURN_SPREAD_RANGE) continue;
+      if (
+        nextTarget === undefined ||
+        dist < bestDistance ||
+        (dist === bestDistance && compareIds(candidate.id, nextTarget.id) < 0)
+      ) {
+        bestDistance = dist;
+        nextTarget = candidate;
+        limit = dist;
+        limitSq = dist * dist * DIST_SQ_MARGIN;
+      }
+    }
     if (!nextTarget) {
       return;
     }

@@ -1,6 +1,6 @@
 {
   "additionalWorkerBuildBonus": 1,
-  "basePopCap": 100,
+  "basePopCap": 8,
   "buildings": [
     {
       "buildTicks": 20,
@@ -15,7 +15,7 @@
     },
     {
       "buildTicks": 24,
-      "cost": { "stone": 20, "wood": 30 },
+      "cost": { "stone": 40, "wood": 60 },
       "footprint": 3,
       "id": "housing",
       "job": "Raises the population cap",
@@ -26,7 +26,7 @@
     },
     {
       "buildTicks": 20,
-      "cost": { "wood": 30 },
+      "cost": { "wood": 60 },
       "dropOff": true,
       "footprint": 3,
       "id": "storehouse",
@@ -43,7 +43,7 @@
         }
       ],
       "buildTicks": 30,
-      "cost": { "stone": 20, "wood": 40 },
+      "cost": { "stone": 30, "wood": 60 },
       "footprint": 5,
       "id": "barracks",
       "job": "Train units",
@@ -54,7 +54,7 @@
     },
     {
       "buildTicks": 30,
-      "cost": { "stone": 25, "wood": 35 },
+      "cost": { "stone": 50, "wood": 70 },
       "footprint": 5,
       "id": "cultivator_sanctum",
       "job": "Train Sword, Flying-Sword, and Formation Cultivators",
@@ -66,7 +66,7 @@
     {
       "auraRadius": 6,
       "buildTicks": 24,
-      "cost": { "stone": 25, "wood": 20 },
+      "cost": { "stone": 50, "wood": 40 },
       "footprint": 3,
       "id": "spirit_array",
       "job": "Gathers Essence passively and doubles nearby Cultivator Qi regen",
@@ -83,7 +83,7 @@
     {
       "auraRadius": 5,
       "buildTicks": 28,
-      "cost": { "iron": 10, "stone": 35, "wood": 30 },
+      "cost": { "iron": 20, "stone": 70, "wood": 60 },
       "footprint": 3,
       "id": "meditation_pavilion",
       "job": "Seclusion chamber: grants nearby Cultivators steady Essence, Merit, and injury recovery",
@@ -94,7 +94,7 @@
     },
     {
       "buildTicks": 20,
-      "cost": { "wood": 20 },
+      "cost": { "wood": 40 },
       "footprint": 3,
       "id": "training_yard",
       "job": "Trains recruits beside the Barracks",
@@ -105,7 +105,7 @@
     {
       "auraRadius": 4,
       "buildTicks": 24,
-      "cost": { "stone": 40, "wood": 20 },
+      "cost": { "stone": 80, "wood": 40 },
       "footprint": 3,
       "id": "ward_tower",
       "job": "Defense and vision",
@@ -118,7 +118,7 @@
       "blocksAlly": true,
       "blocksHorde": true,
       "buildTicks": 10,
-      "cost": { "stone": 5, "wood": 5 },
+      "cost": { "stone": 10, "wood": 10 },
       "id": "wall",
       "job": "Funnels hordes",
       "maxHp": 300,
@@ -129,7 +129,7 @@
       "blocksAlly": true,
       "blocksHorde": true,
       "buildTicks": 16,
-      "cost": { "iron": 2, "stone": 8, "wood": 8 },
+      "cost": { "iron": 4, "stone": 16, "wood": 16 },
       "id": "fire_ward_wall",
       "job": "Funnels hordes and reduces Ember vent burn nearby",
       "maxHp": 320,
@@ -140,7 +140,7 @@
       "blocksAlly": false,
       "blocksHorde": true,
       "buildTicks": 12,
-      "cost": { "stone": 10, "wood": 15 },
+      "cost": { "stone": 20, "wood": 30 },
       "id": "gate",
       "job": "Ally passage in a wall",
       "maxHp": 260,
@@ -149,7 +149,7 @@
     },
     {
       "buildTicks": 24,
-      "cost": { "stone": 15, "wood": 30 },
+      "cost": { "stone": 30, "wood": 60 },
       "flavor": "Quota is a promise.",
       "footprint": 5,
       "id": "mess_hall",
@@ -168,7 +168,7 @@
     },
     {
       "buildTicks": 24,
-      "cost": { "stone": 10, "wood": 35 },
+      "cost": { "stone": 20, "wood": 70 },
       "flavor": "Down is the only forward.",
       "footprint": 5,
       "id": "hell_market",
@@ -179,7 +179,7 @@
     },
     {
       "buildTicks": 18,
-      "cost": { "stone": 10, "wood": 20 },
+      "cost": { "stone": 15, "wood": 30 },
       "footprint": 3,
       "id": "well",
       "job": "Villagers draw Water here; up to three can work it",
@@ -188,14 +188,30 @@
       "production": {
         "everyTicks": 8,
         "input": {},
-        "output": { "water": 4 },
+        "output": { "water": 6 },
         "workers": 3
       },
       "tier": "Camp"
     },
     {
+      "buildTicks": 24,
+      "cost": { "wood": 60 },
+      "footprint": 3,
+      "id": "stone_quarry",
+      "job": "A villager mines renewable Stone",
+      "maxHp": 180,
+      "name": "Stone Quarry",
+      "production": {
+        "everyTicks": 16,
+        "input": {},
+        "output": { "stone": 6 },
+        "workers": 1
+      },
+      "tier": "Camp"
+    },
+    {
       "buildTicks": 20,
-      "cost": { "stone": 5, "wood": 20 },
+      "cost": { "stone": 10, "wood": 40 },
       "footprint": 3,
       "id": "farm",
       "job": "A villager irrigates crops with Water to produce Food",
@@ -211,10 +227,10 @@
     },
     {
       "buildTicks": 24,
-      "cost": { "stone": 5, "wood": 15 },
+      "cost": { "stone": 10, "wood": 30 },
       "footprint": 5,
       "id": "forest",
-      "job": "A villager waters a managed ash grove to produce Wood",
+      "job": "A villager waters the grove and hauls renewable Wood",
       "maxHp": 170,
       "name": "Managed Forest",
       "production": {
@@ -223,11 +239,11 @@
         "output": { "wood": 6 },
         "workers": 1
       },
-      "tier": "Outpost"
+      "tier": "Camp"
     },
     {
       "buildTicks": 24,
-      "cost": { "stone": 10, "wood": 20 },
+      "cost": { "stone": 20, "wood": 40 },
       "footprint": 3,
       "id": "spirit_herb_garden",
       "job": "Grows Spirit Herbs slowly from Water; a villager harvests the ripe crop",
@@ -243,7 +259,7 @@
     },
     {
       "buildTicks": 20,
-      "cost": { "stone": 15, "wood": 20 },
+      "cost": { "stone": 30, "wood": 40 },
       "dropOff": true,
       "footprint": 3,
       "id": "forward_shrine",
@@ -255,7 +271,7 @@
     },
     {
       "buildTicks": 24,
-      "cost": { "stone": 30, "wood": 20 },
+      "cost": { "stone": 60, "wood": 40 },
       "footprint": 3,
       "id": "omen_tower",
       "job": "Shows the next wave class mix",
@@ -265,7 +281,7 @@
     },
     {
       "buildTicks": 20,
-      "cost": { "wood": 25 },
+      "cost": { "wood": 50 },
       "footprint": 3,
       "id": "root_cellar",
       "job": "Raid-immune food and water trickle",
@@ -295,7 +311,7 @@
     },
     {
       "buildTicks": 40,
-      "cost": { "iron": 20, "stone": 60, "wood": 40 },
+      "cost": { "iron": 40, "stone": 120, "wood": 80 },
       "footprint": 5,
       "id": "hero_hall",
       "job": "Train and revive heroes",
@@ -305,13 +321,13 @@
     },
     {
       "buildTicks": 40,
-      "cost": { "essence": 10, "stone": 50, "wood": 30 },
+      "cost": { "essence": 20, "stone": 100, "wood": 60 },
       "footprint": 5,
       "id": "cultivation_hall",
-      "job": "Breakthroughs",
+      "job": "Breakthroughs; introductory breakthroughs need no pills, and Spirit Veins improve success",
       "maxHp": 260,
       "name": "Cultivation Hall",
-      "tier": "Stronghold",
+      "tier": "Outpost",
       "veinBonus": { "amount": 0.15, "id": "breakthrough_success" },
       "veinBonusAtCitadel": { "amount": 0.25, "id": "breakthrough_success" }
     },
@@ -323,7 +339,7 @@
         }
       ],
       "buildTicks": 36,
-      "cost": { "iron": 10, "stone": 30, "wood": 40 },
+      "cost": { "iron": 20, "stone": 60, "wood": 80 },
       "footprint": 3,
       "id": "alchemy_furnace",
       "job": "Brew pills",
@@ -335,7 +351,7 @@
     },
     {
       "buildTicks": 40,
-      "cost": { "essence": 8, "iron": 20, "stone": 35, "wood": 25 },
+      "cost": { "essence": 16, "iron": 40, "stone": 70, "wood": 50 },
       "footprint": 3,
       "id": "ember_forge",
       "job": "Ashen Gate forge unlock for Ember equipment",
@@ -352,7 +368,7 @@
         }
       ],
       "buildTicks": 40,
-      "cost": { "iron": 40, "stone": 40, "wood": 20 },
+      "cost": { "iron": 80, "stone": 80, "wood": 40 },
       "footprint": 3,
       "id": "artifact_forge",
       "job": "Forge treasures",
@@ -362,7 +378,7 @@
     },
     {
       "buildTicks": 36,
-      "cost": { "iron": 15, "stone": 40, "wood": 30 },
+      "cost": { "iron": 30, "stone": 80, "wood": 60 },
       "footprint": 3,
       "id": "deep_mine",
       "job": "Underground stone, iron, and coin",
@@ -372,7 +388,7 @@
     },
     {
       "buildTicks": 48,
-      "cost": { "essence": 40, "iron": 40, "stone": 80 },
+      "cost": { "essence": 80, "iron": 80, "stone": 160 },
       "footprint": 5,
       "id": "calamity_altar",
       "job": "Summon one Calamity",
@@ -386,31 +402,31 @@
     { "id": "Camp", "upgradeCost": {}, "upgradeTicks": 0 },
     {
       "id": "Outpost",
-      "upgradeCost": { "stone": 30, "wood": 20 },
+      "upgradeCost": { "stone": 60, "wood": 40 },
       "upgradeTicks": 15
     },
     {
       "id": "Stronghold",
-      "upgradeCost": { "iron": 10, "stone": 55, "wood": 50 },
+      "upgradeCost": { "iron": 20, "stone": 110, "wood": 100 },
       "upgradeTicks": 22
     },
     {
       "id": "Citadel",
-      "upgradeCost": { "essence": 12, "iron": 25, "stone": 90, "wood": 70 },
+      "upgradeCost": { "essence": 24, "iron": 50, "stone": 180, "wood": 140 },
       "upgradeTicks": 30
     }
   ],
   "repairHpPerTick": 8,
   "trainingCosts": {
-    "adept": { "food": 20, "water": 30 },
-    "breaker": { "food": 40, "water": 20 },
-    "cultivator": { "food": 25, "water": 25 },
-    "formation_master": { "food": 20, "water": 35 },
-    "hunter": { "food": 25, "water": 20 },
-    "raider": { "food": 35, "water": 10 },
-    "rider": { "food": 45, "water": 25 },
-    "sword_sage": { "food": 25, "water": 30 },
-    "villager": { "food": 10, "water": 8 },
-    "warden": { "food": 30, "water": 15 }
+    "adept": { "food": 40, "water": 60 },
+    "breaker": { "food": 80, "water": 40 },
+    "cultivator": { "food": 50, "water": 50 },
+    "formation_master": { "food": 40, "water": 70 },
+    "hunter": { "food": 50, "water": 40 },
+    "raider": { "food": 70, "water": 20 },
+    "rider": { "food": 90, "water": 50 },
+    "sword_sage": { "food": 50, "water": 60 },
+    "villager": { "food": 20, "water": 16 },
+    "warden": { "food": 60, "water": 30 }
   }
 }

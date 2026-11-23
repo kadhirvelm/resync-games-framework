@@ -19,7 +19,7 @@ const TEXELS_PER_TILE = 4;
 const EDGE_BLUR_PIXELS = 6;
 
 /** Shortest gap between repaints, so fast sim speeds stay cheap. */
-const MIN_REPAINT_MS = 100;
+const MIN_REPAINT_MS = 150;
 
 /** Fog drawn over the battlefield. */
 export interface FogOverlayHandle {
@@ -126,6 +126,7 @@ export function createFogOverlay(
   /** Removes the current sheet and its texture. */
   const disposeSheet = (): void => {
     if (sheet === null) return;
+    glow.removeExcludedMesh(sheet.mesh);
     sheet.texture.dispose();
     sheet.material.dispose();
     sheet.mesh.dispose();

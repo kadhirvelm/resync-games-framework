@@ -38,6 +38,37 @@ export const FOG_CELL = {
 } as const;
 
 const textDecoder = new TextDecoder();
+const VISIBLE_CHAR = String.fromCharCode(FOG_CELL.visible);
+const EXPLORED_CHAR = String.fromCharCode(FOG_CELL.explored);
+
+let scratchBuffer = new Uint8Array(0);
+
+/**
+ * Returns a reusable byte view of length `size`, growing the backing store
+ * only when a larger map is encountered.
+ * @param size - Number of cells needed
+ * @returns A `Uint8Array` view of length `size`
+ */
+function acquireScratchBuffer(size: number): Uint8Array {
+  if (scratchBuffer.length < size) {
+    scratchBuffer = new Uint8Array(size);
+  }
+  return scratchBuffer.subarray(0, size);
+}
+
+/**
+ * Ensures a fog state is frozen so snapshots can reuse it without cloning.
+ * @param fog - Fog grid to freeze if needed
+ * @returns Frozen fog grid
+ */
+function freezeFog(fog: FogOfWarState): FogOfWarState {
+  if (Object.isFrozen(fog)) return fog;
+  return Object.freeze({
+    cells: fog.cells,
+    height: fog.height,
+    width: fog.width,
+  });
+}
 
 /**
  * A fully unexplored grid.
@@ -47,11 +78,11 @@ const textDecoder = new TextDecoder();
 export function createFogOfWar(bounds: MapBounds): FogOfWarState {
   const width = Math.max(1, Math.ceil(bounds.width));
   const height = Math.max(1, Math.ceil(bounds.height));
-  return {
+  return Object.freeze({
     cells: String.fromCharCode(FOG_CELL.unseen).repeat(width * height),
     height,
     width,
-  };
+  });
 }
 
 /**
@@ -67,16 +98,26 @@ export function revealFogOfWar(
   sources: readonly SightSource[],
 ): FogOfWarState {
   const { height, width } = previous;
-  const cells = new Uint8Array(width * height);
-  for (let index = 0; index < cells.length; index += 1) {
-    const code = previous.cells.charCodeAt(index);
-    cells[index] =
-      code === FOG_CELL.unseen ? FOG_CELL.unseen : FOG_CELL.explored;
+  const previousCells = previous.cells;
+  if (sources.length === 0) {
+    if (previousCells.indexOf(VISIBLE_CHAR) === -1) return freezeFog(previous);
+    const nextCells = previousCells.replaceAll(VISIBLE_CHAR, EXPLORED_CHAR);
+    return Object.freeze({ cells: nextCells, height, width });
   }
-  for (const source of sources) stampSight(cells, width, height, source);
+  const size = width * height;
+  const cells = acquireScratchBuffer(size);
+  const unseen = FOG_CELL.unseen;
+  const explored = FOG_CELL.explored;
+  for (let index = 0; index < size; index += 1) {
+    const code = previousCells.charCodeAt(index);
+    cells[index] = code === unseen ? unseen : explored;
+  }
+  for (let index = 0; index < sources.length; index += 1) {
+    stampSight(cells, width, height, sources[index] as SightSource);
+  }
   const nextCells = textDecoder.decode(cells);
-  if (nextCells === previous.cells) return previous;
-  return { cells: nextCells, height, width };
+  if (nextCells === previousCells) return freezeFog(previous);
+  return Object.freeze({ cells: nextCells, height, width });
 }
 
 /**

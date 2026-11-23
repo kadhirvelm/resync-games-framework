@@ -157,8 +157,8 @@ function scorePoints(value: number): number {
  * Calculates every roster player's current score from deterministic state.
  * Economy counts surviving owned units and completed standard buildings;
  * military and cultivation use cumulative credited values. Shared stockpiles
- * and Hold-wide upgrades are deliberately excluded rather than attributed
- * arbitrarily to one co-op player.
+ * and owner-scoped Hold upgrades are excluded because this scoring model
+ * values only surviving standard buildings and units.
  * @param world - Simulation world or snapshot
  * @returns Roster-order standings with category and total scores
  */

@@ -167,4 +167,20 @@ describe("Ashen Gate 3D asset routing", () => {
     expect(assetRoleForBuilding("ward_tower", "Outpost")).toBe("wardTower");
     expect(assetRoleForBuilding("barracks", "Stronghold")).toBe("barracks");
   });
+
+  test("resolves Qi attack Meshy props including prompt-prefixed names", () => {
+    const sword = asset(
+      "Descent Qi Flying Sword: stylized dark-fantasy xianxia",
+      "2026-11-23T00:00:00.000Z",
+      "prop",
+    );
+    const lotus = asset(
+      "Descent Qi Spirit Lotus",
+      "2026-11-23T00:00:00.000Z",
+      "prop",
+    );
+    const resolved = resolveAshenGateAssets([sword, lotus]);
+    expect(resolved.qiSword?.id).toBe(sword.id);
+    expect(resolved.qiLotus?.id).toBe(lotus.id);
+  });
 });

@@ -4,7 +4,11 @@ import type {
   UnitInit,
 } from "../../../logic/economy";
 import type { ResourceNode, SpiritVein } from "../../../logic/economy/model";
-import type { CircleVolume, TerrainFeature } from "../../../logic/layers";
+import type {
+  CircleVolume,
+  TerrainBridge,
+  TerrainFeature,
+} from "../../../logic/layers";
 
 /** A named defensive lane on the Ashen Gate teaching map. */
 export interface AshenGateChokePoint {
@@ -16,6 +20,8 @@ export interface AshenGateChokePoint {
 
 /** Complete, data-only map package for one Layer 1 run. */
 export interface AshenGateMap {
+  /** Walkable bridges across the rivers. */
+  bridges: readonly TerrainBridge[];
   buildings: readonly BuildingInit[];
   chokePoints: readonly AshenGateChokePoint[];
   height: number;
@@ -61,8 +67,9 @@ export const ASHEN_GATE_MAP_SIZE = { height: 156, width: 252 } as const;
 export const ASHEN_GATE_STARTING_VILLAGERS = 3;
 
 /**
- * Two deposits of every resource. Ids are stable across runs; only their
- * positions are generated.
+ * Two deposit clusters of each resource plus two extra nearby wood clusters.
+ * The generator adds one equally rich `-cluster` neighbor beside every anchor.
+ * Anchor and cluster ids are stable across runs; only positions are generated.
  */
 export const ASHEN_GATE_NODE_SLOTS: readonly AshenGateNodeSlot[] = [
   {
@@ -197,11 +204,25 @@ export const ASHEN_GATE_NODE_SLOTS: readonly AshenGateNodeSlot[] = [
     resourceId: "essence",
     targetX: 0.74,
   },
+  {
+    band: "near",
+    id: "ashen-wood-copse",
+    nodeType: "ash_grove",
+    remaining: 180,
+    resourceId: "wood",
+  },
+  {
+    band: "near",
+    id: "ashen-wood-thicket",
+    nodeType: "dead_tree",
+    remaining: 180,
+    resourceId: "wood",
+  },
 ];
 
 /**
- * Funds the opening checklist exactly: one villager, a Barracks, five
- * Wardens, and the Outpost upgrade. Everything beyond that must be gathered.
+ * Funds a worker and two Wardens, with enough timber for a Barracks.
+ * More troops, economy buildings, and tier upgrades require gathering.
  */
 export const ASHEN_GATE_STOCKPILE: AshenGateMap["stockpile"] = {
   coin: 0,
@@ -211,5 +232,5 @@ export const ASHEN_GATE_STOCKPILE: AshenGateMap["stockpile"] = {
   spirit_herbs: 0,
   stone: 50,
   water: 83,
-  wood: 60,
+  wood: 80,
 };

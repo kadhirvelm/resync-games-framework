@@ -86,6 +86,9 @@ interface SnapshotIndex {
 
 type DamageEffect = Extract<FxReadout, { kind: "damage" }>;
 
+/** Cached per-snapshot indices so looking up the prior snapshot is O(1). */
+const snapshotIndexCache = new WeakMap<SimSnapshot, SnapshotIndex>();
+
 /** Creates empty state for a new Descent session. */
 export function createAttackAlertState(): AttackAlertState {
   return { lastAlertAtByRegion: {}, previousSnapshot: null };
@@ -220,24 +223,25 @@ function alertsFromSnapshots(
   );
   const alerts: AttackAlert[] = [];
   const alertedTargetIds = new Set<string>();
+  const targets = historicalEntities(current, previous);
   for (const effect of newDamage) {
     const target = damagedTargetAt(
       effect,
       current,
       previous,
+      targets,
       input.localPlayerId,
     );
     if (target === undefined) continue;
     alerts.push(makeAlert(`fx:${effect.id}`, target, current));
     alertedTargetIds.add(target.id);
   }
-  const targets = historicalEntities(current, previous);
   for (const target of targets.values()) {
     if (alertedTargetIds.has(target.id)) continue;
     if (!isLocalTarget(target, input.localPlayerId)) continue;
     if (target.kind === "unit") {
       const damageTick = unitDamageTicks(target.id, current, previous).find(
-        (tick) => hasBossSplashAt(target, tick, current, previous),
+        (tick) => hasBossSplashAt(target, tick, current, previous, targets),
       );
       if (damageTick === undefined) continue;
       alerts.push(
@@ -247,7 +251,7 @@ function alertsFromSnapshots(
       continue;
     }
     if (!buildingLostHitPoints(target.id, current, previous)) continue;
-    if (!hasHostileAttackAt(target, current, previous)) continue;
+    if (!hasHostileAttackAt(target, current, targets)) continue;
     alerts.push(
       makeAlert(
         `building:${target.id}:${input.snapshot.tick}`,
@@ -264,6 +268,7 @@ function alertsFromSnapshots(
  * @param effect - Published unit/turret damage cue
  * @param current - Current snapshot index
  * @param previous - Previous snapshot index
+ * @param candidates - Combined previous and current entities for this tick
  * @param localPlayerId - Local co-op owner, if any
  * @returns Nearest damaged local target, if one can be attributed
  */
@@ -271,9 +276,9 @@ function damagedTargetAt(
   effect: DamageEffect,
   current: SnapshotIndex,
   previous: SnapshotIndex,
+  candidates: ReadonlyMap<string, AttackEntity>,
   localPlayerId?: string,
 ): AttackEntity | undefined {
-  const candidates = historicalEntities(current, previous);
   let nearest: AttackEntity | undefined;
   let nearestDistance = Number.POSITIVE_INFINITY;
   for (const target of candidates.values()) {
@@ -377,13 +382,13 @@ function buildingLostHitPoints(
  * Matches direct building damage to a recent attack launched by a horde body.
  * @param target - Damaged structure
  * @param current - Current snapshot index
- * @param previous - Previous snapshot index
+ * @param entities - Combined previous and current entities for this tick
  * @returns Whether a hostile attack effect names this structure's position
  */
 function hasHostileAttackAt(
   target: AttackEntity,
   current: SnapshotIndex,
-  previous: SnapshotIndex,
+  entities: ReadonlyMap<string, AttackEntity>,
 ): boolean {
   return current.fx.some((effect) => {
     if (effect.kind !== "melee" && effect.kind !== "projectile") return false;
@@ -392,23 +397,21 @@ function hasHostileAttackAt(
       return false;
     }
     if (distance(effect.to, target) > TARGET_POSITION_TOLERANCE) return false;
-    return hasHordeSourceAt(effect, current, previous);
+    return hasHordeSourceAt(effect, entities);
   });
 }
 
 /**
  * Checks that an attack effect originated at a current or recent horde body.
  * @param effect - Published attack effect
- * @param current - Current snapshot index
- * @param previous - Previous snapshot index
+ * @param entities - Combined previous and current entities for this tick
  * @returns Whether an enemy attacker can be attributed
  */
 function hasHordeSourceAt(
   effect: { from: MapPoint },
-  current: SnapshotIndex,
-  previous: SnapshotIndex,
+  entities: ReadonlyMap<string, AttackEntity>,
 ): boolean {
-  return attackSourceAt(effect.from, current, previous) !== undefined;
+  return attackSourceAt(effect.from, entities) !== undefined;
 }
 
 /**
@@ -417,6 +420,7 @@ function hasHordeSourceAt(
  * @param damageTick - Tick shared by the hit and boss attack
  * @param current - Current snapshot index
  * @param previous - Previous snapshot index
+ * @param entities - Combined previous and current entities for this tick
  * @returns Whether the unit stood in a boss's published splash radius
  */
 function hasBossSplashAt(
@@ -424,11 +428,12 @@ function hasBossSplashAt(
   damageTick: number,
   current: SnapshotIndex,
   previous: SnapshotIndex,
+  entities: ReadonlyMap<string, AttackEntity>,
 ): boolean {
   return current.fx.some((effect) => {
     if (effect.kind !== "melee" && effect.kind !== "projectile") return false;
     if (effect.tick !== damageTick) return false;
-    const source = attackSourceAt(effect.from, current, previous);
+    const source = attackSourceAt(effect.from, entities);
     const splashRadius = source?.splashRadius;
     if (splashRadius === null || splashRadius === undefined) return false;
     const gap = distanceToEntity(effect.to, target.id, current, previous);
@@ -439,18 +444,16 @@ function hasBossSplashAt(
 /**
  * Finds the closest current or recent horde body to an attack origin.
  * @param point - Published attack origin
- * @param current - Current snapshot index
- * @param previous - Previous snapshot index
+ * @param entities - Combined previous and current entities for this tick
  * @returns Likely attacking body, if one is near the origin
  */
 function attackSourceAt(
   point: MapPoint,
-  current: SnapshotIndex,
-  previous: SnapshotIndex,
+  entities: ReadonlyMap<string, AttackEntity>,
 ): AttackEntity | undefined {
   let nearest: AttackEntity | undefined;
   let nearestDistance = SOURCE_POSITION_TOLERANCE;
-  for (const source of historicalEntities(current, previous).values()) {
+  for (const source of entities.values()) {
     if (source.factionId !== "horde") continue;
     const gap = distance(point, source);
     if (gap > nearestDistance) continue;
@@ -602,6 +605,8 @@ function compareAlerts(left: AttackAlert, right: AttackAlert): number {
  * @returns Published entities and damage bookkeeping
  */
 function indexSnapshot(snapshot: SimSnapshot): SnapshotIndex {
+  const cached = snapshotIndexCache.get(snapshot);
+  if (cached !== undefined) return cached;
   const presentation = readPresentation(snapshot.meta);
   const splashRadii = readBossSplashRadii(snapshot);
   const entities = new Map<string, AttackEntity>();
@@ -642,12 +647,14 @@ function indexSnapshot(snapshot: SimSnapshot): SnapshotIndex {
       y: building.y,
     });
   }
-  return {
+  const index: SnapshotIndex = {
     entities,
     fx: presentation.fx,
     lastHitTick: readLastHitTick(snapshot),
     tick: snapshot.tick,
   };
+  snapshotIndexCache.set(snapshot, index);
+  return index;
 }
 
 /**

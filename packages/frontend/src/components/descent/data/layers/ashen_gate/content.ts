@@ -4,6 +4,8 @@ export const ASHEN_GATE_BUILDINGS = [
   "housing",
   "storehouse",
   "well",
+  "forest",
+  "stone_quarry",
   "barracks",
   "wall",
   // Outpost (Tier 2)
@@ -13,9 +15,9 @@ export const ASHEN_GATE_BUILDINGS = [
   "omen_tower",
   "cultivator_sanctum",
   "spirit_array",
+  "cultivation_hall",
   // Stronghold (Tier 3)
   "hell_market",
-  "cultivation_hall",
   "meditation_pavilion",
   // Citadel (Tier 4)
   "spirit_herb_garden",
@@ -36,7 +38,7 @@ export const ASHEN_GATE_CONTENT = {
     "Gather food, water, wood, and stone.",
     "Build a Barracks, train Wardens, and upgrade to an Outpost.",
     "Reach the frontier resources behind the Ember vents.",
-    "Raise a Stronghold and Cultivation Hall to make one Sworn.",
+    "Repel the scouts to promote your Captain, or build a Cultivation Hall at Outpost.",
     "Survive the scout, swarm, elite, and Cinderjaw waves.",
   ],
   victory:

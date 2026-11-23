@@ -127,7 +127,10 @@ export function createDescentSim(options: DescentSimOptions): DescentSim {
   const createContext = (tick: number): TickContext => ({
     emit(moduleId, name, data = null) {
       pendingEvents.push({
-        data: structuredClone(data),
+        data:
+          data === null || typeof data !== "object"
+            ? data
+            : structuredClone(data),
         moduleId,
         name,
         tick,
@@ -271,30 +274,141 @@ export function takeDueCommands(
 }
 
 /**
+ * Top-level `world.meta` keys whose values are replaced as whole objects
+ * rather than mutated in place, so their frozen clones can be cached by
+ * reference across snapshots.
+ */
+const IMMUTABLE_META_KEYS = new Set(["fogOfWar", "layerTerrain"]);
+
+/** Caches frozen clones of immutable `world.meta` entries by source reference. */
+const frozenImmutableMetaCache = new WeakMap<object, object>();
+
+/**
  * Builds a deep-frozen copy of the renderer-visible state.
  * @param world - Live world
  * @returns An immutable snapshot
  */
 export function createSnapshot(world: SimWorldState): SimSnapshot {
-  return deepFreeze(
-    structuredClone({
-      buildings: world.buildings,
-      layerId: world.layerId,
-      map: world.map,
-      meta: world.meta,
-      paused: world.paused,
-      resources: world.resources,
-      speed: world.speed,
-      tick: world.tick,
-      units: world.units,
-    }),
-  );
+  const seen = new WeakMap<object, object>();
+  return Object.freeze({
+    buildings: cloneAndFreeze(world.buildings, seen),
+    layerId: world.layerId,
+    map: cloneAndFreeze(world.map, seen),
+    meta: cloneMeta(world.meta, seen),
+    paused: world.paused,
+    resources: cloneAndFreeze(world.resources, seen),
+    speed: world.speed,
+    tick: world.tick,
+    units: cloneAndFreeze(world.units, seen),
+  }) as SimSnapshot;
 }
 
 /**
- * Freezes an object graph in place without per-node child-array allocations.
+ * Clones and freezes `world.meta`, reusing already-frozen entries and cached
+ * frozen clones for known-immutable keys.
+ * @param meta - Live world metadata bag
+ * @param seen - Objects already cloned in this snapshot pass
+ * @returns Frozen metadata copy
+ */
+function cloneMeta(
+  meta: Record<string, unknown>,
+  seen: WeakMap<object, object>,
+): Record<string, unknown> {
+  const copy: Record<string, unknown> = {};
+  seen.set(meta, copy);
+  for (const key in meta) {
+    if (!Object.hasOwn(meta, key)) continue;
+    const entry = meta[key];
+    if (
+      IMMUTABLE_META_KEYS.has(key) &&
+      typeof entry === "object" &&
+      entry !== null
+    ) {
+      copy[key] = getFrozenImmutableEntry(entry);
+      continue;
+    }
+    copy[key] = cloneAndFreeze(entry, seen);
+  }
+  return Object.freeze(copy);
+}
+
+/**
+ * Objects known to be deeply frozen by `cloneAndFreeze` / `deepFreeze`,
+ * safe to return by reference without re-cloning.
+ */
+const deeplyFrozenObjects = new WeakSet<object>();
+
+/**
+ * Returns a cached deeply frozen clone for an immutable meta entry so static
+ * entries are cloned and frozen at most once.
+ * @param entry - Immutable meta object
+ * @returns Deeply frozen copy of `entry`
+ */
+function getFrozenImmutableEntry(entry: object): object {
+  if (deeplyFrozenObjects.has(entry)) return entry;
+  const cached = frozenImmutableMetaCache.get(entry);
+  if (cached !== undefined) return cached;
+  const frozen = cloneAndFreeze(entry, new WeakMap<object, object>());
+  frozenImmutableMetaCache.set(entry, frozen);
+  return frozen;
+}
+
+/**
+ * Deeply clones and freezes a JSON-like value in a single pass. Objects
+ * already verified as deeply frozen are returned directly without copying.
+ * @param value - Value to clone and freeze
+ * @param seen - Objects already cloned in this pass, preserving aliases
+ * @returns A deeply frozen copy (or `value` itself if primitive or deeply frozen)
+ */
+function cloneAndFreeze<TValue>(
+  value: TValue,
+  seen: WeakMap<object, object>,
+): TValue {
+  if (typeof value !== "object" || value === null) return value;
+  if (deeplyFrozenObjects.has(value)) return value;
+  const existing = seen.get(value);
+  if (existing !== undefined) return existing as TValue;
+
+  if (Array.isArray(value)) {
+    const length = value.length;
+    const copy = new Array(length);
+    seen.set(value, copy);
+    for (let index = 0; index < length; index += 1) {
+      copy[index] = cloneAndFreeze(value[index], seen);
+    }
+    const frozen = Object.freeze(copy);
+    deeplyFrozenObjects.add(frozen);
+    return frozen as unknown as TValue;
+  }
+
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) {
+    const cloned = structuredClone(value);
+    seen.set(value, cloned as object);
+    const frozen = deepFreeze(cloned);
+    if (typeof frozen === "object" && frozen !== null) {
+      deeplyFrozenObjects.add(frozen);
+    }
+    return frozen;
+  }
+
+  const copy: Record<string, unknown> =
+    proto === null ? Object.create(null) : {};
+  seen.set(value, copy);
+  const record = value as Record<string, unknown>;
+  for (const key in record) {
+    if (!Object.hasOwn(record, key)) continue;
+    copy[key] = cloneAndFreeze(record[key], seen);
+  }
+  const frozen = Object.freeze(copy);
+  deeplyFrozenObjects.add(frozen);
+  return frozen as TValue;
+}
+
+/**
+ * Freezes a non-plain cloned object graph in place.
  * @param value - Freshly cloned value
- * @param seen - Objects already visited, including any shared aliases
+ * @param seen - Objects already visited
  * @returns The same value, frozen
  */
 function deepFreeze<TValue>(

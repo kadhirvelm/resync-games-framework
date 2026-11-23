@@ -8,6 +8,7 @@ import type {
   LayerTable,
   LayerUnit,
   SchoolId,
+  TerrainBridge,
   TerrainFeature,
   TerrainFeatureKind,
 } from "./layerTypes";
@@ -316,6 +317,8 @@ export interface LayerTerrain {
   layerId: string;
   /** Impassable ridges, spires, ruined walls, and fissures carving choke points. */
   obstacles?: TerrainFeature[];
+  /** Walkable bridges across rivers; they never block movement. */
+  bridges?: TerrainBridge[];
   ventVolumes: CircleVolume[];
 }
 
@@ -327,6 +330,7 @@ interface TerrainHolder {
 
 const TERRAIN_FEATURE_KINDS = new Set<TerrainFeatureKind>([
   "basalt_ridge",
+  "deep_water",
   "magma_fissure",
   "obsidian_spire",
   "ruin_wall",
@@ -347,8 +351,26 @@ export function setLayerTerrain(
     ...(terrain.obstacles !== undefined
       ? { obstacles: terrain.obstacles.map((obstacle) => ({ ...obstacle })) }
       : {}),
+    ...(terrain.bridges !== undefined
+      ? { bridges: terrain.bridges.map((bridge) => ({ ...bridge })) }
+      : {}),
     ventVolumes: terrain.ventVolumes.map((vent) => ({ ...vent })),
   } satisfies LayerTerrain;
+}
+
+/**
+ * Walkable bridges generated for this world's current layer.
+ * @param world - Sim world (or any object with its layer id and meta)
+ * @returns Bridges across rivers; empty on worlds without any
+ */
+export function worldTerrainBridges(
+  world: TerrainHolder,
+): readonly TerrainBridge[] {
+  const terrain = world.meta[LAYER_TERRAIN_META_KEY];
+  if (!isLayerTerrain(terrain) || terrain.layerId !== world.layerId) {
+    return [];
+  }
+  return terrain.bridges ?? [];
 }
 
 /**
@@ -413,9 +435,31 @@ function isLayerTerrain(value: unknown): value is LayerTerrain {
       Number.isFinite((vent as CircleVolume).radius),
   );
   if (!ventsValid) return false;
+  if (candidate.bridges !== undefined) {
+    if (!Array.isArray(candidate.bridges)) return false;
+    if (!candidate.bridges.every(isTerrainBridge)) return false;
+  }
   if (candidate.obstacles === undefined) return true;
   if (!Array.isArray(candidate.obstacles)) return false;
   return candidate.obstacles.every(isTerrainFeature);
+}
+
+/**
+ * Narrows one serialized bridge.
+ * @param value - Candidate bridge record
+ * @returns Whether it is a valid terrain bridge
+ */
+function isTerrainBridge(value: unknown): value is TerrainBridge {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<TerrainBridge>;
+  return (
+    typeof candidate.id === "string" &&
+    Number.isFinite(candidate.x) &&
+    Number.isFinite(candidate.y) &&
+    Number.isFinite(candidate.angle) &&
+    Number.isFinite(candidate.length) &&
+    Number.isFinite(candidate.width)
+  );
 }
 
 /**

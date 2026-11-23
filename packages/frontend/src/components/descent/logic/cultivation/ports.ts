@@ -19,6 +19,8 @@ export interface CultivationCombatPort {
 /** Narrow economy seam used for materials, pill inventory, Hall tier, and pop. */
 export interface CultivationStockpilePort {
   getStockpile(): Readonly<Record<CultivationResourceId, number>>;
+  /** Success bonus supplied by the unit owner's completed Hall. */
+  getBreakthroughSuccessBonus(unitId: string): number;
   hasResources(cost: ResourceCost): boolean;
   trySpend(cost: ResourceCost): boolean;
   getItemCount(itemId: string): number;
@@ -137,6 +139,7 @@ export interface CultivationStockpileStubOptions {
   resources?: ResourceCost;
   items?: Record<string, number>;
   hallTier?: HallTier;
+  breakthroughSuccessBonus?: number;
   populationUsed?: number;
   populationCap?: number;
 }
@@ -166,6 +169,7 @@ export class CultivationStockpileStub implements CultivationStockpilePort {
   private readonly resources: Record<CultivationResourceId, number>;
   private readonly items = new Map<string, number>();
   private hallTier: HallTier;
+  private breakthroughSuccessBonus: number;
   private populationUsed: number;
   private populationCap: number;
 
@@ -176,6 +180,10 @@ export class CultivationStockpileStub implements CultivationStockpilePort {
   constructor(options: CultivationStockpileStubOptions = {}) {
     this.resources = completeResources(options.resources);
     this.hallTier = options.hallTier ?? "Camp";
+    this.breakthroughSuccessBonus = Math.max(
+      0,
+      options.breakthroughSuccessBonus ?? 0,
+    );
     this.populationUsed = Math.max(0, options.populationUsed ?? 0);
     this.populationCap = Math.max(0, options.populationCap ?? 100);
     for (const [itemId, count] of Object.entries(options.items ?? {})) {
@@ -250,6 +258,23 @@ export class CultivationStockpileStub implements CultivationStockpilePort {
   addItem(itemId: string, count = 1): void {
     const next = this.getItemCount(itemId) + Math.max(0, count);
     this.items.set(itemId, next);
+  }
+
+  /**
+   * Reads the test Hall's breakthrough success bonus.
+   * @param _unitId - Unit receiving the bonus; the stub uses one shared Hall
+   * @returns Non-negative additive success chance
+   */
+  getBreakthroughSuccessBonus(_unitId: string): number {
+    return this.breakthroughSuccessBonus;
+  }
+
+  /**
+   * Changes the test Hall's breakthrough success bonus.
+   * @param bonus - Non-negative additive success chance
+   */
+  setBreakthroughSuccessBonus(bonus: number): void {
+    this.breakthroughSuccessBonus = Math.max(0, bonus);
   }
 
   /**

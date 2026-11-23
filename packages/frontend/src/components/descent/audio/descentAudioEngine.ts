@@ -116,6 +116,10 @@ export function playDescentAudio(
       amplifier.gain.value = gain;
       source.connect(amplifier);
       amplifier.connect(destination);
+      source.onended = () => {
+        source.disconnect();
+        amplifier.disconnect();
+      };
       source.start();
     })
     .catch(() => {

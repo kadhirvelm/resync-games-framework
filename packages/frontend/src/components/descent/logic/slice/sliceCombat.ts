@@ -11,10 +11,11 @@ import type {
   CombatUnit,
 } from "../combat/types";
 import { getUnitDefinition } from "../combat/unitCatalog";
+import type { CultivationUnitState } from "../cultivation/types";
 import { damageBuilding } from "../economy/actions";
 import { footprintBodyRadius } from "../economy/footprint";
 import type { EconomyUnit, HoldTier } from "../economy/model";
-import { addItem } from "../economy/queries";
+import { addItem, getHoldTier } from "../economy/queries";
 import { asBuilding, economyHost, isEconomyUnit } from "../economy/records";
 import { buildingDef } from "../economy/tables";
 import {
@@ -35,7 +36,6 @@ import { BOSS_SIZE_SCALE } from "../waves/constants";
 import { toCombatUnit } from "../waves/director";
 import type { WaveEvent, WaveUnit } from "../waves/types";
 import {
-  cultivationRecord,
   cultivationStats,
   layerSchoolModifier,
   openCultivation,
@@ -161,6 +161,13 @@ const KILL_REWARDS: Record<
 /** Radius in which allies share a kill. */
 const SHARE_RADIUS = 7;
 
+/** Minimal pre-tick snapshot needed to diff combat damage and wall pushback. */
+interface PreTickBody {
+  classId: CombatUnit["classId"];
+  hitPoints: number;
+  position: { x: number; y: number };
+}
+
 /**
  * Runs hazards, one combat tick, and every consequence of it.
  * @param context - Current tick
@@ -168,10 +175,25 @@ const SHARE_RADIUS = 7;
 export function runCombatTick(context: TickContext): void {
   const world = context.world;
   const state = sliceState(world);
-  applyHazards(world);
-  refreshHoldStats(world);
-  const roster = buildRoster(world, state);
+  const cultivationByUnit = new Map<string, CultivationUnitState>(
+    state.cultivation.units.map((unit) => [unit.unitId, unit]),
+  );
+  applyHazards(world, cultivationByUnit);
+  refreshHoldStats(world, cultivationByUnit);
+  const roster = buildRoster(world, state, cultivationByUnit);
   const targets = buildingTargets(world);
+  const previous = new Map<string, PreTickBody>();
+  for (const unit of roster) {
+    previous.set(unit.id, {
+      classId: unit.classId,
+      hitPoints: unit.hitPoints,
+      position: { x: unit.position.x, y: unit.position.y },
+    });
+  }
+  const buildingStartHp = new Map<string, number>();
+  for (const target of targets) {
+    buildingStartHp.set(target.id, target.hitPoints);
+  }
   const terrainObstacles = worldTerrainObstacles(world);
   const simulation = new CombatSimulation({
     buildings: targets,
@@ -179,6 +201,7 @@ export function runCombatTick(context: TickContext): void {
     mapSize: world.map,
     obstacles: buildingObstacles(world),
     pendingProjectiles: state.combat.projectiles,
+    skipInputClone: true,
     startTick: state.combat.tick,
     terrainObstacles,
     tickMs: TICK_MS,
@@ -193,15 +216,14 @@ export function runCombatTick(context: TickContext): void {
   state.combat.projectiles = after.pendingProjectiles;
   state.combat.tick = after.tick;
   const bodies = new Map(after.units.map((unit) => [unit.id, unit]));
-  const previous = new Map(roster.map((unit) => [unit.id, unit]));
   recordFx(world, events, bodies);
   applyBossSplash(world, events, bodies);
   writeHoldBodies(world, bodies, previous);
-  writeBuildings(world, after.buildings, targets);
+  writeBuildings(world, after.buildings, buildingStartHp);
   const waveEvents = writeHorde(context, events, bodies, previous);
   for (const event of waveEvents) applyWaveEvent(context, event);
   blockAtWalls(world, previous);
-  separateBodies(world);
+  separateBodies(world, terrainObstacles);
   regenerate(world);
   settleHoldDeaths(world);
   state.combat.bodies = {};
@@ -215,26 +237,33 @@ export function runCombatTick(context: TickContext): void {
  * Builds the combat roster from the world's current records.
  * @param world - Sim world
  * @param state - Slice state with saved combat bodies
+ * @param cultivationByUnit - Pre-indexed cultivation state by unit id
  * @returns One body per soldier, villager, tower, and horde unit
  */
 function buildRoster(
   world: SimWorldState,
   state: AshenGateSliceState,
+  cultivationByUnit: ReadonlyMap<string, CultivationUnitState>,
 ): CombatUnit[] {
   const saved = state.combat.bodies;
   const owners = state.combat.owners ?? {};
   state.combat.owners = owners;
   const roster: CombatUnit[] = [];
+  let garrisonedCount = 0;
   for (const unit of world.units) {
     if (!isEconomyUnit(unit) || unit.hp <= 0) continue;
+    if (unit.garrisoned) garrisonedCount += 1;
     if (unit.ownerId !== undefined) owners[unit.id] = unit.ownerId;
-    roster.push(holdBody(world, unit, saved[unit.id]));
+    roster.push(holdBody(world, unit, saved[unit.id], cultivationByUnit));
   }
   const host = economyHost(world, ECONOMY_STEP_TICKS);
-  const garrisonedCount = world.units.filter(
-    (unit) => isEconomyUnit(unit) && unit.hp > 0 && unit.garrisoned,
-  ).length;
+  const camps: SimWorldState["buildings"][number][] = [];
+  const campById = new Map<string, SimWorldState["buildings"][number]>();
   for (const building of world.buildings) {
+    if (building.buildingType === "camp") {
+      camps.push(building);
+      campById.set(building.id, building);
+    }
     const record = asBuilding(building);
     if (!isArmedBuilding(record)) continue;
     if (record.ownerId !== undefined) {
@@ -243,15 +272,29 @@ function buildRoster(
     const prior = saved[TOWER_PREFIX + record.id];
     roster.push(
       record.buildingType === "camp"
-        ? holdTurretBody(record, host.economy.tier, garrisonedCount, prior)
+        ? holdTurretBody(
+            record,
+            getHoldTier(host, record.ownerId),
+            garrisonedCount,
+            prior,
+          )
         : towerBody(record, prior),
     );
   }
   const waves = waveState(world);
   assignHordeRallyTargets(world, state, waves.units);
+  let barriers: SimWorldState["buildings"][number][] | undefined;
   for (const unit of waves.units) {
+    if (unit.preferredTarget === "wall" && barriers === undefined) {
+      barriers = world.buildings.filter(isBarrier);
+    }
     roster.push(
-      hordeBody(world, unit, saved[unit.id], rallyPointFor(world, unit)),
+      hordeBody(
+        unit,
+        saved[unit.id],
+        rallyPointFor(world, unit, camps, campById),
+        barriers,
+      ),
     );
   }
   return roster;
@@ -262,12 +305,14 @@ function buildRoster(
  * @param world - Sim world
  * @param unit - Economy record
  * @param saved - Last tick's body, if any
+ * @param cultivationByUnit - Pre-indexed cultivation state by unit id
  * @returns Combat body
  */
 function holdBody(
   world: SimWorldState,
   unit: EconomyUnit,
   saved: CombatUnit | undefined,
+  cultivationByUnit: ReadonlyMap<string, CultivationUnitState>,
 ): CombatUnit {
   if (unit.classId === "villager") {
     return {
@@ -278,7 +323,7 @@ function holdBody(
     };
   }
   const definition = getUnitDefinition(unit.classId as CombatClassId);
-  const record = cultivationRecord(world, unit.id);
+  const record = cultivationByUnit.get(unit.id);
   const stats = cultivationStats(record);
   const power = readCultivatorPower(world, unit.id);
   const surgeDamage =
@@ -438,17 +483,17 @@ function towerBody(
 /**
  * A horde body. The wave clock owns its HP and stats; combat owns its
  * cooldowns, statuses, and order. Siege bodies go for walls first.
- * @param world - Sim world
  * @param unit - Wave unit
  * @param saved - Last tick's body, if any
  * @param rally - Where the horde is marching
+ * @param barriers - Pre-filtered completed barriers for wall-seeking units
  * @returns Combat body with a fresh march order when idle
  */
 function hordeBody(
-  world: SimWorldState,
   unit: WaveUnit,
   saved: CombatUnit | undefined,
   rally: { x: number; y: number },
+  barriers: readonly SimWorldState["buildings"][number][] | undefined,
 ): CombatUnit {
   const fresh = toCombatUnit(unit);
   const body: CombatUnit = saved
@@ -462,8 +507,8 @@ function hordeBody(
         speed: fresh.speed,
       }
     : fresh;
-  if (unit.preferredTarget === "wall") {
-    const wall = nearestBuilding(world, unit, isBarrier);
+  if (unit.preferredTarget === "wall" && barriers !== undefined) {
+    const wall = nearestBuilding(barriers, unit);
     if (wall) {
       body.order = { targetId: wall.id, type: "attack_target" };
       return body;
@@ -533,16 +578,20 @@ function assignHordeRallyTargets(
  * Camp in solo play, or the nearest Hold building when no Camp remains.
  * @param world - Sim world
  * @param unit - Horde unit with its position and optional co-op assignment
+ * @param camps - Pre-filtered standing Camp buildings
+ * @param campById - Standing Camp lookup by id
  * @returns March destination
  */
 function rallyPointFor(
   world: SimWorldState,
   unit: WaveUnit,
+  camps: readonly SimWorldState["buildings"][number][],
+  campById: ReadonlyMap<string, SimWorldState["buildings"][number]>,
 ): { x: number; y: number } {
-  const camps = world.buildings.filter(
-    (entry) => entry.buildingType === "camp",
-  );
-  const assigned = camps.find((camp) => camp.id === unit.rallyTargetId);
+  const assigned =
+    unit.rallyTargetId !== undefined
+      ? campById.get(unit.rallyTargetId)
+      : undefined;
   if (assigned !== undefined) return { x: assigned.x, y: assigned.y };
   const candidates = camps.length > 0 ? camps : world.buildings;
   let nearest = candidates[0];
@@ -567,34 +616,38 @@ function rallyPointFor(
  * @returns Combat building targets
  */
 function buildingTargets(world: SimWorldState): CombatBuilding[] {
-  return world.buildings.flatMap((building) => {
+  const targets: CombatBuilding[] = [];
+  for (const building of world.buildings) {
     const record = asBuilding(building);
-    if (isArmedBuilding(record)) return [];
-    return [
-      {
-        armor: BUILDING_ARMOR,
-        bodyRadius: footprintBodyRadius(record.buildingType),
-        factionId: HOLD_FACTION,
-        hitPoints: record.hp,
-        id: record.id,
-        maxHitPoints: record.maxHp,
-        position: { x: record.x, y: record.y },
-      },
-    ];
-  });
+    if (isArmedBuilding(record)) continue;
+    targets.push({
+      armor: BUILDING_ARMOR,
+      bodyRadius: footprintBodyRadius(record.buildingType),
+      factionId: HOLD_FACTION,
+      hitPoints: record.hp,
+      id: record.id,
+      maxHitPoints: record.maxHp,
+      position: { x: record.x, y: record.y },
+    });
+  }
+  return targets;
 }
 
 /**
  * Applies realm, pill, and fed bonuses to each soldier's max HP. HP scales
  * with it so a promotion or ration never reads as damage.
  * @param world - Sim world
+ * @param cultivationByUnit - Pre-indexed cultivation state by unit id
  */
-function refreshHoldStats(world: SimWorldState): void {
+function refreshHoldStats(
+  world: SimWorldState,
+  cultivationByUnit: ReadonlyMap<string, CultivationUnitState>,
+): void {
   for (const unit of world.units) {
     if (!isEconomyUnit(unit) || unit.hp <= 0) continue;
     if (unit.classId === "villager") continue;
     const definition = getUnitDefinition(unit.classId as CombatClassId);
-    const stats = cultivationStats(cultivationRecord(world, unit.id));
+    const stats = cultivationStats(cultivationByUnit.get(unit.id));
     const fed = fedHealthBonus(unit);
     const maxHp = round(definition.maxHitPoints * stats.maxHealth * (1 + fed));
     if (maxHp === unit.maxHp) continue;
@@ -625,8 +678,12 @@ function fedRegenBonus(unit: EconomyUnit): number {
 /**
  * Burns every body standing in an Ember vent (fire-ward walls mitigate).
  * @param world - Sim world
+ * @param cultivationByUnit - Pre-indexed cultivation state by unit id
  */
-function applyHazards(world: SimWorldState): void {
+function applyHazards(
+  world: SimWorldState,
+  cultivationByUnit: ReadonlyMap<string, CultivationUnitState>,
+): void {
   const layer = LAYER_TABLE.layers.find((entry) => entry.id === world.layerId);
   const hazards: readonly HazardId[] = layer?.hazards ?? [];
   if (hazards.length === 0) return;
@@ -637,13 +694,14 @@ function applyHazards(world: SimWorldState): void {
     ventVolumes: worldVentVolumes(world),
   };
   const seconds = TICK_MS / 1_000;
+  const state = sliceState(world);
   for (const unit of world.units) {
     if (!isEconomyUnit(unit) || unit.hp <= 0) continue;
-    const school = cultivationRecord(world, unit.id)?.school;
+    const school = cultivationByUnit.get(unit.id)?.school;
     const burn = environmentAt(context, { school, x: unit.x, y: unit.y });
     if (burn.burnPerSecond <= 0) continue;
     unit.hp = Math.max(0, unit.hp - burn.burnPerSecond * seconds);
-    sliceState(world).lastHitTick[unit.id] = world.tick;
+    state.lastHitTick[unit.id] = world.tick;
   }
   const waves = waveState(world);
   for (const unit of [...waves.units]) {
@@ -665,11 +723,13 @@ function applyHazards(world: SimWorldState): void {
  * @returns One disk per building wider than a cell
  */
 function buildingObstacles(world: SimWorldState): HurtDisk[] {
-  return world.buildings.flatMap((building) => {
+  const obstacles: HurtDisk[] = [];
+  for (const building of world.buildings) {
     const radius = footprintBodyRadius(building.buildingType);
-    if (radius <= 0) return [];
-    return [{ radius, x: building.x, y: building.y }];
-  });
+    if (radius <= 0) continue;
+    obstacles.push({ radius, x: building.x, y: building.y });
+  }
+  return obstacles;
 }
 
 /**
@@ -698,7 +758,7 @@ function layerBuildings(world: SimWorldState): LayerBuilding[] {
 function writeHoldBodies(
   world: SimWorldState,
   bodies: ReadonlyMap<string, CombatUnit>,
-  previous: ReadonlyMap<string, CombatUnit>,
+  previous: ReadonlyMap<string, PreTickBody>,
 ): void {
   const state = sliceState(world);
   for (const unit of world.units) {
@@ -728,15 +788,14 @@ function writeHoldBodies(
  * Furnace still splashes its neighbours).
  * @param world - Sim world
  * @param after - Buildings after the tick
- * @param before - Buildings before the tick
+ * @param start - Pre-tick hit points keyed by building id
  */
 function writeBuildings(
   world: SimWorldState,
   after: readonly CombatBuilding[],
-  before: readonly CombatBuilding[],
+  start: ReadonlyMap<string, number>,
 ): void {
   const host = economyHost(world, ECONOMY_STEP_TICKS);
-  const start = new Map(before.map((entry) => [entry.id, entry.hitPoints]));
   for (const building of after) {
     const lost =
       (start.get(building.id) ?? building.hitPoints) - building.hitPoints;
@@ -785,7 +844,7 @@ function writeHorde(
   context: TickContext,
   events: readonly CombatEvent[],
   bodies: ReadonlyMap<string, CombatUnit>,
-  previous: ReadonlyMap<string, CombatUnit>,
+  previous: ReadonlyMap<string, PreTickBody>,
 ): WaveEvent[] {
   const world = context.world;
   const waves = waveState(world);
@@ -930,11 +989,16 @@ function applyBossSplash(
   bodies: ReadonlyMap<string, CombatUnit>,
 ): void {
   const waves = waveState(world);
+  let bossById: Map<string, WaveUnit> | undefined;
+  for (const unit of waves.units) {
+    if (unit.role !== "boss" || !unit.aoeRadius) continue;
+    if (bossById === undefined) bossById = new Map();
+    bossById.set(unit.id, unit);
+  }
+  if (bossById === undefined) return;
   for (const event of events) {
     if (event.kind !== "attack_started") continue;
-    const boss = waves.units.find(
-      (unit) => unit.id === event.sourceId && unit.role === "boss",
-    );
+    const boss = bossById.get(event.sourceId);
     if (!boss?.aoeRadius) continue;
     const target = bodies.get(event.targetId);
     if (!target) continue;
@@ -993,7 +1057,7 @@ function barrierAt(
  */
 function blockAtWalls(
   world: SimWorldState,
-  previous: ReadonlyMap<string, CombatUnit>,
+  previous: ReadonlyMap<string, PreTickBody>,
 ): void {
   const state = sliceState(world);
   const barriers = world.buildings.filter(isBarrier);
@@ -1028,25 +1092,24 @@ function isBarrier(building: SimWorldState["buildings"][number]): boolean {
 }
 
 /**
- * Finds the nearest building matching a filter.
- * @param world - Sim world
+ * Finds the nearest building from a pre-filtered list.
+ * @param buildings - Candidate buildings
  * @param origin - Search origin
- * @param accept - Filter
  * @returns Nearest match, if any
  */
 function nearestBuilding(
-  world: SimWorldState,
+  buildings: readonly SimWorldState["buildings"][number][],
   origin: { x: number; y: number },
-  accept: (building: SimWorldState["buildings"][number]) => boolean,
 ): SimWorldState["buildings"][number] | undefined {
   let best: SimWorldState["buildings"][number] | undefined;
-  let bestGap = Number.POSITIVE_INFINITY;
-  for (const building of world.buildings) {
-    if (!accept(building)) continue;
-    const gap = Math.hypot(building.x - origin.x, building.y - origin.y);
-    if (gap >= bestGap) continue;
+  let bestGapSq = Number.POSITIVE_INFINITY;
+  for (const building of buildings) {
+    const dx = building.x - origin.x;
+    const dy = building.y - origin.y;
+    const gapSq = dx * dx + dy * dy;
+    if (gapSq >= bestGapSq) continue;
     best = building;
-    bestGap = gap;
+    bestGapSq = gapSq;
   }
   return best;
 }
@@ -1076,6 +1139,29 @@ function firstBodyShare(first: SeparationBody, second: SeparationBody): number {
   return secondWeight / (firstWeight + secondWeight);
 }
 
+/** Minimum body count above which `resolveOverlaps` uses the spatial hash grid. */
+const SPATIAL_HASH_THRESHOLD = 24;
+
+/**
+ * Packs a signed 2D grid cell coordinate into one collision-free integer key.
+ * @param cx - Cell column
+ * @param cy - Cell row
+ * @returns Packed integer key
+ */
+function spatialCellKey(cx: number, cy: number): number {
+  return ((cx + 0x8000) << 16) | ((cy + 0x8000) & 0xffff);
+}
+
+/**
+ * Numeric ascending comparator for sorting candidate indices deterministically.
+ * @param left - First index
+ * @param right - Second index
+ * @returns Difference for `Array.prototype.sort`
+ */
+function compareAscending(left: number, right: number): number {
+  return left - right;
+}
+
 /**
  * Pushes overlapping soldiers and horde bodies apart so groups read as
  * groups instead of a single stacked token. Villagers stand on economy grid
@@ -1083,8 +1169,12 @@ function firstBodyShare(first: SeparationBody, second: SeparationBody): number {
  * A horde body queued against a wall is never shoved into it by the bodies
  * behind it.
  * @param world - Sim world
+ * @param terrainObstacles - Static terrain obstacles for this tick
  */
-function separateBodies(world: SimWorldState): void {
+function separateBodies(
+  world: SimWorldState,
+  terrainObstacles: readonly HurtDisk[],
+): void {
   const bodies: SeparationBody[] = [];
   for (const unit of world.units) {
     if (!isEconomyUnit(unit) || unit.hp <= 0 || unit.garrisoned) continue;
@@ -1095,7 +1185,11 @@ function separateBodies(world: SimWorldState): void {
     });
   }
   const horde = waveState(world).units;
-  const hordeBefore = horde.map((unit) => ({ x: unit.x, y: unit.y }));
+  const barriers = world.buildings.filter(isBarrier);
+  const hordeBefore =
+    barriers.length > 0
+      ? horde.map((unit) => ({ x: unit.x, y: unit.y }))
+      : undefined;
   for (const unit of horde) {
     bodies.push({
       body: unit,
@@ -1104,7 +1198,6 @@ function separateBodies(world: SimWorldState): void {
     });
   }
   resolveOverlaps(bodies, world.map);
-  const terrainObstacles = worldTerrainObstacles(world);
   if (terrainObstacles.length > 0) {
     for (const entry of bodies) {
       if (entry.fixed) continue;
@@ -1118,8 +1211,7 @@ function separateBodies(world: SimWorldState): void {
       entry.body.y = round(adjusted.y);
     }
   }
-  const barriers = world.buildings.filter(isBarrier);
-  if (barriers.length === 0) return;
+  if (hordeBefore === undefined) return;
   horde.forEach((unit, index) => {
     const before = hordeBefore[index];
     if (before === undefined || barrierAt(barriers, unit) === undefined) return;
@@ -1129,8 +1221,104 @@ function separateBodies(world: SimWorldState): void {
 }
 
 /**
+ * Resolves overlap between one ordered pair of bodies in place.
+ * @param first - Lower-index body
+ * @param second - Higher-index body
+ * @param map - Map bounds
+ * @returns Whether the bodies overlapped and were separated
+ */
+function resolveBodyPair(
+  first: SeparationBody,
+  second: SeparationBody,
+  map: { height: number; width: number },
+): boolean {
+  if (first.fixed && second.fixed) return false;
+  const a = first.body;
+  const b = second.body;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const spacing = first.radius + second.radius;
+  if (Math.abs(dx) >= spacing || Math.abs(dy) >= spacing) return false;
+  const gap = Math.hypot(dx, dy);
+  if (gap >= spacing) return false;
+  const overlap = spacing - gap;
+  const nx = gap === 0 ? 1 : dx / gap;
+  const ny = gap === 0 ? 0 : dy / gap;
+  const pushA = firstBodyShare(first, second) * overlap;
+  const pushB = overlap - pushA;
+  a.x = clamp(round(a.x - nx * pushA), 0, map.width - 1);
+  a.y = clamp(round(a.y - ny * pushA), 0, map.height - 1);
+  b.x = clamp(round(b.x + nx * pushB), 0, map.width - 1);
+  b.y = clamp(round(b.y + ny * pushB), 0, map.height - 1);
+  return true;
+}
+
+/**
+ * Moves a body index between spatial hash buckets when it crosses a cell edge.
+ * @param grid - Spatial hash grid
+ * @param bodyCells - Current cell key per body index
+ * @param index - Body index that moved
+ * @param newKey - New packed cell key
+ */
+function moveBodyCell(
+  grid: Map<number, number[]>,
+  bodyCells: Int32Array,
+  index: number,
+  newKey: number,
+): void {
+  const oldKey = bodyCells[index] as number;
+  if (newKey === oldKey) return;
+  const oldBucket = grid.get(oldKey);
+  if (oldBucket !== undefined) {
+    const pos = oldBucket.indexOf(index);
+    if (pos >= 0) {
+      const last = oldBucket.pop() as number;
+      if (pos < oldBucket.length) oldBucket[pos] = last;
+    }
+  }
+  let newBucket = grid.get(newKey);
+  if (newBucket === undefined) {
+    newBucket = [];
+    grid.set(newKey, newBucket);
+  }
+  newBucket.push(index);
+  bodyCells[index] = newKey;
+}
+
+/**
+ * Collects all body indices strictly greater than `minIndex` from the 3x3
+ * spatial hash neighborhood around `(cx, cy)`, sorted ascending.
+ * @param grid - Spatial hash grid
+ * @param cx - Center cell column
+ * @param cy - Center cell row
+ * @param minIndex - Lower bound (exclusive) for collected indices
+ * @param out - Reusable buffer filled in place
+ */
+function collectNeighborIndices(
+  grid: ReadonlyMap<number, number[]>,
+  cx: number,
+  cy: number,
+  minIndex: number,
+  out: number[],
+): void {
+  out.length = 0;
+  for (let dy = -1; dy <= 1; dy += 1) {
+    for (let dx = -1; dx <= 1; dx += 1) {
+      const bucket = grid.get(spatialCellKey(cx + dx, cy + dy));
+      if (bucket === undefined) continue;
+      for (let k = 0; k < bucket.length; k += 1) {
+        const right = bucket[k] as number;
+        if (right > minIndex) out.push(right);
+      }
+    }
+  }
+  if (out.length > 1) out.sort(compareAscending);
+}
+
+/**
  * Pushes overlapping bodies apart until each pair keeps the sum of their
- * radii between them, staying inside the map.
+ * radii between them, staying inside the map. Uses a deterministic spatial
+ * hash grid when the body count exceeds `SPATIAL_HASH_THRESHOLD`.
  * @param bodies - Bodies to separate; positions are edited in place
  * @param map - Map bounds
  */
@@ -1138,28 +1326,65 @@ export function resolveOverlaps(
   bodies: readonly SeparationBody[],
   map: { height: number; width: number },
 ): void {
-  for (let left = 0; left < bodies.length; left += 1) {
+  const count = bodies.length;
+  if (count <= SPATIAL_HASH_THRESHOLD) {
+    for (let left = 0; left < count; left += 1) {
+      const first = bodies[left] as SeparationBody;
+      for (let right = left + 1; right < count; right += 1) {
+        resolveBodyPair(first, bodies[right] as SeparationBody, map);
+      }
+    }
+    return;
+  }
+
+  let maxRadius = BODY_RADIUS;
+  for (let index = 0; index < count; index += 1) {
+    const radius = (bodies[index] as SeparationBody).radius;
+    if (radius > maxRadius) maxRadius = radius;
+  }
+  const cellSize = Math.max(3, maxRadius * 2 + 0.5);
+  const grid = new Map<number, number[]>();
+  const bodyCells = new Int32Array(count);
+  for (let index = 0; index < count; index += 1) {
+    const entry = bodies[index] as SeparationBody;
+    const key = spatialCellKey(
+      Math.floor(entry.body.x / cellSize),
+      Math.floor(entry.body.y / cellSize),
+    );
+    bodyCells[index] = key;
+    let bucket = grid.get(key);
+    if (bucket === undefined) {
+      bucket = [];
+      grid.set(key, bucket);
+    }
+    bucket.push(index);
+  }
+
+  const candidates: number[] = [];
+  for (let left = 0; left < count; left += 1) {
     const first = bodies[left] as SeparationBody;
-    for (let right = left + 1; right < bodies.length; right += 1) {
+    let cx = Math.floor(first.body.x / cellSize);
+    let cy = Math.floor(first.body.y / cellSize);
+    collectNeighborIndices(grid, cx, cy, left, candidates);
+    for (let k = 0; k < candidates.length; k += 1) {
+      const right = candidates[k] as number;
       const second = bodies[right] as SeparationBody;
-      if (first.fixed && second.fixed) continue;
-      const a = first.body;
-      const b = second.body;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const spacing = first.radius + second.radius;
-      if (Math.abs(dx) >= spacing || Math.abs(dy) >= spacing) continue;
-      const gap = Math.hypot(dx, dy);
-      if (gap >= spacing) continue;
-      const overlap = spacing - gap;
-      const nx = gap === 0 ? 1 : dx / gap;
-      const ny = gap === 0 ? 0 : dy / gap;
-      const pushA = firstBodyShare(first, second) * overlap;
-      const pushB = overlap - pushA;
-      a.x = clamp(round(a.x - nx * pushA), 0, map.width - 1);
-      a.y = clamp(round(a.y - ny * pushA), 0, map.height - 1);
-      b.x = clamp(round(b.x + nx * pushB), 0, map.width - 1);
-      b.y = clamp(round(b.y + ny * pushB), 0, map.height - 1);
+      if (!resolveBodyPair(first, second, map)) continue;
+      if (!second.fixed) {
+        const secondKey = spatialCellKey(
+          Math.floor(second.body.x / cellSize),
+          Math.floor(second.body.y / cellSize),
+        );
+        moveBodyCell(grid, bodyCells, right, secondKey);
+      }
+      if (first.fixed) continue;
+      const newCx = Math.floor(first.body.x / cellSize);
+      const newCy = Math.floor(first.body.y / cellSize);
+      if (newCx === cx && newCy === cy) continue;
+      cx = newCx;
+      cy = newCy;
+      collectNeighborIndices(grid, cx, cy, right, candidates);
+      k = -1;
     }
   }
 }

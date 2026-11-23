@@ -243,38 +243,49 @@ function addBasket(
   }
 }
 
+/** Optional shared primary/accent materials owned by a carry-icon layer. */
+export interface CarriedLoadMaterials {
+  accent: StandardMaterial;
+  primary: StandardMaterial;
+}
+
 /**
  * Builds a small resource load whose root can be parented directly to a unit.
- * The root is positioned at hand height and owns its child meshes/materials.
+ * The root is positioned at hand height. When shared materials are omitted,
+ * the root owns and disposes its own materials.
  * @param scene - Scene that owns the load
  * @param resource - Resource to represent
  * @param name - Unique Babylon mesh name
+ * @param sharedMaterials - Optional cached materials owned by the caller
  * @returns A non-pickable load root at hand height
  */
 export function buildCarriedLoad(
   scene: Scene,
   resource: ResourceId,
   name = `carry-load-${resource}`,
+  sharedMaterials?: CarriedLoadMaterials,
 ): Mesh {
   const spec = carriedLoadSpec(resource);
   const root = new Mesh(name, scene);
   root.position.set(0.52, CARRY_LOAD_HEIGHT, 0.16);
   root.rotation.set(0.08, -0.2, -0.12);
   root.isPickable = false;
-  const primary = createLoadMaterial(
-    scene,
-    `${name}-primary`,
-    spec.primaryColor,
-  );
-  const accent = createLoadMaterial(scene, `${name}-accent`, spec.accentColor);
+  const primary =
+    sharedMaterials?.primary ??
+    createLoadMaterial(scene, `${name}-primary`, spec.primaryColor);
+  const accent =
+    sharedMaterials?.accent ??
+    createLoadMaterial(scene, `${name}-accent`, spec.accentColor);
   if (spec.kind === "log") addLog(root, primary, accent);
   if (spec.kind === "rock") addRock(root, primary, accent);
   if (spec.kind === "ore-sack") addOreSack(root, primary, accent);
   if (spec.kind === "basket") addBasket(root, primary, accent);
-  root.onDisposeObservable.add(() => {
-    primary.dispose();
-    accent.dispose();
-  });
+  if (sharedMaterials === undefined) {
+    root.onDisposeObservable.add(() => {
+      primary.dispose();
+      accent.dispose();
+    });
+  }
   return root;
 }
 
@@ -321,8 +332,35 @@ export function createCarryIconLayer(
   options: CarryIconLayerOptions = {},
 ): CarryIconLayer {
   const materials = new Map<ResourceId, StandardMaterial>();
+  const loadMaterials = new Map<string, StandardMaterial>();
   const visuals = new Map<string, CarryVisual>();
   const showIcons = options.showIcons ?? false;
+
+  /**
+   * Returns a cached, frozen load material for one resource and color slot so
+   * picking up and dropping loads never allocates or compiles new materials.
+   * @param resource - Resource id
+   * @param slot - Primary or accent material slot
+   * @returns The shared load material
+   */
+  const loadMaterialFor = (
+    resource: ResourceId,
+    slot: "accent" | "primary",
+  ): StandardMaterial => {
+    const key = `${resource}:${slot}`;
+    const existing = loadMaterials.get(key);
+    if (existing !== undefined) return existing;
+    const spec = carriedLoadSpec(resource);
+    const color = slot === "primary" ? spec.primaryColor : spec.accentColor;
+    const material = createLoadMaterial(
+      scene,
+      `carry-load-mat-${resource}-${slot}`,
+      color,
+    );
+    material.freeze();
+    loadMaterials.set(key, material);
+    return material;
+  };
 
   /**
    * One shared material per optional resource icon.
@@ -363,6 +401,8 @@ export function createCarryIconLayer(
         material.dispose();
       }
       materials.clear();
+      for (const material of loadMaterials.values()) material.dispose();
+      loadMaterials.clear();
     },
     remove,
     sync: (unitId, parent, resource) => {
@@ -380,7 +420,10 @@ export function createCarryIconLayer(
         return;
       }
       if (current !== undefined) remove(unitId);
-      const load = buildCarriedLoad(scene, resource, `carry-load-${unitId}`);
+      const load = buildCarriedLoad(scene, resource, `carry-load-${unitId}`, {
+        accent: loadMaterialFor(resource, "accent"),
+        primary: loadMaterialFor(resource, "primary"),
+      });
       load.parent = parent;
       let icon: Mesh | null = null;
       if (showIcons) {

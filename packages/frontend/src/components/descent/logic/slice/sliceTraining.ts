@@ -4,6 +4,7 @@ import { footprintRadius } from "../economy/footprint";
 import type { HoldTier } from "../economy/model";
 import {
   canAffordPop,
+  getHoldTier,
   releasePopulation,
   reservePopulation,
 } from "../economy/queries";
@@ -89,19 +90,13 @@ export const MAX_QUEUE = 20;
 export const SHIFT_TRAIN_COUNT = 5;
 
 /**
- * Seconds one soldier takes at a Barracks without a vein bonus.
- * The first wave is at 90s and the rest are 120s apart. One builder raises
- * a Barracks in about 15s, so an opening squad of five is out before the
- * scouts, and one Barracks can field about twelve soldiers between waves
- * when the stockpile can pay for them.
+ * Seconds per soldier: three recruits per minute, or eight in the 165s
+ * scout-to-swarm interval before resource and population constraints.
  */
-const SOLDIER_SECONDS = 10;
+const SOLDIER_SECONDS = 20;
 
-/**
- * Seconds one villager takes at the Camp. A little longer than a soldier,
- * so the first extra worker finishes alongside the Barracks.
- */
-const VILLAGER_SECONDS = 12;
+/** Seconds per worker; reinvesting in income competes with army spending. */
+const VILLAGER_SECONDS = 24;
 
 /** What one training order costs and yields. */
 export interface TrainingPlan {
@@ -144,7 +139,7 @@ export function trainingPlan(
   if (classId === "villager") {
     return {
       classId,
-      cost: trainingCost("villager") ?? { food: 10, water: 8 },
+      cost: trainingCost("villager") ?? { food: 20, water: 16 },
       count: 1,
       pop: 1,
       seconds: VILLAGER_SECONDS,
@@ -206,7 +201,7 @@ export function trainingBlocker(
   if (!record.completed) return "Still under construction.";
   const host = economyHost(world, ECONOMY_STEP_TICKS);
   const requiredTier = classRequiredTier(classId);
-  if (!isClassUnlocked(host.economy.tier, classId)) {
+  if (!isClassUnlocked(getHoldTier(host, record.ownerId), classId)) {
     return `Needs ${requiredTier} to train this unit.`;
   }
   const queued = sliceState(world).training.filter(
@@ -307,15 +302,31 @@ export function queueTraining(
   }
 }
 
+/** Historical prices for jobs saved before orders recorded their paid cost. */
+const LEGACY_TRAINING_COSTS: Readonly<
+  Record<ClassId, Partial<ResourceStockpile>>
+> = {
+  adept: { food: 20, water: 30 },
+  breaker: { food: 40, water: 20 },
+  cultivator: { food: 25, water: 25 },
+  formation_master: { food: 20, water: 35 },
+  hunter: { food: 25, water: 20 },
+  raider: { food: 35, water: 10 },
+  rider: { food: 45, water: 25 },
+  sword_sage: { food: 25, water: 30 },
+  villager: { food: 10, water: 8 },
+  warden: { food: 30, water: 15 },
+};
+
 /**
  * What cancelling an order gives back. Orders record what they cost; ones
- * saved before that (including old five-soldier batches) are priced per unit.
+ * saved before that retain historical prices, including five-soldier batches.
  * @param job - Order being cancelled
  * @returns Resources to return to the stockpile
  */
 function trainingRefund(job: TrainingJob): Partial<ResourceStockpile> {
   if (job.paidCost !== undefined) return job.paidCost;
-  const perUnit = trainingPlan(job.classId).cost;
+  const perUnit = LEGACY_TRAINING_COSTS[job.classId];
   const refund: Partial<ResourceStockpile> = {};
   for (const [resourceId, amount] of Object.entries(perUnit)) {
     refund[resourceId as keyof ResourceStockpile] = (amount ?? 0) * job.count;

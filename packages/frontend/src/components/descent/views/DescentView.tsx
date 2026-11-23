@@ -2,13 +2,21 @@
 /** @jsxImportSource react */
 "use client";
 
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { footprintCovers, footprintSide } from "../logic/economy/footprint";
 import type { SimSpeed } from "../logic/sim/constants";
 import { isTrainingBuilding } from "../logic/slice/sliceTraining";
 import type { TutorialTargetHint } from "../logic/tutorial";
 import type { Command, FormationId, SimSnapshot } from "../logic/types";
 import { BuildMenu } from "./BuildMenu";
+import { blockedToast } from "./blockers";
 import { CommandCard } from "./CommandCard";
 import {
   buildCardButtons,
@@ -36,6 +44,7 @@ import {
   GlossaryDialog,
   HotkeyDialog,
   ToastList,
+  type ToastTone,
 } from "./dialogs";
 import type { ControlGroupHotkeyAction, HotkeyAction } from "./hotkeys";
 import {
@@ -59,7 +68,6 @@ import {
   nextIdleVillager,
   nextUnitSelection,
   placementBuilders,
-  pruneSelection,
   rallyCommand,
   type Selection,
   selectionGroups,
@@ -151,6 +159,7 @@ export interface DescentViewProps {
 interface Toast {
   id: number;
   message: string;
+  tone?: ToastTone;
 }
 
 /** Maximum notices allowed to cover the battlefield at once. */
@@ -168,13 +177,20 @@ function nextToastId(): number {
 }
 
 /**
- * Adds notices while keeping only the newest compact stack.
+ * Adds notices while keeping only the newest compact stack of each tone, so a
+ * burst of game events never pushes out a "why can't I" message.
  * @param current - Notices already visible
  * @param incoming - New notices to append
- * @returns At most `MAX_VISIBLE_TOASTS` newest notices
+ * @returns At most `MAX_VISIBLE_TOASTS` newest notices per tone
  */
 function appendToasts(current: Toast[], incoming: Toast[]): Toast[] {
-  return [...current, ...incoming].slice(-MAX_VISIBLE_TOASTS);
+  const all = [...current, ...incoming];
+  const errors = all.filter((toast) => toast.tone === "error");
+  const notices = all.filter((toast) => toast.tone !== "error");
+  return [
+    ...notices.slice(-MAX_VISIBLE_TOASTS),
+    ...errors.slice(-MAX_VISIBLE_TOASTS),
+  ];
 }
 
 /**
@@ -246,8 +262,8 @@ export function DescentView({
   tutorialMode = false,
 }: DescentViewProps) {
   const model = useMemo(
-    () => shellModel ?? buildShellModel(snapshot),
-    [shellModel, snapshot],
+    () => shellModel ?? buildShellModel(snapshot, localPlayerId),
+    [localPlayerId, shellModel, snapshot],
   );
   const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION);
   const controlGroups = useRef<ControlGroupsState>(createControlGroupsState());
@@ -259,6 +275,8 @@ export function DescentView({
   const focusSequence = useRef(0);
   const [camera, setCamera] = useState<Camera>({ x: 0, y: 0 });
   const [buildOpen, setBuildOpen] = useState(false);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const buildWasOpen = useRef(false);
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [hotkeysOpen, setHotkeysOpen] = useState(false);
   const [formation, setFormation] = useState<FormationId>("ranks");
@@ -267,8 +285,12 @@ export function DescentView({
   const [intent, setIntent] = useState<ConfirmIntent | null>(null);
   const [tradeAmount, setTradeAmount] = useState(1);
   const [cursor, setCursor] = useState<MapPoint | null>(null);
+  const cursorRef = useRef<MapPoint | null>(null);
+  const placingRef = useRef<string | null>(null);
+  placingRef.current = placing;
   const [dismissed, setDismissed] = useState<CoachMarkId[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [minimapHost, setMinimapHost] = useState<HTMLElement | null>(null);
   const [loadProgress, setLoadProgress] = useState<LoadingProgress>(
     EMPTY_LOADING_PROGRESS,
   );
@@ -277,8 +299,43 @@ export function DescentView({
   const onLoadedRef = useRef(onLoaded);
   onLoadedRef.current = onLoaded;
   /** Lifts the loading screen once, whether loading finished or was skipped. */
-  const revealBattlefield = () =>
-    setLoadPhase((phase) => (phase === "loading" ? "leaving" : phase));
+  const revealBattlefield = useCallback(
+    () => setLoadPhase((phase) => (phase === "loading" ? "leaving" : phase)),
+    [],
+  );
+
+  /** Updates cursor state only when placing a building and crossing grid cells. */
+  const handleCursor = useCallback((point: MapPoint | null) => {
+    cursorRef.current = point;
+    if (placingRef.current === null) {
+      setCursor((current) => (current === null ? current : null));
+      return;
+    }
+    if (point === null) {
+      setCursor((current) => (current === null ? current : null));
+      return;
+    }
+    const nextCell = snapMapCell(point);
+    setCursor((current) => {
+      if (current !== null) {
+        const prevCell = snapMapCell(current);
+        if (prevCell.x === nextCell.x && prevCell.y === nextCell.y) {
+          return current;
+        }
+      }
+      return point;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (placing === null) {
+      setCursor((current) => (current === null ? current : null));
+      return;
+    }
+    if (cursorRef.current !== null) {
+      setCursor(cursorRef.current);
+    }
+  }, [placing]);
 
   useEffect(() => {
     if (loadPhase !== "leaving") return;
@@ -286,27 +343,87 @@ export function DescentView({
     const timer = setTimeout(() => setLoadPhase("done"), LOADING_FADE_MS);
     return () => clearTimeout(timer);
   }, [loadPhase]);
-  const pruned = pruneSelection(selection, model);
-  if (pruned !== selection) setSelection(pruned);
-  const hasSelectedVillager = model.units.some(
-    (unit) =>
-      unit.classId === "villager" &&
-      unit.factionId === "hold" &&
-      isLocalPlayerOwned(unit, localPlayerId) &&
-      selection.unitIds.includes(unit.id),
-  );
+
+  const activeSelection = useMemo(() => {
+    if (selection.unitIds.length === 0 && selection.buildingId === null) {
+      return selection;
+    }
+    let nextUnitIds = selection.unitIds;
+    if (selection.unitIds.length > 0) {
+      const liveUnitIds = new Set<string>();
+      for (let i = 0; i < model.units.length; i += 1) {
+        const unit = model.units[i];
+        if (unit !== undefined) liveUnitIds.add(unit.id);
+      }
+      let allPresent = true;
+      for (let i = 0; i < selection.unitIds.length; i += 1) {
+        const id = selection.unitIds[i];
+        if (id === undefined || !liveUnitIds.has(id)) {
+          allPresent = false;
+          break;
+        }
+      }
+      if (!allPresent) {
+        nextUnitIds = selection.unitIds.filter((id) => liveUnitIds.has(id));
+      }
+    }
+    let nextBuildingId = selection.buildingId;
+    if (
+      nextBuildingId !== null &&
+      !model.buildings.some((building) => building.id === nextBuildingId)
+    ) {
+      nextBuildingId = null;
+    }
+    if (
+      nextUnitIds === selection.unitIds &&
+      nextBuildingId === selection.buildingId
+    ) {
+      return selection;
+    }
+    return { buildingId: nextBuildingId, unitIds: nextUnitIds };
+  }, [model.buildings, model.units, selection]);
+
+  useEffect(() => {
+    if (activeSelection !== selection) setSelection(activeSelection);
+  }, [activeSelection, selection]);
+
+  const hasSelectedVillager = useMemo(() => {
+    if (activeSelection.unitIds.length === 0) return false;
+    const selectedIds = new Set(activeSelection.unitIds);
+    return model.units.some(
+      (unit) =>
+        unit.classId === "villager" &&
+        unit.factionId === "hold" &&
+        isLocalPlayerOwned(unit, localPlayerId) &&
+        selectedIds.has(unit.id),
+    );
+  }, [activeSelection.unitIds, localPlayerId, model.units]);
+
   useEffect(() => {
     const lostVillagerSelection =
       villagerWasSelected.current && !hasSelectedVillager;
     villagerWasSelected.current = hasSelectedVillager;
     if (lostVillagerSelection) setBuildOpen(false);
   }, [hasSelectedVillager]);
+  useEffect(() => {
+    const wasOpen = buildWasOpen.current;
+    buildWasOpen.current = buildOpen;
+    if (!wasOpen || buildOpen) return;
+    const buildButton = shellRef.current?.querySelector(
+      '[data-command="build"]',
+    );
+    if (buildButton instanceof HTMLButtonElement) buildButton.focus();
+  }, [buildOpen]);
 
   const seenNotices = useRef(new Set<string>());
-  const noticeKey = model.notices
-    .map((notice) => `${notice.id}:${notice.text}`)
-    .join("\n");
+  const noticeKey = useMemo(() => {
+    if (model.notices.length === 0) return "";
+    return model.notices
+      .map((notice) => `${notice.id}:${notice.text}`)
+      .join("\n");
+  }, [model.notices]);
   useEffect(() => {
+    if (noticeKey.length === 0) return;
     const fresh = noticeKey
       .split("\n")
       .filter((entry) => entry.length > 0 && !seenNotices.current.has(entry));
@@ -324,44 +441,90 @@ export function DescentView({
   }, [noticeKey]);
 
   /**
+   * Shows why an action failed, centered above the HUD.
    * @param message - Failure text to show
    */
   const pushToast = (message: string) => {
+    // A repeated click refreshes the same notice instead of stacking copies.
     setToasts((current) =>
-      appendToasts(current, [{ id: nextToastId(), message }]),
+      appendToasts(
+        current.filter((toast) => toast.message !== message),
+        [{ id: nextToastId(), message, tone: "error" }],
+      ),
     );
   };
 
-  const confirm =
-    intent === null ? null : buildConfirm(model, intent, tradeAmount);
-  const placingOption =
-    model.buildOptions.find((option) => option.buildingType === placing) ??
-    null;
-  const placementCell = cursor === null ? null : snapMapCell(cursor);
+  /**
+   * Explains a blocked command-card action and how to clear it.
+   * @param button - The action the player tried
+   */
+  const explainBlocked = (button: CardButton) => {
+    pushToast(blockedToast(button.label, button.blockers ?? []));
+  };
+
+  const confirm = useMemo(
+    () => (intent === null ? null : buildConfirm(model, intent, tradeAmount)),
+    [intent, model, tradeAmount],
+  );
+  const placingOption = useMemo(
+    () =>
+      placing === null
+        ? null
+        : (model.buildOptions.find(
+            (option) => option.buildingType === placing,
+          ) ?? null),
+    [model.buildOptions, placing],
+  );
   const placingFootprint = placing === null ? 1 : footprintSide(placing);
-  const onVein =
-    placing !== null &&
-    placementCell !== null &&
-    model.veins.some((vein) =>
+  const onVein = useMemo(() => {
+    if (placing === null || cursor === null) return false;
+    const placementCell = snapMapCell(cursor);
+    return model.veins.some((vein) =>
       footprintCovers(
         { buildingType: placing, ...placementCell },
         vein.x,
         vein.y,
       ),
     );
-  const primary = primaryUnit(model, selection);
-  const selectedBuilding =
-    model.buildings.find((building) => building.id === selection.buildingId) ??
-    null;
-  const unitGroups = selectionGroups(model.units, selection.unitIds);
-  const inspectTarget = pruneInspectTarget(model, inspected);
-  const selectionCard = describeSelection(model, selection, inspectTarget);
-  const cardButtons = buildCardButtons(
-    model,
-    selection,
-    inspectTarget,
-    formation,
-    localPlayerId,
+  }, [cursor, model.veins, placing]);
+  const primary = useMemo(
+    () => primaryUnit(model, activeSelection),
+    [activeSelection, model],
+  );
+  const selectedBuilding = useMemo(
+    () =>
+      activeSelection.buildingId === null
+        ? null
+        : (model.buildings.find(
+            (building) => building.id === activeSelection.buildingId,
+          ) ?? null),
+    [activeSelection.buildingId, model.buildings],
+  );
+  const unitGroups = useMemo(
+    () => selectionGroups(model.units, activeSelection.unitIds),
+    [activeSelection.unitIds, model.units],
+  );
+  const inspectTarget = useMemo(
+    () => pruneInspectTarget(model, inspected),
+    [inspected, model],
+  );
+  useEffect(() => {
+    if (inspectTarget !== inspected) setInspected(inspectTarget);
+  }, [inspectTarget, inspected]);
+  const selectionCard = useMemo(
+    () => describeSelection(model, activeSelection, inspectTarget),
+    [activeSelection, inspectTarget, model],
+  );
+  const cardButtons = useMemo(
+    () =>
+      buildCardButtons(
+        model,
+        activeSelection,
+        inspectTarget,
+        formation,
+        localPlayerId,
+      ),
+    [activeSelection, formation, inspectTarget, localPlayerId, model],
   );
   const selectedResource =
     inspectTarget?.kind === "stockpile" ? inspectTarget.resource : null;
@@ -377,19 +540,27 @@ export function DescentView({
     primaryCultivation !== null &&
     primaryCultivation.rank === "Sworn" &&
     primaryCultivation.school === undefined;
-  const coach = activeCoach({
-    dismissed,
-    feedOpen: intent?.type === "feed",
-    flags: model.onboarding,
-    furnaceSelected: model.buildings.some(
-      (building) =>
-        building.id === selection.buildingId &&
-        building.buildingType === "alchemy_furnace",
-    ),
-    holdUnitPresent: model.units.some((unit) => unit.factionId === "hold"),
-    layerName: model.banner.name,
-    schoolChoiceVisible,
-  });
+  const coach = useMemo(
+    () =>
+      activeCoach({
+        dismissed,
+        feedOpen: intent?.type === "feed",
+        flags: model.onboarding,
+        furnaceSelected: selectedBuilding?.buildingType === "alchemy_furnace",
+        holdUnitPresent: model.units.some((unit) => unit.factionId === "hold"),
+        layerName: model.banner.name,
+        schoolChoiceVisible,
+      }),
+    [
+      dismissed,
+      intent?.type,
+      model.banner.name,
+      model.onboarding,
+      model.units,
+      schoolChoiceVisible,
+      selectedBuilding?.buildingType,
+    ],
+  );
   /** Selects one building and clears mutually exclusive map intents. */
   const selectBuilding = (id: string) => {
     setRallying(null);
@@ -437,7 +608,7 @@ export function DescentView({
   const selectIdleVillager = () => {
     const id = nextIdleVillager(
       idleVillagerIds(model.units, localPlayerId),
-      selection,
+      activeSelection,
     );
     const villager = model.units.find((unit) => unit.id === id);
     if (id === null || villager === undefined) {
@@ -462,7 +633,7 @@ export function DescentView({
       controlGroups.current = saveControlGroup(
         controlGroups.current,
         action.slot,
-        selection.unitIds,
+        activeSelection.unitIds,
       );
       return;
     }
@@ -470,7 +641,7 @@ export function DescentView({
       controlGroups.current = addToControlGroup(
         controlGroups.current,
         action.slot,
-        selection.unitIds,
+        activeSelection.unitIds,
       );
       return;
     }
@@ -521,6 +692,10 @@ export function DescentView({
    * @param button - Command-card button the player pressed
    */
   const activate = (button: CardButton) => {
+    if (button.disabled === true) {
+      explainBlocked(button);
+      return;
+    }
     const next = button.intent;
     if (next.type === "build") {
       setBuildOpen((open) => !open);
@@ -654,8 +829,14 @@ export function DescentView({
       return;
     }
     if (action.type === "qi_art") {
-      const unitIds = selection.unitIds.filter((id) => {
-        const match = model.units.find((unit) => unit.id === id);
+      const qiTile = cardButtons.find((button) => button.id === "qi-art");
+      if (qiTile?.disabled === true) {
+        explainBlocked(qiTile);
+        return;
+      }
+      const unitsById = new Map(model.units.map((unit) => [unit.id, unit]));
+      const unitIds = activeSelection.unitIds.filter((id) => {
+        const match = unitsById.get(id);
         return (
           match !== undefined &&
           match.factionId === "hold" &&
@@ -668,8 +849,9 @@ export function DescentView({
       return;
     }
     if (action.type === "meditate") {
-      const unitIds = selection.unitIds.filter((id) => {
-        const match = model.units.find((unit) => unit.id === id);
+      const unitsById = new Map(model.units.map((unit) => [unit.id, unit]));
+      const unitIds = activeSelection.unitIds.filter((id) => {
+        const match = unitsById.get(id);
         return (
           match !== undefined &&
           match.factionId === "hold" &&
@@ -716,13 +898,20 @@ export function DescentView({
       return;
     }
     const option = model.trainOptions.find(
-      (item) => item.buildingId === selection.buildingId,
+      (item) => item.buildingId === activeSelection.buildingId,
     );
     if (option === undefined) {
       pushToast("Select the Camp or a Barracks to train.");
       return;
     }
     if (!option.allowed) {
+      const tile = cardButtons.find(
+        (button) => button.id === `train-${option.classId}`,
+      );
+      if (tile !== undefined) {
+        explainBlocked(tile);
+        return;
+      }
       pushToast(option.reason ?? "Cannot train right now.");
       return;
     }
@@ -854,7 +1043,11 @@ export function DescentView({
    */
   const chooseBuilding = (option: BuildReadout) => {
     if (!option.unlocked) {
-      pushToast(option.lockedReason ?? "That building is tier-locked.");
+      pushToast(option.lockedReason ?? `Requires ${option.tier}`);
+      return;
+    }
+    if (option.affordable === false) {
+      pushToast(option.lockedReason ?? "Not enough resources");
       return;
     }
     setPlacing(option.buildingType);
@@ -862,12 +1055,19 @@ export function DescentView({
     setBuildOpen(false);
   };
 
-  const stock = costStock(model);
-  const holdUpgradeProgress = runningHoldUpgrade(model);
-  const hasActiveTraining =
-    holdUpgradeProgress !== null ||
-    model.buildings.some((building) => building.trainingQueue.length > 0) ||
-    growingCrops(model.buildings).length > 0;
+  const stock = useMemo(() => costStock(model), [model]);
+  const holdUpgradeProgress = useMemo(() => runningHoldUpgrade(model), [model]);
+  const holdTier = useMemo(
+    () => modelHoldTier(model, localPlayerId),
+    [localPlayerId, model],
+  );
+  const hasActiveTraining = useMemo(
+    () =>
+      holdUpgradeProgress !== null ||
+      model.buildings.some((building) => building.trainingQueue.length > 0) ||
+      growingCrops(model.buildings).length > 0,
+    [holdUpgradeProgress, model.buildings],
+  );
 
   return (
     <div
@@ -875,11 +1075,13 @@ export function DescentView({
       data-has-training={hasActiveTraining}
       data-paused={model.paused}
       data-testid="descent-view"
+      ref={shellRef}
     >
       <h1 className={styles.srOnly}>Descent</h1>
       <div className={styles.topHud} data-testid="descent-top-hud">
         <ResourceBar
           fullscreen={fullscreen}
+          localPlayerId={localPlayerId}
           model={model}
           onSelectResource={selectResource}
           onSetPaused={onSetPaused}
@@ -942,18 +1144,19 @@ export function DescentView({
             waveHeld={model.wave?.waveHeld === true}
           />
         ) : null}
-        <TierUnlockBanner holdTier={modelHoldTier(model)} />
+        <TierUnlockBanner holdTier={holdTier} />
         <DescentBabylonViewport
           camera={camera}
           focusRequest={focusRequest}
           inspected={inspectTarget}
           localPlayerId={localPlayerId}
+          minimapHost={minimapHost}
           model={model}
           onCameraChange={setCamera}
           onCommand={(command) =>
             onCommand?.(applyFormation(command, formation))
           }
-          onCursor={setCursor}
+          onCursor={handleCursor}
           onInspect={inspect}
           onLoaded={revealBattlefield}
           onLoadProgress={setLoadProgress}
@@ -963,7 +1166,7 @@ export function DescentView({
             onCommand?.({
               builderIds: placementBuilders(
                 model.units,
-                selection,
+                activeSelection,
                 localPlayerId,
               ),
               buildingType: placing,
@@ -973,6 +1176,26 @@ export function DescentView({
               y: cell.y,
             });
             if (!queue) setPlacing(null);
+          }}
+          onPlaceLine={(cells, keepPlacing) => {
+            if (placing === null) return;
+            const builderIds = placementBuilders(
+              model.units,
+              activeSelection,
+              localPlayerId,
+            );
+            // Every piece is queued so builders sweep the whole line.
+            for (const cell of cells) {
+              onCommand?.({
+                builderIds,
+                buildingType: placing,
+                queue: true,
+                type: "place_building",
+                x: cell.x,
+                y: cell.y,
+              });
+            }
+            if (!keepPlacing) setPlacing(null);
           }}
           onSelectBuilding={selectBuilding}
           onSelectUnits={(ids, mode) => {
@@ -992,7 +1215,7 @@ export function DescentView({
           placingFootprint={placingFootprint}
           placingType={placing}
           rallyBuildingId={rallyBuildingId}
-          selection={selection}
+          selection={activeSelection}
           settingRally={rallying !== null}
           status={
             rallying === null
@@ -1007,6 +1230,7 @@ export function DescentView({
         >
           <TrainingTracker
             buildings={model.buildings}
+            localPlayerId={localPlayerId}
             onSelectBuilding={selectBuilding}
             upgrade={holdUpgradeProgress}
           />
@@ -1036,16 +1260,42 @@ export function DescentView({
           toasts={toasts}
         />
       </div>
-      <div className={styles.bottomHud}>
+      <div className={styles.bottomHud} data-testid="descent-bottom-hud">
+        {buildOpen ? (
+          <BuildMenu
+            onChoose={chooseBuilding}
+            onClose={() => setBuildOpen(false)}
+            onGlossary={() => setGlossaryOpen(true)}
+            options={model.buildOptions}
+            shortcutsSuspended={
+              glossaryOpen ||
+              hotkeysOpen ||
+              intent !== null ||
+              model.outcome !== null ||
+              multiplayer?.campaignDebrief != null
+            }
+            stock={stock}
+          />
+        ) : (
+          <CommandCard
+            buttons={cardButtons}
+            onActivate={activate}
+            onBlocked={explainBlocked}
+            stock={stock}
+            subject={
+              selectionCard.kind === "empty" ? undefined : selectionCard.title
+            }
+          />
+        )}
         <UnitPanel
           building={selectedBuilding}
           card={selectionCard}
           groups={unitGroups}
+          localPlayerId={localPlayerId}
           onCancelTraining={(buildingId, jobId) =>
             onCommand?.({ buildingId, jobId, type: "cancel_training" })
           }
           onClear={clearSelection}
-          onGlossary={() => setGlossaryOpen(true)}
           onSelectGroup={(unitIds) => {
             setRallying(null);
             setPlacing(null);
@@ -1055,24 +1305,12 @@ export function DescentView({
           unit={primary}
           upgrade={holdUpgradeProgress}
         />
-        <CommandCard
-          buttons={cardButtons}
-          onActivate={activate}
-          stock={stock}
-          subject={
-            selectionCard.kind === "empty" ? undefined : selectionCard.title
-          }
+        <section
+          aria-label="Minimap"
+          className={styles.minimapWell}
+          ref={setMinimapHost}
         />
       </div>
-      {buildOpen ? (
-        <BuildMenu
-          onChoose={chooseBuilding}
-          onClose={() => setBuildOpen(false)}
-          onGlossary={() => setGlossaryOpen(true)}
-          options={model.buildOptions}
-          stock={stock}
-        />
-      ) : null}
       {glossaryOpen ? (
         <GlossaryDialog onClose={() => setGlossaryOpen(false)} />
       ) : null}

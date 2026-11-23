@@ -7,7 +7,7 @@ import styles from "./bottomHud.module.scss";
 import { UNIT_TRAINING_GUIDES } from "./card";
 import type { SelectionCard, SelectionFact } from "./inspect";
 import type { TrainingQueueReadout } from "./presentation";
-import type { SelectionGroup } from "./selection";
+import { isLocalPlayerOwned, type SelectionGroup } from "./selection";
 import type { ShellBuilding, ShellUnit } from "./shellModel";
 import { CLASS_LABEL } from "./text";
 
@@ -19,10 +19,13 @@ export interface UnitPanelProps {
   card: SelectionCard;
   /** Unit kinds in a mixed selection. */
   groups?: readonly SelectionGroup<ClassId>[];
+  /** Local co-op owner whose Camp shows the running upgrade. */
+  localPlayerId?: string;
   onCancelTraining?: (buildingId: string, jobId: string) => void;
   /** Clears the selection. Omit to hide the close button. */
   onClear?: () => void;
-  onGlossary: () => void;
+  /** @deprecated The panel no longer shows a glossary button. */
+  onGlossary?: () => void;
   onSelectGroup?: (unitIds: readonly string[]) => void;
   /** Primary selected unit, for its cultivation bars. */
   unit: ShellUnit | null;
@@ -39,8 +42,9 @@ export interface HoldUpgradeProgress {
 }
 
 /**
- * The bottom-left panel: what is selected, its key numbers, and what the
- * player can do with it. Units, groups, buildings, resource nodes, Spirit
+ * The bottom-center selection panel, AoE-style: portrait, name, health, and
+ * the few numbers that matter. Actions live on the command card, so the panel
+ * carries no how-to copy. Units, groups, buildings, resource nodes, Spirit
  * Veins, vents, and stockpile entries all share one layout.
  * @param props - The card to show plus the selection details it summarizes
  * @returns The selection panel
@@ -49,9 +53,9 @@ export function UnitPanel({
   building,
   card,
   groups = [],
+  localPlayerId,
   onCancelTraining,
   onClear,
-  onGlossary,
   onSelectGroup,
   unit,
   upgrade = null,
@@ -60,12 +64,13 @@ export function UnitPanel({
     upgrade !== null &&
     card.kind === "building" &&
     building?.buildingType === "camp" &&
-    building.factionId === "hold";
+    building.factionId === "hold" &&
+    isLocalPlayerOwned(building, localPlayerId);
   const showQueue =
     card.kind === "building" &&
     building !== null &&
     building.factionId === "hold" &&
-    (building.trainingQueue.length > 0 || building.rallyPoint !== null);
+    building.trainingQueue.length > 0;
   const cultivation = card.kind === "unit" ? (unit?.cultivation ?? null) : null;
   return (
     <section
@@ -83,31 +88,20 @@ export function UnitPanel({
             <HealthBar max={card.health.max} value={card.health.value} />
           )}
         </div>
-        <div className={styles.identityTools}>
+        {onClear === undefined || card.kind === "empty" ? null : (
           <button
-            aria-label="Open glossary from the unit panel"
+            aria-label="Clear selection"
             className={styles.toolButton}
-            onClick={onGlossary}
-            title="Glossary"
+            onClick={onClear}
+            title="Clear selection (Esc)"
             type="button"
           >
-            ?
+            ×
           </button>
-          {onClear === undefined || card.kind === "empty" ? null : (
-            <button
-              aria-label="Clear selection"
-              className={styles.toolButton}
-              onClick={onClear}
-              title="Clear selection (Esc)"
-              type="button"
-            >
-              ×
-            </button>
-          )}
-        </div>
+        )}
       </header>
       <div className={styles.details}>
-        <p className={styles.summary}>
+        <p className={styles.summary} title={card.summary}>
           <span className={styles.srOnly}>What it is: </span>
           {card.summary}
         </p>
@@ -115,39 +109,8 @@ export function UnitPanel({
         {card.kind === "group" ? (
           <SelectionGroups groups={groups} onSelectGroup={onSelectGroup} />
         ) : null}
-        {cultivation === null ? null : (
-          <div className={styles.bars}>
-            {unit !== null && unit.qi !== null && unit.maxQi !== null ? (
-              <FillBar label="Qi" max={unit.maxQi} value={unit.qi} />
-            ) : null}
-            <FillBar
-              label="Merit"
-              max={cultivation.meritToNext}
-              value={cultivation.merit}
-            />
-            <FillBar
-              label="Essence"
-              max={cultivation.essenceToNext}
-              value={cultivation.essence}
-            />
-            {unit?.breakthroughReady ? (
-              <p className={styles.summary}>
-                <strong>Breakthrough ready!</strong> Select Breakthrough to
-                ascend.
-              </p>
-            ) : null}
-            {unit?.meditating ? (
-              <p className={styles.summary}>
-                <strong>In Seclusion</strong> — absorbing Essence, Merit, and Qi
-                {unit.inSpiritArray ? " (Spirit Array 2.5×)" : ""}.
-              </p>
-            ) : unit?.inSpiritArray ? (
-              <p className={styles.summary}>
-                <strong>Spirit Array Aura</strong> — 2× Qi regen &amp; +15% Qi
-                Art potency.
-              </p>
-            ) : null}
-          </div>
+        {cultivation === null || unit === null ? null : (
+          <CultivationBars unit={unit} />
         )}
         {showUpgrade && upgrade !== null ? (
           <HoldUpgradeRow upgrade={upgrade} />
@@ -156,15 +119,146 @@ export function UnitPanel({
           <TrainingQueue building={building} onCancel={onCancelTraining} />
         ) : null}
       </div>
-      <div className={styles.tips}>
-        <h4 className={styles.tipsHeading}>What you can do</h4>
-        <ul className={styles.tipList}>
-          {card.tips.map((tip) => (
-            <li key={tip}>{tip}</li>
-          ))}
-        </ul>
-      </div>
+      <ul className={styles.srOnly}>
+        {card.tips.map((tip) => (
+          <li key={tip}>{tip}</li>
+        ))}
+      </ul>
     </section>
+  );
+}
+
+/**
+ * Qi, Merit, and Essence bars plus one status line: ready to break through,
+ * how many requirements remain, or what aura the unit stands in.
+ * @param props - The selected cultivating unit
+ * @returns The bars
+ */
+function CultivationBars({ unit }: { unit: ShellUnit }) {
+  const cultivation = unit.cultivation;
+  if (cultivation === null) return null;
+  const missing = cultivation.missingRequirements.length;
+  const maxRank = cultivation.meritToNext === 0;
+  return (
+    <div className={styles.bars}>
+      {unit.qi !== null && unit.maxQi !== null ? (
+        <FillBar label="Qi" max={unit.maxQi} value={unit.qi} />
+      ) : null}
+      {maxRank ? null : (
+        <FillBar
+          label="Merit"
+          max={cultivation.meritToNext}
+          value={cultivation.merit}
+        />
+      )}
+      {maxRank ? null : (
+        <FillBar
+          label="Essence"
+          max={cultivation.essenceToNext}
+          value={cultivation.essence}
+        />
+      )}
+      {unit.breakthroughProgress !== null ? (
+        <BreakthroughBar
+          progress={unit.breakthroughProgress}
+          remainingSeconds={unit.breakthroughRemainingSeconds}
+        />
+      ) : null}
+      <CultivationStatus maxRank={maxRank} missing={missing} unit={unit} />
+    </div>
+  );
+}
+
+/**
+ * Full-width loading bar shown while a unit channels a breakthrough.
+ * @param props - Normalized 0..1 progress and remaining seconds
+ * @returns The breakthrough loading bar
+ */
+function BreakthroughBar({
+  progress,
+  remainingSeconds,
+}: {
+  progress: number;
+  remainingSeconds: number | null;
+}) {
+  const percent = Math.round(Math.max(0, Math.min(1, progress)) * 100);
+  const timeLabel =
+    remainingSeconds === null ? "" : ` · ${remainingSeconds}s left`;
+  return (
+    <div className={styles.breakthroughBar}>
+      <span className={styles.fillLabel}>
+        Breaking through{" "}
+        <strong>
+          {percent}%{timeLabel}
+        </strong>
+      </span>
+      <meter
+        aria-label="Breakthrough progress"
+        className={styles.breakthroughMeter}
+        max={100}
+        min={0}
+        value={percent}
+      />
+    </div>
+  );
+}
+
+/**
+ * One line that says where the unit stands on its next breakthrough.
+ * @param props - Unit, missing requirement count, and whether it is maxed
+ * @returns The status line
+ */
+function CultivationStatus({
+  maxRank,
+  missing,
+  unit,
+}: {
+  maxRank: boolean;
+  missing: number;
+  unit: ShellUnit;
+}) {
+  if (unit.breakthroughProgress !== null) {
+    const timeText =
+      unit.breakthroughRemainingSeconds === null
+        ? "…"
+        : ` · ${unit.breakthroughRemainingSeconds}s remaining`;
+    return (
+      <p className={styles.statusLine} data-tone="ready">
+        Breakthrough in progress{timeText}
+      </p>
+    );
+  }
+  if (unit.breakthroughReady) {
+    return (
+      <p className={styles.statusLine} data-tone="ready">
+        Breakthrough ready
+      </p>
+    );
+  }
+  if (unit.meditating) {
+    return (
+      <p className={styles.statusLine} data-tone="calm">
+        In Seclusion{unit.inSpiritArray ? " · Spirit Array 2.5×" : ""}
+      </p>
+    );
+  }
+  if (maxRank) {
+    return (
+      <p className={styles.statusLine} data-tone="calm">
+        Highest rank reached
+      </p>
+    );
+  }
+  const lines = unit.cultivation?.missingRequirements ?? [];
+  return (
+    <p
+      className={styles.statusLine}
+      data-tone="blocked"
+      title={lines.join("\n")}
+    >
+      Next breakthrough: {missing} {missing === 1 ? "step" : "steps"} left
+      {lines[0] === undefined ? "" : ` · ${lines[0]}`}
+    </p>
   );
 }
 

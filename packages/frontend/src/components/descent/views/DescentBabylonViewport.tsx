@@ -2,10 +2,15 @@
 /** @jsxImportSource react */
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useClientServiceCallers } from "@/services/clientServiceCallers";
 import type { DescentUnitAcknowledgementKind } from "../audio/descentCommandAck";
 import { emitDescentUnitAcknowledgement } from "../audio/descentCommandAck";
+import {
+  isWallType,
+  type WallCell,
+  wallLineCells,
+} from "../logic/economy/wallLine";
 import type { Command } from "../logic/types";
 import { loadAshenGateThreeDAssets } from "./ashenGateThreeDAssets";
 import { commandCursorFor } from "./commandCursor";
@@ -14,7 +19,11 @@ import type {
   DescentScenePick,
   DescentScreenBox,
 } from "./createDescentBabylonScene";
-import { DescentMinimap, type MinimapView } from "./DescentMinimap";
+import {
+  DescentMinimap,
+  dockMinimap,
+  type MinimapView,
+} from "./DescentMinimap";
 import styles from "./descentView.module.scss";
 import { inspectRing, inspectTargetAt } from "./inspect";
 import {
@@ -74,9 +83,16 @@ function nodeHintAction(
  * loading after this keeps streaming in behind the live game.
  */
 const LOAD_DEADLINE_MS = 30_000;
+/** Minimum interval between hover raycasts on pointermove (~30Hz). */
+const HOVER_PICK_INTERVAL_MS = 32;
 
 /** Battlefield props plus opening-load reporting. */
 export interface DescentBabylonViewportProps extends MapViewportProps {
+  /**
+   * Places a dragged wall line, one piece per cell. Shift keeps the wall tool
+   * armed so the next drag chains on.
+   */
+  onPlaceLine?: (cells: WallCell[], keepPlacing: boolean) => void;
   /** Receives counts as models, paintings, and shaders load. */
   onLoadProgress?: (progress: LoadingProgress) => void;
   /**
@@ -107,6 +123,34 @@ export function canUseBabylonRts(): boolean {
 }
 
 /**
+ * Rounds a map point to its building cell.
+ * @param point - Continuous map point
+ * @returns The nearest whole cell
+ */
+function snapCell(point: MapPoint): WallCell {
+  return { x: Math.round(point.x), y: Math.round(point.y) };
+}
+
+/**
+ * Ghost pieces for a wall drag, each tinted by whether its ground is clear.
+ * @param props - Current model and wall type being placed
+ * @param start - Cell where the drag began
+ * @param end - Cell under the pointer
+ * @returns Ghost cells with validity
+ */
+function wallLineGhosts(
+  props: DescentBabylonViewportProps,
+  start: WallCell,
+  end: WallCell,
+): { valid: boolean; x: number; y: number }[] {
+  const type = props.placingType ?? "wall";
+  return wallLineCells(start, end).map((cell) => ({
+    ...cell,
+    valid: placementGroundValid(props.model, type, cell),
+  }));
+}
+
+/**
  * Adds class-specific selection and command responses at the shared viewport
  * boundary, so both Babylon and the DOM fallback publish the same audio events.
  * @param props - Original renderer-neutral viewport callbacks and read model
@@ -130,6 +174,17 @@ function withUnitAcknowledgement(
       props.onPlace(point, queue);
       acknowledgeFirstUnit(props, builderIds, "command", true);
     },
+    onPlaceLine:
+      props.onPlaceLine &&
+      ((cells, keep) => {
+        const builderIds = placementBuilders(
+          props.model.units,
+          props.selection,
+          props.localPlayerId,
+        );
+        props.onPlaceLine?.(cells, keep);
+        acknowledgeFirstUnit(props, builderIds, "command", true);
+      }),
     onSelectUnits: (ids, mode) => {
       props.onSelectUnits(ids, mode);
       const addedIds =
@@ -167,8 +222,12 @@ function acknowledgeFirstUnit(
   kind: DescentUnitAcknowledgementKind,
   villagersOnly = false,
 ): void {
+  if (unitIds.length === 0) return;
+  const unitsById = new Map(
+    props.model.units.map((entry) => [entry.id, entry]),
+  );
   for (const id of unitIds) {
-    const unit = props.model.units.find((entry) => entry.id === id);
+    const unit = unitsById.get(id);
     if (unit === undefined || unit.factionId !== "hold") continue;
     if (!isLocalPlayerOwned(unit, props.localPlayerId)) continue;
     if (villagersOnly && unit.classId !== "villager") continue;
@@ -186,7 +245,15 @@ function acknowledgeFirstUnit(
  */
 function updateCommandCursor(
   canvas: HTMLCanvasElement,
-  props: DescentBabylonViewportProps,
+  props: Pick<
+    DescentBabylonViewportProps,
+    | "localPlayerId"
+    | "model"
+    | "placing"
+    | "rallyBuildingId"
+    | "selection"
+    | "settingRally"
+  >,
   picked: DescentScenePick | null,
 ): void {
   const acceptsUnitOrders =
@@ -243,18 +310,6 @@ function ReadyMapViewport({
  * @returns The interactive canvas and lightweight HTML overlays
  */
 function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
-  const openingAnchor =
-    props.model.buildings.find(
-      (building) =>
-        building.factionId === "hold" &&
-        building.buildingType === "camp" &&
-        isLocalPlayerOwned(building, props.localPlayerId),
-    ) ??
-    props.model.buildings.find(
-      (building) =>
-        building.factionId === "hold" && building.buildingType === "camp",
-    ) ??
-    props.model.buildings.find((building) => building.factionId === "hold");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<DescentBabylonSceneHandle | null>(null);
@@ -263,20 +318,75 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
   const hoverRef = useRef<DescentScenePick | null>(null);
   const pointerRef = useRef<{ clientX: number; clientY: number } | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  /** Wall-clock timestamp of the most recent hover raycast. */
+  const lastHoverPickTimeRef = useRef(0);
+  /** Pending animation frame for throttled pointermove hover picking. */
+  const hoverFrameRef = useRef<number | null>(null);
+  /** Pending timer for throttled pointermove hover picking. */
+  const hoverTimerRef = useRef<number | null>(null);
+  /** Whether a non-null cursor point was last sent to the parent. */
+  const cursorSentRef = useRef(false);
+  /** Last synced scene inputs so handle.update skips no-op renders. */
+  const lastSyncedRef = useRef<{
+    handle: DescentBabylonSceneHandle | null;
+    model: DescentBabylonViewportProps["model"];
+    placing: boolean;
+    placingFootprint: number | undefined;
+    placingType: string | null | undefined;
+    selection: DescentBabylonViewportProps["selection"];
+  } | null>(null);
+  /** Wall line being dragged out: its anchor cell and pointer. */
+  const wallDragRef = useRef<{ pointerId: number; start: WallCell } | null>(
+    null,
+  );
+
+  /** Abandons an in-progress wall line and hides its ghosts. */
+  const cancelWallDrag = (): void => {
+    wallDragRef.current = null;
+    handleRef.current?.setPlacementLine(null);
+  };
   const [dragBox, setDragBox] = useState<DescentScreenBox | null>(null);
   const [nodeHint, setNodeHint] = useState<NodeHint | null>(null);
   const [failed, setFailed] = useState(false);
-  const [minimapView, setMinimapView] = useState<MinimapView>({
-    centerX: Math.min(
-      openingAnchor === undefined ? 18 : openingAnchor.x + 12,
-      props.model.map.width,
-    ),
-    centerY: openingAnchor?.y ?? props.model.map.height / 2,
-    height: Math.min(36, props.model.map.height),
-    rotation: 0,
-    width: Math.min(58, props.model.map.width),
+  const [minimapView, setMinimapView] = useState<MinimapView>(() => {
+    const openingAnchor =
+      props.model.buildings.find(
+        (building) =>
+          building.factionId === "hold" &&
+          building.buildingType === "camp" &&
+          isLocalPlayerOwned(building, props.localPlayerId),
+      ) ??
+      props.model.buildings.find(
+        (building) =>
+          building.factionId === "hold" && building.buildingType === "camp",
+      ) ??
+      props.model.buildings.find((building) => building.factionId === "hold");
+    return {
+      centerX: Math.min(
+        openingAnchor === undefined ? 18 : openingAnchor.x + 12,
+        props.model.map.width,
+      ),
+      centerY: openingAnchor?.y ?? props.model.map.height / 2,
+      height: Math.min(36, props.model.map.height),
+      rotation: 0,
+      width: Math.min(58, props.model.map.width),
+    };
   });
   const { clientServiceCallers } = useClientServiceCallers();
+
+  /** Cancels any queued hover raycast work. */
+  const cancelPendingHover = useCallback((): void => {
+    if (hoverFrameRef.current !== null) {
+      window.cancelAnimationFrame(hoverFrameRef.current);
+      hoverFrameRef.current = null;
+    }
+    if (hoverTimerRef.current !== null) {
+      window.clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => cancelPendingHover, [cancelPendingHover]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -326,6 +436,14 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
         handle.focusCamera({ x: initialCamp.x, y: initialCamp.y });
       }
       handleRef.current = handle;
+      lastSyncedRef.current = {
+        handle,
+        model: current.model,
+        placing: current.placing,
+        placingFootprint: current.placingFootprint,
+        placingType: current.placingType,
+        selection: current.selection,
+      };
       const { assets, textures } = await generated;
       if (!active) return;
       await Promise.all([
@@ -347,25 +465,47 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
       active = false;
       handleRef.current?.dispose();
       handleRef.current = null;
+      lastSyncedRef.current = null;
     };
     // The scene owns a stable canvas and the service callers are a
     // browser-wide singleton; snapshots are synchronized below.
   }, [clientServiceCallers]);
 
   useEffect(() => {
+    const handle = handleRef.current;
+    if (handle === null) return;
+    const prev = lastSyncedRef.current;
+    if (
+      prev !== null &&
+      prev.handle === handle &&
+      prev.model === props.model &&
+      prev.selection === props.selection &&
+      prev.placing === props.placing &&
+      prev.placingFootprint === props.placingFootprint &&
+      prev.placingType === props.placingType
+    ) {
+      return;
+    }
+    lastSyncedRef.current = {
+      handle,
+      model: props.model,
+      placing: props.placing,
+      placingFootprint: props.placingFootprint,
+      placingType: props.placingType,
+      selection: props.selection,
+    };
     const pointer = pointerRef.current;
     const point = props.placing
       ? (hoverRef.current?.point ??
         (pointer === null
           ? null
-          : (handleRef.current?.pick(pointer.clientX, pointer.clientY)?.point ??
-            null)))
+          : (handle.pick(pointer.clientX, pointer.clientY)?.point ?? null)))
       : null;
     const valid =
       point !== null && props.placingType != null
         ? placementGroundValid(props.model, props.placingType, point)
         : null;
-    handleRef.current?.update(props.model, props.selection, props.placing, {
+    handle.update(props.model, props.selection, props.placing, {
       footprint: props.placingFootprint,
       point,
       valid,
@@ -381,13 +521,26 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null) return;
-    const pointer = pointerRef.current;
-    if (pointer !== null) {
-      hoverRef.current =
-        handleRef.current?.pick(pointer.clientX, pointer.clientY) ?? null;
-    }
-    updateCommandCursor(canvas, props, hoverRef.current);
-  }, [props]);
+    updateCommandCursor(
+      canvas,
+      {
+        localPlayerId: props.localPlayerId,
+        model: props.model,
+        placing: props.placing,
+        rallyBuildingId: props.rallyBuildingId,
+        selection: props.selection,
+        settingRally: props.settingRally,
+      },
+      hoverRef.current,
+    );
+  }, [
+    props.localPlayerId,
+    props.model,
+    props.placing,
+    props.rallyBuildingId,
+    props.selection,
+    props.settingRally,
+  ]);
 
   const focusId = props.focusRequest?.id ?? null;
   const focusPoint = useRef<MapPoint | null>(null);
@@ -411,19 +564,144 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
     );
   }, [ringKey]);
 
-  if (failed) return <MapViewport {...props} />;
-
   /** Clears hover-owned cursor and placement feedback after leaving or cancellation. */
-  const clearPointerHover = (): void => {
+  const clearPointerHover = useCallback((): void => {
+    cancelPendingHover();
     pointerRef.current = null;
     hoverRef.current = null;
     if (canvasRef.current !== null) {
       canvasRef.current.style.cursor = "default";
     }
-    props.onCursor(null);
-    setNodeHint(null);
+    if (cursorSentRef.current) {
+      cursorSentRef.current = false;
+      latest.current.onCursor(null);
+    }
+    setNodeHint((current) => (current === null ? current : null));
     handleRef.current?.setPlacementPoint(null);
-  };
+  }, [cancelPendingHover]);
+
+  /** Recenters the Babylon camera from a minimap click. */
+  const handleMinimapNavigate = useCallback((point: MapPoint): void => {
+    handleRef.current?.focusCamera(point);
+  }, []);
+
+  /** Issues a right-click or Shift-click order from the minimap. */
+  const handleMinimapOrder = useCallback(
+    (point: MapPoint, queue: boolean): void => {
+      const current = latest.current;
+      const orders = ordersForRightClick({
+        buildings: current.model.buildings,
+        ground: point,
+        localPlayerId: current.localPlayerId,
+        nodes: current.model.nodes,
+        queue,
+        selectedIds: current.selection.unitIds,
+        targetBuildingId: null,
+        targetUnitId: null,
+        units: current.model.units,
+      });
+      for (const order of orders) current.onCommand(order);
+      const marker = orderMarkerFor({
+        buildings: current.model.buildings,
+        ground: point,
+        nodes: current.model.nodes,
+        orders,
+        units: current.model.units,
+      });
+      if (marker !== null) handleRef.current?.showOrderMarker(marker);
+    },
+    [],
+  );
+
+  /** Runs the throttled hover raycast and updates cursor, placement, and node hint. */
+  const flushHoverPick = useCallback((): void => {
+    hoverFrameRef.current = null;
+    hoverTimerRef.current = null;
+    const pointer = pointerRef.current;
+    if (pointer === null) return;
+    lastHoverPickTimeRef.current = performance.now();
+    const current = latest.current;
+    const picked = handleRef.current?.pick(pointer.clientX, pointer.clientY);
+    hoverRef.current = picked ?? null;
+    if (canvasRef.current !== null) {
+      updateCommandCursor(canvasRef.current, current, hoverRef.current);
+    }
+    if (current.placing) {
+      const point = picked?.point ?? null;
+      cursorSentRef.current = point !== null;
+      current.onCursor(point);
+    } else if (cursorSentRef.current) {
+      cursorSentRef.current = false;
+      current.onCursor(null);
+    }
+    const hovered =
+      picked === undefined ? null : nodeNear(current.model.nodes, picked.point);
+    if (hovered === null) {
+      setNodeHint((prev) => (prev === null ? prev : null));
+    } else {
+      const rect = frameRef.current?.getBoundingClientRect() ?? new DOMRect();
+      const nextLeft = Math.round(pointer.clientX - rect.left);
+      const nextTop = Math.round(pointer.clientY - rect.top);
+      const nextResource = resourceName(hovered.resource);
+      setNodeHint((prev) => {
+        if (
+          prev !== null &&
+          prev.label === hovered.label &&
+          prev.resource === nextResource &&
+          prev.left === nextLeft &&
+          prev.top === nextTop
+        ) {
+          return prev;
+        }
+        return {
+          label: hovered.label,
+          left: nextLeft,
+          resource: nextResource,
+          top: nextTop,
+        };
+      });
+    }
+    const placementPoint = current.placing ? (picked?.point ?? null) : null;
+    const placementValid =
+      placementPoint !== null &&
+      current.placingType !== null &&
+      current.placingType !== undefined
+        ? placementGroundValid(
+            current.model,
+            current.placingType,
+            placementPoint,
+          )
+        : null;
+    handleRef.current?.setPlacementPoint(
+      placementPoint,
+      current.placingFootprint,
+      placementValid,
+    );
+    const wallDrag = wallDragRef.current;
+    if (wallDrag !== null && picked !== undefined) {
+      handleRef.current?.setPlacementLine(
+        wallLineGhosts(current, wallDrag.start, snapCell(picked.point)),
+      );
+    }
+  }, []);
+
+  /** Schedules a hover raycast at most once per `HOVER_PICK_INTERVAL_MS`. */
+  const scheduleHoverPick = useCallback((): void => {
+    if (hoverFrameRef.current !== null || hoverTimerRef.current !== null) {
+      return;
+    }
+    const elapsed = performance.now() - lastHoverPickTimeRef.current;
+    if (elapsed >= HOVER_PICK_INTERVAL_MS) {
+      hoverFrameRef.current = window.requestAnimationFrame(flushHoverPick);
+      return;
+    }
+    hoverTimerRef.current = window.setTimeout(() => {
+      hoverTimerRef.current = null;
+      hoverFrameRef.current = window.requestAnimationFrame(flushHoverPick);
+    }, HOVER_PICK_INTERVAL_MS - elapsed);
+  }, [flushHoverPick]);
+
+  if (failed) return <MapViewport {...props} />;
 
   /** Returns the current frame rectangle or a harmless zero-sized stand-in. */
   const frameRect = (): DOMRect =>
@@ -436,6 +714,10 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
       data-testid="descent-map"
       onContextMenu={(event) => {
         event.preventDefault();
+        if (wallDragRef.current !== null) {
+          cancelWallDrag();
+          return;
+        }
         const picked = handleRef.current?.pick(event.clientX, event.clientY);
         if (picked === undefined) return;
         if (props.rallyBuildingId !== null) {
@@ -507,6 +789,14 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
           props.onSetRally(picked.point);
           return;
         }
+        if (props.placing && isWallType(props.placingType)) {
+          wallDragRef.current = {
+            pointerId: event.pointerId,
+            start: snapCell(picked.point),
+          };
+          event.currentTarget.setPointerCapture(event.pointerId);
+          return;
+        }
         if (props.placing) {
           props.onPlace(picked.point, event.shiftKey);
           if (!event.shiftKey) handleRef.current?.setPlacementPoint(null);
@@ -543,53 +833,36 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
       onPointerLeave={clearPointerHover}
       onPointerMove={(event) => {
         pointerRef.current = { clientX: event.clientX, clientY: event.clientY };
-        const picked = handleRef.current?.pick(event.clientX, event.clientY);
-        hoverRef.current = picked ?? null;
-        if (canvasRef.current !== null) {
-          updateCommandCursor(canvasRef.current, props, hoverRef.current);
-        }
-        props.onCursor(picked?.point ?? null);
-        const hovered =
-          picked === undefined
-            ? null
-            : nodeNear(props.model.nodes, picked.point);
-        const rect = frameRect();
-        setNodeHint(
-          hovered === null
-            ? null
-            : {
-                label: hovered.label,
-                left: event.clientX - rect.left,
-                resource: resourceName(hovered.resource),
-                top: event.clientY - rect.top,
-              },
-        );
-        const placementPoint = props.placing ? (picked?.point ?? null) : null;
-        const placementValid =
-          placementPoint !== null &&
-          props.placingType !== null &&
-          props.placingType !== undefined
-            ? placementGroundValid(
-                props.model,
-                props.placingType,
-                placementPoint,
-              )
-            : null;
-        handleRef.current?.setPlacementPoint(
-          placementPoint,
-          props.placingFootprint,
-          placementValid,
-        );
         const drag = dragRef.current;
-        if (drag === null) return;
-        setDragBox({
-          bottom: event.clientY,
-          left: drag.startX,
-          right: event.clientX,
-          top: drag.startY,
-        });
+        if (drag !== null) {
+          setDragBox({
+            bottom: event.clientY,
+            left: drag.startX,
+            right: event.clientX,
+            top: drag.startY,
+          });
+          return;
+        }
+        scheduleHoverPick();
       }}
       onPointerUp={(event) => {
+        const wallDrag = wallDragRef.current;
+        if (wallDrag !== null) {
+          const picked = handleRef.current?.pick(event.clientX, event.clientY);
+          cancelWallDrag();
+          if (event.currentTarget.hasPointerCapture(wallDrag.pointerId)) {
+            event.currentTarget.releasePointerCapture(wallDrag.pointerId);
+          }
+          const end =
+            picked === undefined ? wallDrag.start : snapCell(picked.point);
+          const cells = wallLineCells(wallDrag.start, end);
+          if (cells.length === 1) {
+            props.onPlace(wallDrag.start, event.shiftKey);
+            return;
+          }
+          props.onPlaceLine?.(cells, event.shiftKey);
+          return;
+        }
         const drag = dragRef.current;
         dragRef.current = null;
         setDragBox(null);
@@ -605,6 +878,12 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
           if (!drag.additive) props.onSelectUnits([], "replace");
           return;
         }
+        const ownedUnitIds = new Set<string>();
+        for (const unit of props.model.units) {
+          if (isLocalPlayerOwned(unit, props.localPlayerId)) {
+            ownedUnitIds.add(unit.id);
+          }
+        }
         const ids =
           handleRef.current
             ?.unitsInScreenBox({
@@ -613,15 +892,7 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
               right: event.clientX,
               top: drag.startY,
             })
-            .filter((unitId) => {
-              const unit = props.model.units.find(
-                (entry) => entry.id === unitId,
-              );
-              return (
-                unit !== undefined &&
-                isLocalPlayerOwned(unit, props.localPlayerId)
-              );
-            }) ?? [];
+            .filter((unitId) => ownedUnitIds.has(unitId)) ?? [];
         props.onSelectUnits(ids, drag.additive ? "add" : "replace");
       }}
       ref={frameRef}
@@ -633,34 +904,17 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
         ref={canvasRef}
         tabIndex={0}
       />
-      <DescentMinimap
-        model={props.model}
-        onNavigate={(point) => handleRef.current?.focusCamera(point)}
-        onOrder={(point, queue) => {
-          const orders = ordersForRightClick({
-            buildings: props.model.buildings,
-            ground: point,
-            localPlayerId: props.localPlayerId,
-            nodes: props.model.nodes,
-            queue,
-            selectedIds: props.selection.unitIds,
-            targetBuildingId: null,
-            targetUnitId: null,
-            units: props.model.units,
-          });
-          for (const order of orders) props.onCommand(order);
-          const marker = orderMarkerFor({
-            buildings: props.model.buildings,
-            ground: point,
-            nodes: props.model.nodes,
-            orders,
-            units: props.model.units,
-          });
-          if (marker !== null) handleRef.current?.showOrderMarker(marker);
-        }}
-        pings={props.pings}
-        view={minimapView}
-      />
+      {dockMinimap(
+        <DescentMinimap
+          model={props.model}
+          onNavigate={handleMinimapNavigate}
+          onOrder={handleMinimapOrder}
+          onPointerEnter={clearPointerHover}
+          pings={props.pings}
+          view={minimapView}
+        />,
+        props.minimapHost,
+      )}
       {dragBox === null ? null : (
         <span
           className={styles.babylonSelectBox}

@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource react */
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { FormationId } from "../logic/types";
 import styles from "./bottomHud.module.scss";
 import { CostRow } from "./CostRow";
@@ -67,7 +67,7 @@ function FormationIcon({ formation }: { formation: FormationId }) {
 }
 
 /**
- * Builds an accessible summary from the visible command-card copy.
+ * Builds an accessible summary from the command-card copy.
  * @param button - Command or training choice
  * @returns Comma-separated label, role, behavior, cost, and blocker
  */
@@ -76,7 +76,17 @@ function buttonAriaLabel(button: CardButton): string {
     button.cost === undefined
       ? undefined
       : `Cost: ${costLineText(button.cost)}`;
-  return [button.label, button.role, button.description, cost, button.detail]
+  const blockers =
+    button.disabled === true && button.blockers !== undefined
+      ? `Unavailable: ${button.blockers.map((item) => item.problem).join("; ")}`
+      : undefined;
+  return [
+    button.label,
+    button.role,
+    button.description,
+    cost,
+    blockers ?? button.detail,
+  ]
     .filter((part): part is string => part !== undefined && part.length > 0)
     .join(", ");
 }
@@ -120,44 +130,71 @@ function shownButton(button: CardButton, shift: boolean): CardButton {
 }
 
 /**
- * One action tile: icon, label, hotkey, and its price as resource icons with
- * amounts, red where the player is short. Training tiles keep their unit
- * portrait and role. The full explanation shows in the hint strip.
- * @param props - Button, activation, hover callbacks, Shift, and stock
+ * Whether a tile is blocked and should explain itself instead of acting.
+ * @param button - Command-card button
+ * @returns True when the action cannot run right now
+ */
+function isBlocked(button: CardButton): boolean {
+  return button.disabled === true;
+}
+
+/**
+ * One square action tile, AoE-style: just the icon and its hotkey. Name,
+ * price, and any blocker live in the tooltip. A blocked tile stays hoverable
+ * and clickable so it can say why it is blocked and how to fix it.
+ * @param props - Button, activation, block, hover callbacks, and denial flash
  * @returns The tile
  */
 function ActionTile({
   button,
+  denied,
+  describedBy,
   onActivate,
+  onDenied,
   onHint,
   shift,
-  stock,
 }: {
   button: CardButton;
+  /** Tooltip id while this tile's tooltip is showing. */
+  describedBy?: string;
+  /** Whether the tile is flashing after a blocked click. */
+  denied: boolean;
   onActivate: (button: CardButton) => void;
+  onDenied: (button: CardButton) => void;
   onHint: (button: CardButton | null) => void;
   shift: boolean;
-  stock: CostStock;
 }) {
   const training = button.intent.type === "train";
   const formation =
     button.intent.type === "formation" ? button.intent.formation : null;
   const shown = shownButton(button, shift);
+  const blocked = isBlocked(button);
+  const batch =
+    shift && button.batchCount !== undefined && button.batchCount > 1
+      ? button.batchCount
+      : null;
   return (
     <button
+      aria-describedby={describedBy}
+      aria-disabled={blocked ? true : undefined}
       aria-label={buttonAriaLabel(shown)}
       aria-pressed={formation === null ? undefined : button.pressed}
       className={`${styles.action} ${button.pressed === true ? formationStyles.active : ""}`}
       data-active={button.pressed === true}
+      data-blocked={blocked}
       data-command={button.intent.type}
+      data-denied={denied}
       data-formation={formation ?? undefined}
       data-training={training}
       data-unit-class={
         button.intent.type === "train" ? button.intent.classId : undefined
       }
-      disabled={button.disabled}
       onBlur={() => onHint(null)}
       onClick={(event) => {
+        if (blocked) {
+          onDenied(button);
+          return;
+        }
         if (
           event.shiftKey &&
           button.intent.type === "train" &&
@@ -188,100 +225,106 @@ function ActionTile({
       ) : (
         <FormationIcon formation={formation} />
       )}
-      <span className={styles.actionLabel}>
+      <span className={styles.srOnly}>
         {training ? button.label.replace(/^Train /, "") : button.label}
       </span>
-      {training && button.role !== undefined ? (
-        <span className={styles.actionRole}>{button.role}</span>
-      ) : null}
-      {shown.cost === undefined ? null : (
-        <span
-          className={styles.actionCost}
-          data-batch={shift && button.batchCost !== undefined}
-        >
-          <CostRow line={shown.cost} stock={stock} />
-        </span>
-      )}
-      {shown.detail === undefined ? null : (
-        <span
-          className={styles.actionDetail}
-          data-batch={shift && button.batchDetail !== undefined}
-          data-blocked={button.disabled === true}
-        >
-          <ResourceLine text={shown.detail} />
-        </span>
-      )}
       {button.hotkey === undefined ? null : (
         <kbd className={styles.actionHotkey}>{button.hotkey}</kbd>
       )}
-      {button.description === undefined ? null : (
-        <span className={styles.srOnly}>{button.description}</span>
+      {batch === null ? null : (
+        <span aria-hidden="true" className={styles.actionBatch}>
+          ×{batch}
+        </span>
       )}
+      {blocked ? (
+        <span aria-hidden="true" className={styles.actionLock}>
+          !
+        </span>
+      ) : null}
     </button>
   );
 }
 
 /**
- * The hint strip line for a hovered action, laid out like an RTS tooltip:
- * name and hotkey, price, then any blocker and what the action does.
+ * The tooltip for a hovered action, laid out like an RTS tooltip: name and
+ * hotkey, price, what it does, then — when blocked — every missing
+ * requirement with the step that fixes it.
  * @param props - The hovered action, whether Shift is held, and stock
- * @returns Its name, role, price, blocker, and explanation
+ * @returns The tooltip body
  */
-function ActionHint({
+function ActionTooltip({
   button,
+  id,
   shift,
   stock,
 }: {
   button: CardButton;
+  id: string;
   shift: boolean;
   stock: CostStock;
 }) {
   const shown = shownButton(button, shift);
+  const blocked = isBlocked(button);
+  const blockers = blocked ? (button.blockers ?? []) : [];
+  const showDetail =
+    shown.detail !== undefined && (blockers.length === 0 || !blocked);
   return (
-    <>
-      <strong>{shown.label}</strong>
-      {shown.hotkey === undefined ? null : (
-        <kbd className={styles.hintHotkey}>{shown.hotkey}</kbd>
-      )}
-      {shown.role === undefined ? null : (
-        <span className={styles.hintRole}>{shown.role}</span>
-      )}
+    <div
+      className={styles.tooltip}
+      data-blocked={blocked}
+      data-testid="command-tooltip"
+      id={id}
+      role="tooltip"
+    >
+      <div className={styles.tooltipHead}>
+        <strong>{shown.label}</strong>
+        {shown.hotkey === undefined ? null : (
+          <kbd className={styles.hintHotkey}>{shown.hotkey}</kbd>
+        )}
+        {shown.role === undefined ? null : (
+          <span className={styles.hintRole}>{shown.role}</span>
+        )}
+      </div>
       {shown.cost === undefined ? null : (
         <CostRow line={shown.cost} size="full" stock={stock} />
       )}
-      {shown.detail === undefined ? null : (
-        <span className={shown.disabled ? styles.hintBlocked : styles.hintCost}>
-          <ResourceLine text={shown.detail} />
-        </span>
-      )}
       {shown.description === undefined ? null : (
-        <span>{shown.description}</span>
+        <p className={styles.tooltipText}>{shown.description}</p>
       )}
-    </>
+      {showDetail && shown.detail !== undefined ? (
+        <p className={blocked ? styles.hintBlocked : styles.hintCost}>
+          <ResourceLine text={shown.detail} />
+        </p>
+      ) : null}
+      {blockers.length === 0 ? null : (
+        <section aria-label="Requirements" className={styles.requirements}>
+          <h4 className={styles.requirementsHeading}>Can't do this yet</h4>
+          <ul className={styles.requirementList}>
+            {blockers.map((item) => (
+              <li key={item.problem}>
+                <span className={styles.requirementProblem}>
+                  {item.problem}
+                </span>
+                {item.fix === undefined ? null : (
+                  <span className={styles.requirementFix}>{item.fix}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
   );
 }
 
+/** How long a blocked tile flashes after a click. */
+const DENIED_FLASH_MS = 450;
+
 /**
- * The bottom-right action panel: what the selection can do, as icon tiles,
- * with a hint strip that explains whichever tile is hovered or focused.
- * @param props - Buttons, the activator, and the name of what they act on
- * @returns The command card
+ * Tracks whether Shift is held anywhere on the page.
+ * @returns Whether Shift is down
  */
-export function CommandCard({
-  buttons,
-  onActivate,
-  stock,
-  subject,
-}: {
-  buttons: readonly CardButton[];
-  onActivate: (button: CardButton) => void;
-  /** What the player can spend, so short amounts draw in red. */
-  stock: CostStock;
-  /** What the actions apply to, e.g. "Camp" or "3 Villagers". */
-  subject?: string;
-}) {
-  const [hinted, setHinted] = useState<string | null>(null);
-  const hint = buttons.find((button) => button.id === hinted) ?? null;
+function useShiftHeld(): boolean {
   const [shift, setShift] = useState(false);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -300,36 +343,97 @@ export function CommandCard({
       window.removeEventListener("blur", onBlur);
     };
   }, []);
+  return shift;
+}
+
+/**
+ * The bottom-left action grid: what the selection can do, as square icon
+ * tiles, with a tooltip above for whichever tile is hovered or focused.
+ * Clicking a blocked tile flashes it, pins its tooltip, and reports it.
+ * @param props - Buttons, activators, stock, and the name of what they act on
+ * @returns The command card
+ */
+export function CommandCard({
+  buttons,
+  onActivate,
+  onBlocked,
+  stock,
+  subject,
+}: {
+  buttons: readonly CardButton[];
+  onActivate: (button: CardButton) => void;
+  /** Called when the player clicks an action that cannot run. */
+  onBlocked?: (button: CardButton) => void;
+  /** What the player can spend, so short amounts draw in red. */
+  stock: CostStock;
+  /** What the actions apply to, e.g. "Camp" or "3 Villagers". */
+  subject?: string;
+}) {
+  const [hinted, setHinted] = useState<string | null>(null);
+  const [denied, setDenied] = useState<string | null>(null);
+  const deniedTimer = useRef<number | null>(null);
+  const hint = buttons.find((button) => button.id === hinted) ?? null;
+  const shift = useShiftHeld();
+  const tooltipId = useId();
+  // A tile that vanished with the selection never fires blur or leave, so
+  // forget it rather than pop its tooltip when a same-id tile returns.
+  useEffect(() => {
+    if (hinted !== null && hint === null) setHinted(null);
+  }, [hint, hinted]);
+  useEffect(
+    () => () => {
+      if (deniedTimer.current !== null) {
+        window.clearTimeout(deniedTimer.current);
+      }
+    },
+    [],
+  );
   const training = buttons.filter((button) => button.intent.type === "train");
   const commands = buttons.filter((button) => button.intent.type !== "train");
   const onHint = (button: CardButton | null) => setHinted(button?.id ?? null);
+  const onDenied = (button: CardButton) => {
+    setHinted(button.id);
+    setDenied(button.id);
+    if (deniedTimer.current !== null) window.clearTimeout(deniedTimer.current);
+    deniedTimer.current = window.setTimeout(
+      () => setDenied(null),
+      DENIED_FLASH_MS,
+    );
+    onBlocked?.(button);
+  };
   return (
     <section aria-label="Command card" className={styles.actions}>
-      <p aria-live="polite" className={styles.hint}>
-        {hint === null ? (
-          <span className={styles.hintIdle}>
-            {buttons.length === 0
-              ? "No actions for this selection."
-              : shift && training.length > 0
-                ? "Holding Shift queues up to 5. Hover a unit to see the cost."
-                : `Actions${subject === undefined ? "" : ` · ${subject}`} — hover one to see what it does`}
-          </span>
-        ) : (
-          <ActionHint button={hint} shift={shift} stock={stock} />
-        )}
-      </p>
-      <div className={styles.actionGrid}>
-        {[...training, ...commands].map((button) => (
-          <ActionTile
-            button={button}
-            key={button.id}
-            onActivate={onActivate}
-            onHint={onHint}
+      <h3 className={styles.srOnly}>
+        {subject === undefined ? "Actions" : `Actions · ${subject}`}
+      </h3>
+      <div className={styles.tooltipDock}>
+        {hint === null ? null : (
+          <ActionTooltip
+            button={hint}
+            id={tooltipId}
             shift={shift}
             stock={stock}
           />
-        ))}
+        )}
       </div>
+      {buttons.length === 0 ? (
+        <p className={styles.actionsEmpty}>No actions</p>
+      ) : (
+        <div className={styles.actionGrid}>
+          {[...training, ...commands].map((button) => (
+            <ActionTile
+              button={button}
+              denied={denied === button.id}
+              describedBy={hint?.id === button.id ? tooltipId : undefined}
+              key={button.id}
+              onActivate={onActivate}
+              onDenied={onDenied}
+              onHint={onHint}
+              shift={shift}
+            />
+          ))}
+        </div>
+      )}
     </section>
   );
 }

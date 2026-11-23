@@ -179,14 +179,16 @@ export class MeshyProvider {
   }
 
   /**
-   * Generates, rigs, animates, and normalizes one complete game character, or
-   * re-rigs and animates an existing GLB when `options.sourceGlbBytes` is supplied.
+   * Generates, rigs, animates, and normalizes one complete game character,
+   * re-animates an existing Meshy rig when `options.sourceRigTaskId` is
+   * supplied, or re-rigs and animates an existing GLB when
+   * `options.sourceGlbBytes` is supplied.
    * @param prompt - Humanoid character art description
    * @param signal - Shared generation cancellation
    * @param report - Durable job progress and provider-id callback
-   * @param resumeJobIds - Persisted task IDs (`[preview, refine, rig, animation]` or `[rig, animation]` for `sourceGlbBytes`)
+   * @param resumeJobIds - Persisted task IDs (`[preview, refine, rig, animation]` or `[rig, animation]`)
    * @param beforeSubmit - Journals each potentially billable submission
-   * @param options - Optional existing GLB and extra animation clips
+   * @param options - Optional existing rig, existing GLB, and extra animation clips
    * @returns Canonical character GLB and provider task IDs
    */
   public async generateCharacter(
@@ -198,9 +200,15 @@ export class MeshyProvider {
     options: {
       extraAnimations?: readonly ThreeDExtraAnimation[];
       sourceGlbBytes?: Uint8Array;
+      sourceRigTaskId?: string;
     } = {},
   ): Promise<{ bytes: Uint8Array; jobIds: string[] }> {
-    const fromExisting = options.sourceGlbBytes !== undefined;
+    const fromExistingRig = options.sourceRigTaskId !== undefined;
+    if (options.sourceRigTaskId !== undefined) {
+      this.validateTaskIds([options.sourceRigTaskId], 1);
+    }
+    const fromExisting =
+      fromExistingRig || options.sourceGlbBytes !== undefined;
     const extraAnimations = options.extraAnimations ?? [];
     const actionIds = [
       ...CHARACTER_ACTION_IDS,
@@ -211,64 +219,70 @@ export class MeshyProvider {
       ...extraAnimations.map((entry) => entry.clipName),
     ];
     this.validateTaskIds(resumeJobIds, fromExisting ? 2 : 4);
-    const jobIds = fromExisting
-      ? [...resumeJobIds]
-      : [
-          ...(
-            await this.generate(
-              prompt,
-              signal,
-              async (stage, progress, id) => report(stage, progress * 0.6, id),
-              resumeJobIds.slice(0, 2),
-              beforeSubmit,
-              { character: true },
-            )
-          ).jobIds,
-          ...resumeJobIds.slice(2),
-        ];
+    let jobIds: string[];
+    if (fromExistingRig) {
+      jobIds =
+        resumeJobIds.length > 0
+          ? [...resumeJobIds]
+          : [options.sourceRigTaskId as string];
+    } else if (fromExisting) {
+      jobIds = [...resumeJobIds];
+    } else {
+      const base = await this.generate(
+        prompt,
+        signal,
+        async (stage, progress, id) => report(stage, progress * 0.6, id),
+        resumeJobIds.slice(0, 2),
+        beforeSubmit,
+        { character: true },
+      );
+      jobIds = [...base.jobIds, ...resumeJobIds.slice(2)];
+    }
     const rigIndex = fromExisting ? 0 : 2;
     const animIndex = fromExisting ? 1 : 3;
-    let activeId = jobIds[rigIndex];
+    let activeId = fromExistingRig ? undefined : jobIds[rigIndex];
     let activeRoute: MeshyTaskRoute = RIGGING_ROUTE;
     try {
-      if (!activeId) {
-        await beforeSubmit("rig");
-        let rigPayload: Record<string, unknown>;
-        if (options.sourceGlbBytes) {
-          const cleanGlb = await this.stripRigAndAnimations(
-            options.sourceGlbBytes,
+      if (!fromExistingRig) {
+        if (!activeId) {
+          await beforeSubmit("rig");
+          let rigPayload: Record<string, unknown>;
+          if (options.sourceGlbBytes) {
+            const cleanGlb = await this.stripRigAndAnimations(
+              options.sourceGlbBytes,
+            );
+            rigPayload = {
+              height_meters: 1.75,
+              model_url: `data:model/gltf-binary;base64,${Buffer.from(cleanGlb).toString("base64")}`,
+            };
+          } else {
+            const inputTaskId = jobIds[1];
+            if (!inputTaskId)
+              throw new ServiceUnavailableException("Missing Meshy refine id.");
+            rigPayload = {
+              height_meters: 1.75,
+              input_task_id: inputTaskId,
+            };
+          }
+          const rig = await this.request(
+            RIGGING_ROUTE,
+            "POST",
+            signal,
+            rigPayload,
           );
-          rigPayload = {
-            height_meters: 1.75,
-            model_url: `data:model/gltf-binary;base64,${Buffer.from(cleanGlb).toString("base64")}`,
-          };
-        } else {
-          const inputTaskId = jobIds[1];
-          if (!inputTaskId)
-            throw new ServiceUnavailableException("Missing Meshy refine id.");
-          rigPayload = {
-            height_meters: 1.75,
-            input_task_id: inputTaskId,
-          };
+          activeId = this.readTaskId(rig, "Meshy returned no rigging task id.");
+          jobIds.push(activeId);
+          await report("Meshy rigging", fromExisting ? 15 : 58, activeId);
         }
-        const rig = await this.request(
+        await this.poll(
           RIGGING_ROUTE,
-          "POST",
+          activeId,
           signal,
-          rigPayload,
+          report,
+          fromExisting ? 15 : 58,
+          fromExisting ? 35 : 12,
         );
-        activeId = this.readTaskId(rig, "Meshy returned no rigging task id.");
-        jobIds.push(activeId);
-        await report("Meshy rigging", fromExisting ? 15 : 58, activeId);
       }
-      await this.poll(
-        RIGGING_ROUTE,
-        activeId,
-        signal,
-        report,
-        fromExisting ? 15 : 58,
-        fromExisting ? 35 : 12,
-      );
       await report("Meshy rig ready", fromExisting ? 50 : 70);
       activeRoute = ANIMATION_ROUTE;
       activeId = jobIds[animIndex];

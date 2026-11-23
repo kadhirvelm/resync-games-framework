@@ -81,7 +81,7 @@ describe("class counter matrix", () => {
       (definition) => definition.classId !== "rider",
     );
     expect(rider.popCost).toBe(2);
-    expect(rider.trainingCost).toEqual({ food: 45, water: 25 });
+    expect(rider.trainingCost).toEqual({ food: 90, water: 50 });
     expect(rider.speed).toBeGreaterThan(
       Math.max(...otherUnits.map((definition) => definition.speed)),
     );
@@ -229,23 +229,23 @@ describe("structures, economy, and simulation seams", () => {
 
   test("trains Ashborn in batches of five through the economy interface", () => {
     const economy = new StubCombatEconomy({
-      food: 200,
+      food: 400,
       population: 3,
       populationCap: 10,
-      water: 100,
+      water: 200,
     });
 
     expect(trainUnitBatch("warden", "Ashborn", economy)).toEqual({
       count: 5,
       ok: true,
       populationAdded: 5,
-      spent: { food: 150, water: 75 },
+      spent: { food: 300, water: 150 },
     });
     expect(economy.state).toEqual({
-      food: 50,
+      food: 100,
       population: 8,
       populationCap: 10,
-      water: 25,
+      water: 50,
     });
   });
 

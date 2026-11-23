@@ -158,8 +158,8 @@ export function createEconomyModule(
     release_villagers(command, context) {
       releaseVillagers(host(context.world), command.actorId);
     },
-    upgrade_hold(_command, context) {
-      upgradeHold(host(context.world));
+    upgrade_hold(command, context) {
+      upgradeHold(host(context.world), command.actorId);
     },
   };
   return {

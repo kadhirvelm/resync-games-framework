@@ -155,11 +155,13 @@ function ToastNotice({
   lifetimeMs,
   message,
   onDismiss,
+  tone,
 }: {
   id: number;
   lifetimeMs: number;
   message: string;
   onDismiss: (id: number) => void;
+  tone: ToastTone;
 }) {
   const dismiss = useRef(onDismiss);
   dismiss.current = onDismiss;
@@ -170,8 +172,8 @@ function ToastNotice({
 
   return (
     <p
-      className={styles.toast}
-      role="status"
+      className={tone === "error" ? styles.errorToast : styles.toast}
+      role={tone === "error" ? "alert" : "status"}
       style={{ ["--toast-life" as string]: `${lifetimeMs}ms` }}
     >
       <span>{message}</span>
@@ -186,10 +188,18 @@ function ToastNotice({
   );
 }
 
+/** How long an "action blocked" notice stays; it carries a fix to read. */
+export const ERROR_TOAST_DISMISS_MS = 4200;
+
+/** `info` for game events, `error` for an action the player could not take. */
+export type ToastTone = "error" | "info";
+
 /**
- * A short stack of notices. Each one leaves on its own.
- * @param props - Messages and dismiss handler
- * @returns The live region
+ * Two short stacks of notices: quiet game events in the corner, and blocked
+ * actions centered above the HUD where the player is looking. Each leaves
+ * on its own.
+ * @param props - Messages, their tones, and the dismiss handler
+ * @returns The live regions
  */
 export function ToastList({
   lifetimeMs = TOAST_DISMISS_MS,
@@ -199,19 +209,36 @@ export function ToastList({
   /** How long each notice stays. Defaults to a short self-dismiss. */
   lifetimeMs?: number;
   onDismiss: (id: number) => void;
-  toasts: readonly { id: number; message: string }[];
+  toasts: readonly { id: number; message: string; tone?: ToastTone }[];
 }) {
+  const errors = toasts.filter((toast) => toast.tone === "error");
+  const notices = toasts.filter((toast) => toast.tone !== "error");
   return (
-    <div aria-live="polite" className={styles.toasts} data-testid="toasts">
-      {toasts.map((toast) => (
-        <ToastNotice
-          id={toast.id}
-          key={toast.id}
-          lifetimeMs={lifetimeMs}
-          message={toast.message}
-          onDismiss={onDismiss}
-        />
-      ))}
-    </div>
+    <>
+      <div aria-live="polite" className={styles.toasts} data-testid="toasts">
+        {notices.map((toast) => (
+          <ToastNotice
+            id={toast.id}
+            key={toast.id}
+            lifetimeMs={lifetimeMs}
+            message={toast.message}
+            onDismiss={onDismiss}
+            tone="info"
+          />
+        ))}
+      </div>
+      <div className={styles.errorToasts} data-testid="error-toasts">
+        {errors.map((toast) => (
+          <ToastNotice
+            id={toast.id}
+            key={toast.id}
+            lifetimeMs={Math.max(lifetimeMs, ERROR_TOAST_DISMISS_MS)}
+            message={toast.message}
+            onDismiss={onDismiss}
+            tone="error"
+          />
+        ))}
+      </div>
+    </>
   );
 }

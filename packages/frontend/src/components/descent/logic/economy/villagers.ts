@@ -84,6 +84,93 @@ export interface VillagerPolicy {
 /** Villagers choose their own jobs. Headless economy tools use this. */
 export const AUTO_VILLAGERS: VillagerPolicy = { manual: false };
 
+/** Passability memo states for one `stepVillagers` pass. */
+const PASSABILITY_UNKNOWN = 0;
+const PASSABILITY_OPEN = 1;
+const PASSABILITY_BLOCKED = 2;
+
+/** Terrain obstacle shape returned by `EconomyHost.getTerrainObstacles`. */
+interface TerrainObstacle {
+  readonly radius: number;
+  readonly x: number;
+  readonly y: number;
+}
+
+/**
+ * Per-step lazy memo for ally walkability (`cellOpenToAlly && cellStaysClear`).
+ * Buildings, terrain obstacles, and vent disks remain constant during one
+ * `stepVillagers` pass, so each cell is evaluated at most once across all
+ * villagers.
+ */
+interface WalkCache {
+  readonly cells: Uint8Array;
+  readonly disks: readonly HurtDisk[];
+  readonly height: number;
+  readonly obstacles: readonly TerrainObstacle[];
+  readonly passable: (x: number, y: number) => boolean;
+  readonly width: number;
+}
+
+let walkCacheBuffer = new Uint8Array(0);
+
+/**
+ * Prepares a fresh lazy passability cache for one `stepVillagers` pass,
+ * reusing the module-level typed array to avoid per-tick allocations.
+ * @param host - World whose map, buildings, obstacles, and vents are queried
+ * @returns Lazy cell-passability cache scoped to this step
+ */
+function createWalkCache(host: EconomyHost): WalkCache {
+  const width = host.map.width;
+  const height = host.map.height;
+  const size = Math.max(0, width * height);
+  if (walkCacheBuffer.length < size) {
+    walkCacheBuffer = new Uint8Array(size);
+  } else {
+    walkCacheBuffer.fill(PASSABILITY_UNKNOWN, 0, size);
+  }
+  const cells = walkCacheBuffer;
+  const disks = host.getVentVolumes();
+  const obstacles = host.getTerrainObstacles?.() ?? [];
+  const passable = (x: number, y: number): boolean =>
+    canWalkCached(host, cells, obstacles, disks, width, height, x, y);
+  return { cells, disks, height, obstacles, passable, width };
+}
+
+/**
+ * Evaluates and memoizes whether an ally can walk into `(x, y)` during the
+ * current step.
+ * @param host - World of buildings
+ * @param cells - Per-step lazy passability table
+ * @param obstacles - Cached terrain obstacles for this step
+ * @param disks - Cached vent volumes for this step
+ * @param width - Map width in cells
+ * @param height - Map height in cells
+ * @param x - Cell column
+ * @param y - Cell row
+ * @returns Whether an ally can enter the cell
+ */
+function canWalkCached(
+  host: EconomyHost,
+  cells: Uint8Array,
+  obstacles: readonly TerrainObstacle[],
+  disks: readonly HurtDisk[],
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+): boolean {
+  if (x < 0 || y < 0 || x >= width || y >= height) return false;
+  const index = y * width + x;
+  const cached = cells[index];
+  if (cached === PASSABILITY_OPEN) return true;
+  if (cached === PASSABILITY_BLOCKED) return false;
+  const open =
+    cellOpenWithObstacles(host, obstacles, x, y, "ally") &&
+    cellStaysClear(disks, x, y);
+  cells[index] = open ? PASSABILITY_OPEN : PASSABILITY_BLOCKED;
+  return open;
+}
+
 /**
  * Assigns idle villagers, then advances every villager one step.
  * @param host - World whose units move
@@ -94,11 +181,12 @@ export function stepVillagers(
   policy: VillagerPolicy = AUTO_VILLAGERS,
 ): void {
   assignIdle(host, policy);
+  const walkCache = createWalkCache(host);
   for (const unit of host.units) {
     if (!isEconomyUnit(unit)) continue;
-    stepOne(host, unit);
+    stepOne(host, unit, walkCache);
   }
-  spreadSettledVillagers(host);
+  spreadSettledVillagers(host, walkCache);
 }
 
 /** Cell offsets tried, nearest first, when a villager needs its own cell. */
@@ -141,10 +229,14 @@ function taskAnchor(
  * (idle, or working beside its node or building) and finds another already
  * on its cell, it steps to the nearest free cell that still touches its work.
  * @param host - World whose villagers settle
+ * @param walkCache - Optional per-step passability cache shared with `stepVillagers`
  */
-export function spreadSettledVillagers(host: EconomyHost): void {
+export function spreadSettledVillagers(
+  host: EconomyHost,
+  walkCache?: WalkCache,
+): void {
   const claimed = new Set<string>();
-  const disks = host.getVentVolumes();
+  const cache = walkCache ?? createWalkCache(host);
   const nodeCells = new Set(
     host.economy.nodes.map((node) => `${node.x},${node.y}`),
   );
@@ -168,8 +260,7 @@ export function spreadSettledVillagers(host: EconomyHost): void {
       (cell) =>
         !claimed.has(`${cell.x},${cell.y}`) &&
         !nodeCells.has(`${cell.x},${cell.y}`) &&
-        cellOpenToAlly(host, cell.x, cell.y) &&
-        cellStaysClear(disks, cell.x, cell.y) &&
+        cache.passable(cell.x, cell.y) &&
         (anchor === null || chebyshev(cell, anchor) <= anchor.reach),
     );
     if (free === undefined) continue;
@@ -807,43 +898,46 @@ function assignOne(host: EconomyHost, unit: EconomyUnit): void {
 /**
  * @param host - World the villager acts in
  * @param unit - Villager to advance
+ * @param walkCache - Per-step lazy passability cache
+ * @param locomotion - Whether this is a sub-step locomotion tick
  */
 function stepOne(
   host: EconomyHost,
   unit: EconomyUnit,
+  walkCache: WalkCache,
   locomotion = false,
 ): void {
   if (unit.hp <= 0 || unit.popKind !== "villager" || !unit.task) return;
   const task = unit.task;
   if (task.kind === "gather") {
-    stepGather(host, unit, task, locomotion);
+    stepGather(host, unit, task, walkCache, locomotion);
     return;
   }
   if (task.kind === "carry") {
-    stepCarry(host, unit, task);
+    stepCarry(host, unit, task, walkCache);
     return;
   }
   if (task.kind === "build") {
-    stepBuild(host, unit, task);
+    stepBuild(host, unit, task, walkCache);
     return;
   }
   if (task.kind === "repair") {
-    stepRepair(host, unit, task, locomotion);
+    stepRepair(host, unit, task, walkCache, locomotion);
     return;
   }
   if (task.kind === "move") {
-    stepMove(host, unit, task);
+    stepMove(host, unit, task, walkCache);
     return;
   }
   if (task.kind === "work") {
-    stepWork(host, unit, task);
+    stepWork(host, unit, task, walkCache);
     return;
   }
   if (task.kind === "harvest") {
-    stepHarvest(host, unit, task);
+    stepHarvest(host, unit, task, walkCache);
     return;
   }
-  stepGarrison(host, unit, task);
+  stepGarrison(host, unit, task, walkCache);
 }
 
 /**
@@ -853,11 +947,13 @@ function stepOne(
  * @param host - World the harvester walks through
  * @param unit - Villager assigned to a harvested producer
  * @param task - Harvest order
+ * @param walkCache - Per-step lazy passability cache
  */
 function stepHarvest(
   host: EconomyHost,
   unit: EconomyUnit,
   task: Extract<VillagerTask, { kind: "harvest" }>,
+  walkCache: WalkCache,
 ): void {
   const building = findBuilding(host, task.buildingId);
   if (!building?.completed || harvestDef(building.buildingType) === null) {
@@ -866,32 +962,37 @@ function stepHarvest(
     return;
   }
   if (unit.carry) {
-    deliverCarry(host, unit);
+    deliverCarry(host, unit, walkCache);
     return;
   }
   if (!besideBuilding(unit, building)) {
-    moveToward(host, unit, building);
+    moveToward(host, unit, building, walkCache);
     return;
   }
   const load = takeHarvest(building);
   if (load === null) return;
   unit.carry = load;
-  deliverCarry(host, unit);
+  deliverCarry(host, unit, walkCache);
 }
 
 /**
  * Sends a loaded villager to the nearest drop-off and starts walking.
  * @param host - World of drop-offs
  * @param unit - Villager holding a load
+ * @param walkCache - Per-step lazy passability cache
  */
-function deliverCarry(host: EconomyHost, unit: EconomyUnit): void {
+function deliverCarry(
+  host: EconomyHost,
+  unit: EconomyUnit,
+  walkCache: WalkCache,
+): void {
   const drop = nearestDropOff(host, unit);
   if (!drop) {
     unit.task = null;
     return;
   }
   unit.task = { buildingId: drop.id, kind: "carry" };
-  stepCarry(host, unit, unit.task);
+  stepCarry(host, unit, unit.task, walkCache);
 }
 
 /**
@@ -901,11 +1002,13 @@ function deliverCarry(host: EconomyHost, unit: EconomyUnit): void {
  * @param host - World the worker walks through
  * @param unit - Villager assigned to a producer
  * @param task - Work order
+ * @param walkCache - Per-step lazy passability cache
  */
 function stepWork(
   host: EconomyHost,
   unit: EconomyUnit,
   task: Extract<VillagerTask, { kind: "work" }>,
+  walkCache: WalkCache,
 ): void {
   const building = findBuilding(host, task.buildingId);
   if (!building?.completed || workerSlots(building.buildingType) === 0) {
@@ -913,8 +1016,18 @@ function stepWork(
     unit.workplaceId = null;
     return;
   }
-  if (besideBuilding(unit, building)) return;
-  moveToward(host, unit, building);
+  if (unit.carry) {
+    deliverCarry(host, unit, walkCache);
+    return;
+  }
+  if (!besideBuilding(unit, building)) {
+    moveToward(host, unit, building, walkCache);
+    return;
+  }
+  if (!building.ready) return;
+  unit.carry = building.ready;
+  building.ready = null;
+  deliverCarry(host, unit, walkCache);
 }
 
 /**
@@ -923,22 +1036,23 @@ function stepWork(
  * @param host - World the villager walks through
  * @param unit - Villager with a move order
  * @param task - Move order
+ * @param walkCache - Per-step lazy passability cache
  */
 function stepMove(
   host: EconomyHost,
   unit: EconomyUnit,
   task: Extract<VillagerTask, { kind: "move" }>,
+  walkCache: WalkCache,
 ): void {
   if (unit.x === task.x && unit.y === task.y) {
     unit.task = null;
     return;
   }
-  const disks = host.getVentVolumes();
-  if (leaveHurt(host, unit, disks)) return;
-  const goal = moveGoal(host, task);
+  if (leaveHurt(host, unit, walkCache)) return;
+  const goal = moveGoal(host, task, walkCache);
   const adjacent = chebyshev(unit, goal) <= goal.reach;
   if (adjacent) {
-    if (goal.reach === 1 && canWalk(host, disks, task.x, task.y)) {
+    if (goal.reach === 1 && walkCache.passable(task.x, task.y)) {
       unit.x = task.x;
       unit.y = task.y;
     }
@@ -948,7 +1062,7 @@ function stepMove(
   const next = nextStep(
     unit,
     goal,
-    (x, y) => canWalk(host, disks, x, y),
+    walkCache.passable,
     host.map.width,
     host.map.height,
     goal.reach,
@@ -966,14 +1080,19 @@ function stepMove(
  * instead, since the cells under it cannot be entered.
  * @param host - World of footprints
  * @param task - Move order
+ * @param walkCache - Per-step lazy passability cache
  * @returns The cell to approach and how close counts as arrived
  */
 function moveGoal(
   host: EconomyHost,
   task: Extract<VillagerTask, { kind: "move" }>,
+  walkCache: WalkCache,
 ): { reach: number; x: number; y: number } {
   const building = buildingCovering(host.buildings, task.x, task.y);
-  if (!building || cellOpenToAlly(host, task.x, task.y)) {
+  if (
+    !building ||
+    cellOpenWithObstacles(host, walkCache.obstacles, task.x, task.y, "ally")
+  ) {
     return { reach: 1, x: task.x, y: task.y };
   }
   return { reach: footprintReach(building), x: building.x, y: building.y };
@@ -983,11 +1102,14 @@ function moveGoal(
  * @param host - World whose node and stockpile change
  * @param unit - Villager at or walking to a node
  * @param task - Gather order
+ * @param walkCache - Per-step lazy passability cache
+ * @param locomotion - Whether this is a sub-step locomotion tick
  */
 function stepGather(
   host: EconomyHost,
   unit: EconomyUnit,
   task: Extract<VillagerTask, { kind: "gather" }>,
+  walkCache: WalkCache,
   locomotion = false,
 ): void {
   const node = host.economy.nodes.find((entry) => entry.id === task.nodeId);
@@ -996,7 +1118,7 @@ function stepGather(
     return;
   }
   if (chebyshev(unit, node) > 1) {
-    moveToward(host, unit, node);
+    moveToward(host, unit, node, walkCache);
     return;
   }
   // Sub-stepped villagers gather the same total per real second, in smaller
@@ -1017,18 +1139,20 @@ function stepGather(
     return;
   }
   unit.task = { buildingId: drop.id, kind: "carry" };
-  stepCarry(host, unit, unit.task);
+  stepCarry(host, unit, unit.task, walkCache);
 }
 
 /**
  * @param host - World that receives the deposit
  * @param unit - Villager carrying a load
  * @param task - Delivery order
+ * @param walkCache - Per-step lazy passability cache
  */
 function stepCarry(
   host: EconomyHost,
   unit: EconomyUnit,
   task: Extract<VillagerTask, { kind: "carry" }>,
+  walkCache: WalkCache,
 ): void {
   if (!unit.carry) {
     unit.task = null;
@@ -1039,7 +1163,7 @@ function stepCarry(
     unit.task = null;
     return;
   }
-  if (!besideBuilding(unit, drop)) moveToward(host, unit, drop);
+  if (!besideBuilding(unit, drop)) moveToward(host, unit, drop, walkCache);
   if (!besideBuilding(unit, drop) || !unit.carry || !unit.task) return;
   const carried = unit.carry;
   host.resources[carried.resourceId] =
@@ -1052,11 +1176,13 @@ function stepCarry(
  * @param host - World the builder walks through
  * @param unit - Villager assigned to a site
  * @param task - Build order
+ * @param walkCache - Per-step lazy passability cache
  */
 function stepBuild(
   host: EconomyHost,
   unit: EconomyUnit,
   task: Extract<VillagerTask, { kind: "build" }>,
+  walkCache: WalkCache,
 ): void {
   const building = findBuilding(host, task.buildingId);
   if (!building?.constructing) {
@@ -1064,18 +1190,21 @@ function stepBuild(
     return;
   }
   if (besideBuilding(unit, building)) return;
-  moveToward(host, unit, building);
+  moveToward(host, unit, building, walkCache);
 }
 
 /**
  * @param host - World the villager walks through
  * @param unit - Villager assigned to repairs
  * @param task - Repair order
+ * @param walkCache - Per-step lazy passability cache
+ * @param locomotion - Whether this is a sub-step locomotion tick
  */
 function stepRepair(
   host: EconomyHost,
   unit: EconomyUnit,
   task: Extract<VillagerTask, { kind: "repair" }>,
+  walkCache: WalkCache,
   locomotion = false,
 ): void {
   const building = findBuilding(host, task.buildingId);
@@ -1088,7 +1217,7 @@ function stepRepair(
     return;
   }
   if (!besideBuilding(unit, building)) {
-    moveToward(host, unit, building);
+    moveToward(host, unit, building, walkCache);
     return;
   }
   building.hp = Math.min(
@@ -1104,18 +1233,21 @@ function stepRepair(
  * @param host - World the villager retreats through
  * @param unit - Villager running for shelter
  * @param task - Garrison order
+ * @param walkCache - Per-step lazy passability cache
  */
 function stepGarrison(
   host: EconomyHost,
   unit: EconomyUnit,
   task: Extract<VillagerTask, { kind: "garrison" }>,
+  walkCache: WalkCache,
 ): void {
   const building = findBuilding(host, task.buildingId);
   if (!building?.completed) {
     unit.task = null;
     return;
   }
-  if (!besideBuilding(unit, building)) moveToward(host, unit, building);
+  if (!besideBuilding(unit, building))
+    moveToward(host, unit, building, walkCache);
   if (!besideBuilding(unit, building) || !unit.task) return;
   if (unit.carry && isDropOff(building)) {
     const carried = unit.carry;
@@ -1146,24 +1278,25 @@ function besideBuilding(
  * @param host - World whose walls and gates decide the path
  * @param unit - Unit that moves one cell
  * @param goal - Node or building to approach
+ * @param walkCache - Per-step lazy passability cache
  * @returns Whether the unit moved or was already adjacent; false when it gave up
  */
 function moveToward(
   host: EconomyHost,
   unit: EconomyUnit,
   goal: { buildingType?: string; id: string; x: number; y: number },
+  walkCache: WalkCache,
 ): boolean {
   const reach =
     goal.buildingType === undefined
       ? 1
       : footprintReach({ buildingType: goal.buildingType });
   if (chebyshev(unit, goal) <= reach) return true;
-  const disks = host.getVentVolumes();
-  if (leaveHurt(host, unit, disks)) return true;
+  if (leaveHurt(host, unit, walkCache)) return true;
   const next = nextStep(
     unit,
     goal,
-    (x, y) => canWalk(host, disks, x, y),
+    walkCache.passable,
     host.map.width,
     host.map.height,
     reach,
@@ -1223,37 +1356,21 @@ function isUnreachable(unit: EconomyUnit, targetId: string): boolean {
  * Steps a villager out of a vent before the rest of the path is planned.
  * @param host - World of footprints
  * @param unit - Villager that might be standing in a vent
- * @param disks - Vents that burn
+ * @param walkCache - Per-step lazy passability cache
  * @returns Whether the villager took an escape step
  */
 function leaveHurt(
   host: EconomyHost,
   unit: EconomyUnit,
-  disks: readonly HurtDisk[],
+  walkCache: WalkCache,
 ): boolean {
-  const out = escapeHurtCell(unit, disks, (x, y) => cellOpenToAlly(host, x, y));
+  const out = escapeHurtCell(unit, walkCache.disks, (x, y) =>
+    cellOpenWithObstacles(host, walkCache.obstacles, x, y, "ally"),
+  );
   if (!out) return false;
   unit.x = out.x;
   unit.y = out.y;
   return true;
-}
-
-/**
- * Allies walk through gates and open ground, not through walls, buildings,
- * or ember vents.
- * @param host - World of footprints
- * @param disks - Vents that burn
- * @param x - Cell column
- * @param y - Cell row
- * @returns Whether an ally can enter the cell
- */
-function canWalk(
-  host: EconomyHost,
-  disks: readonly HurtDisk[],
-  x: number,
-  y: number,
-): boolean {
-  return cellOpenToAlly(host, x, y) && cellStaysClear(disks, x, y);
 }
 
 /**
@@ -1284,9 +1401,33 @@ export function cellOpen(
   y: number,
   side: "ally" | "horde",
 ): boolean {
+  return cellOpenWithObstacles(
+    host,
+    host.getTerrainObstacles?.() ?? [],
+    x,
+    y,
+    side,
+  );
+}
+
+/**
+ * Evaluates cell openness using a pre-fetched terrain obstacle list.
+ * @param host - World of footprints
+ * @param obstacles - Terrain obstacles to test against
+ * @param x - Cell column
+ * @param y - Cell row
+ * @param side - Ally units use gates; the horde does not
+ * @returns Whether that side can enter the cell
+ */
+function cellOpenWithObstacles(
+  host: EconomyHost,
+  obstacles: readonly TerrainObstacle[],
+  x: number,
+  y: number,
+  side: "ally" | "horde",
+): boolean {
   if (x < 0 || y < 0 || x >= host.map.width || y >= host.map.height)
     return false;
-  const obstacles = host.getTerrainObstacles?.() ?? [];
   for (const obstacle of obstacles) {
     const dx = x - obstacle.x;
     const dy = y - obstacle.y;

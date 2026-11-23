@@ -6,7 +6,9 @@ import {
 import {
   distance,
   distanceToSegment,
+  floodDistances,
   sideOfLine,
+  stepsTo,
 } from "../../../../logic/mapgen";
 import { RESOURCE_IDS } from "../../../../logic/types";
 import { SPAWN_EAST_INSET } from "../../../../logic/waves/constants";
@@ -95,19 +97,19 @@ describe("generateAshenGateMap", () => {
     }
   });
 
-  test("keeps the recipe: size, stockpile, stable ids, two of every resource", () => {
+  test("keeps the recipe: size, stockpile, stable ids, extra nearby wood", () => {
     const map = generateAshenGateMap(5);
     expect({ height: map.height, width: map.width }).toEqual(
       ASHEN_GATE_MAP_SIZE,
     );
     expect(map.stockpile).toEqual(ASHEN_GATE_STOCKPILE);
     expect(map.nodes.map((node) => node.id)).toEqual(
-      ASHEN_GATE_NODE_SLOTS.map((slot) => slot.id),
+      ASHEN_GATE_NODE_SLOTS.flatMap((slot) => [slot.id, `${slot.id}-cluster`]),
     );
     for (const resourceId of RESOURCE_IDS) {
       expect(
         map.nodes.filter((node) => node.resourceId === resourceId),
-      ).toHaveLength(2);
+      ).toHaveLength(resourceId === "wood" ? 8 : 4);
     }
     expect(map.veins.map((vein) => vein.id)).toEqual([
       "ashen-vein-hold",
@@ -121,7 +123,39 @@ describe("generateAshenGateMap", () => {
       "spine-choke",
       "flank-choke",
       "canyon-choke",
+      ...map.bridges.map((_, index) => `bridge-choke-${index + 1}`),
     ]);
+  });
+
+  test("every deposit has a nearby matching cluster mate", () => {
+    for (const seed of SEEDS) {
+      const map = mapFor(seed);
+      for (const slot of ASHEN_GATE_NODE_SLOTS) {
+        const anchor = nodeOf(map, slot.id);
+        const mate = nodeOf(map, `${slot.id}-cluster`);
+        expect(mate.resourceId).toBe(anchor.resourceId);
+        expect(mate.remaining).toBe(anchor.remaining);
+        expect(distance(anchor, mate)).toBeGreaterThan(0);
+        expect(distance(anchor, mate)).toBeLessThanOrEqual(7);
+      }
+    }
+  });
+
+  test("six nearby wood patches provide 1440 timber for early Housing", () => {
+    for (const seed of SEEDS) {
+      const map = mapFor(seed);
+      const nearWood = ASHEN_GATE_NODE_SLOTS.filter(
+        (slot) => slot.band === "near" && slot.resourceId === "wood",
+      ).flatMap((slot) => [
+        nodeOf(map, slot.id),
+        nodeOf(map, `${slot.id}-cluster`),
+      ]);
+      expect(nearWood).toHaveLength(6);
+      expect(nearWood.reduce((total, node) => total + node.remaining, 0)).toBe(
+        1440,
+      );
+      expect(validateAshenGateMap(map)).toEqual([]);
+    }
   });
 
   test("the Camp sits on the west side with an open building apron", () => {
@@ -200,9 +234,11 @@ describe("generateAshenGateMap", () => {
   test("outer deposits stay off the horde lane and off the map's rim", () => {
     for (const seed of SEEDS) {
       const map = mapFor(seed);
-      for (const slot of ASHEN_GATE_NODE_SLOTS) {
-        if (slot.band !== "outer") continue;
-        const node = nodeOf(map, slot.id);
+      const outerIds = ASHEN_GATE_NODE_SLOTS.filter(
+        (slot) => slot.band === "outer",
+      ).flatMap((slot) => [slot.id, `${slot.id}-cluster`]);
+      for (const id of outerIds) {
+        const node = nodeOf(map, id);
         const lane = distanceToSegment(node, campOf(map), gateOf(map));
         expect(lane).toBeGreaterThanOrEqual(6);
         expect(node.x).toBeGreaterThanOrEqual(3);
@@ -213,7 +249,7 @@ describe("generateAshenGateMap", () => {
     }
   });
 
-  test("starts a captain and the villagers beside the Camp", () => {
+  test("starts a Cultivator, Rider and the villagers beside the Camp", () => {
     const map = generateAshenGateMap(77);
     const camp = campOf(map);
     const villagers = map.units.filter((unit) => unit.classId === undefined);
@@ -221,10 +257,70 @@ describe("generateAshenGateMap", () => {
     const captain = map.units.find((unit) => unit.id === "ashen-captain");
     expect(captain?.classId).toBe("cultivator");
     expect(captain?.realmId).toBe("qi_gathering");
+    const rider = map.units.find((unit) => unit.id === "ashen-rider");
+    expect(rider?.classId).toBe("rider");
+    expect(rider?.realmId).toBe("qi_gathering");
+    expect(rider?.maxHp).toBe(105);
+    expect(map.units).toHaveLength(5);
+    expect({ x: rider?.x, y: rider?.y }).not.toEqual({
+      x: captain?.x,
+      y: captain?.y,
+    });
     for (const unit of map.units) {
       expect(distance(unit, camp)).toBeLessThanOrEqual(5 + CAMP_EDGE);
       const site = { buildingType: "camp", ...camp };
       expect(footprintCovers(site, unit.x, unit.y)).toBe(false);
+    }
+  });
+});
+
+describe("Ashen Gate waterways", () => {
+  test("every map floods rivers crossed by reachable bridges", () => {
+    // The reachability flood is the slow part, so sample a subset of seeds.
+    for (const seed of SEEDS.slice(0, 15)) {
+      const map = mapFor(seed);
+      const water = map.obstacles.filter(
+        (entry) => entry.kind === "deep_water",
+      );
+      expect(water.length).toBeGreaterThan(30);
+      expect(map.bridges.length).toBeGreaterThanOrEqual(4);
+      const camp = map.buildings[0] as { x: number; y: number };
+      const field = floodDistances(
+        { height: map.height, width: map.width },
+        camp,
+        (x, y) =>
+          !map.obstacles.some(
+            (entry) => distance(entry, { x, y }) <= entry.radius + 0.05,
+          ),
+      );
+      for (const bridge of map.bridges) {
+        const cell = { x: Math.round(bridge.x), y: Math.round(bridge.y) };
+        expect(stepsTo(field, cell)).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+
+  test("a dry map has no water and no bridges", () => {
+    const map = generateAshenGateMap(1, { waterways: false });
+    expect(map.bridges).toHaveLength(0);
+    expect(map.obstacles.some((entry) => entry.kind === "deep_water")).toBe(
+      false,
+    );
+  });
+
+  test("water never touches the Camp apron, vents, or deposits", () => {
+    for (const seed of SEEDS) {
+      const map = mapFor(seed);
+      const water = map.obstacles.filter(
+        (entry) => entry.kind === "deep_water",
+      );
+      const camp = map.buildings[0] as { x: number; y: number };
+      for (const disk of water) {
+        expect(distance(disk, camp)).toBeGreaterThan(disk.radius + 6);
+        for (const node of map.nodes) {
+          expect(distance(disk, node)).toBeGreaterThan(disk.radius);
+        }
+      }
     }
   });
 });

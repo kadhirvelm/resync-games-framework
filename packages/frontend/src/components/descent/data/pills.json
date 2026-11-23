@@ -45,7 +45,7 @@
     "school": "blood"
   },
   {
-    "description": "+20% success chance and consumed when a breakthrough begins.",
+    "description": "+20% success chance for breakthroughs beyond Sworn; consumed when one begins.",
     "effect": { "amount": 0.2, "stat": "success_chance" },
     "id": "breakthrough_pill",
     "name": "Breakthrough Pill",

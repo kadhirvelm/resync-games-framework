@@ -1,5 +1,5 @@
 /** Painted surfaces that dress the Ashen Gate plateau and abyss. */
-export type AshenGateTextureRole = "cliff" | "ground" | "lava";
+export type AshenGateTextureRole = "cliff" | "ground" | "lava" | "water";
 
 /** One generated texture the battlefield looks up by its prompt tag. */
 export interface AshenGateTextureDefinition {
@@ -16,6 +16,7 @@ export const ASHEN_GATE_TEXTURES = [
   { role: "ground", tag: "Descent Ashen Gate ground texture" },
   { role: "lava", tag: "Descent Ashen Gate lava texture" },
   { role: "cliff", tag: "Descent Ashen Gate cliff texture" },
+  { role: "water", tag: "Descent Ashen Gate water texture" },
 ] as const satisfies readonly AshenGateTextureDefinition[];
 
 /** Image URLs for each painted surface that has been generated. */

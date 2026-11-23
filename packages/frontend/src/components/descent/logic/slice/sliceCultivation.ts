@@ -35,11 +35,13 @@ const SWORN_PROOF_THRESHOLD = 3;
 /** Options when opening the cultivation system against a sim world. */
 export interface OpenCultivationOptions {
   /**
-   * Satisfies Cultivation Hall pill and material gates virtually so a
-   * starting Captain can attempt a battlefield breakthrough to Sworn before
-   * Stronghold + Cultivation Hall are built.
+   * Satisfies Cultivation Hall pill, material, and Hold-tier gates virtually
+   * so a starting Captain can attempt a battlefield breakthrough to Sworn
+   * before an Outpost + Cultivation Hall are built.
    */
   bypassHallMaterials?: boolean;
+  /** Specific completed Hall whose Spirit Vein bonus should be used. */
+  hallId?: string;
 }
 
 /** Realm id for each rank title, used by economy population weights. */
@@ -65,7 +67,11 @@ export function openCultivation(
   const system = new CultivationSystem(
     { maxRankForLayer: () => layerRankCap(world) },
     combatPort(world),
-    stockpilePort(world, options?.bypassHallMaterials === true),
+    stockpilePort(
+      world,
+      options?.bypassHallMaterials === true,
+      options?.hallId,
+    ),
   );
   system.restoreState(sliceState(world).cultivation);
   return system;
@@ -82,14 +88,13 @@ export function isStartingCaptain(unitId: string): boolean {
 }
 
 /**
- * Reports whether the opening swarm wave (first two waves) has spawned and
- * been cleared from the field.
+ * Reports whether the opening scout wave has spawned and been cleared.
  * @param world - Sim world
- * @returns Whether at least two waves have spawned and no horde bodies remain
+ * @returns Whether at least one wave has spawned and no horde bodies remain
  */
-export function isSwarmWaveRepelled(world: SimWorldState): boolean {
+export function isOpeningWaveRepelled(world: SimWorldState): boolean {
   const waves = waveState(world);
-  return waves.spawnedWaveIds.length >= 2 && waves.units.length === 0;
+  return waves.spawnedWaveIds.length >= 1 && waves.units.length === 0;
 }
 
 /**
@@ -97,7 +102,7 @@ export function isSwarmWaveRepelled(world: SimWorldState): boolean {
  * breakthrough to Sworn without a Cultivation Hall.
  * @param world - Sim world
  * @param unitId - Candidate unit id
- * @returns Whether this unit is an Ashborn starting Captain after the swarm wave
+ * @returns Whether this unit is an Ashborn starting Captain after the scout wave
  */
 export function canUseCaptainBattlefieldBreakthrough(
   world: SimWorldState,
@@ -108,13 +113,13 @@ export function canUseCaptainBattlefieldBreakthrough(
   if (record?.rank !== "Ashborn") return false;
   return (
     sliceState(world).captainBreakthroughUnlocked === true ||
-    isSwarmWaveRepelled(world)
+    isOpeningWaveRepelled(world)
   );
 }
 
 /**
  * Unlocks the starting Captain's battlefield breakthrough once the opening
- * swarm wave is repelled, topping up living Ashborn Captains to the Sworn
+ * scout wave is repelled, topping up living Ashborn Captains to the Sworn
  * merit, essence, and combat-proof thresholds so they can break through right
  * away.
  * @param world - Sim world
@@ -125,7 +130,7 @@ export function unlockCaptainBattlefieldBreakthrough(
 ): boolean {
   const state = sliceState(world);
   if (state.captainBreakthroughUnlocked === true) return false;
-  if (!isSwarmWaveRepelled(world)) return false;
+  if (!isOpeningWaveRepelled(world)) return false;
   state.captainBreakthroughUnlocked = true;
   const cultivation = openCultivation(world);
   let grantedAny = false;
@@ -223,23 +228,91 @@ export function layerSchoolModifier(
   return layer?.schoolModifiers[school] ?? 1;
 }
 
+/** Precomputed lookup of completed Cultivation Halls, globally and per owner. */
+export interface CompletedHallIndex {
+  anyHall: ReturnType<typeof asBuilding> | null;
+  byOwner: Map<string, ReturnType<typeof asBuilding>>;
+}
+
 /**
- * The completed Cultivation Hall, optionally restricted to one player.
+ * Indexes completed Cultivation Halls once per tick so callers can resolve a
+ * player's Hall in O(1) instead of scanning `world.buildings` per soldier.
+ * @param world - Sim world
+ * @returns Lookup matching `completedHall(world, ownerId)` semantics
+ */
+export function indexCompletedHalls(world: SimWorldState): CompletedHallIndex {
+  let anyHall: ReturnType<typeof asBuilding> | null = null;
+  const byOwner = new Map<string, ReturnType<typeof asBuilding>>();
+  for (const building of world.buildings) {
+    const record = asBuilding(building);
+    if (record.buildingType !== "cultivation_hall" || !record.completed) {
+      continue;
+    }
+    if (anyHall === null) anyHall = record;
+    if (record.ownerId !== undefined && !byOwner.has(record.ownerId)) {
+      byOwner.set(record.ownerId, record);
+    }
+  }
+  return { anyHall, byOwner };
+}
+
+/**
+ * Resolves a completed Cultivation Hall from a precomputed index.
+ * @param index - Precomputed hall index
+ * @param ownerId - Multiplayer owner to match, or undefined for the whole Hold
+ * @returns The first matching completed Hall, or null
+ */
+export function resolveCompletedHall(
+  index: CompletedHallIndex,
+  ownerId?: string,
+): ReturnType<typeof asBuilding> | null {
+  if (ownerId === undefined) return index.anyHall;
+  return index.byOwner.get(ownerId) ?? null;
+}
+
+/**
+ * The completed Cultivation Hall, optionally restricted to one player and id.
  * @param world - Sim world
  * @param ownerId - Multiplayer owner to match; omitted for the whole Hold
+ * @param hallId - Specific Hall to use; omitted for the first completed Hall
  * @returns The hall record, or null
  */
 export function completedHall(
   world: SimWorldState,
   ownerId?: string,
+  hallId?: string,
 ): ReturnType<typeof asBuilding> | null {
   for (const building of world.buildings) {
     const record = asBuilding(building);
     if (record.buildingType !== "cultivation_hall") continue;
+    if (hallId !== undefined && record.id !== hallId) continue;
     if (ownerId !== undefined && record.ownerId !== ownerId) continue;
     if (record.completed) return record;
   }
   return null;
+}
+
+/**
+ * Resolves the Hall that grants a Spirit Vein breakthrough bonus for a unit.
+ * @param targetHall - Specific Hall selected by id, if `hallId` was provided
+ * @param hallId - Specific Hall id filter, if any
+ * @param halls - Lazily built hall index when no specific `hallId` is set
+ * @param ownerId - Unit owner id
+ * @returns Matching completed Hall, or null
+ */
+function resolveBonusHall(
+  targetHall: ReturnType<typeof asBuilding> | null,
+  hallId: string | undefined,
+  halls: CompletedHallIndex | undefined,
+  ownerId: string | undefined,
+): ReturnType<typeof asBuilding> | null {
+  if (hallId !== undefined) {
+    if (targetHall === null) return null;
+    if (ownerId !== undefined && targetHall.ownerId !== ownerId) return null;
+    return targetHall;
+  }
+  if (halls === undefined) return null;
+  return resolveCompletedHall(halls, ownerId);
 }
 
 /**
@@ -290,14 +363,22 @@ function combatPort(world: SimWorldState): CultivationCombatPort {
 /**
  * Cultivation's view of the economy: stockpile, pills, Hall, and population.
  * @param world - Sim world
- * @param bypassHallMaterials - When true, satisfies pill and tier-material gates virtually
+ * @param bypassHallMaterials - When true, satisfies pill, material, and Hold-tier gates virtually
+ * @param hallId - Specific Hall selected for the attempt, if any
  * @returns A port backed by the economy module's records
  */
 function stockpilePort(
   world: SimWorldState,
   bypassHallMaterials: boolean,
+  hallId?: string,
 ): CultivationStockpilePort {
   const host = economyHost(world, ECONOMY_STEP_TICKS);
+  const targetHall =
+    hallId !== undefined ? completedHall(world, undefined, hallId) : null;
+  const hallOwnerId =
+    hallId !== undefined ? targetHall?.ownerId : completedHall(world)?.ownerId;
+  let unitById: Map<string, SimWorldState["units"][number]> | undefined;
+  let halls: CompletedHallIndex | undefined;
   return {
     addItem: (itemId, count = 1) => addItem(host, itemId, count),
     canAffordPop: (delta) => canAffordPop(host, delta),
@@ -305,7 +386,22 @@ function stockpilePort(
       if (bypassHallMaterials && itemId === "breakthrough_pill") return true;
       return consumeItem(host, itemId);
     },
-    getHallTier: (): HallTier => getHoldTier(host),
+    getBreakthroughSuccessBonus: (unitId) => {
+      if (unitById === undefined) {
+        unitById = new Map(world.units.map((entry) => [entry.id, entry]));
+      }
+      const unit = unitById.get(unitId);
+      if (!unit || !isEconomyUnit(unit)) return 0;
+      if (hallId === undefined && halls === undefined) {
+        halls = indexCompletedHalls(world);
+      }
+      const bonus = resolveBonusHall(targetHall, hallId, halls, unit.ownerId)
+        ?.bonuses.vein;
+      if (bonus?.id !== "breakthrough_success") return 0;
+      return Math.max(0, bonus.amount);
+    },
+    getHallTier: (): HallTier =>
+      bypassHallMaterials ? "Outpost" : getHoldTier(host, hallOwnerId),
     getItemCount: (itemId) => {
       if (bypassHallMaterials && itemId === "breakthrough_pill") {
         return Math.max(1, getItemCount(host, itemId));

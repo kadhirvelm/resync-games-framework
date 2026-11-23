@@ -5,6 +5,7 @@
 
 import { footprintCovers, footprintDistance, footprintGap } from "./footprint";
 import type { BonusFlag, EconomyBuilding, EconomyHost } from "./model";
+import { getHoldTier } from "./queries";
 import { asBuilding } from "./records";
 import { type BuildingDef, buildingDef } from "./tables";
 
@@ -39,7 +40,7 @@ function veinFlag(
 ): BonusFlag | null {
   if (!building.onSpiritVein || !def) return null;
   const bonus =
-    host.economy.tier === "Citadel" && def.veinBonusAtCitadel
+    getHoldTier(host, building.ownerId) === "Citadel" && def.veinBonusAtCitadel
       ? def.veinBonusAtCitadel
       : def.veinBonus;
   if (!bonus) return null;

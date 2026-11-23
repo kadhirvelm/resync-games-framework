@@ -41,18 +41,19 @@ const TIER_SUMMARIES: Readonly<
       "Omen Tower",
       "Cultivator Sanctum",
       "Spirit Array",
+      "Cultivation Hall",
     ],
     headline: "Hold Upgraded: Outpost",
     summary:
-      "Unlocks Hunters & Riders at the Barracks, plus Ward Tower, Farm, Gate, Omen Tower, Cultivator Sanctum, and Spirit Array.",
+      "Unlocks Hunters & Riders, the Cultivator Sanctum, Spirit Array, and Cultivation Hall for early breakthroughs.",
     tier: "Outpost",
     units: ["Hunters", "Riders"],
   },
   Stronghold: {
-    buildings: ["Hell Market", "Cultivation Hall", "Meditation Pavilion"],
+    buildings: ["Hell Market", "Meditation Pavilion"],
     headline: "Hold Upgraded: Stronghold",
     summary:
-      "Unlocks Hell Market, Cultivation Hall, and Meditation Pavilion for Coin trade and breakthroughs.",
+      "Unlocks Hell Market and Meditation Pavilion for Coin trade and faster cultivation.",
     tier: "Stronghold",
     units: [],
   },

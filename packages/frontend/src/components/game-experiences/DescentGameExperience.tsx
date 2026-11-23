@@ -4,10 +4,10 @@
 
 import type {
   DescentCampaignState,
-  DescentMapId,
   DescentRoomPlayer,
 } from "@resync-game-framework/api";
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -70,8 +70,6 @@ interface DescentStartScreenProps {
   onContinue: () => void;
   onExit: () => void;
   onMultiplayer: () => void;
-  onCampaign: () => void;
-  onMultiplayerTutorial: () => void;
   onNewGame: () => void;
   /** Enters or leaves fullscreen; the button hides without it. */
   onToggleFullscreen?: () => void;
@@ -198,7 +196,7 @@ function useDescentSim(
   }, [active, sim]);
 
   /** Clears the saved run and replaces the mounted sim. */
-  const restart = () => {
+  const restart = useCallback(() => {
     try {
       window.localStorage.removeItem(saveSlotKey(AUTOSAVE_SLOT));
     } catch {
@@ -207,9 +205,14 @@ function useDescentSim(
     setRunId((current) => current + 1);
     setSession({
       hasSavedRun: false,
-      sim: createAshenGateSim({ seed: createRunSeed(), shouldHoldWave }),
+      sim: createAshenGateSim({
+        seed: createRunSeed(),
+        shouldHoldWave: (world, nextWaveIndex) =>
+          tutorialActiveRef.current &&
+          shouldHoldWaveForTutorial(world, nextWaveIndex),
+      }),
     });
-  };
+  }, [tutorialActiveRef]);
 
   return {
     hasSavedRun: session.hasSavedRun,
@@ -231,8 +234,6 @@ function DescentStartScreen({
   onContinue,
   onExit,
   onMultiplayer,
-  onCampaign,
-  onMultiplayerTutorial,
   onNewGame,
   onToggleFullscreen,
 }: DescentStartScreenProps) {
@@ -277,14 +278,8 @@ function DescentStartScreen({
           >
             <span>{hasSavedRun ? "New game" : "Start"}</span>
           </button>
-          <button onClick={onCampaign} type="button">
-            <span>Co-op Campaign</span>
-          </button>
           <button onClick={onMultiplayer} type="button">
             <span>Co-op Multiplayer</span>
-          </button>
-          <button onClick={onMultiplayerTutorial} type="button">
-            <span>Co-op Tutorial</span>
           </button>
         </nav>
 
@@ -361,7 +356,10 @@ function DescentMultiplayerMatch({
   soundEnabled: boolean;
   tutorialMode: boolean;
 }) {
-  const shellModel = useMemo(() => buildShellModel(snapshot), [snapshot]);
+  const shellModel = useMemo(
+    () => buildShellModel(snapshot, localPlayerId),
+    [localPlayerId, snapshot],
+  );
   useDescentAudio({
     active: true,
     enabled: soundEnabled,
@@ -370,37 +368,54 @@ function DescentMultiplayerMatch({
     snapshot,
   });
 
+  const hasOutcome = shellModel.outcome !== null;
+  const multiplayerBar = useMemo(
+    () => ({
+      campaignDebrief:
+        campaign !== undefined &&
+        (hasOutcome || campaign.status !== "active") ? (
+          <DescentCampaignDebrief
+            campaign={campaign}
+            error={matchError}
+            isHost={isHost}
+            onAction={onCampaignAction}
+            onExit={onLeaveRoom}
+            roster={roster}
+          />
+        ) : undefined,
+      campaignProgress:
+        campaign === undefined ? undefined : (
+          <DescentCampaignProgress campaign={campaign} />
+        ),
+      error: matchError,
+      isSpectator: !isParticipant,
+      onLeaveRoom,
+      onRestart:
+        isHost && campaign === undefined && matchError !== null
+          ? () => void onRestart()
+          : undefined,
+      roomId,
+    }),
+    [
+      campaign,
+      hasOutcome,
+      isHost,
+      isParticipant,
+      matchError,
+      onCampaignAction,
+      onLeaveRoom,
+      onRestart,
+      roomId,
+      roster,
+    ],
+  );
+
   return (
     <DescentView
       fullscreen={fullscreen}
       key={matchKey}
       localPlayerId={localPlayerId}
-      multiplayer={{
-        campaignDebrief:
-          campaign !== undefined &&
-          (shellModel.outcome !== null || campaign.status !== "active") ? (
-            <DescentCampaignDebrief
-              campaign={campaign}
-              error={matchError}
-              isHost={isHost}
-              onAction={onCampaignAction}
-              onExit={onLeaveRoom}
-              roster={roster}
-            />
-          ) : undefined,
-        campaignProgress:
-          campaign === undefined ? undefined : (
-            <DescentCampaignProgress campaign={campaign} />
-          ),
-        error: matchError,
-        isSpectator: !isParticipant,
-        onLeaveRoom,
-        onRestart:
-          isHost && campaign === undefined && matchError !== null
-            ? () => void onRestart()
-            : undefined,
-        roomId,
-      }}
+      multiplayer={multiplayerBar}
       onCommand={onCommand}
       onRestart={isHost && campaign === undefined ? onRestart : undefined}
       onSetPaused={onSetPaused}
@@ -422,7 +437,6 @@ function DescentMultiplayerMatch({
  * @returns The co-op lobby or live multiplayer Descent battlefield
  */
 function DescentMultiplayerExperience({
-  defaultMapId,
   fullscreen,
   initialRoomCode,
   onBack,
@@ -430,7 +444,6 @@ function DescentMultiplayerExperience({
   onToggleFullscreen,
   soundEnabled,
 }: {
-  defaultMapId: DescentMapId;
   fullscreen: boolean;
   initialRoomCode: string | null;
   onBack: () => void;
@@ -475,7 +488,6 @@ function DescentMultiplayerExperience({
   ) {
     return (
       <DescentLobby
-        defaultMapId={defaultMapId}
         error={matchError ?? error}
         isHost={isHost}
         onBack={async () => {
@@ -542,8 +554,6 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
   const [mode, setMode] = useState<"multiplayer" | "solo" | "title">(() =>
     initialRoomCode === null ? "title" : "multiplayer",
   );
-  const [defaultMultiplayerMap, setDefaultMultiplayerMap] =
-    useState<DescentMapId>("ashen_crucible");
   const [battlefieldReady, setBattlefieldReady] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [soloTutorialActive, setSoloTutorialActive] = useState(
@@ -551,6 +561,7 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
   );
   const soloTutorialRef = useRef(soloTutorialActive);
   soloTutorialRef.current = soloTutorialActive;
+  const soloTutorialMarkedDoneRef = useRef(!soloTutorialActive);
   const screen = useFullscreen();
   const toggleFullscreen = screen.available ? screen.toggle : undefined;
   const isSoloPlaying = mode === "solo";
@@ -561,18 +572,26 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
   const shellModel = useMemo(() => buildShellModel(snapshot), [snapshot]);
 
   useEffect(() => {
-    if (!isSoloPlaying || !soloTutorialActive) return;
+    if (
+      !isSoloPlaying ||
+      !soloTutorialActive ||
+      soloTutorialMarkedDoneRef.current
+    ) {
+      return;
+    }
     if (evaluateTutorialProgress(snapshot).allComplete) {
+      soloTutorialMarkedDoneRef.current = true;
       markSoloTutorialDone();
     }
   }, [isSoloPlaying, soloTutorialActive, snapshot]);
 
   /** Dismisses the solo tutorial guide and releases any held tutorial waves. */
-  const dismissSoloTutorial = () => {
+  const dismissSoloTutorial = useCallback(() => {
     soloTutorialRef.current = false;
+    soloTutorialMarkedDoneRef.current = true;
     setSoloTutorialActive(false);
     markSoloTutorialDone();
-  };
+  }, []);
   useDescentAudio({
     active: isSoloPlaying,
     enabled: soundEnabled,
@@ -582,15 +601,43 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
   });
 
   /** Starts a fresh run; its battlefield loads again before the clock runs. */
-  const restartRun = () => {
+  const restartRun = useCallback(() => {
     setBattlefieldReady(false);
     restart();
-  };
+  }, [restart]);
+
+  /** Enqueues one player command against the active solo sim. */
+  const handleSoloCommand = useCallback(
+    (command: Parameters<DescentSim["enqueue"]>[0]) => {
+      sim.enqueue(command);
+    },
+    [sim],
+  );
+
+  /** Marks the solo battlefield ready so the simulation clock can start. */
+  const handleSoloLoaded = useCallback(() => {
+    setBattlefieldReady(true);
+  }, []);
+
+  /** Pauses or resumes the active solo sim. */
+  const handleSoloSetPaused = useCallback(
+    (paused: boolean) => {
+      sim.setPaused(paused);
+    },
+    [sim],
+  );
+
+  /** Updates the active solo sim speed multiplier. */
+  const handleSoloSetSpeed = useCallback(
+    (speed: SimSpeed) => {
+      sim.setSpeed(speed);
+    },
+    [sim],
+  );
 
   if (mode === "multiplayer") {
     return (
       <DescentMultiplayerExperience
-        defaultMapId={defaultMultiplayerMap}
         fullscreen={screen.fullscreen}
         initialRoomCode={initialRoomCode}
         onBack={() => {
@@ -610,11 +657,6 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
       <DescentStartScreen
         fullscreen={screen.fullscreen}
         hasSavedRun={hasSavedRun}
-        onCampaign={() => {
-          unlockDescentAudio();
-          setDefaultMultiplayerMap("ashen_campaign_1");
-          setMode("multiplayer");
-        }}
         onContinue={() => {
           unlockDescentAudio();
           setMode("solo");
@@ -622,12 +664,6 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
         onExit={onExit}
         onMultiplayer={() => {
           unlockDescentAudio();
-          setDefaultMultiplayerMap("ashen_crucible");
-          setMode("multiplayer");
-        }}
-        onMultiplayerTutorial={() => {
-          unlockDescentAudio();
-          setDefaultMultiplayerMap("ashen_crucible_tutorial");
           setMode("multiplayer");
         }}
         onNewGame={() => {
@@ -644,15 +680,13 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
     <DescentView
       fullscreen={screen.fullscreen}
       key={runId}
-      onCommand={(command) => {
-        sim.enqueue(command);
-      }}
+      onCommand={handleSoloCommand}
       onDismissTutorial={dismissSoloTutorial}
-      onLoaded={() => setBattlefieldReady(true)}
+      onLoaded={handleSoloLoaded}
       onRestart={restartRun}
-      onSetPaused={(paused) => sim.setPaused(paused)}
+      onSetPaused={handleSoloSetPaused}
       onSetSoundEnabled={setSoundEnabled}
-      onSetSpeed={(speed) => sim.setSpeed(speed)}
+      onSetSpeed={handleSoloSetSpeed}
       onToggleFullscreen={toggleFullscreen}
       shellModel={shellModel}
       snapshot={snapshot}

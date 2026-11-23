@@ -1,8 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import type { AshenCruciblePlayer } from "../../data/layers/ashen_crucible";
+import { readPresentation } from "../../views/presentation";
 import { buildShellModel } from "../../views/shellModel";
 import { createMultiplayerDescentSim } from "../ashenGateSlice";
+import { REALMS } from "../cultivation/data";
 import { createBuildingRecord, createUnitRecord } from "../economy/records";
+import { buildingDef } from "../economy/tables";
 import {
   calculatePlayerScores,
   creditPlayerCultivation,
@@ -16,6 +19,7 @@ import {
   type AshenGateSliceState,
   createSliceState,
 } from "../slice/sliceState";
+import { trainingPlan } from "../slice/sliceTraining";
 import type { WaveClockState } from "../waves/types";
 
 const PLAYERS: readonly AshenCruciblePlayer[] = [
@@ -80,19 +84,36 @@ describe("Descent multiplayer scoring", () => {
 
     const scores = calculatePlayerScores(world);
 
-    // (18 villager + 45 Warden + 50 Housing) × 20%, rounded.
+    const villagerValue = Object.values(trainingPlan("villager").cost).reduce(
+      (sum, amount) => sum + amount,
+      0,
+    );
+    const wardenValue = Object.values(trainingPlan("warden").cost).reduce(
+      (sum, amount) => sum + amount,
+      0,
+    );
+    const housingValue = Object.values(
+      buildingDef("housing")?.cost ?? {},
+    ).reduce((sum, amount) => sum + amount, 0);
+    const campValue = Object.values(buildingDef("camp")?.cost ?? {}).reduce(
+      (sum, amount) => sum + amount,
+      0,
+    );
+    const p1Economy = Math.round(
+      (villagerValue + wardenValue + housingValue) * 0.2,
+    );
+    const p2Economy = Math.round((villagerValue + campValue) * 0.2);
     expect(scores[0]?.score).toEqual({
       cultivation: 0,
-      economy: 23,
+      economy: p1Economy,
       military: 0,
-      total: 23,
+      total: p1Economy,
     });
-    // (18 villager + 20 Camp) × 20%, rounded.
     expect(scores[1]?.score).toEqual({
       cultivation: 0,
-      economy: 8,
+      economy: p2Economy,
       military: 0,
-      total: 8,
+      total: p2Economy,
     });
   });
 
@@ -106,21 +127,34 @@ describe("Descent multiplayer scoring", () => {
     creditPlayerCultivation(world, "p1", "Sworn");
     creditPlayerMilitary(world, "not-in-the-roster", raiderValue);
 
+    const cultivation = Math.round(
+      REALMS.filter(
+        (realm) => realm.rank === "Ashborn" || realm.rank === "Sworn",
+      ).reduce(
+        (sum, realm) =>
+          sum +
+          (realm.breakthrough?.essence ?? 0) +
+          Object.values(realm.breakthrough?.materials ?? {}).reduce(
+            (total, amount) => total + amount,
+            0,
+          ),
+        0,
+      ) * 0.2,
+    );
+    const military = Math.round(2 * raiderValue * 0.2);
     expect(calculatePlayerScores(world)[0]?.score).toEqual({
-      // Ashborn: 50 essence + 7 materials; Sworn: 150 + 25.
-      cultivation: 46,
+      cultivation,
       economy: 0,
-      // Two 45-resource Raiders at 20%.
-      military: 18,
-      total: 64,
+      military,
+      total: cultivation + military,
     });
     expect(calculatePlayerScores(world)[1]?.score.total).toBe(0);
 
     world.units = [];
     expect(calculatePlayerScores(world)[0]?.score).toMatchObject({
-      cultivation: 46,
+      cultivation,
       economy: 0,
-      military: 18,
+      military,
     });
   });
 
@@ -134,7 +168,9 @@ describe("Descent multiplayer scoring", () => {
     expect(calculatePlayerScores(world)[0]?.score.total).toBe(0);
     creditPlayerMilitary(world, "p2", unitResourceValue("hunter"));
 
-    expect(calculatePlayerScores(world)[1]?.score.military).toBe(9);
+    expect(calculatePlayerScores(world)[1]?.score.military).toBe(
+      Math.round(unitResourceValue("hunter") * 0.2),
+    );
   });
 
   it("attributes a real combat kill to the killing player's military score", () => {
@@ -284,6 +320,10 @@ describe("Descent multiplayer scoring", () => {
   it("publishes changing scores through the live co-op shell model", () => {
     const sim = createMultiplayerDescentSim({ players: PLAYERS, seed: 777 });
     const initial = buildShellModel(sim.snapshot()).players;
+    expect(readPresentation(sim.snapshot().meta).pop).toEqual({
+      cap: 16,
+      used: 12,
+    });
     const p2Camp = sim
       .snapshot()
       .buildings.find(
@@ -298,9 +338,13 @@ describe("Descent multiplayer scoring", () => {
       classId: "villager",
       type: "train_unit",
     });
-    sim.step(260);
+    sim.step(trainingPlan("villager").seconds * TICKS_PER_SECOND + 1);
 
     const updated = buildShellModel(sim.snapshot()).players;
+    expect(readPresentation(sim.snapshot().meta).pop).toEqual({
+      cap: 16,
+      used: 13,
+    });
     expect(updated[0]?.score).toEqual(initial[0]?.score);
     expect(updated[1]?.score.economy).toBeGreaterThan(
       initial[1]?.score.economy ?? 0,

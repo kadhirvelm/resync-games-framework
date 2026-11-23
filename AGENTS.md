@@ -342,10 +342,12 @@ and the battlefield draws each building to fill its square. Camps and
 Barracks publish their three-slot training queues and saved rally points;
 completed batches receive movement orders toward that building's rally point.
 Renewable economy buildings declare timed `production` rows in
-`data/buildings.json`; a cycle pays its inputs when it starts and grants its
-outputs after `everyTicks` progress. A row with `workers` (Well 3, Farm and
-Managed Forest 1) runs only while villagers with a `work` task stand beside
-it, each adding one progress per step; rows without it run on their own.
+`data/buildings.json`; a cycle pays its inputs when it starts and finishes after
+`everyTicks` progress. A row with `workers` (Well 3, Farm, Managed Forest,
+and Stone Quarry 1) runs only while villagers with a `work` task stand beside
+it, each adding one progress per step and hauling finished output to a drop-off;
+rows without workers run on their own. The Camp-tier Managed Forest consumes
+water to produce renewable wood.
 A `harvest` row (Spirit Herb Garden) grows on its own, then waits ripe until
 one villager with a `harvest` task picks it and carries it to a drop-off
 (`logic/economy/harvest.ts`); the HUD tracker shows each crop's growth.
@@ -365,6 +367,16 @@ classes.
 Surface nodes reuse four
 harvestable prop families (grove, tree, outcrop, and well) with resource-color
 cues, while ember vents use one generated hazard prop with a procedural glow.
+Both maps also carry water: `placeWaterways` (`logic/mapgen/rivers.ts`) lays
+north-south rivers as chains of overlapping `deep_water` disks (impassable
+terrain obstacles, so pathing, building placement, and fog already handle them)
+plus small ponds. Each river leaves a dry gap at its bridges; the walkable
+`TerrainBridge` list is saved in `world.meta.layerTerrain.bridges`, read through
+`worldTerrainBridges`, and published as `kind: "bridge"` terrain readouts that
+never block movement. Each bridge is also a named choke point. The renderer
+draws water as flat discs and bridges as the generated `Descent Plank Bridge`
+prop (`plankBridge` role), falling back to a procedural plank deck.
+`createAshenGateSim({ waterways: false })` yields a dry map for scripted tests.
 The battlefield sits on a basalt plateau a little larger than the map, with
 cliffs dropping to a lava sea (`views/ashenBackdrop.ts`). Its ground, cliff,
 and lava paintings come from the `static-image` agent and are found again by

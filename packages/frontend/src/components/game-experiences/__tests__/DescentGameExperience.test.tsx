@@ -77,6 +77,10 @@ describe("DescentGameExperience", () => {
       mounted.container.querySelector('[data-testid="descent-title-artwork"]'),
     ).toBeTruthy();
     expect(mounted.container.textContent).not.toContain("Continue");
+    expect(buttonNamed(mounted.container, "Start")).toBeTruthy();
+    expect(buttonNamed(mounted.container, "Co-op Multiplayer")).toBeTruthy();
+    expect(mounted.container.textContent).not.toContain("Co-op Campaign");
+    expect(mounted.container.textContent).not.toContain("Co-op Tutorial");
 
     await act(async () => {
       buttonNamed(mounted?.container ?? document, "All games").click();

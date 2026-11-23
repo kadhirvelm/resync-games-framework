@@ -38,6 +38,8 @@ export interface BreakthroughDefinition {
   combatProof: number;
   materials: ResourceCost;
   hallTier: HallTier;
+  /** Whether the attempt consumes a Breakthrough Pill; defaults to true. */
+  requiresPill?: boolean;
   baseSuccessChance: number;
   channelSeconds: number;
   kind: "channel" | "tribulation";

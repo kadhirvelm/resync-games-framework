@@ -37,10 +37,15 @@ export type AshenGateAssetRole =
   | "well"
   | "farm"
   | "forest"
+  | "stoneQuarry"
   | "market"
   | "spiritHerbGarden"
   | "emberBolt"
   | "emberVent"
+  | "qiSword"
+  | "qiLotus"
+  | "plankBridge"
+  | "riverRocks"
   | "resourceGrove"
   | "resourceOutcrop"
   | "resourceTree"
@@ -154,6 +159,7 @@ export const ASHEN_GATE_3D_ASSETS = [
   { kind: "prop", name: "Descent Well", role: "well" },
   { kind: "prop", name: "Descent Farm", role: "farm" },
   { kind: "prop", name: "Descent Managed Forest", role: "forest" },
+  { kind: "prop", name: "Descent Stone Quarry", role: "stoneQuarry" },
   { kind: "prop", name: "Descent Hell Market", role: "market" },
   {
     kind: "prop",
@@ -161,7 +167,11 @@ export const ASHEN_GATE_3D_ASSETS = [
     role: "spiritHerbGarden",
   },
   { kind: "prop", name: "Descent Ember Bolt", role: "emberBolt" },
+  { kind: "prop", name: "Descent Qi Flying Sword", role: "qiSword" },
+  { kind: "prop", name: "Descent Qi Spirit Lotus", role: "qiLotus" },
   { kind: "prop", name: "Descent Ember Vent", role: "emberVent" },
+  { kind: "prop", name: "Descent Plank Bridge", role: "plankBridge" },
+  { kind: "prop", name: "Descent River Rocks", role: "riverRocks" },
   {
     kind: "prop",
     name: "Descent Harvest Grove",
@@ -218,7 +228,8 @@ export function resolveAshenGateAssets(
     const match = byNewest.find(
       (asset) =>
         asset.kind === definition.kind &&
-        asset.name === definition.name &&
+        (asset.name === definition.name ||
+          asset.name.startsWith(`${definition.name}:`)) &&
         asset.validation.valid,
     );
     if (match !== undefined) resolved[definition.role] = match;
@@ -296,6 +307,7 @@ export function assetRoleForBuilding(
   if (buildingType === "well") return "well";
   if (buildingType === "farm") return "farm";
   if (buildingType === "forest") return "forest";
+  if (buildingType === "stone_quarry") return "stoneQuarry";
   if (buildingType === "hell_market") return "market";
   if (buildingType === "spirit_herb_garden") return "spiritHerbGarden";
   if (buildingType.includes("fire_ward") || buildingType.includes("wall")) {

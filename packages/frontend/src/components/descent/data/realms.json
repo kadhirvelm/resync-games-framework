@@ -1,14 +1,15 @@
 [
   {
     "breakthrough": {
-      "baseSuccessChance": 0.7,
+      "baseSuccessChance": 0.9,
       "channelSeconds": 20,
       "combatProof": 3,
       "essence": 50,
-      "hallTier": "Camp",
+      "hallTier": "Outpost",
       "kind": "channel",
-      "materials": { "iron": 5, "spirit_herbs": 2 },
+      "materials": {},
       "merit": 100,
+      "requiresPill": false,
       "targetRank": "Sworn"
     },
     "id": "qi_gathering",

@@ -33,6 +33,7 @@ export interface CircleVolume {
 /** Visual and structural archetype for an impassable battlefield landmark. */
 export type TerrainFeatureKind =
   | "basalt_ridge"
+  | "deep_water"
   | "magma_fissure"
   | "obsidian_spire"
   | "ruin_wall";
@@ -47,6 +48,22 @@ export interface TerrainFeature extends CircleVolume {
   readonly id: string;
   readonly kind: TerrainFeatureKind;
   readonly label?: string;
+}
+
+/**
+ * A walkable plank bridge laid across a river. It never blocks movement: the
+ * river leaves a gap where the bridge stands, and the renderer fills it.
+ */
+export interface TerrainBridge {
+  /** Rotation of the deck's long axis, in radians from the map's +x axis. */
+  readonly angle: number;
+  readonly id: string;
+  /** Span along the deck's long axis, in tiles. */
+  readonly length: number;
+  /** Deck width across the span, in tiles. */
+  readonly width: number;
+  readonly x: number;
+  readonly y: number;
 }
 
 export interface EmberVentsHazard {

@@ -2,14 +2,25 @@ import { describe, expect, it } from "bun:test";
 import type { AshenCruciblePlayer } from "../../data/layers/ashen_crucible";
 import { buildCardButtons } from "../../views/card";
 import { buildConfirm } from "../../views/confirm";
+import { readPresentation } from "../../views/presentation";
 import { buildShellModel } from "../../views/shellModel";
+import { modelHoldTier } from "../../views/status";
 import {
   ASHEN_GATE_SLICE_MODULE_ID,
   createMultiplayerDescentSim,
 } from "../ashenGateSlice";
-import type { EconomyBuilding } from "../economy/model";
-import { asUnit, createBuildingRecord } from "../economy/records";
+import type { EconomyBuilding, EconomyMeta } from "../economy/model";
+import {
+  asUnit,
+  createBuildingRecord,
+  ensureEconomyMeta,
+} from "../economy/records";
+import { holdTierDef } from "../economy/tables";
+import { TICKS_PER_SECOND } from "../sim/constants";
+import type { SimWorldState } from "../sim/world";
 import type { AshenGateSliceState } from "../slice/sliceState";
+import { ECONOMY_STEP_TICKS } from "../slice/sliceState";
+import { trainingPlan } from "../slice/sliceTraining";
 import { getWave } from "../waves/catalog";
 import { secondsToWaveTicks } from "../waves/constants";
 import type { WaveClockState } from "../waves/types";
@@ -27,8 +38,13 @@ describe("Descent multiplayer co-op simulation", () => {
       players: FOUR_PLAYERS,
       seed: 9001,
     });
+    const openingUnits = sim.snapshot().units;
+    sim.load(sim.serialize());
+    expect(sim.snapshot().units).toEqual(openingUnits);
     const model = buildShellModel(sim.snapshot());
+    const presentation = readPresentation(sim.snapshot().meta);
 
+    expect(presentation.pop).toEqual({ cap: 32, used: 24 });
     expect(model.players).toHaveLength(4);
     expect(
       model.buildings.filter((b) => b.buildingType === "camp"),
@@ -36,7 +52,26 @@ describe("Descent multiplayer co-op simulation", () => {
 
     for (const player of FOUR_PLAYERS) {
       const units = model.units.filter((unit) => unit.ownerId === player.id);
-      expect(units).toHaveLength(4);
+      expect(units).toHaveLength(5);
+      expect(units.filter((unit) => unit.classId === "villager")).toHaveLength(
+        3,
+      );
+      expect(
+        units.filter((unit) => unit.classId === "cultivator"),
+      ).toHaveLength(1);
+      expect(units.filter((unit) => unit.classId === "rider")).toHaveLength(1);
+      expect(
+        units.find(
+          (unit) => unit.id === `crucible-rider-${player.slotIndex + 1}`,
+        ),
+      ).toMatchObject({ classId: "rider" });
+      const starterNodes = presentation.nodes?.filter((node) =>
+        node.id.startsWith(`crucible-p${player.slotIndex + 1}-`),
+      );
+      expect(starterNodes).toHaveLength(6);
+      expect(
+        starterNodes?.filter((node) => node.resource === "wood"),
+      ).toHaveLength(3);
       for (const unit of units) {
         expect(unit.factionId).toBe("hold");
         expect(unit.ownerColor).toBe(player.color);
@@ -122,20 +157,21 @@ describe("Descent multiplayer co-op simulation", () => {
     sim.step(5);
     expect(
       sim.snapshot().units.filter((unit) => unit.ownerId === "p2"),
-    ).toHaveLength(4);
+    ).toHaveLength(5);
 
-    // Player 2 trains a villager from Player 2's Camp.
+    // Player 2 fills the two slots left by three villagers, Captain, and Rider.
     sim.enqueue({
       actorId: "p2",
       buildingId: p2Camp.id,
       classId: "villager",
+      count: 2,
       type: "train_unit",
     });
-    sim.step(260);
+    sim.step(2 * trainingPlan("villager").seconds * TICKS_PER_SECOND + 1);
     const p2Units = sim
       .snapshot()
       .units.filter((unit) => unit.ownerId === "p2");
-    expect(p2Units).toHaveLength(5);
+    expect(p2Units).toHaveLength(7);
     const model = buildShellModel(sim.snapshot());
     for (const unit of model.units.filter((u) => u.ownerId === "p2")) {
       expect(unit.ownerColor).toBe("#4db8ff");
@@ -269,8 +305,11 @@ describe("Descent multiplayer co-op simulation", () => {
     const p2Rations = model.rationOptions.find(
       (option) => option.messHallId === p2MessHall.id,
     );
-    expect(p2Rations?.unitIds).toHaveLength(1);
-    expect(p2Rations?.unitIds[0]).toContain("crucible-captain-2");
+    expect(p2Rations?.unitIds).toHaveLength(2);
+    expect([...(p2Rations?.unitIds ?? [])].sort()).toEqual([
+      "crucible-captain-2",
+      "crucible-rider-2",
+    ]);
     const rationConfirmation = buildConfirm(
       model,
       { messHallId: p2MessHall.id, type: "rations" },
@@ -302,6 +341,316 @@ describe("Descent multiplayer co-op simulation", () => {
     expect(
       alliedButtons.some((button) => button.intent.type === "rations"),
     ).toBe(false);
+  });
+
+  it("does not borrow another player's veined Cultivation Hall bonus", () => {
+    const sim = createMultiplayerDescentSim({
+      players: FOUR_PLAYERS.slice(0, 2),
+      seed: 315,
+    });
+    const saved = JSON.parse(sim.serialize()) as { state: SimWorldState };
+    const p1Captain = saved.state.units.find(
+      (unit) => unit.ownerId === "p1" && unit.classId === "cultivator",
+    );
+    const p2Captain = saved.state.units.find(
+      (unit) => unit.ownerId === "p2" && unit.classId === "cultivator",
+    );
+    if (!p1Captain || !p2Captain) throw new Error("Missing co-op Captains");
+    const economy = ensureEconomyMeta(saved.state);
+    economy.tier = "Outpost";
+    economy.veins = [{ id: "p2-vein", x: p2Captain.x, y: p2Captain.y }];
+    saved.state.buildings.push(
+      createBuildingRecord({
+        buildingType: "cultivation_hall",
+        completed: true,
+        id: "p1-plain-hall",
+        ownerId: "p1",
+        x: p1Captain.x,
+        y: p1Captain.y,
+      }),
+      createBuildingRecord({
+        buildingType: "cultivation_hall",
+        completed: true,
+        id: "p2-veined-hall",
+        ownerId: "p2",
+        x: p2Captain.x,
+        y: p2Captain.y,
+      }),
+    );
+    const state = saved.state.meta[
+      ASHEN_GATE_SLICE_MODULE_ID
+    ] as AshenGateSliceState;
+    for (const captain of [p1Captain, p2Captain]) {
+      const record = state.cultivation.units.find(
+        (unit) => unit.unitId === captain.id,
+      );
+      if (!record) throw new Error(`Missing cultivation for ${captain.id}`);
+      record.combatProof = 3;
+      record.essence = 50;
+      record.merit = 100;
+    }
+    sim.load(JSON.stringify(saved));
+    sim.step(TICKS_PER_SECOND);
+
+    const model = buildShellModel(sim.snapshot());
+    const p1View = model.units.find((unit) => unit.id === p1Captain.id);
+    const p2View = model.units.find((unit) => unit.id === p2Captain.id);
+    expect(p1View?.cultivation).toMatchObject({
+      missingRequirements: [],
+      successChance: 0.9,
+    });
+    expect(p2View?.cultivation).toMatchObject({
+      missingRequirements: [],
+      successChance: 1,
+    });
+
+    sim.enqueue({
+      actorId: "p1",
+      hallId: "p2-veined-hall",
+      type: "start_breakthrough",
+      unitId: p1Captain.id,
+    });
+    sim.step(1);
+    let current = sim.snapshot().meta[
+      ASHEN_GATE_SLICE_MODULE_ID
+    ] as AshenGateSliceState;
+    expect(
+      current.cultivation.units.find((unit) => unit.unitId === p1Captain.id)
+        ?.activeBreakthrough,
+    ).toBeUndefined();
+
+    sim.enqueue({
+      actorId: "p1",
+      hallId: "p1-plain-hall",
+      type: "start_breakthrough",
+      unitId: p1Captain.id,
+    });
+    sim.step(1);
+    current = sim.snapshot().meta[
+      ASHEN_GATE_SLICE_MODULE_ID
+    ] as AshenGateSliceState;
+    expect(
+      current.cultivation.units.find((unit) => unit.unitId === p1Captain.id)
+        ?.activeBreakthrough,
+    ).toMatchObject({ successChance: 0.9, targetRank: "Sworn" });
+  });
+
+  it("keeps Hold upgrades and their unlocks scoped to the upgrading player", () => {
+    const sim = createMultiplayerDescentSim({
+      players: FOUR_PLAYERS.slice(0, 2),
+      seed: 316,
+    });
+    const saved = JSON.parse(sim.serialize()) as { state: SimWorldState };
+    for (const resourceId of Object.keys(saved.state.resources)) {
+      saved.state.resources[resourceId as keyof typeof saved.state.resources] =
+        500;
+    }
+    saved.state.buildings.push(
+      createBuildingRecord({
+        buildingType: "barracks",
+        completed: true,
+        id: "p1-barracks",
+        ownerId: "p1",
+        x: 40,
+        y: 40,
+      }),
+      createBuildingRecord({
+        buildingType: "barracks",
+        completed: true,
+        id: "p2-barracks",
+        ownerId: "p2",
+        x: 44,
+        y: 44,
+      }),
+    );
+    sim.load(JSON.stringify(saved));
+
+    sim.enqueue({ actorId: "p1", type: "upgrade_hold" });
+    sim.step(1);
+    expect(
+      buildShellModel(sim.snapshot(), "p1").holdUpgrade?.inProgress,
+    ).not.toBeNull();
+    expect(
+      buildShellModel(sim.snapshot(), "p2").holdUpgrade?.inProgress ?? null,
+    ).toBeNull();
+
+    // Owner-scoped timers must survive deterministic replay synchronization.
+    sim.load(sim.serialize());
+    sim.step(
+      ((holdTierDef("Outpost")?.upgradeTicks ?? 0) + 1) * ECONOMY_STEP_TICKS,
+    );
+    const snapshot = sim.snapshot();
+    const p1Model = buildShellModel(snapshot, "p1");
+    const p2Model = buildShellModel(snapshot, "p2");
+    const p1Camp = p1Model.buildings.find(
+      (building) =>
+        building.buildingType === "camp" && building.ownerId === "p1",
+    );
+    const p2Camp = p2Model.buildings.find(
+      (building) =>
+        building.buildingType === "camp" && building.ownerId === "p2",
+    );
+    expect(p1Camp).toMatchObject({ maxHitPoints: 600, tier: "Outpost" });
+    expect(p2Camp).toMatchObject({ maxHitPoints: 400, tier: "Camp" });
+    expect(p1Model.holdUpgrade?.currentTier).toBe("Outpost");
+    expect(p2Model.holdUpgrade?.currentTier).toBe("Camp");
+    expect(
+      p1Model.buildOptions.find(
+        (option) => option.buildingType === "cultivation_hall",
+      )?.unlocked,
+    ).toBe(true);
+    expect(
+      p2Model.buildOptions.find(
+        (option) => option.buildingType === "cultivation_hall",
+      )?.unlocked,
+    ).toBe(false);
+    expect(
+      p1Model.trainOptions.some(
+        (option) =>
+          option.buildingId === "p1-barracks" && option.classId === "hunter",
+      ),
+    ).toBe(true);
+    expect(
+      p2Model.trainOptions.some(
+        (option) =>
+          option.buildingId === "p2-barracks" && option.classId === "hunter",
+      ),
+    ).toBe(false);
+
+    sim.enqueue({
+      actorId: "p2",
+      buildingType: "cultivation_hall",
+      type: "place_building",
+      x: 2,
+      y: 2,
+    });
+    sim.enqueue({
+      actorId: "p1",
+      buildingType: "cultivation_hall",
+      type: "place_building",
+      x: 2,
+      y: 2,
+    });
+    sim.enqueue({
+      actorId: "p2",
+      buildingId: "p2-barracks",
+      classId: "hunter",
+      type: "train_unit",
+    });
+    sim.enqueue({
+      actorId: "p1",
+      buildingId: "p1-barracks",
+      classId: "hunter",
+      type: "train_unit",
+    });
+    sim.step(1);
+    const afterOrders = sim.snapshot();
+    expect(
+      afterOrders.buildings
+        .filter((building) => building.buildingType === "cultivation_hall")
+        .map((building) => building.ownerId),
+    ).toEqual(["p1"]);
+    const training = afterOrders.meta[
+      ASHEN_GATE_SLICE_MODULE_ID
+    ] as AshenGateSliceState;
+    expect(
+      training.training.map((job) => [job.buildingId, job.classId]),
+    ).toEqual([["p1-barracks", "hunter"]]);
+
+    const endgame = JSON.parse(sim.serialize()) as { state: SimWorldState };
+    ensureEconomyMeta(endgame.state).ownerTiers.p1 = "Citadel";
+    // Tier HUD state must survive the local Camp falling while allies continue.
+    endgame.state.buildings = endgame.state.buildings.filter(
+      (building) =>
+        building.buildingType !== "camp" || building.ownerId !== "p1",
+    );
+    sim.load(JSON.stringify(endgame));
+    sim.step(1);
+    const endgameSnapshot = sim.snapshot();
+    const citadelModel = buildShellModel(endgameSnapshot, "p1");
+    const allyModel = buildShellModel(endgameSnapshot, "p2");
+    expect(citadelModel.holdUpgrade).toBeNull();
+    expect(modelHoldTier(citadelModel, "p1")).toBe("Citadel");
+    expect(modelHoldTier(allyModel, "p2")).toBe("Camp");
+  });
+
+  it("finishes staggered co-op upgrades independently", () => {
+    const sim = createMultiplayerDescentSim({
+      players: FOUR_PLAYERS.slice(0, 2),
+      seed: 318,
+    });
+    const saved = JSON.parse(sim.serialize()) as { state: SimWorldState };
+    for (const resourceId of Object.keys(saved.state.resources)) {
+      saved.state.resources[resourceId as keyof typeof saved.state.resources] =
+        500;
+    }
+    sim.load(JSON.stringify(saved));
+    const upgradeTicks = holdTierDef("Outpost")?.upgradeTicks ?? 0;
+
+    sim.enqueue({ actorId: "p1", type: "upgrade_hold" });
+    sim.enqueue({ actorId: "p1", type: "upgrade_hold" });
+    sim.step(5 * ECONOMY_STEP_TICKS);
+    sim.enqueue({ actorId: "p2", type: "upgrade_hold" });
+    sim.step((upgradeTicks - 4) * ECONOMY_STEP_TICKS);
+
+    const firstCompletion = sim.snapshot();
+    expect(
+      buildShellModel(firstCompletion, "p1").holdUpgrade?.currentTier,
+    ).toBe("Outpost");
+    const p2Pending = buildShellModel(firstCompletion, "p2");
+    expect(p2Pending.holdUpgrade?.currentTier).toBe("Camp");
+    expect(p2Pending.holdUpgrade?.inProgress).not.toBeNull();
+    // Duplicate p1 orders are ignored; only p1 and p2's single upgrades charge.
+    expect(firstCompletion.resources.stone).toBe(
+      500 - 2 * (holdTierDef("Outpost")?.upgradeCost.stone ?? 0),
+    );
+    expect(
+      p2Pending.buildings.find(
+        (building) =>
+          building.buildingType === "camp" && building.ownerId === "p2",
+      )?.tier,
+    ).toBe("Camp");
+
+    sim.step(upgradeTicks * ECONOMY_STEP_TICKS);
+    const secondCompletion = sim.snapshot();
+    expect(
+      buildShellModel(secondCompletion, "p1").holdUpgrade?.currentTier,
+    ).toBe("Outpost");
+    expect(
+      buildShellModel(secondCompletion, "p2").holdUpgrade?.currentTier,
+    ).toBe("Outpost");
+  });
+
+  it("refunds a legacy shared co-op upgrade instead of advancing every Camp", () => {
+    const sim = createMultiplayerDescentSim({
+      players: FOUR_PLAYERS.slice(0, 2),
+      seed: 317,
+    });
+    const saved = JSON.parse(sim.serialize()) as { state: SimWorldState };
+    const economy = saved.state.meta.economy as EconomyMeta;
+    economy.upgrade = { startedTick: 0, target: "Outpost", ticksLeft: 1 };
+    saved.state.resources.stone = 0;
+    saved.state.resources.wood = 0;
+    sim.load(JSON.stringify(saved));
+
+    sim.step(
+      ((holdTierDef("Outpost")?.upgradeTicks ?? 0) + 1) * ECONOMY_STEP_TICKS,
+    );
+    const snapshot = sim.snapshot();
+    const migrated = snapshot.meta.economy as EconomyMeta;
+    const definition = holdTierDef("Outpost");
+    expect(migrated.upgrade).toBeNull();
+    expect(migrated.ownerUpgrades).toEqual({});
+    expect(snapshot.resources.stone).toBe(definition?.upgradeCost.stone ?? 0);
+    expect(snapshot.resources.wood).toBe(definition?.upgradeCost.wood ?? 0);
+    for (const camp of snapshot.buildings.filter(
+      (building) => building.buildingType === "camp",
+    )) {
+      expect(camp as EconomyBuilding).toMatchObject({
+        maxHp: 400,
+        tier: "Camp",
+      });
+    }
   });
 
   it("spreads incoming enemies evenly across the allied Camps", () => {

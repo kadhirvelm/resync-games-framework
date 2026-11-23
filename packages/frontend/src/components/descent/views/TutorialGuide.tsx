@@ -30,7 +30,7 @@ const FOCUS_ACTION_LABELS: Readonly<Record<TutorialTargetHint, string>> = {
   build_barracks: "Open Build Menu",
   camp: "Select Camp",
   cultivator: "Select Cultivator",
-  idle_villagers: "Select Villagers",
+  idle_villagers: "Select Idle Villager",
   soldiers: "Select Soldiers",
 };
 
@@ -123,7 +123,7 @@ export function TutorialGuide({
     >
       <header className={styles.header}>
         <div>
-          <span className={styles.eyebrow}>Hold Guide</span>
+          <span className={styles.eyebrow}>Learn to play · Descent</span>
           <h2 className={styles.heading}>
             {progress.completedCount} / {progress.totalCount} Complete
           </h2>
@@ -166,21 +166,52 @@ export function TutorialGuide({
       {waveHeld ? (
         <div className={styles.waveHeldBadge} role="status">
           <span aria-hidden="true" className={styles.waveHeldDot} />
-          <span>Next wave paused until you&apos;re ready</span>
+          <span>
+            The next wave is waiting. Finish the preparation objective to
+            release it. Units and construction still need time to move and
+            build.
+          </span>
         </div>
       ) : null}
 
       {progress.allComplete ? (
         <div className={styles.completeBanner}>
-          <strong>Hold Mastered!</strong>
+          <strong>You defended the Hold!</strong>
           <p>
-            Every guided objective is complete. You&apos;re ready to push deeper
-            into the Ashen Gate.
+            You&apos;ve learned to gather, build, train, and fight. Cinderjaw is
+            defeated. To finish the run, press Esc to clear your selection,
+            click Descend in the bottom commands, and confirm Descend.
           </p>
         </div>
       ) : null}
 
-      {focusedStep === null ? null : (
+      <details className={styles.basics}>
+        <summary>New here? Goal &amp; controls</summary>
+        <p>
+          Protect your Camp, grow an army, and defeat Cinderjaw, the final
+          enemy. Villagers collect supplies and build; soldiers fight
+          automatically when enemies are in range.
+        </p>
+        <p>
+          Left-click selects. Right-click gives the selected units an order.
+          Drag on empty ground to select a group. Press Space to pause and plan;
+          press it again to let gathering, building, and training continue.
+        </p>
+      </details>
+
+      {inspectedStep &&
+      inspectedStep.id !== progress.activeStep?.id &&
+      progress.activeStep ? (
+        <button
+          className={styles.focusButton}
+          onClick={() => setInspectedId(null)}
+          type="button"
+        >
+          Back to current objective
+        </button>
+      ) : null}
+
+      {progress.allComplete || focusedStep === null ? null : (
         <section
           aria-label="Current tutorial objective"
           className={styles.activeCard}
@@ -194,8 +225,15 @@ export function TutorialGuide({
               {focusedStep.progressLabel}
             </span>
           </div>
-          <h3 className={styles.activeTitle}>{focusedStep.title}</h3>
+          <h3 aria-live="polite" className={styles.activeTitle}>
+            {focusedStep.title}
+          </h3>
           <p className={styles.activeDetail}>{focusedStep.detail}</p>
+          <ol className={styles.instructions}>
+            {focusedStep.instructions.map((instruction) => (
+              <li key={instruction}>{instruction}</li>
+            ))}
+          </ol>
           <div className={styles.actionRow}>
             {onFocusTarget && !focusedStep.completed ? (
               <button
@@ -217,40 +255,45 @@ export function TutorialGuide({
             ) : null}
           </div>
           <p className={styles.tip}>
-            <strong>Tip:</strong> {focusedStep.tip}
+            <strong>Need a hand?</strong> {focusedStep.tip}
           </p>
         </section>
       )}
 
-      <ol className={styles.checklist}>
-        {progress.steps.map((step) => {
-          const isCurrent = progress.activeStep?.id === step.id;
-          const isFocused = focusedStep?.id === step.id;
-          return (
-            <li key={step.id}>
-              <button
-                aria-current={isCurrent ? "step" : undefined}
-                className={
-                  isFocused ? styles.checkItemFocused : styles.checkItem
-                }
-                data-completed={step.completed}
-                data-step-id={step.id}
-                onClick={() =>
-                  setInspectedId((current) =>
-                    current === step.id ? null : step.id,
-                  )
-                }
-                type="button"
-              >
-                <span aria-hidden="true" className={styles.checkIcon}>
-                  {step.completed ? "✓" : step.index + 1}
-                </span>
-                <span className={styles.checkTitle}>{step.title}</span>
-              </button>
-            </li>
-          );
-        })}
-      </ol>
+      <details className={styles.basics}>
+        <summary>
+          All objectives ({progress.completedCount}/{progress.totalCount})
+        </summary>
+        <ol className={styles.checklist}>
+          {progress.steps.map((step) => {
+            const isCurrent = progress.activeStep?.id === step.id;
+            const isFocused = focusedStep?.id === step.id;
+            return (
+              <li key={step.id}>
+                <button
+                  aria-current={isCurrent ? "step" : undefined}
+                  className={
+                    isFocused ? styles.checkItemFocused : styles.checkItem
+                  }
+                  data-completed={step.completed}
+                  data-step-id={step.id}
+                  onClick={() =>
+                    setInspectedId((current) =>
+                      current === step.id || isCurrent ? null : step.id,
+                    )
+                  }
+                  type="button"
+                >
+                  <span aria-hidden="true" className={styles.checkIcon}>
+                    {step.completed ? "✓" : step.index + 1}
+                  </span>
+                  <span className={styles.checkTitle}>{step.title}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      </details>
     </aside>
   );
 }

@@ -5,10 +5,15 @@
 import { useEffect, useRef, useState } from "react";
 import type { Command } from "../logic/types";
 import { buildingIconSrc } from "./buildingIcons";
-import { DescentMinimap, type MinimapPing } from "./DescentMinimap";
+import {
+  DescentMinimap,
+  dockMinimap,
+  type MinimapPing,
+} from "./DescentMinimap";
 import styles from "./descentView.module.scss";
 import { FogCanvas } from "./FogCanvas";
 import { type InspectTarget, isInspected } from "./inspect";
+import { terrainAcross } from "./presentation";
 import {
   type Camera,
   clientToWorld,
@@ -37,6 +42,8 @@ export interface MapViewportProps {
   focusRequest?: CameraFocusRequest | null;
   /** Local player id in multiplayer matches; omitted in solo play. */
   localPlayerId?: string;
+  /** HUD element the minimap docks into; omitted, it floats over the map. */
+  minimapHost?: HTMLElement | null;
   model: ShellModel;
   /** Expanding under-attack rings drawn on the minimap. */
   pings?: readonly MinimapPing[];
@@ -124,6 +131,7 @@ export function MapViewport({
   camera,
   focusRequest = null,
   localPlayerId,
+  minimapHost,
   model,
   onCameraChange,
   onCommand,
@@ -299,13 +307,14 @@ export function MapViewport({
             data-terrain-kind={feature.kind}
             key={feature.id}
             style={{
-              height: feature.radius * 2 * model.scale,
+              height: terrainAcross(feature) * model.scale,
               left: (feature.x - feature.radius) * model.scale,
-              top: (feature.y - feature.radius) * model.scale,
+              top: (feature.y - terrainAcross(feature) / 2) * model.scale,
+              transform: `rotate(${feature.angle ?? 0}rad)`,
               width: feature.radius * 2 * model.scale,
             }}
           >
-            {feature.label ?? ""}
+            {feature.kind === "bridge" ? "" : (feature.label ?? "")}
           </span>
         ))}
         {model.veins.map((vein) => (
@@ -546,34 +555,38 @@ export function MapViewport({
           />
         )}
       </div>
-      <DescentMinimap
-        model={model}
-        onNavigate={(point) => {
-          onCameraChange(centeredCamera(point, model, viewportSize));
-        }}
-        onOrder={(point, queue) => {
-          const orders = ordersForRightClick({
-            buildings: model.buildings,
-            ground: point,
-            localPlayerId,
-            nodes: model.nodes,
-            queue,
-            selectedIds: selection.unitIds,
-            targetBuildingId: null,
-            targetUnitId: null,
-            units: model.units,
-          });
-          for (const order of orders) onCommand(order);
-        }}
-        pings={pings}
-        view={{
-          centerX: (camera.x + viewportSize.width / 2) / model.scale,
-          centerY: (camera.y + viewportSize.height / 2) / model.scale,
-          height: viewportSize.height / model.scale,
-          rotation: 0,
-          width: viewportSize.width / model.scale,
-        }}
-      />
+      {dockMinimap(
+        <DescentMinimap
+          model={model}
+          onNavigate={(point) => {
+            onCameraChange(centeredCamera(point, model, viewportSize));
+          }}
+          onOrder={(point, queue) => {
+            const orders = ordersForRightClick({
+              buildings: model.buildings,
+              ground: point,
+              localPlayerId,
+              nodes: model.nodes,
+              queue,
+              selectedIds: selection.unitIds,
+              targetBuildingId: null,
+              targetUnitId: null,
+              units: model.units,
+            });
+            for (const order of orders) onCommand(order);
+          }}
+          onPointerEnter={() => onCursor(null)}
+          pings={pings}
+          view={{
+            centerX: (camera.x + viewportSize.width / 2) / model.scale,
+            centerY: (camera.y + viewportSize.height / 2) / model.scale,
+            height: viewportSize.height / model.scale,
+            rotation: 0,
+            width: viewportSize.width / model.scale,
+          }}
+        />,
+        minimapHost,
+      )}
       {status === null ? null : <p className={styles.mapStatus}>{status}</p>}
       {model.paused ? <p className={styles.pauseOverlay}>Paused</p> : null}
     </div>

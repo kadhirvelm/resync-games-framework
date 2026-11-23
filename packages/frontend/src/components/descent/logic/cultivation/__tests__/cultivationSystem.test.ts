@@ -75,6 +75,60 @@ describe("cultivation gates", () => {
     expect(system.startBreakthrough("battle-only").ok).toBe(false);
   });
 
+  test("allows the introductory Outpost breakthrough without pills or tier materials", () => {
+    const combat = new CultivationCombatStub();
+    const stockpile = new CultivationStockpileStub({ hallTier: "Outpost" });
+    const system = new CultivationSystem(
+      { maxRankForLayer: () => "Sworn" },
+      combat,
+      stockpile,
+    );
+    system.registerUnit({
+      combatProof: 3,
+      essence: 50,
+      merit: 100,
+      unitId: "early",
+    });
+
+    stockpile.setHallTier("Camp");
+    expect(system.getCultivationView("early").missingRequirements).toContain(
+      "Cultivation Hall requires Outpost.",
+    );
+    expect(system.startBreakthrough("early").ok).toBe(false);
+    stockpile.setHallTier("Outpost");
+    expect(system.getCultivationView("early")).toMatchObject({
+      missingRequirements: [],
+      successChance: 0.9,
+    });
+    expect(system.startBreakthrough("early")).toMatchObject({
+      ok: true,
+      value: { successChance: 0.9 },
+    });
+    expect(stockpile.getItemCount("breakthrough_pill")).toBe(0);
+    system.advanceBreakthroughs(20, { early: 0 });
+    expect(system.getUnitState("early").rank).toBe("Sworn");
+  });
+
+  test("adds the Hall's Spirit Vein bonus to shown and rolled success", () => {
+    const { stockpile, system } = createHarness();
+    system.registerUnit({
+      combatProof: 15,
+      essence: 350,
+      merit: 700,
+      rank: "Veteran",
+      school: "ember",
+      unitId: "veined",
+    });
+
+    stockpile.setBreakthroughSuccessBonus(0.15);
+    expect(system.getCultivationView("veined").successChance).toBeCloseTo(0.95);
+    stockpile.setBreakthroughSuccessBonus(0.25);
+    expect(system.startBreakthrough("veined")).toMatchObject({
+      ok: true,
+      value: { successChance: 1 },
+    });
+  });
+
   test("preserves merit, halves essence, and injures for 45s on failure", () => {
     const { combat, stockpile, system } = createHarness();
     system.registerUnit({

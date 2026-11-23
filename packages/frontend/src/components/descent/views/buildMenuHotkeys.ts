@@ -4,20 +4,25 @@
  * one key picks a category, one more picks the building.
  */
 
-/** Category keys, matching the menu's two-by-two category grid. */
-export const BUILD_CATEGORY_KEYS = ["Q", "W", "A", "S"] as const;
+/** Category keys, matching the command grid's top row. */
+export const BUILD_CATEGORY_KEYS = ["Q", "W", "E", "R"] as const;
 
-/** Building keys, matching the menu's three-column building grid. */
+/** Building keys, reading left-to-right across the five-column command grid. */
 export const BUILD_OPTION_KEYS = [
   "Q",
   "W",
   "E",
+  "R",
+  "T",
   "A",
   "S",
   "D",
+  "F",
+  "G",
   "Z",
   "X",
   "C",
+  "V",
 ] as const;
 
 /** Which page of the build menu is open. */

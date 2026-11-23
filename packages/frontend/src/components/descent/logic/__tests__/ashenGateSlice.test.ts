@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { ASHEN_GATE_STOCKPILE } from "../../data/layers/ashen_gate/map";
 import {
   type ReadPresentation,
   readPresentation,
@@ -9,7 +10,15 @@ import {
   createAshenGateSim,
   isAshenGateSliceSnapshot,
 } from "../ashenGateSlice";
-import { buildingDef, footprintCovers, footprintGap } from "../economy";
+import {
+  buildingDef,
+  createBuildingRecord,
+  createUnitRecord,
+  ensureEconomyMeta,
+  footprintCovers,
+  footprintGap,
+  holdTierDef,
+} from "../economy";
 import {
   AUTOSAVE_SLOT,
   attachLayerAutosave,
@@ -17,7 +26,8 @@ import {
   TICKS_PER_SECOND,
 } from "../sim";
 import type { DescentSim } from "../sim/descentSim";
-import { trainingPlan } from "../slice/sliceTraining";
+import type { SimWorldState } from "../sim/world";
+import { MAX_QUEUE, trainingPlan } from "../slice/sliceTraining";
 import {
   type ClassId,
   type Command,
@@ -115,7 +125,7 @@ function putVillagersToWork(sim: DescentSim) {
   sim.enqueue({
     nodeId: "ashen-water-near",
     type: "assign_gather",
-    unitIds: ids.slice(2),
+    unitIds: ids.slice(2, 3),
   });
   sim.step(1);
 }
@@ -306,9 +316,15 @@ const SQUAD_SIZE = 5;
  * @param sim - Sim
  * @param barracksId - Barracks
  * @param classId - Class to train
+ * @param count - Soldiers to order, defaulting to a full squad
  */
-function trainSquad(sim: DescentSim, barracksId: string, classId: ClassId) {
-  for (let ordered = 0; ordered < SQUAD_SIZE; ordered += 1) {
+function trainSquad(
+  sim: DescentSim,
+  barracksId: string,
+  classId: ClassId,
+  count = SQUAD_SIZE,
+) {
+  for (let ordered = 0; ordered < count; ordered += 1) {
     stepUntil(
       sim,
       () =>
@@ -330,29 +346,94 @@ function trainSquad(sim: DescentSim, barracksId: string, classId: ClassId) {
       (ui(sim.snapshot()).buildings?.[barracksId]?.trainingQueue?.length ??
         0) === 0,
     `${classId} squad`,
-    90,
+    count * trainingPlan(classId).seconds + 10,
   );
 }
 
+/**
+ * Funds isolated training tests through a save without a long gather loop.
+ * @param sim - Sim whose stockpile and housing should cover the orders
+ * @param classId - Class to queue
+ * @param orders - Number of orders to fund and accommodate
+ */
+function fundTraining(sim: DescentSim, classId: ClassId, orders: number): void {
+  const saved = JSON.parse(sim.serialize()) as { state: SimWorldState };
+  const plan = trainingPlan(classId);
+  for (const resourceId of RESOURCE_IDS) {
+    saved.state.resources[resourceId] += (plan.cost[resourceId] ?? 0) * orders;
+  }
+  const housing = buildingDef("housing");
+  if (!housing?.popBonus) throw new Error("Missing housing population bonus");
+  for (
+    let index = 0;
+    index < Math.ceil((plan.pop * orders) / housing.popBonus);
+    index += 1
+  ) {
+    saved.state.buildings.push(
+      createBuildingRecord({
+        buildingType: "housing",
+        completed: true,
+        id: `queue-test-housing-${index}`,
+        x: 2 + index * 4,
+        y: 2,
+      }),
+    );
+  }
+  sim.load(JSON.stringify(saved));
+}
+
+/**
+ * Drives the Captain through ordinary player commands during scripted waits:
+ * meditate between fights, promote after earning a breakthrough, and cast in combat.
+ * @param sim - Running sim to observe without changing rules or wave timing
+ * @returns Unsubscribe function that stops issuing Captain commands
+ */
+function attachCaptainMicro(sim: DescentSim): () => void {
+  return sim.subscribe(() => {
+    const snapshot = sim.snapshot();
+    const captain = snapshot.units.find((unit) => unit.id === "ashen-captain");
+    const view = ui(snapshot).units?.["ashen-captain"];
+    if (!captain || !view || sim.paused) return;
+    const enemiesNearby = waves(snapshot).units.some(
+      (enemy) => Math.hypot(enemy.x - captain.x, enemy.y - captain.y) < 8,
+    );
+    if (view.breakthroughReady && !enemiesNearby) {
+      sim.enqueue({ type: "start_breakthrough", unitId: captain.id });
+    }
+    if (view.rank === "Sworn" && !view.school) {
+      sim.enqueue({
+        school: "blood",
+        type: "choose_school",
+        unitId: captain.id,
+      });
+    }
+    if (enemiesNearby && view.qiArt?.ready) {
+      sim.enqueue({ type: "cast_qi_art", unitIds: [captain.id] });
+    }
+    if (!view.channel && view.meditating === enemiesNearby) {
+      sim.enqueue({ type: "toggle_meditate", unitIds: [captain.id] });
+    }
+  });
+}
+
 describe("Ashen Gate vertical slice", () => {
-  test("the starting stockpile exactly funds the opening defense checklist", () => {
+  test("the starting stockpile funds a worker, Barracks, and two Wardens", () => {
     const start = createAshenGateSim({ seed: 1 }).snapshot();
     const barracks = buildingDef("barracks");
-    const omenTower = buildingDef("omen_tower");
-    if (!barracks || !omenTower) throw new Error("Missing opening buildings");
+    if (!barracks) throw new Error("Missing Barracks");
     const costs = [
       trainingPlan("villager").cost,
       barracks.cost,
-      ...Array.from({ length: SQUAD_SIZE }, () => trainingPlan("warden").cost),
-      omenTower.cost,
+      ...Array.from({ length: 2 }, () => trainingPlan("warden").cost),
     ];
 
+    expect(start.resources).toEqual(ASHEN_GATE_STOCKPILE);
     for (const resourceId of RESOURCE_IDS) {
       const required = costs.reduce(
         (total, cost) => total + (cost[resourceId] ?? 0),
         0,
       );
-      expect(start.resources[resourceId]).toBe(required);
+      expect(start.resources[resourceId]).toBeGreaterThanOrEqual(required);
     }
   });
 
@@ -361,14 +442,24 @@ describe("Ashen Gate vertical slice", () => {
     const start = sim.snapshot();
     expect(isAshenGateSliceSnapshot(start)).toBe(true);
     expect(start.map).toEqual({ height: 156, width: 252 });
-    expect(ui(start).nodes).toHaveLength(16);
+    expect(ui(start).pop).toEqual({ cap: 8, used: 6 });
+    expect(start.units).toHaveLength(5);
+    expect(start.units.find((unit) => unit.id === "ashen-rider")).toMatchObject(
+      {
+        classId: "rider",
+      },
+    );
+    sim.load(sim.serialize());
+    expect(sim.snapshot().units).toEqual(start.units);
+    expect(ui(sim.snapshot()).pop).toEqual({ cap: 8, used: 6 });
+    expect(ui(start).nodes).toHaveLength(36);
     expect(ui(start).nodes?.some((node) => node.x > start.map.width / 2)).toBe(
       true,
     );
     for (const resourceId of RESOURCE_IDS) {
       expect(
         ui(start).nodes?.filter((node) => node.resource === resourceId),
-      ).toHaveLength(2);
+      ).toHaveLength(resourceId === "wood" ? 8 : 4);
     }
     expect(ui(start).vents?.length).toBeGreaterThanOrEqual(3);
     expect(ui(start).vents?.length).toBeLessThanOrEqual(4);
@@ -386,6 +477,76 @@ describe("Ashen Gate vertical slice", () => {
       ui(sim.snapshot()).objectives?.find((entry) => entry.id === "gather")
         ?.done,
     ).toBe(true);
+  });
+
+  test("the starting cap queues only two extra workers until Housing is built", () => {
+    const sim = createAshenGateSim({ seed: 1 });
+    const start = sim.snapshot();
+    const camp = start.buildings.find(
+      (building) => building.buildingType === "camp",
+    );
+    const housing = buildingDef("housing");
+    if (!camp || !housing?.popBonus) throw new Error("Missing Camp or Housing");
+    const worker = trainingPlan("villager");
+    expect(villagerIds(sim)).toHaveLength(3);
+    expect(ui(start).pop).toEqual({ cap: 8, used: 6 });
+
+    sim.enqueue({
+      buildingId: camp.id,
+      classId: "villager",
+      count: 3,
+      type: "train_unit",
+    });
+    sim.step(1);
+    const queued = ui(sim.snapshot()).buildings?.[camp.id]?.trainingQueue;
+    expect(queued).toHaveLength(2);
+    expect(
+      queued?.every((job) => job.classId === "villager" && job.count === 1),
+    ).toBe(true);
+    expect(ui(sim.snapshot()).pop).toEqual({ cap: 8, used: 8 });
+    for (const id of RESOURCE_IDS) {
+      expect(sim.snapshot().resources[id]).toBe(
+        start.resources[id] - 2 * (worker.cost[id] ?? 0),
+      );
+    }
+
+    // Idle villagers spend the real starting stockpile on a real construction site.
+    const beforeHousing = sim.snapshot().resources;
+    place(sim, "housing", -5, 0);
+    for (const id of RESOURCE_IDS) {
+      expect(sim.snapshot().resources[id]).toBe(
+        beforeHousing[id] - (housing.cost[id] ?? 0),
+      );
+    }
+    expect(ui(sim.snapshot()).pop?.cap).toBe(8);
+    completed(sim, "housing");
+    expect(ui(sim.snapshot()).pop).toEqual({
+      cap: 8 + housing.popBonus,
+      used: 8,
+    });
+
+    const beforeThirdWorker = sim.snapshot().resources;
+    sim.enqueue({
+      buildingId: camp.id,
+      classId: "villager",
+      type: "train_unit",
+    });
+    sim.step(1);
+    expect(ui(sim.snapshot()).pop).toEqual({
+      cap: 8 + housing.popBonus,
+      used: 9,
+    });
+    for (const id of RESOURCE_IDS) {
+      expect(sim.snapshot().resources[id]).toBe(
+        beforeThirdWorker[id] - (worker.cost[id] ?? 0),
+      );
+    }
+    stepUntil(
+      sim,
+      () => villagerIds(sim).length === 6,
+      "third extra worker after Housing",
+      3 * worker.seconds + 10,
+    );
   });
 
   test("a Camp rallied on a resource sends new villagers to gather it", () => {
@@ -422,7 +583,7 @@ describe("Ashen Gate vertical slice", () => {
       sim,
       () => villagerIds(sim).length === startingVillagers.size + 1,
       "villager training",
-      25,
+      trainingPlan("villager").seconds + 5,
     );
     const trainedId = villagerIds(sim).find((id) => !startingVillagers.has(id));
     const trained = () =>
@@ -469,7 +630,7 @@ describe("Ashen Gate vertical slice", () => {
       sim,
       () => villagerIds(sim).length === startingVillagers.size + 1,
       "villager training",
-      25,
+      trainingPlan("villager").seconds + 5,
     );
     const trainedId = villagerIds(sim).find((id) => !startingVillagers.has(id));
     expect(trainedId).toBeDefined();
@@ -561,7 +722,12 @@ describe("Ashen Gate vertical slice", () => {
       label: "Hunter",
     });
     expect(queue?.[0]?.progress).toBeGreaterThan(0);
-    stepUntil(sim, () => holdCount(sim, "hunter") === 1, "hunter", 30);
+    stepUntil(
+      sim,
+      () => holdCount(sim, "hunter") === 1,
+      "hunter",
+      trainingPlan("hunter").seconds + 10,
+    );
     expect(birthSounds(sim)).toEqual(["soldier"]);
     expect(ui(sim.snapshot()).pop?.used).toBe(popBefore + 1);
     const hunterIds = sim
@@ -633,6 +799,7 @@ describe("Ashen Gate vertical slice", () => {
     putVillagersToWork(sim);
     place(sim, "barracks", 6, 3);
     const barracksId = completed(sim, "barracks");
+    fundTraining(sim, "warden", 5);
     const before = sim.snapshot().resources;
     const popBefore = ui(sim.snapshot()).pop?.used ?? 0;
     sim.enqueue({
@@ -647,22 +814,18 @@ describe("Ashen Gate vertical slice", () => {
     expect(
       queue?.every((job) => job.classId === "warden" && job.count === 1),
     ).toBe(true);
-    expect(sim.snapshot().resources.food).toBe((before.food ?? 0) - 150);
-    expect(sim.snapshot().resources.water).toBe((before.water ?? 0) - 75);
+    expect(sim.snapshot().resources.food).toBe(
+      (before.food ?? 0) - 5 * (trainingPlan("warden").cost.food ?? 0),
+    );
+    expect(sim.snapshot().resources.water).toBe(
+      (before.water ?? 0) - 5 * (trainingPlan("warden").cost.water ?? 0),
+    );
     expect(ui(sim.snapshot()).pop?.used).toBe(popBefore + 5);
   });
 
   test("a shift-click stops when the queue has room for only part of the five", () => {
     const sim = createAshenGateSim({ seed: 9 });
-    putVillagersToWork(sim);
-    stepUntil(
-      sim,
-      () =>
-        (sim.snapshot().resources.food ?? 0) >= 200 &&
-        (sim.snapshot().resources.water ?? 0) >= 160,
-      "resources for queue-capacity test",
-      240,
-    );
+    fundTraining(sim, "villager", MAX_QUEUE);
     const camp = sim
       .snapshot()
       .buildings.find((building) => building.buildingType === "camp");
@@ -697,7 +860,9 @@ describe("Ashen Gate vertical slice", () => {
     expect(ui(sim.snapshot()).buildings?.[camp.id]?.trainingQueue).toHaveLength(
       20,
     );
-    expect(sim.snapshot().resources.food).toBe((food ?? 0) - 20);
+    expect(sim.snapshot().resources.food).toBe(
+      (food ?? 0) - 2 * (trainingPlan("villager").cost.food ?? 0),
+    );
     expect(
       ui(sim.snapshot()).notices.some((notice) =>
         notice.text.includes("Queued 2 of 5"),
@@ -737,13 +902,13 @@ describe("Ashen Gate vertical slice", () => {
       ),
     ).toEqual(["warden"]);
     expect(ui(sim.snapshot()).pop?.used).toBe(popBefore + 1);
-    const hunterCost = { food: 25, water: 20 };
+    const hunterCost = trainingPlan("hunter").cost;
     expect((after.food ?? 0) - (afterOrders.food ?? 0)).toBeGreaterThanOrEqual(
-      hunterCost.food,
+      hunterCost.food ?? 0,
     );
     expect(
       (after.water ?? 0) - (afterOrders.water ?? 0),
-    ).toBeGreaterThanOrEqual(hunterCost.water);
+    ).toBeGreaterThanOrEqual(hunterCost.water ?? 0);
     expect(after.water).toBeLessThan(before.water ?? 0);
   });
 
@@ -769,7 +934,7 @@ describe("Ashen Gate vertical slice", () => {
       sim,
       () => holdCount(sim, "hunter") === 1,
       "hunter after cancel",
-      30,
+      trainingPlan("hunter").seconds + 10,
     );
     expect(holdCount(sim, "warden")).toBe(0);
     expect(holdCount(sim, "cultivator")).toBe(1);
@@ -805,7 +970,7 @@ describe("Ashen Gate vertical slice", () => {
       sim,
       () => holdCount(sim, "cultivator") === 2,
       "second cultivator",
-      30,
+      trainingPlan("cultivator").seconds + 10,
     );
     const trained = sim
       .snapshot()
@@ -820,6 +985,12 @@ describe("Ashen Gate vertical slice", () => {
 
   test("the starting Cultivator alone clears the scout wave", () => {
     const sim = createAshenGateSim({ seed: 5 });
+    const saved = JSON.parse(sim.serialize()) as { state: SimWorldState };
+    saved.state.units = saved.state.units.filter(
+      (unit) => unit.id !== "ashen-rider",
+    );
+    sim.load(JSON.stringify(saved));
+    expect(holdCount(sim, "rider")).toBe(0);
     putVillagersToWork(sim);
     stepUntil(
       sim,
@@ -845,6 +1016,7 @@ describe("Ashen Gate vertical slice", () => {
     putVillagersToWork(sim);
     place(sim, "barracks", 6, 3);
     const barracksId = completed(sim, "barracks");
+    fundTraining(sim, "warden", SQUAD_SIZE);
     trainSquad(sim, barracksId, "warden");
     stepUntil(
       sim,
@@ -910,18 +1082,121 @@ describe("Ashen Gate vertical slice", () => {
     "plays Camp through Cinderjaw, reloads, and ends on victory",
     () => {
       const storage = new MemoryStorage();
-      // Seed 8 is a layout this scripted player reaches victory on; the
-      // script's fixed build offsets and gather split are seed-sensitive.
-      const sim = createAshenGateSim({ seed: 8 });
+      // This scripted climb is tuned to a dry approach; rivers reroute the
+      // scouts onto the working villagers. Waterways have their own tests.
+      const sim = createAshenGateSim({ seed: 1, waterways: false });
+      const stopCaptainMicro = attachCaptainMicro(sim);
       attachLayerAutosave(sim, storage);
       sim.step(1);
       expect(readSaveSlot(storage, AUTOSAVE_SLOT)).not.toBeNull();
       putVillagersToWork(sim);
 
+      const camp = sim
+        .snapshot()
+        .buildings.find((entry) => entry.buildingType === "camp");
+      const wood = ui(sim.snapshot()).nodes?.find(
+        (node) => node.id === "ashen-wood-near",
+      );
+      if (!camp || !wood) throw new Error("Missing opening economy");
+      sim.enqueue({
+        buildingId: camp.id,
+        nodeId: wood.id,
+        type: "set_rally_point",
+        x: wood.x,
+        y: wood.y,
+      });
+      sim.enqueue({
+        buildingId: camp.id,
+        classId: "villager",
+        count: 2,
+        type: "train_unit",
+      });
       place(sim, "barracks", 6, 3);
       const barracksId = completed(sim, "barracks");
-      trainSquad(sim, barracksId, "warden");
+      stepUntil(
+        sim,
+        () => villagerIds(sim).length === 5,
+        "first two opening workers",
+        2 * trainingPlan("villager").seconds + 10,
+      );
+      expect(ui(sim.snapshot()).pop).toEqual({ cap: 8, used: 8 });
+      const openingWorkers = villagerIds(sim);
+      sim.enqueue({
+        nodeId: "ashen-wood-near",
+        type: "assign_gather",
+        unitIds: openingWorkers.slice(3, 4),
+      });
+      sim.enqueue({
+        nodeId: "ashen-stone-near",
+        type: "assign_gather",
+        unitIds: openingWorkers.slice(4),
+      });
+      const openingHousing = buildingDef("housing");
+      if (!openingHousing) throw new Error("Missing Housing");
+      stepUntil(
+        sim,
+        () =>
+          RESOURCE_IDS.every(
+            (id) =>
+              sim.snapshot().resources[id] >= (openingHousing.cost[id] ?? 0),
+          ),
+        "opening Housing resources",
+        300,
+      );
+      // Build real Housing before reserving population beyond the initial eight.
+      place(sim, "housing", -5, 0);
+      completed(sim, "housing");
+      expect(ui(sim.snapshot()).pop?.cap).toBe(
+        8 + (openingHousing.popBonus ?? 0),
+      );
+      sim.enqueue({
+        buildingId: camp.id,
+        classId: "villager",
+        type: "train_unit",
+      });
+      trainSquad(sim, barracksId, "warden", 2);
 
+      // Gather the actual upgrade and defense costs before spending either.
+      const outpost = holdTierDef("Outpost");
+      const omenTower = buildingDef("omen_tower");
+      const wardTower = buildingDef("ward_tower");
+      const housing = buildingDef("housing");
+      const farm = buildingDef("farm");
+      if (!outpost || !omenTower || !wardTower || !housing || !farm) {
+        throw new Error("Missing Outpost economy definitions");
+      }
+      stepUntil(
+        sim,
+        () => villagerIds(sim).length === 6,
+        "opening workers",
+        3 * trainingPlan("villager").seconds + 10,
+      );
+      const workers = villagerIds(sim);
+      sim.enqueue({
+        nodeId: "ashen-wood-near",
+        type: "assign_gather",
+        unitIds: workers.slice(3, 5),
+      });
+      sim.enqueue({
+        nodeId: "ashen-stone-near",
+        type: "assign_gather",
+        unitIds: workers.slice(5),
+      });
+      const costs = [outpost.upgradeCost];
+      stepUntil(
+        sim,
+        () =>
+          ["wood", "stone"].every((resourceId) => {
+            const id = resourceId as "wood" | "stone";
+            const required = costs.reduce(
+              (total, cost) => total + (cost[id] ?? 0),
+              0,
+            );
+            return sim.snapshot().resources[id] >= required;
+          }),
+        "gathered Outpost upgrade wood and stone",
+        600,
+      );
       sim.enqueue({ type: "upgrade_hold" });
       stepUntil(
         sim,
@@ -929,33 +1204,36 @@ describe("Ashen Gate vertical slice", () => {
         "Outpost upgrade",
         30,
       );
+      putVillagersToWork(sim);
 
-      // Gather wood and stone for an Outpost Omen Tower and Ward Tower.
-      const workers = villagerIds(sim);
       sim.enqueue({
         nodeId: "ashen-wood-near",
         type: "assign_gather",
-        unitIds: workers.slice(0, 1),
+        unitIds: workers.slice(3, 4),
       });
       sim.enqueue({
         nodeId: "ashen-stone-near",
         type: "assign_gather",
-        unitIds: workers.slice(1),
+        unitIds: workers.slice(4),
       });
+      trainSquad(sim, barracksId, "hunter");
       stepUntil(
         sim,
         () =>
-          (sim.snapshot().resources.wood ?? 0) >= 40 &&
-          (sim.snapshot().resources.stone ?? 0) >= 70,
-        "Outpost wood and stone",
-        150,
+          ["wood", "stone"].every((resourceId) => {
+            const id = resourceId as "wood" | "stone";
+            return (
+              sim.snapshot().resources[id] >=
+              (omenTower.cost[id] ?? 0) + (wardTower.cost[id] ?? 0)
+            );
+          }),
+        "tower resources",
+        300,
       );
-      putVillagersToWork(sim);
-
       place(sim, "omen_tower", 9, -3);
       place(sim, "ward_tower", 12, 0);
       completed(sim, "omen_tower");
-      trainSquad(sim, barracksId, "hunter");
+      completed(sim, "ward_tower");
       stepUntil(
         sim,
         () =>
@@ -965,9 +1243,80 @@ describe("Ashen Gate vertical slice", () => {
         200,
       );
 
-      for (const classId of ["hunter", "hunter", "hunter", "warden"] as const) {
+      stepUntil(
+        sim,
+        () =>
+          RESOURCE_IDS.every(
+            (id) =>
+              sim.snapshot().resources[id] >=
+              (housing.cost[id] ?? 0) + (farm.cost[id] ?? 0),
+          ),
+        "housing resources",
+        300,
+      );
+      const secondHousingCell = place(sim, "housing", 2, 8);
+      stepUntil(
+        sim,
+        () =>
+          sim
+            .snapshot()
+            .buildings.some(
+              (building) =>
+                building.buildingType === "housing" &&
+                building.x === secondHousingCell.x &&
+                building.y === secondHousingCell.y &&
+                ui(sim.snapshot()).buildings?.[building.id]?.constructing ===
+                  false,
+            ),
+        "second Housing construction",
+        120,
+      );
+      place(sim, "farm", -6, 3);
+      const farmId = completed(sim, "farm");
+      place(sim, "well", -6, -3);
+      const wellId = completed(sim, "well");
+      // Train one more worker on the clustered Food node while the Camp is idle
+      // so Food keeps up with Water during continuous Barracks recruitment.
+      sim.enqueue({
+        buildingId: camp.id,
+        nodeId: "ashen-food-near-cluster",
+        type: "set_rally_point",
+        x:
+          ui(sim.snapshot()).nodes?.find(
+            (node) => node.id === "ashen-food-near-cluster",
+          )?.x ?? camp.x,
+        y:
+          ui(sim.snapshot()).nodes?.find(
+            (node) => node.id === "ashen-food-near-cluster",
+          )?.y ?? camp.y,
+      });
+      sim.enqueue({
+        buildingId: camp.id,
+        classId: "villager",
+        count: 1,
+        type: "train_unit",
+      });
+      // Recruitment needs more Food than Water: keep three gatherers plus
+      // the Farm on Food, and two workers drawing Water from the Well.
+      sim.enqueue({
+        nodeId: "ashen-food-near",
+        type: "assign_gather",
+        unitIds: workers.slice(0, 3),
+      });
+      sim.enqueue({ type: "order_stop", unitIds: workers.slice(3) });
+      sim.step(1);
+      sim.enqueue({
+        buildingId: farmId,
+        type: "assign_build",
+        unitIds: workers.slice(3, 4),
+      });
+      sim.enqueue({
+        buildingId: wellId,
+        type: "assign_build",
+        unitIds: workers.slice(4),
+      });
+      for (const classId of ["warden", "hunter", "warden", "hunter"] as const) {
         trainSquad(sim, barracksId, classId);
-        place(sim, "housing", 2 + holdCount(sim, "hunter"), 8);
       }
 
       const save = sim.serialize();
@@ -979,14 +1328,42 @@ describe("Ashen Gate vertical slice", () => {
         slice(sim.snapshot()).cultivation,
       );
 
+      // Keep recruiting reinforcements through the final natural waves.
+      let reinforcement = 0;
       stepUntil(
         sim,
-        () =>
-          waves(sim.snapshot()).bossGateCleared ||
-          slice(sim.snapshot()).outcome !== "playing",
+        () => {
+          const snapshot = sim.snapshot();
+          if (
+            waves(snapshot).bossGateCleared ||
+            slice(snapshot).outcome !== "playing"
+          )
+            return true;
+          const presentation = ui(snapshot);
+          const classId = reinforcement % 2 === 0 ? "warden" : "hunter";
+          if (
+            (presentation.buildings?.[barracksId]?.trainingQueue?.length ?? 0) <
+              3 &&
+            presentation.trainOptions?.some(
+              (option) =>
+                option.buildingId === barracksId &&
+                option.classId === classId &&
+                option.allowed,
+            )
+          ) {
+            sim.enqueue({
+              buildingId: barracksId,
+              classId,
+              type: "train_unit",
+            });
+            reinforcement += 1;
+          }
+          return false;
+        },
         "Cinderjaw",
         900,
       );
+      stopCaptainMicro();
       expect(slice(sim.snapshot()).outcome).toBe("playing");
       expect(
         ui(sim.snapshot()).objectives?.find((entry) => entry.id === "boss")
@@ -1086,17 +1463,15 @@ describe("Ashen Gate vertical slice", () => {
     expect(releasedWave?.canCallEarly).toBe(true);
   });
 
-  test("starting Captain breaks through to Sworn without a Cultivation Hall after the swarm wave", () => {
+  test("starting Captain breaks through to Sworn without a Cultivation Hall after the scout wave", () => {
     const sim = createAshenGateSim({ seed: 23 });
     sim.step(1);
-    // Before swarm is repelled, Captain cannot break through without a Hall.
+    // Before scouts are repelled, Captain cannot break through without a Hall.
     expect(ui(sim.snapshot()).units?.["ashen-captain"]?.breakthroughReady).toBe(
       false,
     );
 
-    // Call scout + swarm early and clear both waves cleanly.
-    sim.enqueue({ type: "call_next_wave" } as unknown as Command);
-    sim.step(1);
+    // Call the scouts early and clear them cleanly.
     sim.enqueue({ type: "call_next_wave" } as unknown as Command);
     sim.step(1);
     const saved = JSON.parse(sim.serialize()) as {
@@ -1109,10 +1484,7 @@ describe("Ashen Gate vertical slice", () => {
         };
       };
     };
-    expect(saved.state.meta.waves.spawnedWaveIds).toEqual([
-      "ashen_scout",
-      "ashen_swarm",
-    ]);
+    expect(saved.state.meta.waves.spawnedWaveIds).toEqual(["ashen_scout"]);
     saved.state.meta.waves.units = [];
     sim.load(JSON.stringify(saved));
     sim.step(1);
@@ -1121,6 +1493,25 @@ describe("Ashen Gate vertical slice", () => {
     const readyReadout = ui(sim.snapshot()).units?.["ashen-captain"];
     expect(readyReadout?.breakthroughReady).toBe(true);
     expect(readyReadout?.breakthroughHallId).toBeUndefined();
+    expect(readyReadout?.cultivation).toMatchObject({
+      essence: 50,
+      merit: 100,
+      missingRequirements: [],
+      successChance: 0.9,
+    });
+    const toppedUp = slice(sim.snapshot()).cultivation.units.find(
+      (entry) => entry.unitId === "ashen-captain",
+    );
+    expect(toppedUp).toMatchObject({
+      combatProof: 3,
+      essence: 50,
+      merit: 100,
+    });
+    sim.load(sim.serialize());
+    sim.step(1);
+    expect(ui(sim.snapshot()).units?.["ashen-captain"]?.breakthroughReady).toBe(
+      true,
+    );
 
     // Start breakthrough without hallId, finish the 20s channel, and choose a school.
     sim.enqueue({
@@ -1131,7 +1522,19 @@ describe("Ashen Gate vertical slice", () => {
     const channeling = slice(sim.snapshot()).cultivation.units.find(
       (entry) => entry.unitId === "ashen-captain",
     );
-    expect(channeling?.activeBreakthrough?.targetRank).toBe("Sworn");
+    expect(channeling?.activeBreakthrough).toMatchObject({
+      successChance: 0.9,
+      targetRank: "Sworn",
+    });
+    sim.load(sim.serialize());
+    sim.step(1);
+    const restoredChannel = slice(sim.snapshot()).cultivation.units.find(
+      (entry) => entry.unitId === "ashen-captain",
+    );
+    expect(restoredChannel?.activeBreakthrough).toMatchObject({
+      successChance: 0.9,
+      targetRank: "Sworn",
+    });
 
     // Force a deterministic passing roll by advancing 20s; retry once if RNG rolled >= 0.9.
     sim.step(20 * TICKS_PER_SECOND + 1);
@@ -1150,5 +1553,87 @@ describe("Ashen Gate vertical slice", () => {
       // Failed roll (10% chance): unit is injured, proving the real breakthrough channel ran.
       expect(ui(sim.snapshot()).units?.["ashen-captain"]?.injured).toBe(true);
     }
+  });
+
+  test("a non-Captain Outpost breakthrough needs no pill and uses the selected Hall's vein bonus", () => {
+    const sim = createAshenGateSim({ seed: 29 });
+    const unitId = "ordinary-warden";
+    const saved = JSON.parse(sim.serialize()) as { state: SimWorldState };
+    const economy = ensureEconomyMeta(saved.state);
+    economy.tier = "Outpost";
+    economy.items = {};
+    const vein = economy.veins[0];
+    if (!vein) throw new Error("Missing starting Spirit Vein");
+    saved.state.buildings.push(
+      createBuildingRecord({
+        buildingType: "cultivation_hall",
+        completed: true,
+        id: "plain-hall",
+        x: vein.x,
+        y: vein.y + 8,
+      }),
+      createBuildingRecord({
+        buildingType: "cultivation_hall",
+        completed: true,
+        id: "early-hall",
+        x: vein.x,
+        y: vein.y,
+      }),
+    );
+    const captain = saved.state.units.find(
+      (unit) => unit.id === "ashen-captain",
+    );
+    if (!captain) throw new Error("Missing Captain unit");
+    saved.state.units.push(
+      createUnitRecord({
+        classId: "warden",
+        id: unitId,
+        maxHp: 140,
+        popKind: "soldier",
+        realmId: "qi_gathering",
+        x: captain.x,
+        y: captain.y,
+      }),
+    );
+    const initialRecord = slice(saved.state).cultivation.units.find(
+      (unit) => unit.unitId === "ashen-captain",
+    );
+    if (!initialRecord) throw new Error("Missing Captain cultivation");
+    const ordinary = structuredClone(initialRecord);
+    ordinary.unitId = unitId;
+    ordinary.combatProof = 3;
+    ordinary.essence = 50;
+    ordinary.merit = 100;
+    slice(saved.state).cultivation.units.push(ordinary);
+    saved.state.resources.iron = 0;
+    saved.state.resources.spirit_herbs = 0;
+    sim.load(JSON.stringify(saved));
+    sim.step(TICKS_PER_SECOND);
+
+    const ready = ui(sim.snapshot()).units?.[unitId];
+    expect(ready?.breakthroughReady).toBe(true);
+    expect(ready?.breakthroughHallId).toBe("plain-hall");
+    expect(ready?.cultivation?.missingRequirements).toEqual([]);
+    expect(ready?.cultivation?.successChance).toBe(0.9);
+
+    sim.enqueue({
+      hallId: "early-hall",
+      type: "start_breakthrough",
+      unitId,
+    });
+    sim.step(1);
+    const channeling = slice(sim.snapshot()).cultivation.units.find(
+      (unit) => unit.unitId === unitId,
+    );
+    expect(channeling?.activeBreakthrough).toMatchObject({
+      successChance: 1,
+      targetRank: "Sworn",
+    });
+    const after = JSON.parse(sim.serialize()) as { state: SimWorldState };
+    expect(
+      ensureEconomyMeta(after.state).items.breakthrough_pill,
+    ).toBeUndefined();
+    expect(after.state.resources.iron).toBe(0);
+    expect(after.state.resources.spirit_herbs).toBe(0);
   });
 });

@@ -59,7 +59,7 @@ export const BUILDING_TOOLTIPS = {
   },
   forest: {
     buildingId: "forest",
-    lore: "Ash saplings drink from clay channels until the Hold can cut one beam and plant two more.",
+    lore: "Ash saplings take root in the cinders, so the Hold can cut one beam and plant two more.",
     name: "Managed Forest",
   },
   forward_shrine: {

@@ -109,7 +109,7 @@ describe("Descent economy placement", () => {
     const walls = sim.listBuildings();
     expect(walls).toHaveLength(1);
     expect(walls[0]).toMatchObject({ x: 2, y: 4 });
-    expect(sim.getStockpile().wood).toBe(95);
+    expect(sim.getStockpile().wood).toBe(90);
     expect(sim.isCellPassable(2, 4, "horde")).toBe(false);
   });
 });
@@ -168,7 +168,7 @@ describe("Descent economy construction", () => {
     sim.step(Math.ceil(buildTicks / constructionProgressPerStep(1)) + 2);
     const housing = sim.listBuildings()[0];
     expect(housing?.completed).toBe(true);
-    expect(sim.getPopCap()).toBe(110);
+    expect(sim.getPopCap()).toBe(18);
   });
 
   test("damage taken while building is kept through the ramp and completion", () => {

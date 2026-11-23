@@ -5,6 +5,11 @@ import type {
   ResourceId,
   SchoolId,
 } from "../logic/types";
+import {
+  type BlockerItem,
+  blockersFromLines,
+  pricedActionBlockers,
+} from "./blockers";
 import { type CostLine, type CostStock, costLineFrom } from "./costLine";
 import type { InspectTarget } from "./inspect";
 import {
@@ -119,6 +124,11 @@ export interface CardButton {
   batchCost?: CostLine;
   /** Cost of {@link batchCount}, shown while Shift is held. */
   batchDetail?: string;
+  /**
+   * Why a disabled action cannot run and how to fix it. Every disabled
+   * button carries at least one item so clicks and hovers can explain it.
+   */
+  blockers?: readonly BlockerItem[];
   /** Price drawn as resource icons and amounts. */
   cost?: CostLine;
   description?: string;
@@ -319,14 +329,20 @@ function unitButtons(
     .map((unit) => unit.id);
   if (primary.qiArt !== null && cultivatorIds.length > 0) {
     const art = primary.qiArt;
+    // The art casts for every selected cultivator, so it is blocked only
+    // when none of them can cast it.
+    const anyReady = selected.some(
+      (unit) => unit.factionId === "hold" && unit.qiArt?.ready === true,
+    );
     const detail =
       art.cooldownSeconds > 0
         ? `Cooldown ${art.cooldownSeconds}s`
         : `${art.qiCost} Qi`;
     buttons.push({
+      blockers: anyReady ? undefined : qiArtBlockers(primary),
       description: art.description,
       detail,
-      disabled: !art.ready,
+      disabled: !anyReady,
       hotkey: "C",
       id: "qi-art",
       intent: { type: "qi_art", unitIds: cultivatorIds },
@@ -346,12 +362,19 @@ function unitButtons(
     });
   }
   if (primary.cultivation !== null) {
+    const missing = primary.cultivation.missingRequirements;
+    const maxRank = primary.cultivation.meritToNext === 0;
+    const blocked = maxRank || missing.length > 0;
+    const gateLines = maxRank ? ["Already at the highest rank."] : missing;
     const breakthroughDetail = primary.breakthroughReady
       ? `Ready! (${Math.round(primary.cultivation.successChance * 100)}%)`
-      : primary.cultivation.missingRequirements[0];
+      : missing[0];
     buttons.push({
-      description: "Try to advance a rank at the Cultivation Hall.",
+      blockers: blocked ? blockersFromLines(gateLines) : undefined,
+      description:
+        "Advance a rank. The first breakthrough needs no pill; a Hall on a Spirit Vein improves success.",
       detail: breakthroughDetail,
+      disabled: blocked,
       id: "breakthrough",
       intent: { type: "breakthrough", unitId: primary.id },
       label: "Breakthrough",
@@ -465,9 +488,13 @@ function buildingButtons(
     const cost =
       upgrade.cost === undefined ? undefined : costLineFrom(upgrade.cost);
     buttons.push({
+      blockers: upgrade.allowed
+        ? undefined
+        : pricedActionBlockers(upgrade.reason, cost, costStock(model)),
       cost,
       description: upgrade.unlocks,
       detail: blockerDetail(upgrade, cost, upgrade.costLabel),
+      disabled: !upgrade.allowed,
       id: "upgrade-hold",
       intent: { type: "upgrade" },
       label: `Upgrade to ${model.holdUpgrade.targetTier}`,
@@ -500,6 +527,9 @@ function buildingButtons(
       batchCost: quote?.cost,
       batchCount: quote?.count,
       batchDetail: quote?.detail,
+      blockers: option.allowed
+        ? undefined
+        : pricedActionBlockers(option.reason, cost, costStock(model)),
       cost,
       description: guide.description,
       detail: blockerDetail(option, cost, option.detail),
@@ -598,6 +628,40 @@ function buildingButtons(
   return buttons;
 }
 
+/** Shown on gather buttons when every villager already has a job. */
+const NO_IDLE_BLOCKERS: readonly BlockerItem[] = [
+  {
+    fix: "Train a Villager at the Camp, or select busy villagers and right-click this node.",
+    problem: "No idle villagers",
+  },
+];
+
+/**
+ * Explains why a cultivator's Qi Art cannot be cast yet.
+ * @param unit - Cultivator whose art is not ready
+ * @returns Cooldown and Qi shortfall items
+ */
+function qiArtBlockers(unit: ShellUnit): BlockerItem[] {
+  const art = unit.qiArt;
+  if (art === null) return [];
+  const items: BlockerItem[] = [];
+  if (art.cooldownSeconds > 0) {
+    items.push({
+      fix: "Wait for the cooldown to finish.",
+      problem: `Recharging — ${art.cooldownSeconds}s left`,
+    });
+  }
+  const qi = unit.qi ?? 0;
+  if (qi < art.qiCost) {
+    items.push({
+      fix: "Qi refills over time; Meditate (M) or stand in a Spirit Array to refill faster.",
+      problem: `Need ${art.qiCost} Qi (have ${qi})`,
+    });
+  }
+  if (items.length === 0) items.push({ problem: "Not ready yet" });
+  return items;
+}
+
 /**
  * @param resource - Stable resource id
  * @returns Player-facing resource name
@@ -620,8 +684,10 @@ function nodeButtons(
 ): CardButton[] {
   const idle = idleVillagerIds(model.units, localPlayerId).length;
   const none = idle === 0;
+  const blockers = none ? NO_IDLE_BLOCKERS : undefined;
   return [
     {
+      blockers,
       description: "Send the next idle villager to gather here.",
       detail: none ? "No idle villagers" : `${idle} idle`,
       disabled: none,
@@ -630,6 +696,7 @@ function nodeButtons(
       label: "Send 1 idle",
     },
     {
+      blockers,
       description: "Send every idle villager to gather here.",
       detail: none ? "No idle villagers" : `${idle} idle`,
       disabled: none,
@@ -668,8 +735,17 @@ function generalButtons(
       label: "Controls",
     },
     {
+      blockers: model.bossGateCleared
+        ? undefined
+        : [
+            {
+              fix: "Defeat the layer boss at the far side of the map.",
+              problem: "The boss still lives",
+            },
+          ],
       description: "Go down to the next layer once the boss is dead.",
       detail: model.bossGateCleared ? "Boss gate clear" : "Boss still lives",
+      disabled: !model.bossGateCleared,
       id: "descend",
       intent: { type: "descend" },
       label: "Descend",

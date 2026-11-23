@@ -3,10 +3,15 @@
 "use client";
 
 import {
+  memo,
+  type ReactNode,
   type PointerEvent as ReactPointerEvent,
   useEffect,
+  useMemo,
+  useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import styles from "./descentView.module.scss";
 import { FogCanvas } from "./FogCanvas";
 import {
@@ -15,12 +20,245 @@ import {
   minimapPingPresentation,
   pruneMinimapPings,
 } from "./minimapPings";
+import { type TerrainReadout, terrainAcross } from "./presentation";
 import type { MapPoint } from "./selection";
 import type { ShellModel } from "./shellModel";
 
 export type { MinimapPing } from "./minimapPings";
 
 const EMPTY_PINGS: readonly MinimapPing[] = [];
+/** Resolution of the minimap canvas along its horizontal axis. */
+const MINIMAP_CANVAS_WIDTH = 256;
+/** Minimum interval between dynamic entity redraws on the minimap canvas. */
+const MINIMAP_REDRAW_INTERVAL_MS = 64;
+
+interface StaticLayerSnapshot {
+  height: number;
+  nodeIds: readonly string[];
+  terrainIds: readonly string[];
+  veinIds: readonly string[];
+  ventIds: readonly string[];
+  width: number;
+}
+
+/**
+ * Checks whether an entity list has the same ids in the same order as before.
+ * @param items - Current feature list
+ * @param previousIds - Previously drawn feature ids
+ * @returns True when the list is unchanged
+ */
+function sameFeatureIds(
+  items: readonly { id: string }[],
+  previousIds: readonly string[],
+): boolean {
+  if (items.length !== previousIds.length) return false;
+  for (let i = 0; i < items.length; i += 1) {
+    if (items[i]?.id !== previousIds[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * Returns fill and stroke styles matching the minimap terrain CSS tokens.
+ * @param kind - Terrain kind
+ * @returns Fill and stroke colors
+ */
+function terrainColors(kind: TerrainReadout["kind"]): {
+  fill: string;
+  stroke: string;
+} {
+  if (kind === "magma_fissure") {
+    return { fill: "rgba(214, 82, 34, 0.75)", stroke: "#ff9c54" };
+  }
+  if (kind === "obsidian_spire") {
+    return { fill: "rgba(42, 28, 58, 0.9)", stroke: "#a96de0" };
+  }
+  if (kind === "deep_water") {
+    return {
+      fill: "rgba(47, 127, 154, 0.8)",
+      stroke: "rgba(120, 190, 214, 0.7)",
+    };
+  }
+  if (kind === "bridge") {
+    return { fill: "rgba(139, 106, 69, 0.95)", stroke: "#d3b080" };
+  }
+  return {
+    fill: "rgba(56, 48, 54, 0.85)",
+    stroke: "rgba(124, 108, 116, 0.8)",
+  };
+}
+
+/**
+ * Paints one terrain feature onto the cached static minimap layer.
+ * @param ctx - Offscreen 2D context
+ * @param feature - Terrain feature to draw
+ * @param scaleX - Canvas pixels per map unit along x
+ * @param scaleY - Canvas pixels per map unit along y
+ */
+function drawTerrainFeature(
+  ctx: CanvasRenderingContext2D,
+  feature: TerrainReadout,
+  scaleX: number,
+  scaleY: number,
+): void {
+  const { fill, stroke } = terrainColors(feature.kind);
+  const cx = feature.x * scaleX;
+  const cy = feature.y * scaleY;
+  const w = Math.max(4, feature.radius * 2 * scaleX);
+  const h = Math.max(4, terrainAcross(feature) * scaleY);
+  ctx.fillStyle = fill;
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = 1;
+  if (feature.kind === "deep_water") {
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    return;
+  }
+  ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
+  ctx.strokeRect(cx - w / 2, cy - h / 2, w, h);
+}
+
+/**
+ * Draws the fog-revealed static features (terrain, vents, veins, nodes) onto
+ * a cached offscreen canvas so 20Hz entity redraws can blit them in one call.
+ * @param canvas - Reusable offscreen canvas
+ * @param model - Current shell model
+ * @param canvasWidth - Pixel width
+ * @param canvasHeight - Pixel height
+ */
+function paintStaticMinimapLayer(
+  canvas: HTMLCanvasElement,
+  model: ShellModel,
+  canvasWidth: number,
+  canvasHeight: number,
+): void {
+  if (canvas.width !== canvasWidth) canvas.width = canvasWidth;
+  if (canvas.height !== canvasHeight) canvas.height = canvasHeight;
+  const ctx = canvas.getContext("2d");
+  if (ctx === null) return;
+  ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+  const mapWidth = model.map.width > 0 ? model.map.width : 1;
+  const mapHeight = model.map.height > 0 ? model.map.height : 1;
+  const scaleX = canvasWidth / mapWidth;
+  const scaleY = canvasHeight / mapHeight;
+
+  for (let i = 0; i < model.terrain.length; i += 1) {
+    const feature = model.terrain[i];
+    if (feature === undefined || feature.kind === "bridge") continue;
+    drawTerrainFeature(ctx, feature, scaleX, scaleY);
+  }
+  for (let i = 0; i < model.terrain.length; i += 1) {
+    const feature = model.terrain[i];
+    if (feature === undefined || feature.kind !== "bridge") continue;
+    drawTerrainFeature(ctx, feature, scaleX, scaleY);
+  }
+
+  ctx.fillStyle = "rgba(238, 83, 62, 0.2)";
+  ctx.strokeStyle = "rgba(238, 83, 62, 0.75)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < model.vents.length; i += 1) {
+    const vent = model.vents[i];
+    if (vent === undefined) continue;
+    const rx = Math.max(2, vent.radius * scaleX);
+    const ry = Math.max(2, vent.radius * scaleY);
+    ctx.beginPath();
+    ctx.ellipse(vent.x * scaleX, vent.y * scaleY, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = "#59d5ef";
+  for (let i = 0; i < model.veins.length; i += 1) {
+    const vein = model.veins[i];
+    if (vein === undefined) continue;
+    ctx.beginPath();
+    ctx.arc(vein.x * scaleX, vein.y * scaleY, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = "#8eb678";
+  ctx.strokeStyle = "#d0e0a9";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < model.nodes.length; i += 1) {
+    const node = model.nodes[i];
+    if (node === undefined) continue;
+    ctx.beginPath();
+    ctx.arc(node.x * scaleX, node.y * scaleY, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+}
+
+/**
+ * Composites the cached static layer with live buildings and units onto the
+ * visible minimap canvas.
+ * @param canvas - Visible minimap canvas
+ * @param staticCanvas - Cached offscreen static layer, if available
+ * @param model - Current shell model
+ * @param canvasWidth - Pixel width
+ * @param canvasHeight - Pixel height
+ */
+function paintDynamicMinimapLayer(
+  canvas: HTMLCanvasElement,
+  staticCanvas: HTMLCanvasElement | null,
+  model: ShellModel,
+  canvasWidth: number,
+  canvasHeight: number,
+): void {
+  if (canvas.width !== canvasWidth) canvas.width = canvasWidth;
+  if (canvas.height !== canvasHeight) canvas.height = canvasHeight;
+  const ctx = canvas.getContext("2d");
+  if (ctx === null) return;
+  ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+  if (staticCanvas !== null) {
+    ctx.drawImage(staticCanvas, 0, 0);
+  }
+  const mapWidth = model.map.width > 0 ? model.map.width : 1;
+  const mapHeight = model.map.height > 0 ? model.map.height : 1;
+  const scaleX = canvasWidth / mapWidth;
+  const scaleY = canvasHeight / mapHeight;
+
+  ctx.lineWidth = 1;
+  for (let i = 0; i < model.buildings.length; i += 1) {
+    const building = model.buildings[i];
+    if (building === undefined) continue;
+    const bx = building.x * scaleX;
+    const by = building.y * scaleY;
+    ctx.fillStyle = building.ownerColor ?? "#e0b35d";
+    ctx.strokeStyle = building.ownerColor === undefined ? "#fff0bb" : "#0b0705";
+    ctx.fillRect(bx - 3.5, by - 3.5, 7, 7);
+    ctx.strokeRect(bx - 3.5, by - 3.5, 7, 7);
+  }
+
+  for (let i = 0; i < model.units.length; i += 1) {
+    const unit = model.units[i];
+    if (unit === undefined) continue;
+    const ux = unit.x * scaleX;
+    const uy = unit.y * scaleY;
+    ctx.fillStyle =
+      unit.factionId === "horde" ? "#ee533e" : (unit.ownerColor ?? "#f4dc93");
+    ctx.beginPath();
+    ctx.arc(ux, uy, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+/**
+ * Renders the minimap into the HUD's minimap well when one is mounted, the
+ * way AoE docks it in the bottom bar; otherwise it floats over the map.
+ * @param minimap - The minimap element
+ * @param host - HUD element to dock into, or null to float
+ * @returns The minimap, portaled when docked
+ */
+export function dockMinimap(
+  minimap: ReactNode,
+  host: HTMLElement | null | undefined,
+): ReactNode {
+  if (host === null || host === undefined) return minimap;
+  return createPortal(minimap, host);
+}
 
 /** Camera footprint drawn over the strategic map. */
 export interface MinimapView {
@@ -40,6 +278,11 @@ export interface DescentMinimapProps {
    * button) queues a waypoint.
    */
   onOrder?: (point: MapPoint, queue: boolean) => void;
+  /**
+   * Called when the pointer enters the minimap. A docked minimap is outside
+   * the map frame, so the frame uses this to drop its hover state.
+   */
+  onPointerEnter?: () => void;
   /**
    * Short-lived attack rings. They ignore pointer events so the existing
    * click-to-jump navigation also works when clicking directly on a ping.
@@ -122,15 +365,137 @@ export function minimapPressAction(
  *   callbacks
  * @returns A clickable overview that recenters the camera or orders units
  */
-export function DescentMinimap({
+function DescentMinimapInner({
   model,
   onNavigate,
   onOrder,
+  onPointerEnter,
   pings = EMPTY_PINGS,
   view,
 }: DescentMinimapProps) {
   const reducedMotion = usePrefersReducedMotion();
   const now = useMinimapPingClock(pings, reducedMotion);
+  const entityCanvasRef = useRef<HTMLCanvasElement>(null);
+  const staticCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const staticSnapshotRef = useRef<StaticLayerSnapshot | null>(null);
+  const lastDrawTimeRef = useRef(0);
+  const pendingDrawRef = useRef<number | null>(null);
+  const latestModelRef = useRef(model);
+  latestModelRef.current = model;
+
+  const canvasWidth = MINIMAP_CANVAS_WIDTH;
+  const canvasHeight =
+    model.map.width > 0
+      ? Math.max(
+          1,
+          Math.round(
+            (MINIMAP_CANVAS_WIDTH * model.map.height) / model.map.width,
+          ),
+        )
+      : MINIMAP_CANVAS_WIDTH;
+  const canvasHeightRef = useRef(canvasHeight);
+  canvasHeightRef.current = canvasHeight;
+
+  const fogCells = model.fog?.cells;
+  const fogWidth = model.fog?.width;
+  const fogHeight = model.fog?.height;
+  const fogLayer = useMemo(() => {
+    if (
+      fogCells === undefined ||
+      fogWidth === undefined ||
+      fogHeight === undefined
+    ) {
+      return null;
+    }
+    return (
+      <FogCanvas
+        className={styles.minimapFog}
+        fog={{ cells: fogCells, height: fogHeight, width: fogWidth }}
+      />
+    );
+  }, [fogCells, fogHeight, fogWidth]);
+
+  useEffect(() => {
+    const drawModel = (current: ShellModel) => {
+      pendingDrawRef.current = null;
+      const canvas = entityCanvasRef.current;
+      if (canvas === null) return;
+      const height = canvasHeightRef.current;
+      const prev = staticSnapshotRef.current;
+      const staticChanged =
+        prev === null ||
+        prev.width !== canvasWidth ||
+        prev.height !== height ||
+        !sameFeatureIds(current.terrain, prev.terrainIds) ||
+        !sameFeatureIds(current.vents, prev.ventIds) ||
+        !sameFeatureIds(current.veins, prev.veinIds) ||
+        !sameFeatureIds(current.nodes, prev.nodeIds);
+
+      if (staticChanged) {
+        if (
+          staticCanvasRef.current === null &&
+          typeof document !== "undefined"
+        ) {
+          staticCanvasRef.current = document.createElement("canvas");
+        }
+        if (staticCanvasRef.current !== null) {
+          paintStaticMinimapLayer(
+            staticCanvasRef.current,
+            current,
+            canvasWidth,
+            height,
+          );
+        }
+        staticSnapshotRef.current = {
+          height,
+          nodeIds: current.nodes.map((item) => item.id),
+          terrainIds: current.terrain.map((item) => item.id),
+          veinIds: current.veins.map((item) => item.id),
+          ventIds: current.vents.map((item) => item.id),
+          width: canvasWidth,
+        };
+      }
+
+      paintDynamicMinimapLayer(
+        canvas,
+        staticCanvasRef.current,
+        current,
+        canvasWidth,
+        height,
+      );
+      lastDrawTimeRef.current = performance.now();
+    };
+
+    const elapsed = performance.now() - lastDrawTimeRef.current;
+    if (
+      lastDrawTimeRef.current === 0 ||
+      elapsed >= MINIMAP_REDRAW_INTERVAL_MS
+    ) {
+      if (pendingDrawRef.current !== null) {
+        window.cancelAnimationFrame(pendingDrawRef.current);
+        pendingDrawRef.current = null;
+      }
+      drawModel(model);
+      return;
+    }
+
+    if (pendingDrawRef.current === null) {
+      pendingDrawRef.current = window.requestAnimationFrame(() =>
+        drawModel(latestModelRef.current),
+      );
+    }
+  }, [model]);
+
+  useEffect(
+    () => () => {
+      if (pendingDrawRef.current !== null) {
+        window.cancelAnimationFrame(pendingDrawRef.current);
+        pendingDrawRef.current = null;
+      }
+    },
+    [],
+  );
+
   /** Recenters the camera or orders the selection at the pointer. */
   const press = (event: ReactPointerEvent<HTMLButtonElement>): void => {
     const action = minimapPressAction(
@@ -170,93 +535,30 @@ export function DescentMinimap({
       }}
       onDoubleClick={(event) => event.stopPropagation()}
       onPointerDown={press}
+      onPointerEnter={onPointerEnter}
       onPointerMove={(event) => event.stopPropagation()}
       onPointerUp={(event) => event.stopPropagation()}
-      style={{ aspectRatio: `${model.map.width} / ${model.map.height}` }}
+      style={{
+        aspectRatio: `${model.map.width} / ${model.map.height}`,
+        ["--minimap-ratio" as string]: model.map.width / model.map.height,
+      }}
       type="button"
     >
-      {model.fog === null ? null : (
-        <FogCanvas className={styles.minimapFog} fog={model.fog} />
-      )}
+      {fogLayer}
+      <canvas
+        height={canvasHeight}
+        ref={entityCanvasRef}
+        style={{
+          height: "100%",
+          inset: 0,
+          pointerEvents: "none",
+          position: "absolute",
+          width: "100%",
+          zIndex: 1,
+        }}
+        width={canvasWidth}
+      />
       <span className={styles.minimapTitle}>Map</span>
-      {model.terrain.map((feature) => (
-        <span
-          className={`${styles.minimapMarker} ${styles.minimapTerrain}`}
-          data-terrain-kind={feature.kind}
-          key={feature.id}
-          style={{
-            height: `${mapPercent(feature.radius * 2, model.map.height)}%`,
-            left: `${mapPercent(feature.x, model.map.width)}%`,
-            top: `${mapPercent(feature.y, model.map.height)}%`,
-            width: `${mapPercent(feature.radius * 2, model.map.width)}%`,
-          }}
-        />
-      ))}
-      {model.vents.map((vent) => (
-        <span
-          className={`${styles.minimapMarker} ${styles.minimapVent}`}
-          key={vent.id}
-          style={{
-            height: `${mapPercent(vent.radius * 2, model.map.height)}%`,
-            left: `${mapPercent(vent.x, model.map.width)}%`,
-            top: `${mapPercent(vent.y, model.map.height)}%`,
-            width: `${mapPercent(vent.radius * 2, model.map.width)}%`,
-          }}
-        />
-      ))}
-      {model.veins.map((vein) => (
-        <span
-          className={`${styles.minimapMarker} ${styles.minimapVein}`}
-          key={vein.id}
-          style={{
-            left: `${mapPercent(vein.x, model.map.width)}%`,
-            top: `${mapPercent(vein.y, model.map.height)}%`,
-          }}
-        />
-      ))}
-      {model.nodes.map((node) => (
-        <span
-          className={`${styles.minimapMarker} ${styles.minimapNode}`}
-          key={node.id}
-          style={{
-            left: `${mapPercent(node.x, model.map.width)}%`,
-            top: `${mapPercent(node.y, model.map.height)}%`,
-          }}
-        />
-      ))}
-      {model.buildings.map((building) => (
-        <span
-          className={`${styles.minimapMarker} ${styles.minimapBuilding}`}
-          key={building.id}
-          style={{
-            ...(building.ownerColor === undefined
-              ? {}
-              : {
-                  backgroundColor: building.ownerColor,
-                  borderColor: "#0b0705",
-                }),
-            left: `${mapPercent(building.x, model.map.width)}%`,
-            top: `${mapPercent(building.y, model.map.height)}%`,
-          }}
-        />
-      ))}
-      {model.units.map((unit) => {
-        const factionClass =
-          unit.factionId === "horde" ? styles.minimapHorde : styles.minimapHold;
-        return (
-          <span
-            className={`${styles.minimapMarker} ${styles.minimapUnit} ${factionClass}`}
-            key={unit.id}
-            style={{
-              ...(unit.factionId === "hold" && unit.ownerColor !== undefined
-                ? { backgroundColor: unit.ownerColor }
-                : {}),
-              left: `${mapPercent(unit.x, model.map.width)}%`,
-              top: `${mapPercent(unit.y, model.map.height)}%`,
-            }}
-          />
-        );
-      })}
       <span
         className={styles.minimapCamera}
         style={{
@@ -310,6 +612,9 @@ export function DescentMinimap({
   );
 }
 
+/** Memoized strategic minimap so unrelated shell state updates do not re-render it. */
+export const DescentMinimap = memo(DescentMinimapInner);
+
 /**
  * Tracks the browser's reduced-motion preference without reading it during SSR.
  * @returns Whether animated minimap rings should remain static
@@ -341,6 +646,7 @@ function useMinimapPingClock(
 ): number {
   const [now, setNow] = useState(0);
   useEffect(() => {
+    if (pings.length === 0) return;
     let animationFrame: number | undefined;
     let expiryTimer: number | undefined;
     /** Publishes time and schedules the next frame or reduced-motion expiry. */

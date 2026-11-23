@@ -259,7 +259,7 @@ export class CultivationSystem {
       passives,
       rank: unit.rank,
       school: unit.school,
-      successChance: this.successChance(realm),
+      successChance: this.successChance(unitId, realm),
       toxicity,
       toxicityCap: TOXICITY_CAP,
     };
@@ -430,12 +430,13 @@ export class CultivationSystem {
     if (!this.stockpile.reservePopulation(populationDelta)) {
       return failure("Spare population was lost before the channel began.");
     }
-    if (!this.stockpile.consumeItem("breakthrough_pill")) {
+    const requiresPill = breakthrough.requiresPill !== false;
+    if (requiresPill && !this.stockpile.consumeItem("breakthrough_pill")) {
       this.stockpile.releasePopulation(populationDelta);
       return failure("Breakthrough Pill changed before it could be consumed.");
     }
     if (!this.stockpile.trySpend(breakthrough.materials)) {
-      this.stockpile.addItem("breakthrough_pill", 1);
+      if (requiresPill) this.stockpile.addItem("breakthrough_pill", 1);
       this.stockpile.releasePopulation(populationDelta);
       return failure("Tier materials changed before they could be spent.");
     }
@@ -444,7 +445,7 @@ export class CultivationSystem {
       remainingSeconds: breakthrough.channelSeconds,
       reservedPopulation: populationDelta,
       sourceRank: unit.rank,
-      successChance: this.successChance(realm),
+      successChance: this.successChance(unitId, realm),
       targetRank: breakthrough.targetRank,
     };
     return success({ ...unit.activeBreakthrough });
@@ -690,7 +691,10 @@ export class CultivationSystem {
     ) {
       missing.push(`Cultivation Hall requires ${breakthrough.hallTier}.`);
     }
-    if (this.stockpile.getItemCount("breakthrough_pill") < 1) {
+    if (
+      breakthrough.requiresPill !== false &&
+      this.stockpile.getItemCount("breakthrough_pill") < 1
+    ) {
       missing.push("Breakthrough Pill is required.");
     }
     const targetRealm = this.realmForRank(breakthrough.targetRank);
@@ -732,17 +736,25 @@ export class CultivationSystem {
   }
 
   /**
-   * Includes the required Breakthrough Pill's 20% bonus in the shown chance.
+   * Includes any required Breakthrough Pill and the unit owner's Hall bonus.
+   * @param unitId - Unit attempting the breakthrough
    * @param realm - Current realm definition
    * @returns Clamped success chance from zero through one
    */
-  private successChance(realm: RealmDefinition): number {
+  private successChance(unitId: string, realm: RealmDefinition): number {
     const breakthrough = realm.breakthrough;
     if (!breakthrough) {
       return 1;
     }
-    const pill = this.requirePill("breakthrough_pill");
-    return Math.min(1, breakthrough.baseSuccessChance + pill.effect.amount);
+    const pillBonus =
+      breakthrough.requiresPill === false
+        ? 0
+        : this.requirePill("breakthrough_pill").effect.amount;
+    const hallBonus = this.stockpile.getBreakthroughSuccessBonus(unitId);
+    return Math.min(
+      1,
+      Math.max(0, breakthrough.baseSuccessChance + pillBonus + hallBonus),
+    );
   }
 
   /**

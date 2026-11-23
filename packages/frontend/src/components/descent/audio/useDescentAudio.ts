@@ -23,6 +23,12 @@ import {
 } from "./descentAudioEngine";
 import { subscribeDescentUnitAcknowledgement } from "./descentCommandAck";
 
+/** Threshold above which seen FX ids are pruned to the current snapshot. */
+const MAX_SEEN_FX = 512;
+
+/** Threshold above which seen notice ids are pruned to the current snapshot. */
+const MAX_SEEN_NOTICES = 256;
+
 /** Inputs that keep generated audio synchronized with one Descent session. */
 export interface UseDescentAudioInput {
   active: boolean;
@@ -78,21 +84,26 @@ export function useDescentAudio(input: UseDescentAudioInput): void {
     setDescentAudioEnabled(input.enabled);
   }, [input.enabled]);
 
+  const hasBoss = model.boss !== null;
+  const hasLiveEnemies = (model.wave?.live ?? 0) > 0;
+
   useEffect(() => {
     setDescentAudioScene({
       active: input.active,
       ambience: "volcanic-ambience",
       music: musicIdForEncounter({
-        boss: model.boss !== null,
-        liveEnemies: model.wave?.live ?? 0,
+        boss: hasBoss,
+        liveEnemies: hasLiveEnemies ? 1 : 0,
       }),
     });
-  }, [input.active, model.boss, model.wave]);
+  }, [hasBoss, hasLiveEnemies, input.active]);
 
   useEffect(() => {
     if (!input.active || !ready.current) {
       for (const effect of model.fx) seenFx.current.add(effect.id);
       for (const notice of model.notices) seenNotices.current.add(notice.id);
+      pruneSeenIds(seenFx.current, model.fx, MAX_SEEN_FX);
+      pruneSeenIds(seenNotices.current, model.notices, MAX_SEEN_NOTICES);
       previousBuildings.current = new Map(
         model.buildings.map((building) => [building.id, building.constructing]),
       );
@@ -105,12 +116,14 @@ export function useDescentAudio(input: UseDescentAudioInput): void {
       const id = audioIdForFx(effect);
       if (id !== null) playDescentAudio(id);
     }
+    pruneSeenIds(seenFx.current, model.fx, MAX_SEEN_FX);
     for (const notice of model.notices) {
       if (seenNotices.current.has(notice.id)) continue;
       seenNotices.current.add(notice.id);
       const id = audioIdForNotice(notice);
       if (id !== null) playDescentAudio(id);
     }
+    pruneSeenIds(seenNotices.current, model.notices, MAX_SEEN_NOTICES);
     const nextBuildings = new Map<string, boolean>();
     for (const building of model.buildings) {
       nextBuildings.set(building.id, building.constructing);
@@ -162,6 +175,26 @@ export function useDescentAudio(input: UseDescentAudioInput): void {
   }, []);
 
   useEffect(() => () => stopDescentAudio(), []);
+}
+
+/**
+ * Retains only ids still present in the current snapshot once a seen-id set
+ * exceeds its upper bound.
+ * @param seen - Tracked ids for the current session
+ * @param items - Currently published items with numeric ids
+ * @param maxSize - Maximum size before pruning
+ */
+function pruneSeenIds(
+  seen: Set<number>,
+  items: readonly { id: number }[],
+  maxSize: number,
+): void {
+  if (seen.size <= maxSize) return;
+  const active = new Set<number>();
+  for (const item of items) active.add(item.id);
+  for (const id of seen) {
+    if (!active.has(id)) seen.delete(id);
+  }
 }
 
 /** Reads the terminal outcome from a JSON-safe module-event payload. */
