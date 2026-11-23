@@ -6,6 +6,7 @@ const MUSIC_GAIN = 0.38;
 const AMBIENCE_GAIN = 0.16;
 
 const EFFECT_RATE_LIMIT_MS: Partial<Record<AshenGateAudioId, number>> = {
+  "boss-taunt": 500,
   "combat-impact": 90,
   "magic-attack": 130,
   "melee-attack": 110,
@@ -96,7 +97,7 @@ export function playDescentAudio(
   const url = catalog[id]?.audioUrl;
   if (url === undefined) return;
   const now = typeof performance === "undefined" ? 0 : performance.now();
-  const limit = EFFECT_RATE_LIMIT_MS[id];
+  const limit = playbackRateLimit(id);
   if (
     limit !== undefined &&
     now - (lastPlayedAt.get(id) ?? -Infinity) < limit
@@ -120,6 +121,20 @@ export function playDescentAudio(
     .catch(() => {
       // A missing generated file should not interrupt the simulation.
     });
+}
+
+/**
+ * Limits duplicate acknowledgements from double-click selection gestures while
+ * retaining the combat mix's existing per-effect limits.
+ * @param id - Stable clip id from the Ashen Gate manifest
+ * @returns Minimum milliseconds between plays, or undefined when unrestricted
+ */
+function playbackRateLimit(id: AshenGateAudioId): number | undefined {
+  const configured = EFFECT_RATE_LIMIT_MS[id];
+  if (configured !== undefined) return configured;
+  if (id.endsWith("-select")) return 350;
+  if (id.endsWith("-command")) return 120;
+  return undefined;
 }
 
 /** Stops Descent's long-running loops when the game experience unmounts. */

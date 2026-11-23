@@ -2,6 +2,9 @@ import unitData from "../../data/units.json";
 import type { CombatClassId, RankTitle, UnitDefinition } from "./types";
 
 const COMBAT_CLASSES: readonly CombatClassId[] = [
+  "cultivator",
+  "sword_sage",
+  "formation_master",
   "warden",
   "hunter",
   "rider",

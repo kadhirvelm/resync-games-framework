@@ -27,6 +27,9 @@ export type ResourceStockpile = Record<ResourceId, number>;
 /** Unit classes, including the non-combat villager. */
 export type ClassId =
   | "villager"
+  | "cultivator"
+  | "sword_sage"
+  | "formation_master"
   | "warden"
   | "hunter"
   | "rider"
@@ -80,6 +83,8 @@ export type Command = (
       y: number;
       /** Villagers sent to build the new site. */
       builderIds?: string[];
+      /** Shift placement: spread builders across every unfinished site. */
+      queue?: boolean;
     }
   | {
       type: "train_unit";
@@ -124,6 +129,8 @@ export type Command = (
   | { type: "release_villagers" }
   | { type: "train_hero"; hallId: string; heroId: string }
   | { type: "revive_hero"; hallId: string; heroId: string }
+  | { type: "cast_qi_art"; unitIds: string[] }
+  | { type: "toggle_meditate"; unitIds: string[] }
 ) & {
   /** Issuing player id in multiplayer matches; omitted in solo play. */
   actorId?: string;

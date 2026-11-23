@@ -2,11 +2,25 @@
 /** @jsxImportSource react */
 "use client";
 
-import type { PointerEvent as ReactPointerEvent } from "react";
+import {
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useState,
+} from "react";
 import styles from "./descentView.module.scss";
 import { FogCanvas } from "./FogCanvas";
+import {
+  MINIMAP_PING_DURATION_MS,
+  type MinimapPing,
+  minimapPingPresentation,
+  pruneMinimapPings,
+} from "./minimapPings";
 import type { MapPoint } from "./selection";
 import type { ShellModel } from "./shellModel";
+
+export type { MinimapPing } from "./minimapPings";
+
+const EMPTY_PINGS: readonly MinimapPing[] = [];
 
 /** Camera footprint drawn over the strategic map. */
 export interface MinimapView {
@@ -26,6 +40,11 @@ export interface DescentMinimapProps {
    * button) queues a waypoint.
    */
   onOrder?: (point: MapPoint, queue: boolean) => void;
+  /**
+   * Short-lived attack rings. They ignore pointer events so the existing
+   * click-to-jump navigation also works when clicking directly on a ping.
+   */
+  pings?: readonly MinimapPing[];
   view: MinimapView;
 }
 
@@ -107,8 +126,11 @@ export function DescentMinimap({
   model,
   onNavigate,
   onOrder,
+  pings = EMPTY_PINGS,
   view,
 }: DescentMinimapProps) {
+  const reducedMotion = usePrefersReducedMotion();
+  const now = useMinimapPingClock(pings, reducedMotion);
   /** Recenters the camera or orders the selection at the pointer. */
   const press = (event: ReactPointerEvent<HTMLButtonElement>): void => {
     const action = minimapPressAction(
@@ -157,6 +179,19 @@ export function DescentMinimap({
         <FogCanvas className={styles.minimapFog} fog={model.fog} />
       )}
       <span className={styles.minimapTitle}>Map</span>
+      {model.terrain.map((feature) => (
+        <span
+          className={`${styles.minimapMarker} ${styles.minimapTerrain}`}
+          data-terrain-kind={feature.kind}
+          key={feature.id}
+          style={{
+            height: `${mapPercent(feature.radius * 2, model.map.height)}%`,
+            left: `${mapPercent(feature.x, model.map.width)}%`,
+            top: `${mapPercent(feature.y, model.map.height)}%`,
+            width: `${mapPercent(feature.radius * 2, model.map.width)}%`,
+          }}
+        />
+      ))}
       {model.vents.map((vent) => (
         <span
           className={`${styles.minimapMarker} ${styles.minimapVent}`}
@@ -232,6 +267,107 @@ export function DescentMinimap({
           width: `${mapPercent(view.width, model.map.width)}%`,
         }}
       />
+      <svg
+        aria-hidden="true"
+        data-testid="descent-minimap-pings"
+        preserveAspectRatio="none"
+        style={{
+          height: "100%",
+          inset: 0,
+          pointerEvents: "none",
+          position: "absolute",
+          width: "100%",
+          zIndex: 3,
+        }}
+        viewBox={`0 0 ${model.map.width} ${model.map.height}`}
+      >
+        {pings.map((ping) => {
+          const presentation = minimapPingPresentation(
+            ping,
+            now,
+            reducedMotion,
+          );
+          if (presentation === null) return null;
+          const key = ping.id ?? `${ping.startedAt}:${ping.x}:${ping.y}`;
+          return (
+            <circle
+              cx={ping.x}
+              cy={ping.y}
+              data-severity={ping.severity}
+              data-testid="descent-minimap-ping"
+              fill="none"
+              key={key}
+              opacity={presentation.opacity}
+              r={presentation.radius}
+              stroke={ping.severity === "critical" ? "#ff322d" : "#ff5548"}
+              strokeWidth={ping.severity === "critical" ? 2.25 : 1.5}
+              vectorEffect="non-scaling-stroke"
+            />
+          );
+        })}
+      </svg>
     </button>
   );
+}
+
+/**
+ * Tracks the browser's reduced-motion preference without reading it during SSR.
+ * @returns Whether animated minimap rings should remain static
+ */
+function usePrefersReducedMotion(): boolean {
+  const [reducedMotion, setReducedMotion] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (media === undefined) return;
+    /** Reads the latest media-query value into React state. */
+    const update = () => setReducedMotion(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  return reducedMotion;
+}
+
+/**
+ * Advances a wall clock only while pings are alive. Reduced-motion mode uses
+ * expiry timers rather than animation frames.
+ * @param pings - Current attack markers
+ * @param reducedMotion - Whether expansion and fading are disabled
+ * @returns Current `Date.now()` timestamp, or zero before mounting
+ */
+function useMinimapPingClock(
+  pings: readonly MinimapPing[],
+  reducedMotion: boolean,
+): number {
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    let animationFrame: number | undefined;
+    let expiryTimer: number | undefined;
+    /** Publishes time and schedules the next frame or reduced-motion expiry. */
+    const update = () => {
+      const current = Date.now();
+      setNow(current);
+      const active = pruneMinimapPings(pings, current);
+      if (active.length === 0) return;
+      if (!reducedMotion) {
+        animationFrame = window.requestAnimationFrame(update);
+        return;
+      }
+      const nextExpiry = Math.min(
+        ...active.map((ping) => ping.startedAt + MINIMAP_PING_DURATION_MS),
+      );
+      expiryTimer = window.setTimeout(
+        update,
+        Math.max(0, nextExpiry - current) + 16,
+      );
+    };
+    update();
+    return () => {
+      if (animationFrame !== undefined) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+      if (expiryTimer !== undefined) window.clearTimeout(expiryTimer);
+    };
+  }, [pings, reducedMotion]);
+  return now;
 }

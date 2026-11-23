@@ -8,20 +8,22 @@ const CHARACTER_TEXTURE_EDGE = 1024;
 /**
  * Converts Meshy's multi-clip character output into the framework contract.
  * @param bytes - Meshy's self-contained animated character GLB
- * @returns A compact core glTF GLB with the five canonical clip names
+ * @param clipNames - Ordered clip names matching the requested Meshy actions
+ * @returns A compact core glTF GLB with canonical clip names
  */
 export async function normalizeMeshyCharacter(
   bytes: Uint8Array,
+  clipNames: readonly string[] = THREE_D_CHARACTER_ANIMATIONS,
 ): Promise<Uint8Array> {
   const io = new NodeIO();
   const document = await io.readBinary(bytes);
   const animations = document.getRoot().listAnimations();
-  if (animations.length !== THREE_D_CHARACTER_ANIMATIONS.length)
+  if (animations.length !== clipNames.length)
     throw new BadRequestException(
-      "Meshy character output did not contain the five requested animations.",
+      `Meshy character output contained ${animations.length} animations, expected ${clipNames.length}.`,
     );
   for (const [index, animation] of animations.entries()) {
-    const name = THREE_D_CHARACTER_ANIMATIONS[index];
+    const name = clipNames[index];
     if (!name) throw new BadRequestException("Unknown character animation.");
     animation.setName(name);
   }

@@ -1,5 +1,6 @@
 import type { AshenGateSceneryRole } from "../data/layers/ashen_gate/threeDAssets";
 import { listBuildingDefs } from "../logic/economy/tables";
+import { isTrainingBuilding } from "../logic/slice/sliceTraining";
 import type { ResourceId } from "../logic/types";
 import { ashenSceneryPlacements } from "./ashenTerrainLayout";
 import { buildingIconSrc } from "./buildingIcons";
@@ -539,10 +540,7 @@ function buildingTips(model: ShellModel, building: ShellBuilding): string[] {
     (option) => option.buildingId === building.id,
   );
   if (trains) tips.push("Pick a unit on the right to train it.");
-  if (
-    building.buildingType === "camp" ||
-    building.buildingType === "barracks"
-  ) {
+  if (isTrainingBuilding(building.buildingType)) {
     tips.push("Right-click the map to set where new units gather.");
   }
   const option = model.buildOptions.find(

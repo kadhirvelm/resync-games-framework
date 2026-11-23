@@ -166,6 +166,8 @@ export interface WaveUnit {
   lifesteal: boolean;
   maxHitPoints: number;
   preferredTarget: PreferredTarget;
+  /** Co-op Camp this body marches toward; assigned by the slice bridge. */
+  rallyTargetId?: string;
   role: WaveRole;
   school: SchoolId | null;
   speed: number;
@@ -210,6 +212,8 @@ export interface WaveSpawnContext {
   grade: number;
   hellPressure: number;
   layerId: LayerId;
+  /** Optional difficulty scale for horde HP and damage (e.g. tutorial mode). */
+  statMultiplier?: number;
   waveId: string;
 }
 
@@ -278,6 +282,10 @@ export interface WaveClockState {
   trackedUnitIds: string[];
   triggeredPhases: string[];
   units: WaveUnit[];
+  /** Optional difficulty scale applied to spawned horde HP and damage. */
+  waveStatScale?: number;
+  /** Optional pacing multiplier applied to wave spawn timestamps. */
+  waveTimeScale?: number;
 }
 
 /** Result of removing one horde body. */

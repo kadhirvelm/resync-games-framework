@@ -40,7 +40,7 @@ const LONG_LIFE_RANK: RankTitle = "Champion";
 /** Roll used when a breakthrough has no supplied roll: always a failure. */
 const MISSING_ROLL = 1;
 
-const HALL_TIERS: HallTier[] = ["Camp", "Stronghold", "Citadel"];
+const HALL_TIERS: HallTier[] = ["Camp", "Outpost", "Stronghold", "Citadel"];
 const VALID_ESSENCE_GRADES = new Set([1, 2, 4, 8, 16]);
 
 /**

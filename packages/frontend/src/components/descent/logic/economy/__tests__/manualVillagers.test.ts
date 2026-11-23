@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createDescentSim, type DescentSim } from "../../sim";
 import type { SimModule } from "../../sim/modules";
 import { seedEconomyWorld } from "../economy";
-import type { EconomyMeta, EconomyUnit } from "../model";
+import type { EconomyBuilding, EconomyMeta, EconomyUnit } from "../model";
 import { createEconomyModule } from "../module";
 import { economyHost } from "../records";
 import { orderVillagersMove } from "../villagers";
@@ -192,6 +192,126 @@ describe("manual villagers", () => {
     expect(villager(sim, "v1").preferredNodeId).toBe("food-a");
     expect(villager(sim, "v1").task?.kind).not.toBe("build");
     expect(villager(sim, "v2").task?.kind).not.toBe("build");
+  });
+
+  test("shift placements distribute busy villagers and finish every site", () => {
+    const sim = manualSim();
+    sim.enqueue({
+      nodeId: "food-a",
+      type: "assign_gather",
+      unitIds: ["v1", "v2"],
+    });
+    sim.step(1);
+    const cells = [
+      { x: 9, y: 13 },
+      { x: 14, y: 16 },
+      { x: 19, y: 13 },
+    ];
+    for (const cell of cells) {
+      sim.enqueue({
+        builderIds: ["v1", "v2"],
+        buildingType: "wall",
+        queue: true,
+        type: "place_building",
+        ...cell,
+      });
+      sim.step(1);
+    }
+
+    const first = villager(sim, "v1");
+    const second = villager(sim, "v2");
+    const firstTask = first.task;
+    const secondTask = second.task;
+    expect(firstTask?.kind).toBe("build");
+    expect(secondTask?.kind).toBe("build");
+    if (firstTask?.kind !== "build" || secondTask?.kind !== "build") {
+      throw new Error("Builders were not assigned to construction");
+    }
+    expect(firstTask.buildingId).not.toBe(secondTask.buildingId);
+    expect(first.queuedBuild).toBe(true);
+    expect(second.queuedBuild).toBe(true);
+
+    let guard = 0;
+    while (guard < 1_000) {
+      const walls = sim
+        .snapshot()
+        .buildings.filter((building) => building.buildingType === "wall");
+      if (
+        walls.length === cells.length &&
+        walls.every((building) => (building as EconomyBuilding).completed)
+      ) {
+        break;
+      }
+      sim.step(5);
+      guard += 5;
+    }
+    const walls = sim
+      .snapshot()
+      .buildings.filter((building) => building.buildingType === "wall");
+    expect(walls).toHaveLength(cells.length);
+    expect(
+      walls.every((building) => (building as EconomyBuilding).completed),
+    ).toBe(true);
+    expect(villager(sim, "v1").queuedBuild).toBe(false);
+    expect(villager(sim, "v2").queuedBuild).toBe(false);
+    expect(villager(sim, "v1").preferredNodeId).toBe("food-a");
+    expect(villager(sim, "v2").preferredNodeId).toBe("food-a");
+    sim.step(1);
+    expect(villager(sim, "v1").task?.kind).toBe("gather");
+    expect(villager(sim, "v2").task?.kind).toBe("gather");
+  });
+
+  test("a shift-placement builder walks to a distant wall after the first", () => {
+    const sim = manualSim();
+    for (const cell of [
+      { x: 9, y: 13 },
+      { x: 22, y: 8 },
+    ]) {
+      sim.enqueue({
+        builderIds: ["v1"],
+        buildingType: "wall",
+        queue: true,
+        type: "place_building",
+        ...cell,
+      });
+      sim.step(1);
+    }
+    const walls = sim
+      .snapshot()
+      .buildings.filter((building) => building.buildingType === "wall");
+    const first = walls.find((building) => building.x === 9);
+    const second = walls.find((building) => building.x === 22);
+    if (!first || !second) throw new Error("Missing queued walls");
+
+    let guard = 0;
+    while (guard < 500) {
+      const current = sim
+        .snapshot()
+        .buildings.find((building) => building.id === first.id);
+      if ((current as EconomyBuilding).completed) break;
+      sim.step(1);
+      guard += 1;
+    }
+    const completedFirst = sim
+      .snapshot()
+      .buildings.find((building) => building.id === first.id);
+    expect((completedFirst as EconomyBuilding).completed).toBe(true);
+    expect(villager(sim, "v1").task).toEqual({
+      buildingId: second.id,
+      kind: "build",
+    });
+    while (guard < 1_000) {
+      const current = sim
+        .snapshot()
+        .buildings.find((building) => building.id === second.id);
+      if ((current as EconomyBuilding).completed) break;
+      sim.step(1);
+      guard += 1;
+    }
+    const completedSecond = sim
+      .snapshot()
+      .buildings.find((building) => building.id === second.id);
+    expect((completedSecond as EconomyBuilding).completed).toBe(true);
   });
 
   test("an unbuilt site with no builders makes no progress", () => {

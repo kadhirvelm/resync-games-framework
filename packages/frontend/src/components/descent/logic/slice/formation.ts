@@ -27,9 +27,12 @@ export const MAX_RANK_WIDTH = 8;
 const CLASS_TIER: Record<ClassId, number> = {
   adept: 3,
   breaker: 0,
+  cultivator: 1,
+  formation_master: 3,
   hunter: 2,
   raider: 1,
   rider: 1,
+  sword_sage: 2,
   villager: 4,
   warden: 0,
 };

@@ -62,11 +62,20 @@ export interface ThreeDAsset {
     estimatedCredits: number | null;
   };
 }
+/** Optional preset animation appended to a character's base five clips. */
+export interface ThreeDExtraAnimation {
+  actionId: number;
+  clipName: string;
+}
 /** Generation options exposed explicitly by the workshop. */
 export interface ThreeDGenerationPayload extends AssetGenerationPayload {
   provider?: ThreeDProvider;
   useLore?: boolean;
   design?: ThreeDDesign;
+  /** Existing character asset id to re-rig and animate without regenerating geometry. */
+  sourceAssetId?: string;
+  /** Additional Meshy preset animations appended after the five base clips. */
+  extraAnimations?: ThreeDExtraAnimation[];
 }
 /** Capabilities and stored assets returned by each 3D gallery. */
 export interface ThreeDAssetList {

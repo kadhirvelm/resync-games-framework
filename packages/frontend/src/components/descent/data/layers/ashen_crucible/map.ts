@@ -4,7 +4,7 @@ import type {
   UnitInit,
 } from "../../../logic/economy";
 import type { ResourceNode, SpiritVein } from "../../../logic/economy/model";
-import type { CircleVolume } from "../../../logic/layers";
+import type { CircleVolume, TerrainFeature } from "../../../logic/layers";
 import { ASHEN_GATE_STOCKPILE } from "../ashen_gate/map";
 
 /** One co-op player assigned a Hold on the Ashen Crucible map. */
@@ -29,6 +29,7 @@ export interface AshenCrucibleMap {
   chokePoints: readonly AshenCrucibleChokePoint[];
   height: number;
   nodes: readonly ResourceNode[];
+  obstacles: readonly TerrainFeature[];
   stockpile: NonNullable<EconomyInit["stockpile"]>;
   units: readonly UnitInit[];
   veins: readonly SpiritVein[];

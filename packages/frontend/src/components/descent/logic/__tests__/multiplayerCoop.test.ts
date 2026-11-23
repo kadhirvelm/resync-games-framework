@@ -10,6 +10,9 @@ import {
 import type { EconomyBuilding } from "../economy/model";
 import { asUnit, createBuildingRecord } from "../economy/records";
 import type { AshenGateSliceState } from "../slice/sliceState";
+import { getWave } from "../waves/catalog";
+import { secondsToWaveTicks } from "../waves/constants";
+import type { WaveClockState } from "../waves/types";
 
 const FOUR_PLAYERS: AshenCruciblePlayer[] = [
   { color: "#f2c14e", id: "p1", name: "Aria", slotIndex: 0 },
@@ -49,10 +52,10 @@ describe("Descent multiplayer co-op simulation", () => {
     });
     const before = sim.snapshot();
     const p1Captain = before.units.find(
-      (unit) => unit.ownerId === "p1" && unit.classId === "warden",
+      (unit) => unit.ownerId === "p1" && unit.classId === "cultivator",
     );
     const p2Captain = before.units.find(
-      (unit) => unit.ownerId === "p2" && unit.classId === "warden",
+      (unit) => unit.ownerId === "p2" && unit.classId === "cultivator",
     );
     expect(p1Captain).toBeDefined();
     expect(p2Captain).toBeDefined();
@@ -245,7 +248,7 @@ describe("Descent multiplayer co-op simulation", () => {
 
     const model = buildShellModel(sim.snapshot());
     const p1Captain = model.units.find(
-      (unit) => unit.ownerId === "p1" && unit.classId === "warden",
+      (unit) => unit.ownerId === "p1" && unit.classId === "cultivator",
     );
     if (!p1Captain?.cultivation) throw new Error("Missing captain cultivation");
     p1Captain.cultivation = {
@@ -301,6 +304,169 @@ describe("Descent multiplayer co-op simulation", () => {
     ).toBe(false);
   });
 
+  it("spreads incoming enemies evenly across the allied Camps", () => {
+    const sim = createMultiplayerDescentSim({
+      players: FOUR_PLAYERS,
+      seed: 7007,
+    });
+    const saved = JSON.parse(sim.serialize()) as {
+      state: { meta: { waves: WaveClockState } };
+    };
+    saved.state.meta.waves.layerStartedTick = -secondsToWaveTicks(
+      getWave("ashen_swarm").spawnAtSeconds,
+    );
+    sim.load(JSON.stringify(saved));
+    // Waves spawn after combat in the tick pipeline; the next tick gives
+    // those bodies their march orders.
+    sim.step(2);
+
+    const snapshot = sim.snapshot();
+    const state = snapshot.meta[
+      ASHEN_GATE_SLICE_MODULE_ID
+    ] as AshenGateSliceState;
+    const campOwners = new Map(
+      snapshot.buildings
+        .filter((building) => building.buildingType === "camp")
+        .map((camp) => [`${camp.x},${camp.y}`, camp.ownerId]),
+    );
+    const attackedPlayers = new Map(
+      FOUR_PLAYERS.map((player) => [player.id, 0]),
+    );
+    const waveIds = new Set(
+      (snapshot.meta.waves as WaveClockState).units.map((unit) => unit.id),
+    );
+    for (const body of Object.values(state.combat.bodies)) {
+      if (!waveIds.has(body.id) || body.order?.type !== "attack_move") {
+        continue;
+      }
+      const { x, y } = body.order.destination;
+      const ownerId = campOwners.get(`${x},${y}`);
+      expect(ownerId).toBeDefined();
+      if (ownerId === undefined) continue;
+      attackedPlayers.set(ownerId, (attackedPlayers.get(ownerId) ?? 0) + 1);
+    }
+
+    const counts = [...attackedPlayers.values()];
+    expect(counts.reduce((sum, count) => sum + count, 0)).toBe(7);
+    expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
+  });
+
+  it("keeps Camp assignments stable and rebalances orphaned enemies", () => {
+    const players = FOUR_PLAYERS.slice(0, 3);
+    const sim = createMultiplayerDescentSim({ players, seed: 7008 });
+    const saved = JSON.parse(sim.serialize()) as {
+      state: {
+        buildings: EconomyBuilding[];
+        meta: { waves: WaveClockState };
+      };
+    };
+    saved.state.meta.waves.layerStartedTick = -secondsToWaveTicks(
+      getWave("ashen_swarm").spawnAtSeconds,
+    );
+    sim.load(JSON.stringify(saved));
+    sim.step(2);
+
+    const initial = sim.snapshot().meta.waves as WaveClockState;
+    const initialTargets = Object.fromEntries(
+      initial.units.map((unit) => [unit.id, unit.rallyTargetId]),
+    );
+    expect(Object.values(initialTargets).every(Boolean)).toBe(true);
+    sim.step(3);
+    const settled = sim.snapshot().meta.waves as WaveClockState;
+    expect(settled.units.map((unit) => [unit.id, unit.rallyTargetId])).toEqual(
+      Object.entries(initialTargets),
+    );
+
+    const destroyedCampId = initial.units[0]?.rallyTargetId;
+    expect(destroyedCampId).toBeDefined();
+    const withDestroyedCamp = JSON.parse(sim.serialize()) as typeof saved;
+    withDestroyedCamp.state.buildings =
+      withDestroyedCamp.state.buildings.filter(
+        (building) => building.id !== destroyedCampId,
+      );
+    sim.load(JSON.stringify(withDestroyedCamp));
+    sim.step(1);
+
+    const rebalancedSnapshot = sim.snapshot();
+    const rebalanced = rebalancedSnapshot.meta.waves as WaveClockState;
+    const combat = rebalancedSnapshot.meta[
+      ASHEN_GATE_SLICE_MODULE_ID
+    ] as AshenGateSliceState;
+    const remainingCamps = new Map(
+      rebalancedSnapshot.buildings
+        .filter((building) => building.buildingType === "camp")
+        .map((camp) => [camp.id, camp]),
+    );
+    const remainingCampIds = new Set(remainingCamps.keys());
+    const counts = new Map([...remainingCampIds].map((campId) => [campId, 0]));
+    for (const unit of rebalanced.units) {
+      expect(unit.rallyTargetId).not.toBe(destroyedCampId);
+      expect(unit.rallyTargetId).toBeDefined();
+      if (unit.rallyTargetId === undefined) continue;
+      expect(remainingCampIds.has(unit.rallyTargetId)).toBe(true);
+      const camp = remainingCamps.get(unit.rallyTargetId);
+      expect(camp).toBeDefined();
+      const order = combat.combat.bodies[unit.id]?.order;
+      expect(order?.type).toBe("attack_move");
+      if (order?.type === "attack_move") {
+        expect(order.destination).toEqual({ x: camp?.x, y: camp?.y });
+      }
+      counts.set(unit.rallyTargetId, (counts.get(unit.rallyTargetId) ?? 0) + 1);
+      if (initialTargets[unit.id] !== destroyedCampId) {
+        expect(unit.rallyTargetId).toBe(initialTargets[unit.id]);
+      }
+    }
+    const values = [...counts.values()];
+    expect(values.reduce((sum, count) => sum + count, 0)).toBe(7);
+    expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(1);
+  });
+
+  it("continues fair rotation after an earlier wave is wiped out", () => {
+    const sim = createMultiplayerDescentSim({
+      players: FOUR_PLAYERS,
+      seed: 7009,
+    });
+    const opening = JSON.parse(sim.serialize()) as {
+      state: { meta: { waves: WaveClockState } };
+    };
+    opening.state.meta.waves.layerStartedTick = -secondsToWaveTicks(
+      getWave("ashen_scout").spawnAtSeconds,
+    );
+    sim.load(JSON.stringify(opening));
+    sim.step(2);
+
+    const withScoutsRemoved = JSON.parse(sim.serialize()) as {
+      state: {
+        meta: { waves: WaveClockState };
+        tick: number;
+        units: { id: string }[];
+      };
+    };
+    const waves = withScoutsRemoved.state.meta.waves;
+    const scoutIds = new Set(waves.units.map((unit) => unit.id));
+    waves.units = [];
+    waves.trackedUnitIds = [];
+    waves.layerStartedTick =
+      withScoutsRemoved.state.tick -
+      secondsToWaveTicks(getWave("ashen_swarm").spawnAtSeconds);
+    withScoutsRemoved.state.units = withScoutsRemoved.state.units.filter(
+      (unit) => !scoutIds.has(unit.id),
+    );
+    sim.load(JSON.stringify(withScoutsRemoved));
+    sim.step(2);
+
+    const snapshot = sim.snapshot();
+    const campOwners = new Map(
+      snapshot.buildings
+        .filter((building) => building.buildingType === "camp")
+        .map((camp) => [camp.id, camp.ownerId]),
+    );
+    const targets = (snapshot.meta.waves as WaveClockState).units.map((unit) =>
+      campOwners.get(unit.rallyTargetId ?? ""),
+    );
+    expect(targets).toEqual(["p3", "p4", "p1", "p2", "p3"]);
+  });
+
   it("stays 100% deterministic across two independent client sims", () => {
     const players = FOUR_PLAYERS.slice(0, 3);
     const simA = createMultiplayerDescentSim({ players, seed: 5555 });
@@ -327,7 +493,28 @@ describe("Descent multiplayer co-op simulation", () => {
       });
       sim.step(80);
     }
+    expect(simB.snapshot()).toEqual(simA.snapshot());
 
+    for (const sim of [simA, simB]) {
+      const withWaves = JSON.parse(sim.serialize()) as {
+        state: { meta: { waves: WaveClockState }; tick: number };
+      };
+      withWaves.state.meta.waves.layerStartedTick =
+        withWaves.state.tick -
+        secondsToWaveTicks(getWave("ashen_swarm").spawnAtSeconds);
+      sim.load(JSON.stringify(withWaves));
+      sim.step(2);
+
+      const withDestroyedCamp = JSON.parse(sim.serialize()) as {
+        state: { buildings: EconomyBuilding[] };
+      };
+      withDestroyedCamp.state.buildings =
+        withDestroyedCamp.state.buildings.filter(
+          (building) => building.id !== "crucible-camp-1",
+        );
+      sim.load(JSON.stringify(withDestroyedCamp));
+      sim.step(80);
+    }
     expect(simB.snapshot()).toEqual(simA.snapshot());
   });
 });

@@ -25,7 +25,7 @@ describe("Omen timing", () => {
     stepTo(director, waveAt("ashen_swarm") - 60);
     expect(director.getOmen()).toEqual({
       bossId: null,
-      composition: { raider: bodiesIn("ashen_swarm") },
+      composition: { hunter: 1, raider: 4 },
       elite: null,
       etaSeconds: 60,
     });

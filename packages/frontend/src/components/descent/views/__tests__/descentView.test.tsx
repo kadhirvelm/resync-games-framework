@@ -277,7 +277,7 @@ describe("DescentView", () => {
       ),
     ).not.toBeNull();
     expect(buildMenu.textContent).toContain(
-      "Trains Wardens, Hunters, Raiders, Breakers, and Adepts.",
+      "Trains the Hold's soldiers; upgrading the Hold unlocks more classes.",
     );
     expect(buildMenu.textContent).not.toContain(
       "Lets trained units attempt cultivation breakthroughs.",
@@ -341,6 +341,76 @@ describe("DescentView", () => {
         y: 5,
       },
     ]);
+  });
+
+  test("shift-click keeps placing buildings and queues each site", async () => {
+    mounted = await mount();
+    const { commands, container } = mounted;
+    await click(unit(container, "villager-1"));
+    await click(buttonNamed(container, "Build"));
+    const buildMenu = container.querySelector('[aria-label="Build menu"]');
+    if (!(buildMenu instanceof HTMLElement)) {
+      throw new Error("Missing build menu");
+    }
+    await click(buttonNamed(buildMenu, "Military"));
+    await click(buttonNamed(buildMenu, "Barracks"));
+    const map = container.querySelector("[data-testid=descent-map]");
+    if (!(map instanceof HTMLElement)) throw new Error("Missing map");
+    map.getBoundingClientRect = () =>
+      ({
+        bottom: 600,
+        height: 600,
+        left: 0,
+        right: 800,
+        toJSON() {
+          return {};
+        },
+        top: 0,
+        width: 800,
+        x: 0,
+        y: 0,
+      }) as DOMRect;
+
+    for (const clientX of [80, 120, 160]) {
+      await act(async () => {
+        map.dispatchEvent(
+          new PointerEvent("pointerdown", {
+            bubbles: true,
+            button: 0,
+            clientX,
+            clientY: 40,
+            shiftKey: true,
+          }),
+        );
+      });
+    }
+
+    expect(commands).toEqual(
+      [10, 15, 20].map((x) => ({
+        builderIds: ["villager-1"],
+        buildingType: "barracks",
+        queue: true,
+        type: "place_building",
+        x,
+        y: 5,
+      })),
+    );
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }),
+      );
+    });
+    await act(async () => {
+      map.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          button: 0,
+          clientX: 200,
+          clientY: 40,
+        }),
+      );
+    });
+    expect(commands).toHaveLength(3);
   });
 
   test("builds from the keyboard with B, a category key, and a building key", async () => {

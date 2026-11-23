@@ -1,0 +1,21 @@
+<svg aria-label="First-level Cultivator with spirit blade" role="img" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x2="0" y2="1">
+      <stop stop-color="#1e4a52" />
+      <stop offset="1" stop-color="#0c151a" />
+    </linearGradient>
+    <linearGradient id="blade" x1="0" x2="1" y1="0" y2="1">
+      <stop stop-color="#e8ffff" />
+      <stop offset=".5" stop-color="#6ee4f0" />
+      <stop offset="1" stop-color="#2c8fa3" />
+    </linearGradient>
+  </defs>
+  <rect fill="url(#bg)" height="92" rx="12" stroke="#64d6e0" stroke-width="3" width="92" x="2" y="2" />
+  <circle cx="42" cy="27" fill="#d29c76" r="10" />
+  <path d="M36 16c4-4 8-4 12 0" fill="none" stroke="#1b262c" stroke-linecap="round" stroke-width="5" />
+  <path d="M22 80V50l20-11 20 11v30z" fill="#223b44" stroke="#68d2dc" stroke-width="2" />
+  <path d="M26 52l16 14 16-14" fill="none" stroke="#d8a24c" stroke-width="4" />
+  <circle cx="42" cy="64" fill="#6ee4f0" r="4" stroke="#d9ffff" stroke-width="1.5" />
+  <path d="M72 16l6 4-10 52-6-2z" fill="url(#blade)" stroke="#d9ffff" stroke-width="1.5" />
+  <path d="M60 66l14 4" stroke="#d8a24c" stroke-linecap="round" stroke-width="4" />
+</svg>

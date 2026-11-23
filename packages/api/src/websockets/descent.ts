@@ -30,7 +30,88 @@ export const DESCENT_PLAYER_COLOR_NAMES = [
 ] as const;
 
 /** Playable multiplayer map identifier. */
-export type DescentMapId = "ashen_crucible";
+export type DescentMapId =
+  | "ashen_crucible"
+  | "ashen_crucible_tutorial"
+  | DescentCampaignMissionId;
+
+/** Supported Ashen Crucible campaign scenarios, not unfinished deeper layers. */
+export type DescentCampaignMissionId =
+  | "ashen_campaign_1"
+  | "ashen_campaign_2"
+  | "ashen_campaign_3";
+
+/**
+ * Shared scenarios for the existing Ashen Crucible sim, ending at Cinderjaw.
+ * `waveStatScale` multiplies wave combat stats; `waveTimeScale` multiplies wave
+ * timing intervals (values below one mean faster waves). This is configuration,
+ * not a backend simulation: all peers must apply the same selected scenario.
+ */
+export const DESCENT_CAMPAIGN_MISSIONS = [
+  {
+    briefing: "Establish your Hold in the Ashen Crucible and defeat Cinderjaw.",
+    id: "ashen_campaign_1",
+    title: "Establish the Hold",
+    waveStatScale: 1,
+    waveTimeScale: 1,
+  },
+  {
+    briefing:
+      "Rebuild in the Ashen Crucible against stronger, faster waves and defeat Cinderjaw.",
+    id: "ashen_campaign_2",
+    title: "Under Siege",
+    waveStatScale: 1.25,
+    waveTimeScale: 0.9,
+  },
+  {
+    briefing:
+      "Withstand the fiercest Ashen Crucible siege together and defeat Cinderjaw.",
+    id: "ashen_campaign_3",
+    title: "Crucible United",
+    waveStatScale: 1.5,
+    waveTimeScale: 0.8,
+  },
+] as const satisfies readonly {
+  id: DescentCampaignMissionId;
+  title: string;
+  briefing: string;
+  waveStatScale: number;
+  waveTimeScale: number;
+}[];
+
+/** Peer-reported terminal simulation result; the backend does not verify sim execution. */
+export type DescentOutcome = "victory" | "defeat";
+
+/**
+ * Room-scoped Redis campaign progress, lost when the room is deleted (including final leave).
+ * Outcomes are immutable reports by the locked roster, not an anti-cheat mechanism.
+ * Victory requires every locked participant, even if one disconnects; any defeat allows retry.
+ */
+export interface DescentCampaignState {
+  missionIndex: number;
+  completedMissionIds: DescentCampaignMissionId[];
+  outcomes: Record<string, DescentOutcome>;
+  status: "active" | "victory" | "defeat" | "completed";
+}
+
+/** All valid Descent multiplayer map identifiers. */
+export const DESCENT_MAP_IDS: readonly DescentMapId[] = [
+  "ashen_crucible",
+  "ashen_crucible_tutorial",
+  ...DESCENT_CAMPAIGN_MISSIONS.map((mission) => mission.id),
+] as const;
+
+/**
+ * Checks whether an unknown wire value is a supported Descent multiplayer map.
+ * @param value - Candidate map id
+ * @returns Whether `value` is a valid `DescentMapId`
+ */
+export function isDescentMapId(value: unknown): value is DescentMapId {
+  return (
+    typeof value === "string" &&
+    (DESCENT_MAP_IDS as readonly string[]).includes(value)
+  );
+}
 
 /** One player locked into a Descent multiplayer match roster. */
 export interface DescentRoomPlayer {
@@ -46,6 +127,7 @@ export interface DescentRoomPlayer {
  * Room membership, host, and revisions are owned by `GameRoomStore`.
  */
 export interface DescentRoomState {
+  campaign?: DescentCampaignState;
   mapId: DescentMapId;
   matchId: string | null;
   phase: "lobby" | "playing";
@@ -86,7 +168,20 @@ export interface DescentStampedCommand {
 
 /** Payload for starting a Descent co-op match from the lobby. */
 export interface DescentStartMatchPayload {
+  /** Explicit host-only campaign transition; ordinary starts cannot replace a campaign. */
+  campaignAction?: "start" | "retry" | "advance";
+  /** Required for retry/advance and when replacing an existing match; null is valid in the initial lobby. */
+  matchId?: string | null;
+  /** Optional map/mode selection; defaults to `ashen_crucible`. */
+  mapId?: DescentMapId;
   roomId: string;
+}
+
+/** Payload for attesting a terminal outcome for the current campaign match. */
+export interface DescentReportOutcomePayload {
+  roomId: string;
+  matchId: string;
+  outcome: DescentOutcome;
 }
 
 /** Payload for submitting one player command to an active Descent match. */
@@ -155,6 +250,10 @@ export interface DescentWebsocketEvents extends WebsocketEvents {
       payload: DescentCommandPayload;
       response: DescentAckResult;
     };
+    descentReportOutcome: {
+      payload: DescentReportOutcomePayload;
+      response: GameRoomCommandResult;
+    };
     descentSetPaused: {
       payload: DescentSetPausedPayload;
       response: DescentAckResult;
@@ -184,6 +283,7 @@ export const DescentEventsDefinition: WebsocketEventsDefinition<DescentWebsocket
   {
     clientToServer: {
       descentCommand: "descentCommand",
+      descentReportOutcome: "descentReportOutcome",
       descentSetPaused: "descentSetPaused",
       descentSetSpeed: "descentSetSpeed",
       descentStartMatch: "descentStartMatch",

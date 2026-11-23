@@ -45,7 +45,7 @@ const COMMAND_SCHEMAS: Readonly<Record<string, CommandSchema>> = {
   order_move: MOVE,
   order_stop: { required: { unitIds: IDS("stringArray") } },
   place_building: {
-    optional: { builderIds: IDS("stringArray") },
+    optional: { builderIds: IDS("stringArray"), queue: IDS("boolean") },
     required: {
       buildingType: IDS(),
       x: IDS("number"),

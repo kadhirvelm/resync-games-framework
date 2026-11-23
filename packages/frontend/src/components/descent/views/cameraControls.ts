@@ -17,6 +17,33 @@ export interface GroundVector {
   z: number;
 }
 
+/** Pointer position in browser client coordinates. */
+export interface EdgeScrollPointer {
+  x: number;
+  y: number;
+}
+
+/** A viewport or HUD rectangle in browser client coordinates. */
+export interface EdgeScrollRect {
+  bottom: number;
+  left: number;
+  right: number;
+  top: number;
+}
+
+/** Optional edge size and HUD hit-testing for edge scrolling. */
+export interface EdgeScrollOptions {
+  /** Width of the active band inside each viewport edge, in pixels. */
+  edgeSize?: number;
+  /** HUD rectangles over which edge scrolling must stay inactive. */
+  hudRects?: readonly EdgeScrollRect[];
+  /** Additional HUD hit-test, useful for DOM element-based integration. */
+  isPointerOverHud?: (pointer: EdgeScrollPointer) => boolean;
+}
+
+/** Default width of the pointer band that activates edge scrolling. */
+export const EDGE_SCROLL_MARGIN_PX = 24;
+
 /**
  * Creates a key state with nothing held.
  * @returns A fresh, fully released key state
@@ -75,6 +102,21 @@ export function cameraPanDirection(
 ): GroundVector {
   const forwardInput = Number(keys.forward) - Number(keys.back);
   const rightInput = Number(keys.right) - Number(keys.left);
+  return groundPanDirection(forwardInput, rightInput, alpha);
+}
+
+/**
+ * Converts screen-relative forward/right input into a normalized world vector.
+ * @param forwardInput - Positive toward the top of the screen
+ * @param rightInput - Positive toward the right of the screen
+ * @param alpha - ArcRotateCamera longitudinal angle in radians
+ * @returns A normalized ground direction, or zero for no/cancelled input
+ */
+function groundPanDirection(
+  forwardInput: number,
+  rightInput: number,
+  alpha: number,
+): GroundVector {
   if (forwardInput === 0 && rightInput === 0) return { x: 0, z: 0 };
   // The camera sits at target + (cos α, sin α) on the ground plane, so the
   // view direction is the negation; screen-right is up × forward.
@@ -86,6 +128,59 @@ export function cameraPanDirection(
   const z = forwardZ * forwardInput + rightZ * rightInput;
   const length = Math.hypot(x, z);
   return { x: x / length, z: z / length };
+}
+
+/**
+ * Tests a pointer against a client rectangle with an exclusive right/bottom.
+ * @param pointer - Browser pointer position
+ * @param rect - Viewport or HUD rectangle
+ * @returns Whether the pointer lies inside the rectangle
+ */
+function pointerInsideRect(
+  pointer: EdgeScrollPointer,
+  rect: EdgeScrollRect,
+): boolean {
+  return (
+    pointer.x >= rect.left &&
+    pointer.x < rect.right &&
+    pointer.y >= rect.top &&
+    pointer.y < rect.bottom
+  );
+}
+
+/**
+ * Computes camera-relative panning from a pointer near the viewport edges.
+ * A null/outside pointer, HUD hit, interior pointer, or opposing edge input
+ * produces zero movement. The result uses the same heading and speed pathway
+ * as keyboard panning.
+ * @param pointer - Current browser pointer position, or null when unavailable
+ * @param viewport - Canvas rectangle in browser client coordinates
+ * @param alpha - ArcRotateCamera longitudinal angle in radians
+ * @param options - Edge size and HUD hit-testing
+ * @returns A normalized ground direction, or zero when edge scroll is inactive
+ */
+export function edgeScrollPanDirection(
+  pointer: EdgeScrollPointer | null,
+  viewport: EdgeScrollRect,
+  alpha: number,
+  options: EdgeScrollOptions = {},
+): GroundVector {
+  if (pointer === null || !pointerInsideRect(pointer, viewport)) {
+    return { x: 0, z: 0 };
+  }
+  const edgeSize = Math.max(0, options.edgeSize ?? EDGE_SCROLL_MARGIN_PX);
+  const forwardInput =
+    Number(pointer.y < viewport.top + edgeSize) -
+    Number(pointer.y >= viewport.bottom - edgeSize);
+  const rightInput =
+    Number(pointer.x >= viewport.right - edgeSize) -
+    Number(pointer.x < viewport.left + edgeSize);
+  if (forwardInput === 0 && rightInput === 0) return { x: 0, z: 0 };
+  if (options.isPointerOverHud?.(pointer) === true) return { x: 0, z: 0 };
+  if (options.hudRects?.some((rect) => pointerInsideRect(pointer, rect))) {
+    return { x: 0, z: 0 };
+  }
+  return groundPanDirection(forwardInput, rightInput, alpha);
 }
 
 /**

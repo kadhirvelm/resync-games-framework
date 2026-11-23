@@ -8,6 +8,8 @@ import type {
   LayerTable,
   LayerUnit,
   SchoolId,
+  TerrainFeature,
+  TerrainFeatureKind,
 } from "./layerTypes";
 
 /** Everything a hazard query needs to know about the current layer and map. */
@@ -312,6 +314,8 @@ export const LAYER_TERRAIN_META_KEY = "layerTerrain";
 /** Terrain a layer generated for one run, saved with the world. */
 export interface LayerTerrain {
   layerId: string;
+  /** Impassable ridges, spires, ruined walls, and fissures carving choke points. */
+  obstacles?: TerrainFeature[];
   ventVolumes: CircleVolume[];
 }
 
@@ -320,6 +324,13 @@ interface TerrainHolder {
   layerId: string | null;
   meta: Record<string, unknown>;
 }
+
+const TERRAIN_FEATURE_KINDS = new Set<TerrainFeatureKind>([
+  "basalt_ridge",
+  "magma_fissure",
+  "obsidian_spire",
+  "ruin_wall",
+]);
 
 /**
  * Records a run's generated terrain so hazards, movement, and the renderer
@@ -333,8 +344,27 @@ export function setLayerTerrain(
 ): void {
   world.meta[LAYER_TERRAIN_META_KEY] = {
     layerId: terrain.layerId,
+    ...(terrain.obstacles !== undefined
+      ? { obstacles: terrain.obstacles.map((obstacle) => ({ ...obstacle })) }
+      : {}),
     ventVolumes: terrain.ventVolumes.map((vent) => ({ ...vent })),
   } satisfies LayerTerrain;
+}
+
+/**
+ * Impassable terrain obstacles generated for this world's current layer.
+ * Returns an empty list on worlds without generated obstacle terrain.
+ * @param world - Sim world (or any object with its layer id and meta)
+ * @returns Terrain features in effect
+ */
+export function worldTerrainObstacles(
+  world: TerrainHolder,
+): readonly TerrainFeature[] {
+  const terrain = world.meta[LAYER_TERRAIN_META_KEY];
+  if (!isLayerTerrain(terrain) || terrain.layerId !== world.layerId) {
+    return [];
+  }
+  return terrain.obstacles ?? [];
 }
 
 /**
@@ -374,12 +404,35 @@ function isLayerTerrain(value: unknown): value is LayerTerrain {
   const candidate = value as Partial<LayerTerrain>;
   if (typeof candidate.layerId !== "string") return false;
   if (!Array.isArray(candidate.ventVolumes)) return false;
-  return candidate.ventVolumes.every(
+  const ventsValid = candidate.ventVolumes.every(
     (vent: unknown) =>
       typeof vent === "object" &&
       vent !== null &&
       Number.isFinite((vent as CircleVolume).x) &&
       Number.isFinite((vent as CircleVolume).y) &&
       Number.isFinite((vent as CircleVolume).radius),
+  );
+  if (!ventsValid) return false;
+  if (candidate.obstacles === undefined) return true;
+  if (!Array.isArray(candidate.obstacles)) return false;
+  return candidate.obstacles.every(isTerrainFeature);
+}
+
+/**
+ * Narrows one serialized terrain obstacle.
+ * @param value - Candidate obstacle record
+ * @returns Whether it is a valid terrain feature
+ */
+function isTerrainFeature(value: unknown): value is TerrainFeature {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<TerrainFeature>;
+  return (
+    typeof candidate.id === "string" &&
+    typeof candidate.kind === "string" &&
+    TERRAIN_FEATURE_KINDS.has(candidate.kind as TerrainFeatureKind) &&
+    Number.isFinite(candidate.x) &&
+    Number.isFinite(candidate.y) &&
+    Number.isFinite(candidate.radius) &&
+    Number.isFinite(candidate.height)
   );
 }

@@ -1,3 +1,4 @@
+import { isTrainingBuilding } from "../logic/slice/sliceTraining";
 import type {
   ClassId,
   FormationId,
@@ -45,6 +46,8 @@ export type CardIntent =
   | { count: "all" | "one"; nodeId: string; type: "gather_idle" }
   | { type: "hotkeys" }
   | { type: "idle" }
+  | { type: "meditate"; unitIds: string[] }
+  | { type: "qi_art"; unitIds: string[] }
   | { type: "recall" }
   | { type: "release" }
   | { type: "stop"; unitIds: string[] };
@@ -56,6 +59,8 @@ const IMMEDIATE_INTENTS: ReadonlySet<CardIntent["type"]> = new Set([
   "gather_idle",
   "hotkeys",
   "idle",
+  "meditate",
+  "qi_art",
   "recall",
   "rally",
   "release",
@@ -75,6 +80,8 @@ const COMMAND_ICONS = {
   hotkeys: "/descent/command-icons/hotkeys.png",
   idle: "/descent/command-icons/idle.png",
   market: "/descent/command-icons/market.png",
+  meditate: "/descent/command-icons/meditate.svg",
+  qi_art: "/descent/command-icons/qi_art.svg",
   rally: "/descent/command-icons/rally.png",
   rations: "/descent/command-icons/rations.png",
   recall: "/descent/command-icons/recall.png",
@@ -174,6 +181,18 @@ export const UNIT_TRAINING_GUIDES: Record<ClassId, UnitTrainingGuide> = {
     iconSrc: "/descent/unit-icons/breaker.svg",
     role: "Siege",
   },
+  cultivator: {
+    description:
+      "Agile spirit-blade vanguard. Unleashes Sword Qi bursts and Dao Arts.",
+    iconSrc: "/descent/unit-icons/cultivator.svg",
+    role: "Cultivator",
+  },
+  formation_master: {
+    description:
+      "Ranged talisman caster whose arrays heal allies, grant Spirit Surge, and pulse foes.",
+    iconSrc: "/descent/unit-icons/formation_master.svg",
+    role: "Formation",
+  },
   hunter: {
     description: "Long-range archer that stays behind the front line.",
     iconSrc: "/descent/unit-icons/hunter.svg",
@@ -189,6 +208,12 @@ export const UNIT_TRAINING_GUIDES: Record<ClassId, UnitTrainingGuide> = {
       "Very fast outrider with exceptional sight but light combat power.",
     iconSrc: "/descent/unit-icons/rider.svg",
     role: "Scout",
+  },
+  sword_sage: {
+    description:
+      "Ranged flying-sword cultivator that pierces armor and rains spirit blades.",
+    iconSrc: "/descent/unit-icons/sword_sage.svg",
+    role: "Sword Sage",
   },
   villager: {
     description: "Gathers resources, constructs buildings, and repairs.",
@@ -289,9 +314,44 @@ function unitButtons(
     }
   }
   if (primary === null || primary.factionId !== "hold") return buttons;
+  const cultivatorIds = selected
+    .filter((unit) => unit.factionId === "hold" && unit.qiArt !== null)
+    .map((unit) => unit.id);
+  if (primary.qiArt !== null && cultivatorIds.length > 0) {
+    const art = primary.qiArt;
+    const detail =
+      art.cooldownSeconds > 0
+        ? `Cooldown ${art.cooldownSeconds}s`
+        : `${art.qiCost} Qi`;
+    buttons.push({
+      description: art.description,
+      detail,
+      disabled: !art.ready,
+      hotkey: "C",
+      id: "qi-art",
+      intent: { type: "qi_art", unitIds: cultivatorIds },
+      label: art.name,
+      role: "Qi Art",
+    });
+    buttons.push({
+      description:
+        "Channel Heaven & Earth Qi in place for Essence, Merit, and healing (2.5× near Spirit Veins or Arrays).",
+      detail: primary.meditating ? "Active" : "Seclusion",
+      hotkey: "M",
+      id: "meditate",
+      intent: { type: "meditate", unitIds: cultivatorIds },
+      label: primary.meditating ? "End Meditation" : "Meditate",
+      pressed: primary.meditating,
+      role: "Seclusion",
+    });
+  }
   if (primary.cultivation !== null) {
+    const breakthroughDetail = primary.breakthroughReady
+      ? `Ready! (${Math.round(primary.cultivation.successChance * 100)}%)`
+      : primary.cultivation.missingRequirements[0];
     buttons.push({
       description: "Try to advance a rank at the Cultivation Hall.",
+      detail: breakthroughDetail,
       id: "breakthrough",
       intent: { type: "breakthrough", unitId: primary.id },
       label: "Breakthrough",
@@ -311,6 +371,12 @@ function unitButtons(
   }
   const rank = primary.cultivation?.rank;
   if (rank === "Sworn" && primary.cultivation?.school === undefined) {
+    const schoolGuides: Record<SchoolId, string> = {
+      blood: "Lifesteal attacks + Crimson Tempest / Blood-Oath Dao Arts.",
+      ember:
+        "Ignites foes (favored in Ashen Gate) + Blazing Lotus / Solar Sword Dao Arts.",
+      rime: "Chills & freezes foes + Glacial Mirror / Sanctum healing Dao Arts.",
+    };
     const schools = [
       "ember",
       "rime",
@@ -319,6 +385,7 @@ function unitButtons(
     for (const school of schools) {
       const name = SCHOOL_LABEL[school];
       buttons.push({
+        description: schoolGuides[school],
         id: `school-${school}`,
         intent: { school, type: "school", unitId: primary.id },
         label: name,
@@ -380,10 +447,7 @@ function buildingButtons(
   building: ShellBuilding,
 ): CardButton[] {
   const buttons: CardButton[] = [];
-  if (
-    !building.constructing &&
-    (building.buildingType === "camp" || building.buildingType === "barracks")
-  ) {
+  if (!building.constructing && isTrainingBuilding(building.buildingType)) {
     buttons.push({
       description: "Choose where new units walk. Or just right-click the map.",
       id: "set-rally",
@@ -402,6 +466,7 @@ function buildingButtons(
       upgrade.cost === undefined ? undefined : costLineFrom(upgrade.cost);
     buttons.push({
       cost,
+      description: upgrade.unlocks,
       detail: blockerDetail(upgrade, cost, upgrade.costLabel),
       id: "upgrade-hold",
       intent: { type: "upgrade" },

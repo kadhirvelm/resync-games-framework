@@ -505,7 +505,7 @@ describe("Descent economy", () => {
     expect(withHero.getPopUsed()).toBe(0);
   });
 
-  test("Camp, Stronghold, and Citadel gate which buildings can be placed", () => {
+  test("Camp, Outpost, Stronghold, and Citadel gate which buildings can be placed", () => {
     const sim = createEconomy({ stockpile: richStockpile() });
     sim.enqueue({
       buildingType: "barracks",
@@ -514,7 +514,7 @@ describe("Descent economy", () => {
       y: 2,
     });
     sim.enqueue({
-      buildingType: "alchemy_furnace",
+      buildingType: "ward_tower",
       type: "place_building",
       x: 6,
       y: 1,
@@ -528,50 +528,77 @@ describe("Descent economy", () => {
     expect(
       sim
         .listBuildings()
-        .some((building) => building.buildingType === "alchemy_furnace"),
+        .some((building) => building.buildingType === "ward_tower"),
+    ).toBe(false);
+
+    expect(sim.upgradeHold()).toBe(true);
+    sim.step((holdTierDef("Outpost")?.upgradeTicks ?? 0) + 1);
+    expect(sim.getHoldTier()).toBe("Outpost");
+    sim.enqueue({
+      buildingType: "ward_tower",
+      type: "place_building",
+      x: 6,
+      y: 1,
+    });
+    sim.enqueue({
+      buildingType: "cultivation_hall",
+      type: "place_building",
+      x: 10,
+      y: 2,
+    });
+    sim.step();
+    expect(
+      sim
+        .listBuildings()
+        .some((building) => building.buildingType === "ward_tower"),
+    ).toBe(true);
+    expect(
+      sim
+        .listBuildings()
+        .some((building) => building.buildingType === "cultivation_hall"),
     ).toBe(false);
 
     expect(sim.upgradeHold()).toBe(true);
     sim.step((holdTierDef("Stronghold")?.upgradeTicks ?? 0) + 1);
     expect(sim.getHoldTier()).toBe("Stronghold");
     sim.enqueue({
-      buildingType: "alchemy_furnace",
-      type: "place_building",
-      x: 6,
-      y: 1,
-    });
-    sim.enqueue({
-      buildingType: "calamity_altar",
+      buildingType: "cultivation_hall",
       type: "place_building",
       x: 10,
       y: 2,
+    });
+    sim.enqueue({
+      buildingType: "alchemy_furnace",
+      type: "place_building",
+      x: 14,
+      y: 1,
     });
     sim.step();
     expect(
       sim
         .listBuildings()
-        .some((building) => building.buildingType === "alchemy_furnace"),
+        .some((building) => building.buildingType === "cultivation_hall"),
     ).toBe(true);
     expect(
       sim
         .listBuildings()
-        .some((building) => building.buildingType === "calamity_altar"),
+        .some((building) => building.buildingType === "alchemy_furnace"),
     ).toBe(false);
 
     expect(sim.upgradeHold()).toBe(true);
     sim.step((holdTierDef("Citadel")?.upgradeTicks ?? 0) + 1);
     expect(sim.getHoldTier()).toBe("Citadel");
     sim.enqueue({
-      buildingType: "calamity_altar",
+      buildingType: "alchemy_furnace",
       type: "place_building",
-      x: 10,
-      y: 2,
+      x: 14,
+      y: 1,
     });
     sim.step();
     expect(
       sim
         .listBuildings()
-        .some((building) => building.buildingType === "calamity_altar"),
+        .some((building) => building.buildingType === "alchemy_furnace"),
     ).toBe(true);
   });
 

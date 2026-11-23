@@ -114,6 +114,14 @@ describe("generateAshenGateMap", () => {
       "ashen-vein-choke",
       "ashen-vein-frontier",
     ]);
+    expect(map.obstacles.length).toBeGreaterThanOrEqual(16);
+    expect(map.chokePoints.map((choke) => choke.id)).toEqual([
+      "west-choke",
+      "vent-choke",
+      "spine-choke",
+      "flank-choke",
+      "canyon-choke",
+    ]);
   });
 
   test("the Camp sits on the west side with an open building apron", () => {
@@ -211,7 +219,8 @@ describe("generateAshenGateMap", () => {
     const villagers = map.units.filter((unit) => unit.classId === undefined);
     expect(villagers).toHaveLength(ASHEN_GATE_STARTING_VILLAGERS);
     const captain = map.units.find((unit) => unit.id === "ashen-captain");
-    expect(captain?.classId).toBe("warden");
+    expect(captain?.classId).toBe("cultivator");
+    expect(captain?.realmId).toBe("qi_gathering");
     for (const unit of map.units) {
       expect(distance(unit, camp)).toBeLessThanOrEqual(5 + CAMP_EDGE);
       const site = { buildingType: "camp", ...camp };

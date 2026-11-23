@@ -396,6 +396,9 @@ export function buildConfirm(
         value: `${upgrade.currentTier} → ${upgrade.targetTier}`,
       },
       { label: "Cost", value: upgrade.costLabel },
+      ...(upgrade.unlocks === undefined
+        ? []
+        : [{ label: "Unlocks", value: upgrade.unlocks }]),
     ];
     if (!upgrade.allowed) {
       return blocked(

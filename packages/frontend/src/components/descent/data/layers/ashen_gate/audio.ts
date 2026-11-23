@@ -135,10 +135,186 @@ export const ASHEN_GATE_AUDIO = [
     role: "effect",
   },
   {
+    cue: "impact",
+    direction:
+      "One villager selection acknowledgement for a dark-fantasy RTS: a light cloth shift, a wooden tool lifted once, and a soft warm wooden tick. Humble and immediate, under one second, no voice, no melody, no music bed.",
+    id: "villager-select",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "attack",
+    direction:
+      "One villager move-out acknowledgement for a dark-fantasy RTS: two quick gravel footsteps and a wooden tool settling against a shoulder. Willing and compact, under one second, no voice, no melody, no music bed.",
+    id: "villager-command",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "impact",
+    direction:
+      "One cultivator selection acknowledgement for a dark-fantasy RTS: a restrained sleeve sweep and a tiny clear spiritual chime with a warm ember breath. Calm and immediate, under one second, no voice, no melody, no music bed.",
+    id: "cultivator-select",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "attack",
+    direction:
+      "One cultivator move-out acknowledgement for a dark-fantasy RTS: a decisive sleeve sweep, one firm step on basalt, and a short controlled ember-energy pulse. Compact single gesture, no voice, no melody, no music bed.",
+    id: "cultivator-command",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "impact",
+    direction:
+      "One sword sage selection acknowledgement for a dark-fantasy RTS: a controlled blade-tip turn, a quiet scabbard click, and one fine spiritual ring. Precise and immediate, under one second, no voice, no melody, no music bed.",
+    id: "sword_sage-select",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "attack",
+    direction:
+      "One sword sage move-out acknowledgement for a dark-fantasy RTS: one clean blade draw, a light stepping slash through air, and a brief clear qi resonance. Compact single gesture, no voice, no melody, no music bed.",
+    id: "sword_sage-command",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "impact",
+    direction:
+      "One formation master selection acknowledgement for a dark-fantasy RTS: a wooden command baton lifting through cloth and a restrained bronze tactics-chime tick. Composed and immediate, under one second, no voice, no melody, no music bed.",
+    id: "formation_master-select",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "attack",
+    direction:
+      "One formation master move-out acknowledgement for a dark-fantasy RTS: a command baton tapping the palm, one firm basalt step, and a short orderly bronze resonance. Compact single gesture, no voice, no melody, no music bed.",
+    id: "formation_master-command",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "impact",
+    direction:
+      "One warden selection acknowledgement for a dark-fantasy RTS: a heavy armored shoulder shift and one muted shield-rim knock. Steadfast and immediate, under one second, no voice, no melody, no music bed.",
+    id: "warden-select",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "attack",
+    direction:
+      "One warden move-out acknowledgement for a dark-fantasy RTS: a spear haft striking stone once and one weighty armored step. Disciplined and compact, under one second, no voice, no melody, no music bed.",
+    id: "warden-command",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "impact",
+    direction:
+      "One hunter selection acknowledgement for a dark-fantasy RTS: a light leather strap tightening and one soft fingertip tap on a wooden bow. Alert and immediate, under one second, no voice, no melody, no music bed.",
+    id: "hunter-select",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "attack",
+    direction:
+      "One hunter move-out acknowledgement for a dark-fantasy RTS: a quick bowstring tension tick, two light steps, and a faint arrow-fletching rustle. Agile and compact, no voice, no melody, no music bed.",
+    id: "hunter-command",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "impact",
+    direction:
+      "One rider selection acknowledgement for a dark-fantasy RTS: a saddle creak, brief bridle jingle, and one restrained mount hoof tap. Readied and immediate, under one second, no voice, no melody, no music bed.",
+    id: "rider-select",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "attack",
+    direction:
+      "One rider move-out acknowledgement for a dark-fantasy RTS: a short mount snort, bridle snap, and two quick hoof strikes on basalt. Energetic and compact, no voice, no melody, no music bed.",
+    id: "rider-command",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "impact",
+    direction:
+      "One raider selection acknowledgement for a dark-fantasy RTS: a short blade sliding against its guard and one light metal armor tick. Keen and immediate, under one second, no voice, no melody, no music bed.",
+    id: "raider-select",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "attack",
+    direction:
+      "One raider move-out acknowledgement for a dark-fantasy RTS: a fast blade whisper and two light running footsteps over grit. Aggressive but restrained, compact single gesture, no voice, no melody, no music bed.",
+    id: "raider-command",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "impact",
+    direction:
+      "One breaker selection acknowledgement for a dark-fantasy RTS: a massive hammer head settling against a gloved palm with a low metal thunk. Heavy and immediate, under one second, no voice, no melody, no music bed.",
+    id: "breaker-select",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "attack",
+    direction:
+      "One breaker move-out acknowledgement for a dark-fantasy RTS: a heavy hammer haft knock and one deep boot stomp with a brief stone grit scrape. Forceful and compact, no voice, no melody, no music bed.",
+    id: "breaker-command",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "impact",
+    direction:
+      "One adept selection acknowledgement for a dark-fantasy RTS: a fingertip brush through cloth and a tiny crystalline ember shimmer. Focused and immediate, under one second, no voice, no melody, no music bed.",
+    id: "adept-select",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "attack",
+    direction:
+      "One adept move-out acknowledgement for a dark-fantasy RTS: a compact arcane sigil ignition, one light step, and a brief airy ember flare. Precise single gesture, no voice, no melody, no music bed.",
+    id: "adept-command",
+    loop: false,
+    role: "effect",
+  },
+  {
     cue: "wave",
     direction:
       "One ominous horde warning horn across a vast volcanic cavern: deep rough bronze war horn with a short echo, followed by a faint distant chain rattle. Single warning call, no melody, no voice, no music bed.",
     id: "wave-horn",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "wave",
+    direction:
+      "One short boss taunt for a colossal volcanic demon: a deep bestial intake becomes a grinding roar layered with cracked bronze resonance and a huge cavern tail. Threatening and readable beneath dialogue text, no intelligible speech, no music bed.",
+    id: "boss-taunt",
+    loop: false,
+    role: "effect",
+  },
+  {
+    cue: "wave",
+    direction:
+      "Very short under-attack warning for a dark-fantasy RTS: one dry low war-drum strike immediately answered by a restrained rough bronze horn pulse, urgent and readable without being louder than battle. Complete in under 1.2 seconds, no voice, no melody, no music bed, no long echo.",
+    id: "under-attack",
     loop: false,
     role: "effect",
   },

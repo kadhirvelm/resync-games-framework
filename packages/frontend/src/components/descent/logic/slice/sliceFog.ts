@@ -32,7 +32,9 @@ const DEFAULT_BUILDING_SIGHT = 6;
  */
 const BUILDING_SIGHT: Readonly<Record<string, number>> = {
   camp: 14,
+  meditation_pavilion: 8,
   omen_tower: 16,
+  spirit_array: 10,
   ward_tower: 11,
 };
 

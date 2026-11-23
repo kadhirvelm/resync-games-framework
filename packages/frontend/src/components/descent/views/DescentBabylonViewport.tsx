@@ -4,9 +4,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useClientServiceCallers } from "@/services/clientServiceCallers";
+import type { DescentUnitAcknowledgementKind } from "../audio/descentCommandAck";
+import { emitDescentUnitAcknowledgement } from "../audio/descentCommandAck";
+import type { Command } from "../logic/types";
 import { loadAshenGateThreeDAssets } from "./ashenGateThreeDAssets";
+import { commandCursorFor } from "./commandCursor";
 import type {
   DescentBabylonSceneHandle,
+  DescentScenePick,
   DescentScreenBox,
 } from "./createDescentBabylonScene";
 import { DescentMinimap, type MinimapView } from "./DescentMinimap";
@@ -18,12 +23,14 @@ import {
   settleWithin,
 } from "./loadingProgress";
 import { MapViewport, type MapViewportProps } from "./MapViewport";
+import { placementGroundValid } from "./placementValidity";
 import {
   isLocalPlayerOwned,
   type MapPoint,
   nodeNear,
   orderMarkerFor,
   ordersForRightClick,
+  placementBuilders,
   similarVisibleUnitIds,
 } from "./selection";
 
@@ -100,14 +107,115 @@ export function canUseBabylonRts(): boolean {
 }
 
 /**
+ * Adds class-specific selection and command responses at the shared viewport
+ * boundary, so both Babylon and the DOM fallback publish the same audio events.
+ * @param props - Original renderer-neutral viewport callbacks and read model
+ * @returns Props whose interaction callbacks also publish audio events
+ */
+function withUnitAcknowledgement(
+  props: DescentBabylonViewportProps,
+): DescentBabylonViewportProps {
+  return {
+    ...props,
+    onCommand: (command) => {
+      props.onCommand(command);
+      acknowledgeCommand(props, command);
+    },
+    onPlace: (point, queue) => {
+      const builderIds = placementBuilders(
+        props.model.units,
+        props.selection,
+        props.localPlayerId,
+      );
+      props.onPlace(point, queue);
+      acknowledgeFirstUnit(props, builderIds, "command", true);
+    },
+    onSelectUnits: (ids, mode) => {
+      props.onSelectUnits(ids, mode);
+      const addedIds =
+        mode === "replace"
+          ? ids
+          : ids.filter((id) => !props.selection.unitIds.includes(id));
+      acknowledgeFirstUnit(props, addedIds, "select");
+    },
+  };
+}
+
+/**
+ * Publishes one response for the first controllable actor in an issued order.
+ * @param props - Current units and local ownership
+ * @param command - Order forwarded to the simulation
+ */
+function acknowledgeCommand(
+  props: DescentBabylonViewportProps,
+  command: Command,
+): void {
+  if (!("unitIds" in command)) return;
+  acknowledgeFirstUnit(props, command.unitIds, "command");
+}
+
+/**
+ * Resolves a response from the first eligible Hold unit in interaction order.
+ * @param props - Current units and local ownership
+ * @param unitIds - Units selected or commanded by the interaction
+ * @param kind - Selection or command response
+ * @param villagersOnly - Restricts building-placement responses to builders
+ */
+function acknowledgeFirstUnit(
+  props: DescentBabylonViewportProps,
+  unitIds: readonly string[],
+  kind: DescentUnitAcknowledgementKind,
+  villagersOnly = false,
+): void {
+  for (const id of unitIds) {
+    const unit = props.model.units.find((entry) => entry.id === id);
+    if (unit === undefined || unit.factionId !== "hold") continue;
+    if (!isLocalPlayerOwned(unit, props.localPlayerId)) continue;
+    if (villagersOnly && unit.classId !== "villager") continue;
+    emitDescentUnitAcknowledgement(unit.classId, kind);
+    return;
+  }
+}
+
+/**
+ * Applies the context cursor for the latest picked target to the canvas.
+ * Rally targeting keeps the default cursor because it issues no unit order.
+ * @param canvas - Babylon canvas whose inline cursor should change
+ * @param props - Current selection, targets, and placement state
+ * @param picked - Latest hovered scene target, or null before a valid pick
+ */
+function updateCommandCursor(
+  canvas: HTMLCanvasElement,
+  props: DescentBabylonViewportProps,
+  picked: DescentScenePick | null,
+): void {
+  const acceptsUnitOrders =
+    props.rallyBuildingId === null && !props.settingRally;
+  canvas.style.cursor = commandCursorFor({
+    buildings: props.model.buildings,
+    ground: picked?.point ?? null,
+    localPlayerId: props.localPlayerId,
+    nodes: props.model.nodes,
+    placing: props.placing && !props.settingRally,
+    selectedIds: acceptsUnitOrders ? props.selection.unitIds : [],
+    targetBuildingId: picked?.buildingId ?? null,
+    targetUnitId: picked?.unitId ?? null,
+    units: props.model.units,
+  });
+}
+
+/**
  * Babylon-backed RTS battlefield with the same renderer-neutral command
  * contract as the accessible DOM map.
  * @param props - Current read model, selection, camera, and command callbacks
  * @returns A Babylon canvas or the DOM fallback when WebGL cannot start
  */
 export function DescentBabylonViewport(props: DescentBabylonViewportProps) {
-  if (!canUseBabylonRts()) return <ReadyMapViewport {...props} />;
-  return <ActiveBabylonViewport {...props} />;
+  const acknowledgedProps = withUnitAcknowledgement(props);
+  if (!canUseBabylonRts()) {
+    return <ReadyMapViewport {...acknowledgedProps} />;
+  }
+  return <ActiveBabylonViewport {...acknowledgedProps} />;
 }
 
 /**
@@ -152,6 +260,8 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
   const handleRef = useRef<DescentBabylonSceneHandle | null>(null);
   const latest = useRef(props);
   latest.current = props;
+  const hoverRef = useRef<DescentScenePick | null>(null);
+  const pointerRef = useRef<{ clientX: number; clientY: number } | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const [dragBox, setDragBox] = useState<DescentScreenBox | null>(null);
   const [nodeHint, setNodeHint] = useState<NodeHint | null>(null);
@@ -243,8 +353,41 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
   }, [clientServiceCallers]);
 
   useEffect(() => {
-    handleRef.current?.update(props.model, props.selection, props.placing);
-  }, [props.model, props.placing, props.selection]);
+    const pointer = pointerRef.current;
+    const point = props.placing
+      ? (hoverRef.current?.point ??
+        (pointer === null
+          ? null
+          : (handleRef.current?.pick(pointer.clientX, pointer.clientY)?.point ??
+            null)))
+      : null;
+    const valid =
+      point !== null && props.placingType != null
+        ? placementGroundValid(props.model, props.placingType, point)
+        : null;
+    handleRef.current?.update(props.model, props.selection, props.placing, {
+      footprint: props.placingFootprint,
+      point,
+      valid,
+    });
+  }, [
+    props.model,
+    props.placing,
+    props.placingFootprint,
+    props.placingType,
+    props.selection,
+  ]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas === null) return;
+    const pointer = pointerRef.current;
+    if (pointer !== null) {
+      hoverRef.current =
+        handleRef.current?.pick(pointer.clientX, pointer.clientY) ?? null;
+    }
+    updateCommandCursor(canvas, props, hoverRef.current);
+  }, [props]);
 
   const focusId = props.focusRequest?.id ?? null;
   const focusPoint = useRef<MapPoint | null>(null);
@@ -269,6 +412,18 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
   }, [ringKey]);
 
   if (failed) return <MapViewport {...props} />;
+
+  /** Clears hover-owned cursor and placement feedback after leaving or cancellation. */
+  const clearPointerHover = (): void => {
+    pointerRef.current = null;
+    hoverRef.current = null;
+    if (canvasRef.current !== null) {
+      canvasRef.current.style.cursor = "default";
+    }
+    props.onCursor(null);
+    setNodeHint(null);
+    handleRef.current?.setPlacementPoint(null);
+  };
 
   /** Returns the current frame rectangle or a harmless zero-sized stand-in. */
   const frameRect = (): DOMRect =>
@@ -336,6 +491,14 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
           event.shiftKey ? "add" : "replace",
         );
       }}
+      onPointerCancel={(event) => {
+        dragRef.current = null;
+        setDragBox(null);
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+        clearPointerHover();
+      }}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         const picked = handleRef.current?.pick(event.clientX, event.clientY);
@@ -345,8 +508,8 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
           return;
         }
         if (props.placing) {
-          props.onPlace(picked.point);
-          handleRef.current?.setPlacementPoint(null);
+          props.onPlace(picked.point, event.shiftKey);
+          if (!event.shiftKey) handleRef.current?.setPlacementPoint(null);
           return;
         }
         if (picked.unitId !== null) {
@@ -377,13 +540,14 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
         };
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
-      onPointerLeave={() => {
-        props.onCursor(null);
-        setNodeHint(null);
-        handleRef.current?.setPlacementPoint(null);
-      }}
+      onPointerLeave={clearPointerHover}
       onPointerMove={(event) => {
+        pointerRef.current = { clientX: event.clientX, clientY: event.clientY };
         const picked = handleRef.current?.pick(event.clientX, event.clientY);
+        hoverRef.current = picked ?? null;
+        if (canvasRef.current !== null) {
+          updateCommandCursor(canvasRef.current, props, hoverRef.current);
+        }
         props.onCursor(picked?.point ?? null);
         const hovered =
           picked === undefined
@@ -400,9 +564,21 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
                 top: event.clientY - rect.top,
               },
         );
+        const placementPoint = props.placing ? (picked?.point ?? null) : null;
+        const placementValid =
+          placementPoint !== null &&
+          props.placingType !== null &&
+          props.placingType !== undefined
+            ? placementGroundValid(
+                props.model,
+                props.placingType,
+                placementPoint,
+              )
+            : null;
         handleRef.current?.setPlacementPoint(
-          props.placing ? (picked?.point ?? null) : null,
+          placementPoint,
           props.placingFootprint,
+          placementValid,
         );
         const drag = dragRef.current;
         if (drag === null) return;
@@ -482,6 +658,7 @@ function ActiveBabylonViewport(props: DescentBabylonViewportProps) {
           });
           if (marker !== null) handleRef.current?.showOrderMarker(marker);
         }}
+        pings={props.pings}
         view={minimapView}
       />
       {dragBox === null ? null : (

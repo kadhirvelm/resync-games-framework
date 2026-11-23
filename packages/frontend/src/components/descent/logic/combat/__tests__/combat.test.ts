@@ -50,16 +50,29 @@ describe("class counter matrix", () => {
   const counters: Readonly<Record<CombatClassId, readonly CombatClassId[]>> = {
     adept: ["hunter"],
     breaker: ["warden"],
+    cultivator: ["raider", "adept"],
+    formation_master: ["hunter", "raider"],
     hunter: ["warden"],
     raider: ["hunter", "adept", "breaker"],
     rider: [],
+    sword_sage: ["warden", "breaker"],
     warden: ["raider", "rider"],
   };
 
   test("contains every data-driven combat class", () => {
     expect(
       UNIT_DEFINITIONS.map((definition) => definition.classId).sort(),
-    ).toEqual(["adept", "breaker", "hunter", "raider", "rider", "warden"]);
+    ).toEqual([
+      "adept",
+      "breaker",
+      "cultivator",
+      "formation_master",
+      "hunter",
+      "raider",
+      "rider",
+      "sword_sage",
+      "warden",
+    ]);
   });
 
   test("makes the Rider the roster's fast, far-seeing scout", () => {

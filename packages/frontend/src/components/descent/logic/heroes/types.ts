@@ -1,7 +1,7 @@
 import type { ClassId, ResourceId, SchoolId } from "../types";
 
 /** Building tier ladder; a building at a higher tier satisfies a lower gate. */
-export type HoldTier = "Camp" | "Stronghold" | "Citadel";
+export type HoldTier = "Camp" | "Outpost" | "Stronghold" | "Citadel";
 
 /** Sparse resource cost. */
 export type ResourceCost = Partial<Record<ResourceId, number>>;

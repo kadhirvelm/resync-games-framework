@@ -10,7 +10,11 @@
 import type { BuildingInit, UnitInit } from "../../../logic/economy";
 import { footprintRadius } from "../../../logic/economy/footprint";
 import type { ResourceNode, SpiritVein } from "../../../logic/economy/model";
-import type { CircleVolume } from "../../../logic/layers";
+import type {
+  CircleVolume,
+  TerrainFeature,
+  TerrainFeatureKind,
+} from "../../../logic/layers";
 import {
   clamp,
   createMapRng,
@@ -46,6 +50,7 @@ const BUILD_APRON = 5.5 + CAMP_EDGE;
 const EDGE_MARGIN = 4;
 const CANDIDATE_SPACING = 4;
 const VENT_CLEARANCE = 2.5;
+const OBSTACLE_CLEARANCE = 2.5;
 const VEIN_CLEARANCE = 3;
 const SPAWN_CLEARING_COLUMNS = 18;
 const SPAWN_CLEARING_ROWS = 22;
@@ -104,6 +109,7 @@ export function validateAshenCrucibleMap(map: AshenCrucibleMap): string[] {
   const field = floodDistances(size, primaryCamp, (x, y) => {
     if (nodeCells.has(`${x},${y}`)) return false;
     if (campCells.has(`${x},${y}`)) return false;
+    if (insideAnyObstacle(map.obstacles, { x, y })) return false;
     return !insideAnyVent(map.vents, { x, y });
   });
 
@@ -115,10 +121,16 @@ export function validateAshenCrucibleMap(map: AshenCrucibleMap): string[] {
   for (const node of map.nodes) {
     if (!onMap(map, node)) problems.push(`${node.id} off the map`);
     if (insideAnyVent(map.vents, node)) problems.push(`${node.id} in a vent`);
+    if (insideAnyObstacle(map.obstacles, node)) {
+      problems.push(`${node.id} in terrain`);
+    }
     if (stepsToBeside(field, node) < 0) problems.push(`${node.id} unreachable`);
   }
   for (const vein of map.veins) {
     if (insideAnyVent(map.vents, vein)) problems.push(`${vein.id} in a vent`);
+    if (insideAnyObstacle(map.obstacles, vein)) {
+      problems.push(`${vein.id} in terrain`);
+    }
     if (stepsTo(field, vein) < 0) problems.push(`${vein.id} unreachable`);
   }
   const gate = {
@@ -148,8 +160,10 @@ function layoutAttempt(
   const spawn: MapPoint = { x: width - SPAWN_EAST_INSET, y: height / 2 };
   const placements = placeCamps(rng, players, spawn);
   const vents = placeCrucibleVents(rng);
-  const veins = placeCrucibleVeins(rng, placements, vents, spawn);
-  const nodes = placeCrucibleNodes(rng, placements, vents, veins);
+  const terrainRng = createMapRng(seed, `ashen_crucible:terrain:${attempt}`);
+  const obstacles = placeCrucibleObstacles(terrainRng, placements, vents);
+  const veins = placeCrucibleVeins(rng, placements, vents, obstacles, spawn);
+  const nodes = placeCrucibleNodes(rng, placements, vents, obstacles, veins);
 
   const buildings: BuildingInit[] = placements.map((entry) => ({
     buildingType: "camp",
@@ -188,6 +202,7 @@ function layoutAttempt(
     ],
     height,
     nodes,
+    obstacles,
     stockpile: ashenCrucibleStockpile(players.length),
     units,
     veins,
@@ -263,11 +278,99 @@ function placeCrucibleVents(rng: SimRng): CircleVolume[] {
 }
 
 /**
+ * Places staggered basalt ridges, ruined bastion walls, and obsidian spires
+ * across the Crucible mid-field, framing the north, center, and south lanes.
+ * @param rng - Layout RNG
+ * @param placements - Player camp placements
+ * @param vents - Placed Ember Vents
+ * @returns Impassable terrain features
+ */
+function placeCrucibleObstacles(
+  rng: SimRng,
+  placements: readonly CampPlacement[],
+  vents: readonly CircleVolume[],
+): TerrainFeature[] {
+  const { height, width } = ASHEN_CRUCIBLE_MAP_SIZE;
+  const obstacles: TerrainFeature[] = [];
+  let serial = 0;
+
+  const add = (
+    kind: TerrainFeatureKind,
+    x: number,
+    y: number,
+    radius: number,
+    heightUnits: number,
+    label?: string,
+  ): void => {
+    const rx = Math.round(x * 2) / 2;
+    const ry = Math.round(y * 2) / 2;
+    if (
+      rx < radius + 3 ||
+      rx > width - radius - 3 ||
+      ry < radius + 3 ||
+      ry > height - radius - 3
+    ) {
+      return;
+    }
+    const point = { x: rx, y: ry };
+    if (
+      placements.some(
+        (entry) => distance(point, entry.camp) < BUILD_APRON + radius + 5,
+      )
+    ) {
+      return;
+    }
+    if (
+      vents.some((vent) => distance(point, vent) < vent.radius + radius + 3)
+    ) {
+      return;
+    }
+    const inArrival =
+      rx + radius >= width - SPAWN_CLEARING_COLUMNS - 2 &&
+      Math.abs(ry - height / 2) <= SPAWN_CLEARING_ROWS + radius + 2;
+    if (inArrival) return;
+    serial += 1;
+    obstacles.push({
+      height: Math.round(heightUnits * 10) / 10,
+      id: `crucible-terrain-${serial}`,
+      kind,
+      ...(label ? { label } : {}),
+      radius: Math.round(radius * 4) / 4,
+      x: rx,
+      y: ry,
+    });
+  };
+
+  // Two opposing bastion ridges framing the three Crucible lanes
+  const midX = width * randomBetween(rng, 0.36, 0.41);
+  const laneAnchors = [0.27, 0.73];
+  for (const anchor of laneAnchors) {
+    const centerY = height * anchor;
+    add("ruin_wall", midX, centerY - 6, 3.6, 5.4, "Crucible Bastion");
+    add("basalt_ridge", midX - 2, centerY, 4.6, 4.8);
+    add("obsidian_spire", midX + 2, centerY + 6, 3.4, 7.6);
+  }
+
+  // Eastern magma canyon walls flanking the Horde Gate approach
+  const eastX = width * randomBetween(rng, 0.65, 0.72);
+  for (const sign of [-1, 1] as const) {
+    const baseY = height / 2 + sign * 24;
+    add("obsidian_spire", eastX, baseY, 3.6, 7.8);
+    add("magma_fissure", eastX + 3, baseY + sign * 8, 4.2, 2.0);
+    add("basalt_ridge", eastX - 1, baseY + sign * 16, 4.8, 5.2);
+    add("basalt_ridge", eastX + 2, baseY + sign * 24, 4.6, 4.6);
+  }
+
+  return obstacles;
+}
+
+/**
  * Places one Spirit Vein near each Camp plus two shared veins along the
  * central Crucible lanes.
  * @param rng - Layout RNG
  * @param placements - Player camp placements
  * @param vents - Placed Ember Vents
+ * @param obstacles - Placed terrain obstacles
  * @param spawn - Eastern Horde Gate point
  * @returns Spirit veins
  */
@@ -275,6 +378,7 @@ function placeCrucibleVeins(
   rng: SimRng,
   placements: readonly CampPlacement[],
   vents: readonly CircleVolume[],
+  obstacles: readonly TerrainFeature[],
   spawn: MapPoint,
 ): SpiritVein[] {
   const { height, width } = ASHEN_CRUCIBLE_MAP_SIZE;
@@ -286,7 +390,7 @@ function placeCrucibleVeins(
     );
     return {
       id: `crucible-vein-p${entry.player.slotIndex + 1}`,
-      ...clearOfVents(vents, raw, entry.heading),
+      ...clearOfTerrain(vents, obstacles, raw, entry.heading),
     };
   });
 
@@ -310,7 +414,12 @@ function placeCrucibleVeins(
   for (const target of sharedTargets) {
     veins.push({
       id: target.id,
-      ...clearOfVents(vents, target, headingBetween(target, spawn)),
+      ...clearOfTerrain(
+        vents,
+        obstacles,
+        target,
+        headingBetween(target, spawn),
+      ),
     });
   }
   return veins;
@@ -323,6 +432,7 @@ function placeCrucibleVeins(
  * @param rng - Layout RNG
  * @param placements - Player camp placements
  * @param vents - Placed vents
+ * @param obstacles - Placed terrain obstacles
  * @param veins - Placed veins
  * @returns All resource nodes on the map
  */
@@ -330,6 +440,7 @@ function placeCrucibleNodes(
   rng: SimRng,
   placements: readonly CampPlacement[],
   vents: readonly CircleVolume[],
+  obstacles: readonly TerrainFeature[],
   veins: readonly SpiritVein[],
 ): ResourceNode[] {
   const { height, width } = ASHEN_CRUCIBLE_MAP_SIZE;
@@ -340,6 +451,7 @@ function placeCrucibleNodes(
     if (!onMap(ASHEN_CRUCIBLE_MAP_SIZE, cell)) return false;
     if (taken.has(cellKey(cell))) return false;
     if (nearVent(vents, cell)) return false;
+    if (nearObstacle(obstacles, cell)) return false;
     if (nearestDistance(cell, veins) < VEIN_CLEARANCE) return false;
     for (const entry of placements) {
       if (distance(cell, entry.camp) < BUILD_APRON) return false;
@@ -479,7 +591,7 @@ function pickSharedCell(
 }
 
 /**
- * Creates a player's starting Captain Warden and three Villagers beside their Camp.
+ * Creates a player's starting first-level Cultivator and three Villagers beside their Camp.
  * @param entry - Player and camp placement
  * @returns Starting unit records owned by this player
  */
@@ -493,9 +605,9 @@ function startingUnitsForPlayer(entry: CampPlacement): UnitInit[] {
   );
   return [
     {
-      classId: "warden",
+      classId: "cultivator",
       id: `crucible-captain-${slot}`,
-      maxHp: 140,
+      maxHp: 135,
       ownerId: player.id,
       popKind: "soldier",
       realmId: "qi_gathering",
@@ -515,16 +627,40 @@ function startingUnitsForPlayer(entry: CampPlacement): UnitInit[] {
   ];
 }
 
-function clearOfVents(
+function clearOfTerrain(
   vents: readonly CircleVolume[],
+  obstacles: readonly TerrainFeature[],
   point: MapPoint,
   heading: number,
 ): MapPoint {
   let cell = insideMap(point, EDGE_MARGIN);
-  for (let step = 0; step < 12 && nearVent(vents, cell); step += 1) {
-    cell = insideMap(polarOffset(cell, heading, 2), EDGE_MARGIN);
+  for (
+    let step = 0;
+    step < 16 && (nearVent(vents, cell) || nearObstacle(obstacles, cell));
+    step += 1
+  ) {
+    cell = insideMap(polarOffset(cell, heading, 2.5), EDGE_MARGIN);
   }
   return cell;
+}
+
+function nearObstacle(
+  obstacles: readonly TerrainFeature[],
+  cell: MapPoint,
+): boolean {
+  return obstacles.some(
+    (obstacle) =>
+      distance(obstacle, cell) < obstacle.radius + OBSTACLE_CLEARANCE,
+  );
+}
+
+function insideAnyObstacle(
+  obstacles: readonly TerrainFeature[],
+  cell: MapPoint,
+): boolean {
+  return obstacles.some(
+    (obstacle) => distance(obstacle, cell) <= obstacle.radius + 0.05,
+  );
 }
 
 function nearVent(vents: readonly CircleVolume[], cell: MapPoint): boolean {

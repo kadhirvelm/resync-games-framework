@@ -2,6 +2,11 @@
 /** @jsxImportSource react */
 "use client";
 
+import type {
+  DescentCampaignState,
+  DescentMapId,
+  DescentRoomPlayer,
+} from "@resync-game-framework/api";
 import {
   useEffect,
   useMemo,
@@ -27,12 +32,20 @@ import {
   startSimDriver,
   writeSaveSlot,
 } from "@/components/descent/logic/sim";
+import {
+  DescentCampaignDebrief,
+  DescentCampaignProgress,
+} from "@/components/descent/multiplayer/campaign/DescentCampaign";
 import { DescentLobby } from "@/components/descent/multiplayer/DescentLobby";
 import {
   buildDescentPlayer,
   loadOrCreateDescentPlayer,
   saveDescentPlayer,
 } from "@/components/descent/multiplayer/playerIdentity";
+import {
+  readDescentRoomFromSearch,
+  syncDescentRoomInUrl,
+} from "@/components/descent/multiplayer/roomLocation";
 import { useDescentMultiplayer } from "@/components/descent/multiplayer/useDescentMultiplayer";
 import { DescentView } from "@/components/descent/views";
 import { buildShellModel } from "@/components/descent/views/shellModel";
@@ -52,6 +65,8 @@ interface DescentStartScreenProps {
   onContinue: () => void;
   onExit: () => void;
   onMultiplayer: () => void;
+  onCampaign: () => void;
+  onMultiplayerTutorial: () => void;
   onNewGame: () => void;
   /** Enters or leaves fullscreen; the button hides without it. */
   onToggleFullscreen?: () => void;
@@ -169,6 +184,8 @@ function DescentStartScreen({
   onContinue,
   onExit,
   onMultiplayer,
+  onCampaign,
+  onMultiplayerTutorial,
   onNewGame,
   onToggleFullscreen,
 }: DescentStartScreenProps) {
@@ -213,8 +230,14 @@ function DescentStartScreen({
           >
             <span>{hasSavedRun ? "New game" : "Start"}</span>
           </button>
+          <button onClick={onCampaign} type="button">
+            <span>Co-op Campaign</span>
+          </button>
           <button onClick={onMultiplayer} type="button">
             <span>Co-op Multiplayer</span>
+          </button>
+          <button onClick={onMultiplayerTutorial} type="button">
+            <span>Co-op Tutorial</span>
           </button>
         </nav>
 
@@ -247,6 +270,9 @@ function DescentStartScreen({
  * @returns Mounted Descent RTS view for co-op play
  */
 function DescentMultiplayerMatch({
+  campaign,
+  onCampaignAction,
+  roster,
   fullscreen,
   isHost,
   isParticipant,
@@ -264,7 +290,11 @@ function DescentMultiplayerMatch({
   sim,
   snapshot,
   soundEnabled,
+  tutorialMode,
 }: {
+  campaign?: DescentCampaignState;
+  onCampaignAction: (action: "retry" | "advance") => Promise<void>;
+  roster: readonly DescentRoomPlayer[];
   fullscreen: boolean;
   isHost: boolean;
   isParticipant: boolean;
@@ -272,7 +302,7 @@ function DescentMultiplayerMatch({
   matchError: string | null;
   matchKey: string;
   onCommand: (command: Parameters<DescentSim["enqueue"]>[0]) => void;
-  onLeaveRoom: () => void;
+  onLeaveRoom: () => Promise<void>;
   onRestart: () => void;
   onSetPaused: (paused: boolean) => void;
   onSetSoundEnabled: (enabled: boolean) => void;
@@ -282,6 +312,7 @@ function DescentMultiplayerMatch({
   sim: DescentSim;
   snapshot: ReturnType<DescentSim["snapshot"]>;
   soundEnabled: boolean;
+  tutorialMode: boolean;
 }) {
   const shellModel = useMemo(() => buildShellModel(snapshot), [snapshot]);
   useDescentAudio({
@@ -298,15 +329,33 @@ function DescentMultiplayerMatch({
       key={matchKey}
       localPlayerId={localPlayerId}
       multiplayer={{
+        campaignDebrief:
+          campaign !== undefined &&
+          (shellModel.outcome !== null || campaign.status !== "active") ? (
+            <DescentCampaignDebrief
+              campaign={campaign}
+              error={matchError}
+              isHost={isHost}
+              onAction={onCampaignAction}
+              onExit={onLeaveRoom}
+              roster={roster}
+            />
+          ) : undefined,
+        campaignProgress:
+          campaign === undefined ? undefined : (
+            <DescentCampaignProgress campaign={campaign} />
+          ),
         error: matchError,
         isSpectator: !isParticipant,
         onLeaveRoom,
         onRestart:
-          isHost && matchError !== null ? () => void onRestart() : undefined,
+          isHost && campaign === undefined && matchError !== null
+            ? () => void onRestart()
+            : undefined,
         roomId,
       }}
       onCommand={onCommand}
-      onRestart={isHost ? onRestart : undefined}
+      onRestart={isHost && campaign === undefined ? onRestart : undefined}
       onSetPaused={onSetPaused}
       onSetSoundEnabled={onSetSoundEnabled}
       onSetSpeed={onSetSpeed}
@@ -314,6 +363,7 @@ function DescentMultiplayerMatch({
       shellModel={shellModel}
       snapshot={snapshot}
       soundEnabled={soundEnabled}
+      tutorialMode={tutorialMode}
     />
   );
 }
@@ -325,13 +375,17 @@ function DescentMultiplayerMatch({
  * @returns The co-op lobby or live multiplayer Descent battlefield
  */
 function DescentMultiplayerExperience({
+  defaultMapId,
   fullscreen,
+  initialRoomCode,
   onBack,
   onSetSoundEnabled,
   onToggleFullscreen,
   soundEnabled,
 }: {
+  defaultMapId: DescentMapId;
   fullscreen: boolean;
+  initialRoomCode: string | null;
   onBack: () => void;
   onSetSoundEnabled: (enabled: boolean) => void;
   onToggleFullscreen?: () => void;
@@ -346,6 +400,7 @@ function DescentMultiplayerExperience({
     joinRoom,
     leaveRoom,
     matchError,
+    rejoiningRoomId,
     room,
     sendCommand,
     setPaused,
@@ -353,8 +408,9 @@ function DescentMultiplayerExperience({
     sim,
     snapshot,
     startMatch,
+    startCampaignAction,
     status,
-  } = useDescentMultiplayer(player);
+  } = useDescentMultiplayer(player, { initialRoomCode });
 
   const handlePlayerNameChange = (name: string) => {
     const updated = buildDescentPlayer(name, player);
@@ -372,6 +428,7 @@ function DescentMultiplayerExperience({
   ) {
     return (
       <DescentLobby
+        defaultMapId={defaultMapId}
         error={matchError ?? error}
         isHost={isHost}
         onBack={async () => {
@@ -381,11 +438,12 @@ function DescentMultiplayerExperience({
         onJoinRoom={joinRoom}
         onLeaveRoom={leaveRoom}
         onPlayerNameChange={handlePlayerNameChange}
-        onStartMatch={async () => {
+        onStartMatch={async (selectedMapId) => {
           unlockDescentAudio();
-          await startMatch();
+          await startMatch(selectedMapId);
         }}
         player={player}
+        rejoiningRoomId={rejoiningRoomId}
         room={room}
         status={status}
       />
@@ -394,25 +452,29 @@ function DescentMultiplayerExperience({
 
   return (
     <DescentMultiplayerMatch
+      campaign={room.gameState.campaign}
       fullscreen={fullscreen}
       isHost={isHost}
       isParticipant={isParticipant}
       localPlayerId={player.id}
       matchError={matchError ?? error}
       matchKey={room.gameState.matchId ?? room.id}
+      onCampaignAction={startCampaignAction}
       onCommand={sendCommand}
       onLeaveRoom={async () => {
         if (await leaveRoom()) onBack();
       }}
-      onRestart={() => void startMatch()}
+      onRestart={() => void startMatch(room.gameState.mapId)}
       onSetPaused={setPaused}
       onSetSoundEnabled={onSetSoundEnabled}
       onSetSpeed={setSpeed}
       onToggleFullscreen={onToggleFullscreen}
       roomId={room.id}
+      roster={room.gameState.roster}
       sim={sim}
       snapshot={snapshot}
       soundEnabled={soundEnabled}
+      tutorialMode={room.gameState.mapId === "ashen_crucible_tutorial"}
     />
   );
 }
@@ -425,7 +487,16 @@ function DescentMultiplayerExperience({
  * @returns The title screen, co-op lobby, or mounted Descent RTS
  */
 export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
-  const [mode, setMode] = useState<"multiplayer" | "solo" | "title">("title");
+  const [initialRoomCode, setInitialRoomCode] = useState<string | null>(() =>
+    typeof window === "undefined"
+      ? null
+      : readDescentRoomFromSearch(window.location.search),
+  );
+  const [mode, setMode] = useState<"multiplayer" | "solo" | "title">(() =>
+    initialRoomCode === null ? "title" : "multiplayer",
+  );
+  const [defaultMultiplayerMap, setDefaultMultiplayerMap] =
+    useState<DescentMapId>("ashen_crucible");
   const [battlefieldReady, setBattlefieldReady] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const screen = useFullscreen();
@@ -452,8 +523,14 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
   if (mode === "multiplayer") {
     return (
       <DescentMultiplayerExperience
+        defaultMapId={defaultMultiplayerMap}
         fullscreen={screen.fullscreen}
-        onBack={() => setMode("title")}
+        initialRoomCode={initialRoomCode}
+        onBack={() => {
+          setInitialRoomCode(null);
+          syncDescentRoomInUrl(null);
+          setMode("title");
+        }}
         onSetSoundEnabled={setSoundEnabled}
         onToggleFullscreen={toggleFullscreen}
         soundEnabled={soundEnabled}
@@ -466,6 +543,11 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
       <DescentStartScreen
         fullscreen={screen.fullscreen}
         hasSavedRun={hasSavedRun}
+        onCampaign={() => {
+          unlockDescentAudio();
+          setDefaultMultiplayerMap("ashen_campaign_1");
+          setMode("multiplayer");
+        }}
         onContinue={() => {
           unlockDescentAudio();
           setMode("solo");
@@ -473,6 +555,12 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
         onExit={onExit}
         onMultiplayer={() => {
           unlockDescentAudio();
+          setDefaultMultiplayerMap("ashen_crucible");
+          setMode("multiplayer");
+        }}
+        onMultiplayerTutorial={() => {
+          unlockDescentAudio();
+          setDefaultMultiplayerMap("ashen_crucible_tutorial");
           setMode("multiplayer");
         }}
         onNewGame={() => {

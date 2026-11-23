@@ -4,7 +4,7 @@ import type {
   UnitInit,
 } from "../../../logic/economy";
 import type { ResourceNode, SpiritVein } from "../../../logic/economy/model";
-import type { CircleVolume } from "../../../logic/layers";
+import type { CircleVolume, TerrainFeature } from "../../../logic/layers";
 
 /** A named defensive lane on the Ashen Gate teaching map. */
 export interface AshenGateChokePoint {
@@ -20,6 +20,7 @@ export interface AshenGateMap {
   chokePoints: readonly AshenGateChokePoint[];
   height: number;
   nodes: readonly ResourceNode[];
+  obstacles: readonly TerrainFeature[];
   stockpile: NonNullable<EconomyInit["stockpile"]>;
   units: readonly UnitInit[];
   veins: readonly SpiritVein[];
@@ -200,7 +201,7 @@ export const ASHEN_GATE_NODE_SLOTS: readonly AshenGateNodeSlot[] = [
 
 /**
  * Funds the opening checklist exactly: one villager, a Barracks, five
- * Wardens, and an Omen Tower. Everything beyond that must be gathered.
+ * Wardens, and the Outpost upgrade. Everything beyond that must be gathered.
  */
 export const ASHEN_GATE_STOCKPILE: AshenGateMap["stockpile"] = {
   coin: 0,

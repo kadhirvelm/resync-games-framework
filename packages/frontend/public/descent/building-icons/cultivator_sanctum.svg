@@ -1,0 +1,10 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <title>Cultivator Sanctum</title>
+  <rect fill="#101b22" height="64" rx="12" width="64" />
+  <rect fill="#3a332d" height="8" rx="2" stroke="#5cc9d6" stroke-width="2" width="48" x="8" y="48" />
+  <path d="M16 48V32h32v16" fill="#233742" stroke="#64d2de" stroke-width="2" />
+  <path d="M10 32l22-14 22 14z" fill="#8b3b2e" stroke="#e0a958" stroke-width="2" />
+  <path d="M18 22l14-10 14 10z" fill="#a24737" stroke="#e0a958" stroke-width="2" />
+  <circle cx="32" cy="40" fill="#7be8f2" r="5" stroke="#e2ffff" stroke-width="2" />
+  <path d="M32 7v6" stroke="#8eeef1" stroke-linecap="round" stroke-width="3" />
+</svg>

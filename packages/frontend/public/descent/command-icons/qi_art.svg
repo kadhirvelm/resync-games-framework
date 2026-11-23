@@ -1,0 +1,7 @@
+<svg fill="none" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <title>Qi Art</title>
+  <rect fill="#0f172a" height="64" rx="12" width="64"/>
+  <circle cx="32" cy="32" opacity="0.85" r="20" stroke="#38bdf8" stroke-width="2.5"/>
+  <circle cx="32" cy="32" r="12" stroke="#7dd3fc" stroke-dasharray="5 3" stroke-width="2"/>
+  <path d="M32 10L36 28L54 32L36 36L32 54L28 36L10 32L28 28L32 10Z" fill="#e0f2fe"/>
+</svg>

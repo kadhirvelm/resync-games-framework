@@ -1,12 +1,18 @@
 import type { CombatClassId } from "../combat/types";
 import { getUnitDefinition } from "../combat/unitCatalog";
 import { footprintRadius } from "../economy/footprint";
+import type { HoldTier } from "../economy/model";
 import {
   canAffordPop,
   releasePopulation,
   reservePopulation,
 } from "../economy/queries";
-import { asBuilding, createUnitRecord, economyHost } from "../economy/records";
+import {
+  asBuilding,
+  createUnitRecord,
+  economyHost,
+  tierAllows,
+} from "../economy/records";
 import { canAfford, trySpend } from "../economy/stockpile";
 import { trainingCost } from "../economy/tables";
 import {
@@ -37,6 +43,44 @@ export const BARRACKS_CLASSES: readonly CombatClassId[] = [
   "breaker",
   "adept",
 ];
+
+/** Classes a completed Cultivator Sanctum can train, in card order. */
+export const CULTIVATOR_SANCTUM_CLASSES: readonly CombatClassId[] = [
+  "cultivator",
+  "sword_sage",
+  "formation_master",
+];
+
+/** Minimum Hold tier required to train each unit class. */
+export const CLASS_REQUIRED_TIER: Readonly<Record<ClassId, HoldTier>> = {
+  adept: "Citadel",
+  breaker: "Citadel",
+  cultivator: "Outpost",
+  formation_master: "Stronghold",
+  hunter: "Outpost",
+  raider: "Stronghold",
+  rider: "Outpost",
+  sword_sage: "Outpost",
+  villager: "Camp",
+  warden: "Camp",
+};
+
+/**
+ * @param classId - Unit class
+ * @returns The Hold tier required to train that class
+ */
+export function classRequiredTier(classId: ClassId): HoldTier {
+  return CLASS_REQUIRED_TIER[classId];
+}
+
+/**
+ * @param tier - Current Hold tier
+ * @param classId - Unit class
+ * @returns Whether the current Hold tier can train that class
+ */
+export function isClassUnlocked(tier: HoldTier, classId: ClassId): boolean {
+  return tierAllows(tier, CLASS_REQUIRED_TIER[classId]);
+}
 
 /** Most orders one building may have queued, including the one training. */
 export const MAX_QUEUE = 20;
@@ -73,8 +117,18 @@ export interface TrainingPlan {
  * @param classId - Class requested
  * @returns The building type that trains it
  */
-export function trainerFor(classId: ClassId): "barracks" | "camp" {
-  return classId === "villager" ? "camp" : "barracks";
+export function trainerFor(
+  classId: ClassId,
+): "barracks" | "camp" | "cultivator_sanctum" {
+  if (classId === "villager") return "camp";
+  if (
+    classId === "cultivator" ||
+    classId === "sword_sage" ||
+    classId === "formation_master"
+  ) {
+    return "cultivator_sanctum";
+  }
+  return "barracks";
 }
 
 /**
@@ -139,17 +193,28 @@ export function trainingBlocker(
   if (!building) return "That building is gone.";
   const record = asBuilding(building);
   if (record.buildingType !== trainerFor(classId)) {
-    return classId === "villager"
-      ? "Villagers train at the Camp."
-      : "Soldiers train at a Barracks.";
+    if (classId === "villager") return "Villagers train at the Camp.";
+    if (
+      classId === "cultivator" ||
+      classId === "sword_sage" ||
+      classId === "formation_master"
+    ) {
+      return "Cultivators train at a Cultivator Sanctum.";
+    }
+    return "Soldiers train at a Barracks.";
   }
   if (!record.completed) return "Still under construction.";
+  const host = economyHost(world, ECONOMY_STEP_TICKS);
+  const requiredTier = classRequiredTier(classId);
+  if (!isClassUnlocked(host.economy.tier, classId)) {
+    return `Needs ${requiredTier} to train this unit.`;
+  }
   const queued = sliceState(world).training.filter(
     (job) => job.buildingId === buildingId,
   ).length;
   if (queued >= MAX_QUEUE) return "Training queue is full.";
   const plan = trainingPlan(classId, trainSpeedBonus(record));
-  if (!canAffordPop(economyHost(world, ECONOMY_STEP_TICKS), plan.pop)) {
+  if (!canAffordPop(host, plan.pop)) {
     return POPULATION_BLOCKER;
   }
   if (!canAfford(world.resources, plan.cost)) {
@@ -518,8 +583,12 @@ function sendVillagersToRally(
  * @param buildingType - Economy building type
  * @returns Whether the building produces units
  */
-function isTrainingBuilding(buildingType: string): boolean {
-  return buildingType === "camp" || buildingType === "barracks";
+export function isTrainingBuilding(buildingType: string): boolean {
+  return (
+    buildingType === "camp" ||
+    buildingType === "barracks" ||
+    buildingType === "cultivator_sanctum"
+  );
 }
 
 /**

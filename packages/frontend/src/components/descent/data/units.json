@@ -1,5 +1,70 @@
 [
   {
+    "armor": 5,
+    "attackKind": "melee",
+    "attackRange": 1.6,
+    "attacksPerSecond": 0.95,
+    "barkKey": "hold.cultivator",
+    "classId": "cultivator",
+    "damage": 19,
+    "defaultRankTitle": "Ashborn",
+    "id": "hold-cultivator",
+    "maxHitPoints": 135,
+    "name": "Hold Cultivator",
+    "popCost": 1,
+    "speed": 3.4,
+    "structureDamageMultiplier": 1,
+    "trainingCost": {
+      "food": 25,
+      "water": 25
+    },
+    "vision": 10
+  },
+  {
+    "armor": 3,
+    "attackKind": "projectile",
+    "attackRange": 6.5,
+    "attacksPerSecond": 1.05,
+    "barkKey": "hold.cultivator",
+    "classId": "sword_sage",
+    "damage": 18,
+    "defaultRankTitle": "Ashborn",
+    "id": "hold-sword-sage",
+    "maxHitPoints": 105,
+    "name": "Hold Flying-Sword Cultivator",
+    "popCost": 1,
+    "projectileSpeed": 15,
+    "speed": 3.5,
+    "structureDamageMultiplier": 0.9,
+    "trainingCost": {
+      "food": 25,
+      "water": 30
+    },
+    "vision": 11
+  },
+  {
+    "armor": 4,
+    "attackKind": "projectile",
+    "attackRange": 6,
+    "attacksPerSecond": 0.85,
+    "barkKey": "hold.cultivator",
+    "classId": "formation_master",
+    "damage": 16,
+    "defaultRankTitle": "Ashborn",
+    "id": "hold-formation-master",
+    "maxHitPoints": 115,
+    "name": "Hold Formation Master",
+    "popCost": 1,
+    "projectileSpeed": 13,
+    "speed": 3.1,
+    "structureDamageMultiplier": 0.9,
+    "trainingCost": {
+      "food": 20,
+      "water": 35
+    },
+    "vision": 12
+  },
+  {
     "armor": 8,
     "attackKind": "melee",
     "attackRange": 1.4,

@@ -2,9 +2,10 @@
 /** @jsxImportSource react */
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { footprintCovers, footprintSide } from "../logic/economy/footprint";
 import type { SimSpeed } from "../logic/sim/constants";
+import { isTrainingBuilding } from "../logic/slice/sliceTraining";
 import type { Command, FormationId, SimSnapshot } from "../logic/types";
 import { BuildMenu } from "./BuildMenu";
 import { CommandCard } from "./CommandCard";
@@ -18,6 +19,13 @@ import {
 } from "./card";
 import { activeCoach, type CoachMarkId } from "./coach";
 import { buildConfirm } from "./confirm";
+import {
+  addToControlGroup,
+  type ControlGroupsState,
+  createControlGroupsState,
+  recallControlGroup,
+  saveControlGroup,
+} from "./controlGroups";
 import { DescentBabylonViewport } from "./DescentBabylonViewport";
 import { DescentLoadingScreen } from "./DescentLoadingScreen";
 import styles from "./descentView.module.scss";
@@ -28,7 +36,7 @@ import {
   HotkeyDialog,
   ToastList,
 } from "./dialogs";
-import type { HotkeyAction } from "./hotkeys";
+import type { ControlGroupHotkeyAction, HotkeyAction } from "./hotkeys";
 import {
   describeSelection,
   type InspectTarget,
@@ -39,6 +47,7 @@ import {
   type LoadingProgress,
 } from "./loadingProgress";
 import type { CameraFocusRequest } from "./MapViewport";
+import { PlayerScoreboard } from "./PlayerScoreboard";
 import type { BuildReadout } from "./presentation";
 import {
   type Camera,
@@ -62,8 +71,10 @@ import {
   StrategicStatus,
   TrainingTracker,
 } from "./status";
+import { TutorialGuide } from "./TutorialGuide";
 import type { ResourceSelectionId } from "./text";
 import { type HoldUpgradeProgress, UnitPanel } from "./UnitPanel";
+import { useAttackAlerts } from "./useAttackAlerts";
 import { useHotkeys } from "./useHotkeys";
 
 /** Matches the loading screen's fade-out in `loadingScreen.module.scss`. */
@@ -74,6 +85,10 @@ type LoadPhase = "done" | "leaving" | "loading";
 
 /** Multiplayer HUD metadata shown when playing in a co-op room. */
 export interface DescentMultiplayerBar {
+  /** Campaign progress rendered inside the existing co-op HUD. */
+  campaignProgress?: ReactNode;
+  /** Campaign debrief replacing the default outcome dialog, including report waits. */
+  campaignDebrief?: ReactNode;
   /** Latest recoverable or terminal multiplayer error. */
   error?: string | null;
   /** Whether the local player joined after the roster was locked. */
@@ -124,6 +139,8 @@ export interface DescentViewProps {
   snapshot: SimSnapshot;
   /** Whether the generated mix is audible. */
   soundEnabled?: boolean;
+  /** Whether the live co-op tutorial guide overlay is shown. */
+  tutorialMode?: boolean;
 }
 
 interface Toast {
@@ -166,10 +183,11 @@ function placementStatus(
   onVein: boolean,
 ): string | null {
   if (option === null) return null;
+  const repeatHint = "Shift-click to place multiple";
   if (onVein) {
-    return `${option.name} · Spirit Vein`;
+    return `${option.name} · Spirit Vein · ${repeatHint}`;
   }
-  return option.name;
+  return `${option.name} · ${repeatHint}`;
 }
 
 /**
@@ -219,12 +237,15 @@ export function DescentView({
   shellModel,
   snapshot,
   soundEnabled = true,
+  tutorialMode = false,
 }: DescentViewProps) {
   const model = useMemo(
     () => shellModel ?? buildShellModel(snapshot),
     [shellModel, snapshot],
   );
   const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION);
+  const controlGroups = useRef<ControlGroupsState>(createControlGroupsState());
+  const attackPings = useAttackAlerts({ localPlayerId, snapshot });
   const [inspected, setInspected] = useState<InspectTarget | null>(null);
   const [focusRequest, setFocusRequest] = useState<CameraFocusRequest | null>(
     null,
@@ -342,8 +363,7 @@ export function DescentView({
     selectedBuilding !== null &&
     !selectedBuilding.constructing &&
     isLocalPlayerOwned(selectedBuilding, localPlayerId) &&
-    (selectedBuilding.buildingType === "camp" ||
-      selectedBuilding.buildingType === "barracks")
+    isTrainingBuilding(selectedBuilding.buildingType)
       ? selectedBuilding.id
       : null;
   const primaryCultivation = primary?.cultivation ?? null;
@@ -396,6 +416,15 @@ export function DescentView({
   };
 
   /**
+   * Requests one camera recenter through the viewport's existing focus path.
+   * @param point - Map-space point to center
+   */
+  const focusOnPoint = (point: MapPoint) => {
+    focusSequence.current += 1;
+    setFocusRequest({ id: focusSequence.current, point });
+  };
+
+  /**
    * Selects the next idle villager and centers the camera on it, cycling
    * through idle villagers on repeated presses.
    */
@@ -413,10 +442,66 @@ export function DescentView({
     setPlacing(null);
     setInspected(null);
     setSelection({ buildingId: null, unitIds: [id] });
-    focusSequence.current += 1;
-    setFocusRequest({
-      id: focusSequence.current,
-      point: { x: villager.x, y: villager.y },
+    focusOnPoint({ x: villager.x, y: villager.y });
+  };
+
+  /**
+   * Saves, extends, or recalls one session-local unit control group.
+   * Recalled ids are resolved against the latest model before selection, and
+   * a double-tap centers on the surviving units' mean map position.
+   * @param action - Control-group key action
+   */
+  const handleControlGroup = (action: ControlGroupHotkeyAction) => {
+    if (action.mode === "save") {
+      controlGroups.current = saveControlGroup(
+        controlGroups.current,
+        action.slot,
+        selection.unitIds,
+      );
+      return;
+    }
+    if (action.mode === "add") {
+      controlGroups.current = addToControlGroup(
+        controlGroups.current,
+        action.slot,
+        selection.unitIds,
+      );
+      return;
+    }
+    const recalled = recallControlGroup(
+      controlGroups.current,
+      action.slot,
+      Date.now(),
+    );
+    controlGroups.current = recalled.state;
+    if (recalled.selectionIds === null) return;
+    const unitsById = new Map(model.units.map((unit) => [unit.id, unit]));
+    const units = recalled.selectionIds.flatMap((id) => {
+      const unit = unitsById.get(id);
+      if (
+        unit === undefined ||
+        unit.factionId !== "hold" ||
+        !isLocalPlayerOwned(unit, localPlayerId)
+      ) {
+        return [];
+      }
+      return [unit];
+    });
+    setRallying(null);
+    setPlacing(null);
+    setInspected(null);
+    setSelection({
+      buildingId: null,
+      unitIds: units.map((unit) => unit.id),
+    });
+    if (!recalled.center || units.length === 0) return;
+    const center = units.reduce(
+      (sum, unit) => ({ x: sum.x + unit.x, y: sum.y + unit.y }),
+      { x: 0, y: 0 },
+    );
+    focusOnPoint({
+      x: center.x / units.length,
+      y: center.y / units.length,
     });
   };
 
@@ -474,6 +559,14 @@ export function DescentView({
     }
     if (next.type === "stop") {
       onCommand?.({ type: "order_stop", unitIds: next.unitIds });
+      return;
+    }
+    if (next.type === "qi_art") {
+      onCommand?.({ type: "cast_qi_art", unitIds: next.unitIds });
+      return;
+    }
+    if (next.type === "meditate") {
+      onCommand?.({ type: "toggle_meditate", unitIds: next.unitIds });
       return;
     }
     if (next.type === "train") {
@@ -546,8 +639,40 @@ export function DescentView({
       return;
     }
     if (glossaryOpen || intent !== null) return;
+    if (action.type === "controlGroup") {
+      handleControlGroup(action);
+      return;
+    }
     if (action.type === "build") {
       setBuildOpen((open) => !open);
+      return;
+    }
+    if (action.type === "qi_art") {
+      const unitIds = selection.unitIds.filter((id) => {
+        const match = model.units.find((unit) => unit.id === id);
+        return (
+          match !== undefined &&
+          match.factionId === "hold" &&
+          match.qiArt !== null
+        );
+      });
+      if (unitIds.length > 0) {
+        onCommand?.({ type: "cast_qi_art", unitIds });
+      }
+      return;
+    }
+    if (action.type === "meditate") {
+      const unitIds = selection.unitIds.filter((id) => {
+        const match = model.units.find((unit) => unit.id === id);
+        return (
+          match !== undefined &&
+          match.factionId === "hold" &&
+          match.qiArt !== null
+        );
+      });
+      if (unitIds.length > 0) {
+        onCommand?.({ type: "toggle_meditate", unitIds });
+      }
       return;
     }
     if (action.type === "hotkeys") {
@@ -580,11 +705,7 @@ export function DescentView({
       if (camp !== undefined) {
         setInspected(null);
         setSelection({ buildingId: camp.id, unitIds: [] });
-        focusSequence.current += 1;
-        setFocusRequest({
-          id: focusSequence.current,
-          point: { x: camp.x, y: camp.y },
-        });
+        focusOnPoint({ x: camp.x, y: camp.y });
       }
       return;
     }
@@ -673,56 +794,50 @@ export function DescentView({
         />
       </div>
       <div className={styles.stage}>
-        {multiplayer !== undefined || model.players.length > 0 ? (
-          <div className={styles.coopBar} data-testid="descent-coop-bar">
-            {multiplayer === undefined ? null : (
-              <span className={styles.coopRoomBadge}>
-                Room <strong>{multiplayer.roomId}</strong>
-              </span>
-            )}
-            <div className={styles.coopRoster}>
-              {model.players.map((player) => (
-                <span className={styles.coopPlayerChip} key={player.id}>
-                  <span
-                    aria-hidden="true"
-                    className={styles.coopColorDot}
-                    style={{ backgroundColor: player.color }}
-                  />
-                  <span>
-                    {player.name}
-                    {player.id === localPlayerId ? " (You)" : ""}
-                  </span>
+        <div className={styles.coopHud} data-testid="descent-coop-hud">
+          {multiplayer !== undefined || model.players.length > 0 ? (
+            <div className={styles.coopBar} data-testid="descent-coop-bar">
+              {multiplayer === undefined ? null : (
+                <span className={styles.coopRoomBadge}>
+                  Room <strong>{multiplayer.roomId}</strong>
+                  {tutorialMode ? " · Tutorial" : ""}
                 </span>
-              ))}
+              )}
+              {multiplayer?.isSpectator === true ? (
+                <span className={styles.coopSpectatorBadge}>Spectator</span>
+              ) : null}
+              {multiplayer?.onRestart === undefined ? null : (
+                <button
+                  className={styles.coopLeaveButton}
+                  onClick={multiplayer.onRestart}
+                  type="button"
+                >
+                  Restart
+                </button>
+              )}
+              {multiplayer === undefined ? null : (
+                <button
+                  className={styles.coopLeaveButton}
+                  onClick={multiplayer.onLeaveRoom}
+                  type="button"
+                >
+                  Leave
+                </button>
+              )}
+              {multiplayer?.error == null ? null : (
+                <span className={styles.coopError} role="alert">
+                  {multiplayer.error}
+                </span>
+              )}
             </div>
-            {multiplayer?.isSpectator === true ? (
-              <span className={styles.coopSpectatorBadge}>Spectator</span>
-            ) : null}
-            {multiplayer?.onRestart === undefined ? null : (
-              <button
-                className={styles.coopLeaveButton}
-                onClick={multiplayer.onRestart}
-                type="button"
-              >
-                Restart
-              </button>
-            )}
-            {multiplayer === undefined ? null : (
-              <button
-                className={styles.coopLeaveButton}
-                onClick={multiplayer.onLeaveRoom}
-                type="button"
-              >
-                Leave
-              </button>
-            )}
-            {multiplayer?.error == null ? null : (
-              <span className={styles.coopError} role="alert">
-                {multiplayer.error}
-              </span>
-            )}
-          </div>
-        ) : null}
+          ) : null}
+          {multiplayer?.campaignProgress}
+          <PlayerScoreboard
+            localPlayerId={localPlayerId}
+            players={model.players}
+          />
+        </div>
+        {tutorialMode ? <TutorialGuide snapshot={snapshot} /> : null}
         <DescentBabylonViewport
           camera={camera}
           focusRequest={focusRequest}
@@ -737,7 +852,7 @@ export function DescentView({
           onInspect={inspect}
           onLoaded={revealBattlefield}
           onLoadProgress={setLoadProgress}
-          onPlace={(point) => {
+          onPlace={(point, queue = false) => {
             if (placing === null) return;
             const cell = snapMapCell(point);
             onCommand?.({
@@ -748,10 +863,11 @@ export function DescentView({
               ),
               buildingType: placing,
               type: "place_building",
+              ...(queue ? { queue: true } : {}),
               x: cell.x,
               y: cell.y,
             });
-            setPlacing(null);
+            if (!queue) setPlacing(null);
           }}
           onSelectBuilding={selectBuilding}
           onSelectUnits={(ids, mode) => {
@@ -766,8 +882,10 @@ export function DescentView({
             onCommand?.(rallyCommand(buildingId, point, model.nodes));
             setRallying(null);
           }}
+          pings={attackPings}
           placing={placing !== null}
           placingFootprint={placingFootprint}
+          placingType={placing}
           rallyBuildingId={rallyBuildingId}
           selection={selection}
           settingRally={rallying !== null}
@@ -871,14 +989,28 @@ export function DescentView({
           progress={loadProgress}
         />
       )}
-      {model.outcome === null ? null : (
-        <section className={styles.outcome} role="dialog">
-          <h2>{model.outcome.title}</h2>
-          <button onClick={onRestart} type="button">
-            Restart
-          </button>
+      {multiplayer?.campaignDebrief != null || model.outcome !== null ? (
+        <section
+          aria-label={
+            multiplayer?.campaignDebrief != null
+              ? "Campaign debrief"
+              : "Match outcome"
+          }
+          className={styles.outcome}
+          role="dialog"
+        >
+          {multiplayer?.campaignDebrief ?? (
+            <>
+              <h2>{model.outcome?.title}</h2>
+              {onRestart === undefined ? null : (
+                <button onClick={onRestart} type="button">
+                  Restart
+                </button>
+              )}
+            </>
+          )}
         </section>
-      )}
+      ) : null}
     </div>
   );
 }

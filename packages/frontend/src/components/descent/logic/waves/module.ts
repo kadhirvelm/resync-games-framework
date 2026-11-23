@@ -18,6 +18,14 @@ import type {
 /** Sim-module id. Snapshot readers look up `meta.waves`. */
 export const WAVES_MODULE_ID = "waves";
 
+/** Optional difficulty tuning for a waves module instance. */
+export interface WaveModuleOptions {
+  /** Multiplier for spawned horde HP and damage (default `1`). */
+  waveStatScale?: number;
+  /** Multiplier for wave spawn timestamps (default `1`). */
+  waveTimeScale?: number;
+}
+
 /**
  * Creates the waves sim module.
  * Register it on `DESCENT_SIM_MODULES` (phase `waves` is already reserved).
@@ -27,13 +35,17 @@ export const WAVES_MODULE_ID = "waves";
  * the highest essence seen as wave power, and opens the gate when a boss died
  * through a direct `damageWaveUnit` call since the last tick.
  * @param gate - Layers gate, when the host has one
+ * @param options - Optional pacing and difficulty multipliers
  * @returns A sim module
  */
-export function createWavesModule(gate?: WaveGatePort): SimModule {
+export function createWavesModule(
+  gate?: WaveGatePort,
+  options?: WaveModuleOptions,
+): SimModule {
   return {
     id: WAVES_MODULE_ID,
     init(world) {
-      world.meta.waves = freshState(world);
+      world.meta.waves = freshState(world, options);
     },
     processors: [
       {
@@ -126,11 +138,20 @@ export function getHellPressureFromMeta(
  * @param world - Fresh world
  * @returns A clock aligned to tick 0
  */
-function freshState(world: SimWorldState): WaveClockState {
+function freshState(
+  world: SimWorldState,
+  options?: WaveModuleOptions,
+): WaveClockState {
   const layerId = isLayerId(world.layerId) ? world.layerId : null;
   const state = createWaveState(layerId, 0, world.map);
   state.collectedEssence = world.resources.essence;
   state.omenTower = hasOmenTower(world);
+  if (options?.waveStatScale !== undefined) {
+    state.waveStatScale = options.waveStatScale;
+  }
+  if (options?.waveTimeScale !== undefined) {
+    state.waveTimeScale = options.waveTimeScale;
+  }
   return state;
 }
 
@@ -156,6 +177,12 @@ function retarget(
     world.resources.essence,
   );
   next.omenTower = hasOmenTower(world);
+  if (previous.waveStatScale !== undefined) {
+    next.waveStatScale = previous.waveStatScale;
+  }
+  if (previous.waveTimeScale !== undefined) {
+    next.waveTimeScale = previous.waveTimeScale;
+  }
   return next;
 }
 

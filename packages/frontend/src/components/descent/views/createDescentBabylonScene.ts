@@ -4,6 +4,7 @@ import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 // Registers Scene.pick and createPickingRay; without it picking silently
 // returns null (every click lands on map 0,0) or throws.
 import "@babylonjs/core/Culling/ray";
+import type { Bone } from "@babylonjs/core/Bones/bone";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { GlowLayer } from "@babylonjs/core/Layers/glowLayer";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
@@ -47,11 +48,14 @@ import {
 } from "../data/layers/ashen_gate/threeDAssets";
 import { isFogVisible } from "../logic/fog";
 import { ASHEN_HAZE, ASHEN_VOID, addAshenBackdrop } from "./ashenBackdrop";
+import { addCinderFlock } from "./ashenCinders";
 import { PLATEAU_RIM } from "./ashenTerrainLayout";
 import {
   cameraKeyFromInput,
   cameraPanDirection,
   cameraRotationInput,
+  type EdgeScrollPointer,
+  edgeScrollPanDirection,
   emptyCameraKeys,
 } from "./cameraControls";
 import { createCarryIconLayer } from "./carryIcons";
@@ -72,10 +76,14 @@ import {
   type Gait,
   gaitMotion,
   motionBlend,
+  proceduralWorkPose,
+  selectCharacterLoopClip,
   smoothAngle,
   stepProgress,
   unitMotionPhase,
+  type VillagerWorkPose,
 } from "./motion";
+import { buildProgressScale, placementPreviewTint } from "./preview";
 import { type RouteFlag, routePlan } from "./routeFlags";
 import { revealedSceneryIds } from "./sceneryFog";
 import { type ScreenPoint, unitAtScreenPoint } from "./screenPick";
@@ -86,6 +94,7 @@ import {
   type ShellUnit,
   unitDisplayScale,
 } from "./shellModel";
+import { buildTerrainLandmark, createTerrainMaterials } from "./terrainMeshes";
 import {
   SILHOUETTE_OUTLINE_COLOR,
   selectionRingDiameter,
@@ -139,10 +148,23 @@ export interface DescentBabylonSceneHandle {
   setInspectRing: (
     ring: { radius: number; x: number; y: number } | null,
   ) => void;
-  setPlacementPoint: (point: MapPoint | null, footprint?: number) => void;
+  setPlacementPoint: (
+    point: MapPoint | null,
+    footprint?: number,
+    valid?: boolean | null,
+  ) => void;
   showOrderMarker: (marker: OrderMarker) => void;
   unitsInScreenBox: (box: DescentScreenBox) => string[];
-  update: (model: ShellModel, selection: Selection, placing: boolean) => void;
+  update: (
+    model: ShellModel,
+    selection: Selection,
+    placing: boolean,
+    placement?: {
+      footprint: number;
+      point: MapPoint | null;
+      valid: boolean | null;
+    },
+  ) => void;
 }
 
 interface EntityMetadata {
@@ -153,6 +175,7 @@ interface EntityMetadata {
 
 interface EntityVisual {
   actionUntil: number;
+  activity?: string;
   animations: AnimationGroup[];
   construction: TransformNode | null;
   currentClip: string;
@@ -161,6 +184,8 @@ interface EntityVisual {
   facing: number;
   fallback: TransformNode;
   generated: TransformNode | null;
+  /** Lazily cached arm bones for the procedural gather swing. */
+  workBones?: { left: Bone[]; right: Bone[] } | null;
   health: AbstractMesh | null;
   healthInitialized: boolean;
   healthRatio: number;
@@ -202,13 +227,14 @@ interface TransientEffect {
   duration: number;
   from: Vector3;
   kind: "marker" | "pulse" | "travel";
-  mesh: AbstractMesh;
+  mesh: TransformNode;
+  orientAlongFlight?: boolean;
   startedAt: number;
   to: Vector3;
 }
 
-/** Sim cadence of a villager hop: ECONOMY_STEP_TICKS × TICK_MS at 1× speed. */
-const DEFAULT_STEP_INTERVAL_MS = 500;
+/** Sim cadence of a villager hop: VILLAGER_STEP_TICKS × TICK_MS at 1× speed. */
+const DEFAULT_STEP_INTERVAL_MS = 100;
 
 /** A position change larger than this (map cells) snaps instead of gliding. */
 const TELEPORT_DISTANCE = 4;
@@ -236,7 +262,9 @@ const BUILDING_ROLE_PRESENCE: Partial<
   Record<AshenGateAssetRole, { heightRatio: number; spanScale: number }>
 > = {
   citadel: { heightRatio: 2.2, spanScale: 1.24 },
+  outpost: { heightRatio: 1.55, spanScale: 1.07 },
   stronghold: { heightRatio: 1.9, spanScale: 1.14 },
+  wardTower: { heightRatio: 2.1, spanScale: 0.95 },
 };
 
 /** Model to try when an upgraded Hold's own model is not generated yet. */
@@ -244,7 +272,10 @@ const HOLD_MODEL_FALLBACK: Partial<
   Record<AshenGateAssetRole, AshenGateAssetRole>
 > = {
   citadel: "stronghold",
-  stronghold: "camp",
+  housing: "camp",
+  outpost: "camp",
+  stronghold: "outpost",
+  wardTower: "camp",
 };
 
 /** Health bar clearance above a building's roof, in world units. */
@@ -432,13 +463,84 @@ function findClip(
 }
 
 /** Starts a looping generated clip only when its desired state changed. */
-function playClip(visual: EntityVisual, name: "idle" | "walk"): void {
-  if (visual.currentClip === name) return;
-  const clip = findClip(visual.animations, name);
+function playClip(
+  visual: EntityVisual,
+  name: "idle" | "run" | "walk" | "work",
+): void {
+  const requested = findClip(visual.animations, name);
+  let resolvedName: "idle" | "run" | "walk" | "work" = name;
+  if (requested === undefined) {
+    if (name === "work") resolvedName = "idle";
+    else if (name === "run") resolvedName = "walk";
+  }
+  if (visual.currentClip === resolvedName) return;
+  const clip = requested ?? findClip(visual.animations, resolvedName);
   if (clip === undefined) return;
   for (const animation of visual.animations) animation.stop();
-  clip.start(true, name === "walk" ? 1.12 : 0.88);
-  visual.currentClip = name;
+  const speed =
+    resolvedName === "run"
+      ? 1.15
+      : resolvedName === "walk"
+        ? 1.12
+        : resolvedName === "work"
+          ? 1.0
+          : 0.88;
+  clip.start(true, speed);
+  visual.currentClip = resolvedName;
+}
+
+/**
+ * Finds each skeleton's arm bones once per visual; multipart GLBs often share
+ * one skeleton across meshes, so bones are deduplicated by identity.
+ * @param visual - Unit whose generated rig is inspected
+ * @returns Cached left and right arm bones
+ */
+function workBonesFor(visual: EntityVisual): {
+  left: Bone[];
+  right: Bone[];
+} {
+  if (visual.workBones !== undefined && visual.workBones !== null) {
+    return visual.workBones;
+  }
+  const found = { left: [] as Bone[], right: [] as Bone[] };
+  const seen = new Set<Bone>();
+  for (const mesh of visual.generated?.getChildMeshes() ?? []) {
+    const skeleton = mesh.skeleton;
+    if (!skeleton) continue;
+    for (const bone of skeleton.bones) {
+      if (seen.has(bone)) continue;
+      seen.add(bone);
+      const name = bone.name.toLowerCase();
+      if (name === "leftarm" || name.endsWith("-leftarm")) {
+        found.left.push(bone);
+      }
+      if (name === "rightarm" || name.endsWith("-rightarm")) {
+        found.right.push(bone);
+      }
+    }
+  }
+  visual.workBones = found;
+  return found;
+}
+
+/**
+ * Applies a procedural work pose to the presentation and canonical rig arms.
+ * @param visual - Unit presentation to pose
+ * @param pose - Current procedural joint angles
+ */
+function applyWorkPose(visual: EntityVisual, pose: VillagerWorkPose): void {
+  visual.presentation.rotation.x = pose.torsoPitch;
+  const bones = workBonesFor(visual);
+  for (const bone of bones.left) {
+    const rotation = bone.rotation;
+    rotation.x = pose.leftArmPitch;
+    bone.rotation = rotation;
+  }
+  for (const bone of bones.right) {
+    const rotation = bone.rotation;
+    rotation.x = pose.rightArmPitch;
+    bone.rotation = rotation;
+  }
 }
 
 /**
@@ -573,6 +675,26 @@ export function createDescentBabylonScene(
     window.addEventListener("keyup", onCameraKey);
     window.addEventListener("blur", releaseCameraKeys);
 
+    let edgeScrollPointer: EdgeScrollPointer | null = null;
+
+    /**
+     * Tracks the browser pointer for RTS edge scrolling.
+     * @param event - Window pointer event
+     */
+    const onEdgeScrollPointerMove = (event: PointerEvent): void => {
+      edgeScrollPointer = { x: event.clientX, y: event.clientY };
+    };
+
+    /** Stops edge scrolling when the pointer leaves the canvas or window. */
+    const releaseEdgeScrollPointer = (): void => {
+      edgeScrollPointer = null;
+    };
+    window.addEventListener("pointermove", onEdgeScrollPointerMove, {
+      passive: true,
+    });
+    canvas.addEventListener("pointerleave", releaseEdgeScrollPointer);
+    window.addEventListener("blur", releaseEdgeScrollPointer);
+
     const ambient = new HemisphericLight(
       "ashen-ambient",
       new Vector3(0.2, 1, -0.3),
@@ -624,7 +746,11 @@ export function createDescentBabylonScene(
       glow,
       reducedMotion,
     );
+    const cinders = reducedMotion
+      ? null
+      : addCinderFlock(scene, initialModel.map.width, initialModel.map.height);
     const fogOverlay = createFogOverlay(scene, PLATEAU_RIM, glow);
+    const terrainMaterials = createTerrainMaterials(scene);
 
     const holdMaterial = material(scene, "hold-bronze", "#d0aa66");
     const holdDarkMaterial = material(scene, "hold-dark", "#473126");
@@ -884,12 +1010,20 @@ export function createDescentBabylonScene(
      * Shows or hides the snapped building footprint under the cursor.
      * @param point - Cursor on the map, or null to hide the preview
      * @param footprint - Side of the building's square in map cells
+     * @param valid - Whether the ground allows placement; null keeps neutral
      */
-    const setPlacementPoint = (point: MapPoint | null, footprint = 1): void => {
+    const setPlacementPoint = (
+      point: MapPoint | null,
+      footprint = 1,
+      valid: boolean | null = null,
+    ): void => {
       if (point === null) {
         placementPreview.setEnabled(false);
         return;
       }
+      const tint = Color3.FromHexString(placementPreviewTint(valid));
+      placementMaterial.diffuseColor.copyFrom(tint);
+      placementMaterial.emissiveColor.copyFrom(tint.scale(0.55));
       placementPreview.scaling.set(footprint, 1, footprint);
       placementPreview.position.set(
         Math.round(point.x),
@@ -956,7 +1090,12 @@ export function createDescentBabylonScene(
       head.parent = fallback;
       head.position.y = role === "cinderjaw" ? 1.95 : 1.25;
       head.material = dark;
-      if (role === "warden" || role === "raider" || role === "cinderjaw") {
+      if (
+        role === "warden" ||
+        role === "cultivator" ||
+        role === "raider" ||
+        role === "cinderjaw"
+      ) {
         const weapon = CreateBox(
           `stand-in-weapon-${id}`,
           {
@@ -1144,6 +1283,7 @@ export function createDescentBabylonScene(
         markSilhouette(mesh, currentOutlineWidth());
       }
       visual.generated = generated;
+      visual.workBones = null;
       visual.animations = instance.animationGroups;
       // Crossfade from the current pose instead of snapping between clips.
       for (const animation of visual.animations) {
@@ -1541,6 +1681,10 @@ export function createDescentBabylonScene(
       health.setEnabled(false);
       const visual: EntityVisual = {
         actionUntil: 0,
+        activity:
+          kind === "unit"
+            ? ((entity as ShellUnit).activity ?? undefined)
+            : undefined,
         animations: [],
         construction,
         currentClip: "",
@@ -1599,7 +1743,8 @@ export function createDescentBabylonScene(
         return;
       }
       const ratio = Math.max(0.03, Math.min(1, hitPoints / maxHitPoints));
-      visual.health.setEnabled(ratio < 0.999);
+      // Like AoE2, a selected unit always shows its health, even at full HP.
+      visual.health.setEnabled(ratio < 0.999 || visual.selection.isEnabled());
       if (
         visual.healthInitialized &&
         ratio < visual.targetHealthRatio - 0.015 &&
@@ -1612,7 +1757,7 @@ export function createDescentBabylonScene(
       visual.targetHealthRatio = ratio;
     };
 
-    /** Rebuilds non-interactive veins, vents, nodes, and warning rings. */
+    /** Rebuilds non-interactive veins, vents, terrain landmarks, nodes, and warning rings. */
     const syncDecorations = (model: ShellModel): void => {
       const signature = JSON.stringify({
         nodes: model.nodes.map((node) => ({
@@ -1622,6 +1767,13 @@ export function createDescentBabylonScene(
           y: node.y,
         })),
         telegraphs: model.telegraphs,
+        terrain: model.terrain.map((feature) => ({
+          id: feature.id,
+          kind: feature.kind,
+          radius: feature.radius,
+          x: feature.x,
+          y: feature.y,
+        })),
         veins: model.veins,
         vents: model.vents,
       });
@@ -1630,6 +1782,16 @@ export function createDescentBabylonScene(
       decorationRoot.dispose();
       decorationMotions.length = 0;
       decorationRoot = new TransformNode("map-decoration", scene);
+      for (const feature of model.terrain) {
+        buildTerrainLandmark(
+          scene,
+          decorationRoot,
+          feature,
+          mapYToWorldZ(feature.y, model.map.height),
+          terrainMaterials,
+          decorationMotions,
+        );
+      }
       for (const vein of model.veins) {
         const marker = CreateTorus(
           `vein-ring-${vein.id}`,
@@ -1877,28 +2039,92 @@ export function createDescentBabylonScene(
       return closest;
     };
 
+    /**
+     * Instantiates the generated Ember Bolt prop for a ranged projectile,
+     * orienting its longest axis along +Z so `lookAt` points it downrange.
+     * Falls back to `null` when the model is not loaded yet.
+     * @param effectId - Unique sim FX id
+     * @returns Projectile root node, or null for the procedural sphere stand-in
+     */
+    const createEmberBoltNode = (effectId: number): TransformNode | null => {
+      const container = containers.get("emberBolt");
+      const asset = currentAssets.emberBolt;
+      if (container === undefined || asset === undefined) return null;
+      const root = new TransformNode(`fx-bolt-${effectId}`, scene);
+      const instance = container.instantiateModelsToScene(
+        (name) => `fx-bolt-${effectId}-${name}`,
+        false,
+      );
+      const modelRoot = new TransformNode(`fx-bolt-model-${effectId}`, scene);
+      modelRoot.parent = root;
+      for (const node of instance.rootNodes) node.parent = modelRoot;
+      const { min, max } = asset.validation.bounds;
+      const width = Math.max(0.01, (max[0] ?? 1) - (min[0] ?? 0));
+      const height = Math.max(0.01, (max[1] ?? 1) - (min[1] ?? 0));
+      const depth = Math.max(0.01, (max[2] ?? 1) - (min[2] ?? 0));
+      const longest = Math.max(width, height, depth);
+      const scale = 1.15 / longest;
+      modelRoot.scaling.setAll(scale);
+      const centerX = ((min[0] ?? 0) + (max[0] ?? 0)) / 2;
+      const centerY = ((min[1] ?? 0) + (max[1] ?? 0)) / 2;
+      const centerZ = ((min[2] ?? 0) + (max[2] ?? 0)) / 2;
+      modelRoot.position.set(
+        -centerX * scale,
+        -centerY * scale,
+        -centerZ * scale,
+      );
+      // Align the bolt's longest dimension along +Z for `lookAt`.
+      if (width >= height && width >= depth) {
+        modelRoot.rotation.y = Math.PI / 2;
+      } else if (height >= width && height >= depth) {
+        modelRoot.rotation.x = Math.PI / 2;
+      }
+      for (const child of root.getChildMeshes()) {
+        child.isPickable = false;
+      }
+      const glow = CreateSphere(
+        `fx-bolt-glow-${effectId}`,
+        { diameter: 0.22, segments: 8 },
+        scene,
+      );
+      glow.parent = root;
+      glow.material = projectileMaterial;
+      glow.isPickable = false;
+      return root;
+    };
+
     /** Creates short-lived animated combat feedback from resolved sim FX. */
     const syncEffects = (model: ShellModel): void => {
       for (const effect of model.fx) {
         if (seenEffects.has(effect.id)) continue;
         seenEffects.add(effect.id);
         const now = presentationNow;
-        let mesh: AbstractMesh;
+        let mesh: TransformNode;
         if (
           effect.kind === "projectile" ||
           effect.kind === "melee" ||
           effect.kind === "heal"
         ) {
-          mesh = CreateSphere(
-            `fx-${effect.id}`,
-            {
-              diameter: effect.kind === "melee" ? 0.38 : 0.26,
-              segments: 8,
-            },
-            scene,
-          );
-          mesh.material =
-            effect.kind === "heal" ? healMaterial : projectileMaterial;
+          const bolt =
+            effect.kind === "projectile"
+              ? createEmberBoltNode(effect.id)
+              : null;
+          if (bolt !== null) {
+            mesh = bolt;
+          } else {
+            const sphere = CreateSphere(
+              `fx-${effect.id}`,
+              {
+                diameter: effect.kind === "melee" ? 0.38 : 0.26,
+                segments: 8,
+              },
+              scene,
+            );
+            sphere.material =
+              effect.kind === "heal" ? healMaterial : projectileMaterial;
+            sphere.isPickable = false;
+            mesh = sphere;
+          }
           const from = new Vector3(
             effect.from.x,
             0.62,
@@ -1910,11 +2136,13 @@ export function createDescentBabylonScene(
             mapYToWorldZ(effect.to.y, model.map.height),
           );
           mesh.position.copyFrom(from);
+          if (bolt !== null) mesh.lookAt(to);
           transientEffects.push({
             duration: effect.kind === "melee" ? 180 : 340,
             from,
             kind: "travel",
             mesh,
+            orientAlongFlight: bolt !== null,
             startedAt: now,
             to,
           });
@@ -1926,8 +2154,42 @@ export function createDescentBabylonScene(
           if (target !== null && effect.kind !== "heal") {
             playAction(target, "hit", 280, presentationNow);
           }
+        } else if (effect.kind === "qi_nova") {
+          const ring = CreateTorus(
+            `fx-${effect.id}`,
+            {
+              diameter: Math.max(2.4, effect.radius * 1.15),
+              tessellation: 28,
+              thickness: 0.16,
+            },
+            scene,
+          );
+          ring.position.set(
+            effect.x,
+            0.22,
+            mapYToWorldZ(effect.y, model.map.height),
+          );
+          ring.material =
+            effect.school === "ember" || effect.school === "blood"
+              ? ventMaterial
+              : healMaterial;
+          ring.scaling.setAll(0.18);
+          ring.isPickable = false;
+          mesh = ring;
+          transientEffects.push({
+            duration: 680,
+            from: ring.position.clone(),
+            kind: "pulse",
+            mesh: ring,
+            startedAt: now,
+            to: ring.position.clone(),
+          });
+          const caster = closestUnit({ x: effect.x, y: effect.y });
+          if (caster !== null) {
+            playAction(caster, "attack", 480, presentationNow);
+          }
         } else {
-          mesh = CreateTorus(
+          const ring = CreateTorus(
             `fx-${effect.id}`,
             {
               diameter: effect.kind === "damage" ? 0.8 : 1.6,
@@ -1938,17 +2200,19 @@ export function createDescentBabylonScene(
           );
           const x = "x" in effect ? effect.x : 0;
           const y = "y" in effect ? effect.y : 0;
-          mesh.position.set(x, 0.12, mapYToWorldZ(y, model.map.height));
-          mesh.material =
+          ring.position.set(x, 0.12, mapYToWorldZ(y, model.map.height));
+          ring.material =
             effect.kind === "damage" ? ventMaterial : telegraphMaterial;
-          mesh.scaling.setAll(0.25);
+          ring.scaling.setAll(0.25);
+          ring.isPickable = false;
+          mesh = ring;
           transientEffects.push({
             duration: effect.kind === "death" ? 620 : 440,
-            from: mesh.position.clone(),
+            from: ring.position.clone(),
             kind: "pulse",
-            mesh,
+            mesh: ring,
             startedAt: now,
-            to: mesh.position.clone(),
+            to: ring.position.clone(),
           });
           const target = closestUnit({ x, y });
           if (target !== null) {
@@ -1959,7 +2223,6 @@ export function createDescentBabylonScene(
             }
           }
         }
-        mesh.isPickable = false;
       }
       if (seenEffects.size > 2_000) seenEffects.clear();
     };
@@ -2020,7 +2283,29 @@ export function createDescentBabylonScene(
     const applyCameraKeys = (deltaMs: number): void => {
       const seconds = deltaMs / 1000;
       desiredCameraAlpha += cameraRotationInput(cameraKeys) * 1.9 * seconds;
-      const direction = cameraPanDirection(cameraKeys, camera.alpha);
+      const keyDirection = cameraPanDirection(cameraKeys, camera.alpha);
+      let direction = keyDirection;
+      // Keyboard panning wins; the screen edge pans only when no key is held.
+      if (keyDirection.x === 0 && keyDirection.z === 0) {
+        // The DOM rect is read only while the pointer sits in the edge band,
+        // so an idle interior pointer costs no layout work per frame.
+        const pointer = edgeScrollPointer;
+        const rect =
+          pointer !== null &&
+          (pointer.x <= 24 ||
+            pointer.x >= window.innerWidth - 24 ||
+            pointer.y <= 24 ||
+            pointer.y >= window.innerHeight - 24)
+            ? canvas.getBoundingClientRect()
+            : null;
+        direction =
+          rect === null
+            ? { x: 0, z: 0 }
+            : edgeScrollPanDirection(pointer, rect, camera.alpha, {
+                isPointerOverHud: (position) =>
+                  document.elementFromPoint(position.x, position.y) !== canvas,
+              });
+      }
       if (direction.x === 0 && direction.z === 0) return;
       const speed = camera.radius * 0.95;
       desiredCameraTarget.x += direction.x * speed * seconds;
@@ -2195,12 +2480,26 @@ export function createDescentBabylonScene(
       model: ShellModel,
       selection: Selection,
       placing: boolean,
+      placement?: {
+        footprint: number;
+        point: MapPoint | null;
+        valid: boolean | null;
+      },
     ): void => {
       currentModel = model;
       setPresentationPaused(model.paused);
       fogOverlay.update(model.fog);
       syncSceneryFog(model);
       if (!placing) setPlacementPoint(null);
+      // Re-evaluate the ghost every model tick: the camera can scroll the map
+      // under a stationary pointer, and queued placements change the ground.
+      if (placing && placement !== undefined) {
+        setPlacementPoint(
+          placement.point,
+          placement.footprint,
+          placement.valid,
+        );
+      }
       const live = new Set<string>();
       for (const unit of model.units) {
         live.add(unit.id);
@@ -2216,11 +2515,18 @@ export function createDescentBabylonScene(
           entities.set(unit.id, visual);
         }
         visual.removeAt = null;
+        visual.activity = unit.activity ?? undefined;
         beginStep(visual, unit.x, unit.y);
         visual.targetScale.setAll(unitDisplayScale(unit));
         visual.targetPresentationScale.setAll(1);
         visual.selection.setEnabled(selection.unitIds.includes(unit.id));
         updateHealth(visual, unit.hitPoints, unit.maxHitPoints);
+        // Selecting a healthy unit reveals its bar without a later HP change.
+        if (selection.unitIds.includes(unit.id)) {
+          visual.health?.setEnabled(true);
+        } else if (visual.targetHealthRatio >= 0.999) {
+          visual.health?.setEnabled(false);
+        }
         carryIcons.sync(unit.id, visual.root, unit.carrying?.resource ?? null);
       }
       for (const building of model.buildings) {
@@ -2245,9 +2551,12 @@ export function createDescentBabylonScene(
         visual.target.copyFrom(visual.root.position);
         visual.selection.setEnabled(selection.buildingId === building.id);
         visual.targetScale.setAll(1);
+        // Buildings rise out of their foundations as construction advances.
         visual.targetPresentationScale.set(
           1,
-          building.constructing ? 0.48 : 1,
+          building.constructing
+            ? buildProgressScale(building.activityProgress ?? 0)
+            : 1,
           1,
         );
         visual.construction?.setEnabled(building.constructing);
@@ -2280,16 +2589,31 @@ export function createDescentBabylonScene(
             x: visual.target.x,
             y: worldZToMapY(visual.target.z, model.map.height),
           });
+        // Corpses must not intercept picks meant for the living or the ground.
+        for (const mesh of visual.root.getChildMeshes()) {
+          mesh.isPickable = false;
+        }
+        // A body lingers on the field, then sinks away: the death has weight.
+        // Destroyed buildings clear quickly instead of standing as ghosts.
+        const lingerMs = visual.kind === "unit" ? 10000 : 700;
         visual.removeAt =
-          presentationNow + (reducedMotion || lostInFog ? 0 : 560);
+          presentationNow + (reducedMotion || lostInFog ? 0 : lingerMs);
         visual.target.copyFrom(visual.root.position);
         visual.stepFrom.copyFrom(visual.root.position);
-        visual.targetScale.setAll(reducedMotion ? 0 : 0.08);
         visual.health?.setEnabled(false);
         visual.selection.setEnabled(false);
+        visual.construction?.setEnabled(false);
         carryIcons.remove(visual.id);
+        if (visual.kind === "building") {
+          visual.targetScale.set(1.02, 0.06, 1.02);
+        }
         if (visual.kind === "unit" && !lostInFog) {
           playAction(visual, "death", 520, presentationNow);
+          if (!reducedMotion) {
+            // Lie the body down and let it sink into the ash before removal.
+            visual.targetPresentationScale.setAll(0.9);
+            visual.presentation.rotation.x = -Math.PI / 2.2;
+          }
         }
       }
       clampCameraTarget();
@@ -2301,6 +2625,7 @@ export function createDescentBabylonScene(
     scene.onBeforeRenderObservable.add(() => {
       const deltaMs = Math.min(50, engine.getDeltaTime());
       backdrop.update(deltaMs);
+      cinders?.update(deltaMs);
       const cameraBlend = reducedMotion ? 1 : motionBlend(deltaMs, 155);
       if (decorationAssetsDirty) {
         decorationAssetsDirty = false;
@@ -2384,8 +2709,40 @@ export function createDescentBabylonScene(
           visual.presentation.position.y = motion.bob;
           visual.presentation.rotation.z = motion.lean;
         }
-        if (now < visual.actionUntil) continue;
-        playClip(visual, locomoting ? "walk" : "idle");
+        if (now < visual.actionUntil) {
+          visual.presentation.rotation.x = 0;
+          continue;
+        }
+        const hasWorkClip = findClip(visual.animations, "work") !== undefined;
+        const workPose = reducedMotion
+          ? null
+          : proceduralWorkPose({
+              activity: visual.activity,
+              hasWorkClip,
+              locomoting,
+              phase: unitMotionPhase(visual.id),
+              role: visual.role,
+              timeMs: now,
+            });
+        if (workPose !== null) {
+          for (const animation of visual.animations) animation.stop();
+          visual.currentClip = "";
+          visual.presentation.position.y += workPose.bob;
+          visual.presentation.rotation.z += workPose.lean;
+          applyWorkPose(visual, workPose);
+          continue;
+        }
+        visual.presentation.rotation.x = 0;
+        playClip(
+          visual,
+          selectCharacterLoopClip({
+            activity: visual.activity,
+            hasRunClip: findClip(visual.animations, "run") !== undefined,
+            hasWorkClip,
+            locomoting,
+            role: visual.role,
+          }),
+        );
       }
       if (!reducedMotion) {
         const seconds = now / 1000;
@@ -2414,9 +2771,12 @@ export function createDescentBabylonScene(
         if (effect.kind === "marker") {
           const tighten = 1 - (1 - progress) ** 3;
           effect.mesh.scaling.setAll(1.7 - tighten * 1.0);
-          effect.mesh.visibility = 1 - progress * progress;
+          const visibility = 1 - progress * progress;
+          if ("visibility" in effect.mesh) {
+            (effect.mesh as AbstractMesh).visibility = visibility;
+          }
           for (const child of effect.mesh.getChildMeshes()) {
-            child.visibility = effect.mesh.visibility;
+            child.visibility = visibility;
             child.position.y = 0.55 + (1 - tighten) * 0.6;
           }
         } else if (effect.kind === "travel") {
@@ -2427,8 +2787,15 @@ export function createDescentBabylonScene(
             effect.mesh.position,
           );
           effect.mesh.position.y += Math.sin(progress * Math.PI) * 0.72;
-          const pulse = 0.8 + Math.sin(progress * Math.PI) * 0.65;
-          effect.mesh.scaling.setAll(pulse);
+          if (effect.orientAlongFlight) {
+            const lookProgress = Math.min(1, progress + 0.06);
+            const ahead = Vector3.Lerp(effect.from, effect.to, lookProgress);
+            ahead.y += Math.sin(lookProgress * Math.PI) * 0.72;
+            effect.mesh.lookAt(ahead);
+          } else {
+            const pulse = 0.8 + Math.sin(progress * Math.PI) * 0.65;
+            effect.mesh.scaling.setAll(pulse);
+          }
         } else {
           effect.mesh.scaling.setAll(0.25 + progress * 1.85);
           effect.mesh.rotation.y += deltaMs / 280;
@@ -2589,6 +2956,9 @@ export function createDescentBabylonScene(
         window.removeEventListener("keydown", onCameraKey);
         window.removeEventListener("keyup", onCameraKey);
         window.removeEventListener("blur", releaseCameraKeys);
+        window.removeEventListener("pointermove", onEdgeScrollPointerMove);
+        canvas.removeEventListener("pointerleave", releaseEdgeScrollPointer);
+        window.removeEventListener("blur", releaseEdgeScrollPointer);
         for (const effect of transientEffects) effect.mesh.dispose();
         transientEffects.length = 0;
         carryIcons.dispose();

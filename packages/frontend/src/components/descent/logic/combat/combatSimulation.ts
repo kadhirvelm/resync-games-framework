@@ -1,4 +1,5 @@
 import { type HurtDisk, stepAroundHurt } from "../pathing/avoidHurt";
+import { terrainWaypoint } from "../pathing/terrainNav";
 import { TICK_MS } from "../sim/constants";
 import { CombatCommandQueue } from "./commandQueue";
 import { getClassCounterMultiplier } from "./counters";
@@ -85,12 +86,16 @@ export interface CombatSimulationOptions {
   healingMultiplier?: number;
   /** Disks a unit is hurt for standing in. Steps skirt them. */
   hurtZones?: readonly HurtDisk[];
+  /** Playable map bounds, used by coarse terrain navigation around ridges. */
+  mapSize?: { readonly height: number; readonly width: number };
   /** Disks that block movement without hurting, such as large buildings. */
   obstacles?: readonly HurtDisk[];
   /** Projectiles still in flight, from a previous `exportState`. */
   pendingProjectiles?: PendingProjectile[];
   /** Tick counter to resume from, from a previous `exportState`. */
   startTick?: number;
+  /** Static impassable terrain formations (ridges, spires, ruins, fissures). */
+  terrainObstacles?: readonly HurtDisk[];
   tickMs?: number;
   units?: CombatUnit[];
 }
@@ -244,9 +249,14 @@ export class CombatSimulation {
   private globalVisionMultiplier = 1;
   private healingMultiplier = 1;
   private readonly hurtZones: readonly HurtDisk[];
+  private readonly mapSize: {
+    readonly height: number;
+    readonly width: number;
+  } | null;
   private readonly movementHazards: readonly HurtDisk[];
   private readonly obstacles: readonly HurtDisk[];
   private readonly pendingProjectiles: PendingProjectile[] = [];
+  private readonly terrainObstacles: readonly HurtDisk[];
   private readonly tickMs: number;
   private readonly units = new Map<string, CombatUnit>();
   private currentTick = 0;
@@ -264,8 +274,14 @@ export class CombatSimulation {
       options.healingMultiplier ?? 1,
     );
     this.hurtZones = options.hurtZones ?? [];
+    this.mapSize = options.mapSize ?? null;
     this.obstacles = options.obstacles ?? [];
-    this.movementHazards = [...this.hurtZones, ...this.obstacles];
+    this.terrainObstacles = options.terrainObstacles ?? [];
+    this.movementHazards = [
+      ...this.hurtZones,
+      ...this.obstacles,
+      ...this.terrainObstacles,
+    ];
     for (const unit of options.units ?? []) {
       this.units.set(unit.id, structuredClone(unit));
     }
@@ -977,18 +993,33 @@ export class CombatSimulation {
     if (step <= 0) {
       return false;
     }
-    const ratio = Math.min(1, step / remaining);
+    const steerTarget =
+      this.terrainObstacles.length > 0 && this.mapSize !== null
+        ? terrainWaypoint(
+            unit.position,
+            destination,
+            this.terrainObstacles,
+            this.mapSize,
+          )
+        : destination;
+    const steerRemaining = distance(unit.position, steerTarget);
+    const effectiveRemaining = steerRemaining > 0 ? steerRemaining : remaining;
+    const ratio = Math.min(1, step / effectiveRemaining);
     const proposed = {
-      x: unit.position.x + (destination.x - unit.position.x) * ratio,
-      y: unit.position.y + (destination.y - unit.position.y) * ratio,
+      x: unit.position.x + (steerTarget.x - unit.position.x) * ratio,
+      y: unit.position.y + (steerTarget.y - unit.position.y) * ratio,
     };
     const next = stepAroundHurt(
       unit.position,
       proposed,
-      destination,
+      steerTarget,
       this.movementHazards,
     );
-    if (next.x === destination.x && next.y === destination.y) {
+    if (
+      steerTarget === destination &&
+      next.x === destination.x &&
+      next.y === destination.y
+    ) {
       unit.position = { ...destination };
       return true;
     }

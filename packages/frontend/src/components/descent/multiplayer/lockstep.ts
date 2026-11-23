@@ -1,4 +1,5 @@
 import type {
+  DescentMapId,
   DescentStampedCommand,
   DescentTickPayload,
 } from "@resync-game-framework/api";
@@ -20,6 +21,7 @@ export interface DescentLockstepSession {
   appliedSeqs: Set<number>;
   /** Whether a terminal sim pause stopped replay before the server target. */
   halted: boolean;
+  mapId: DescentMapId;
   matchId: string;
   pendingByTick: Map<number, DescentStampedCommand[]>;
   players: readonly AshenCruciblePlayer[];
@@ -34,6 +36,8 @@ export type DescentLockstepApplyResult = "applied" | "resync-required";
 
 /** Construction options for one deterministic multiplayer replay session. */
 export interface CreateDescentLockstepSessionOptions {
+  /** Multiplayer map/mode; defaults to `ashen_crucible`. */
+  mapId?: DescentMapId;
   matchId: string;
   players: readonly AshenCruciblePlayer[];
   seed: number;
@@ -49,9 +53,11 @@ export interface CreateDescentLockstepSessionOptions {
 export function createDescentLockstepSession(
   options: CreateDescentLockstepSessionOptions,
 ): DescentLockstepSession {
+  const mapId: DescentMapId = options.mapId ?? "ashen_crucible";
   return {
     appliedSeqs: new Set<number>(),
     halted: false,
+    mapId,
     matchId: options.matchId,
     pendingByTick: new Map<number, DescentStampedCommand[]>(),
     players: options.players,
@@ -60,6 +66,7 @@ export function createDescentLockstepSession(
     sim:
       options.sim ??
       createMultiplayerDescentSim({
+        mapId,
         players: options.players,
         seed: options.seed,
       }),

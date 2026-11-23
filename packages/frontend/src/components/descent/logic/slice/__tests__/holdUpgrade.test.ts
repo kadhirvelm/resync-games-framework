@@ -28,8 +28,9 @@ describe("Hold upgrade progress", () => {
     sim.enqueue({ type: "upgrade_hold" });
     sim.step(1);
     const started = buildShellModel(sim.snapshot()).holdUpgrade;
-    expect(started?.targetTier).toBe("Stronghold");
+    expect(started?.targetTier).toBe("Outpost");
     expect(started?.allowed).toBe(false);
+    expect(started?.unlocks).toContain("Ward Tower");
     expect(started?.inProgress?.progress).toBeGreaterThanOrEqual(0);
     expect(started?.inProgress?.secondsLeft).toBeGreaterThan(0);
 
@@ -38,12 +39,51 @@ describe("Hold upgrade progress", () => {
     expect(later?.progress).toBeGreaterThan(started?.inProgress?.progress ?? 1);
 
     for (let tick = 0; tick < 2_000; tick += 1) {
-      if (buildShellModel(sim.snapshot()).holdUpgrade?.targetTier === "Citadel")
+      if (
+        buildShellModel(sim.snapshot()).holdUpgrade?.targetTier === "Stronghold"
+      )
         break;
       sim.step(1);
     }
-    const done = buildShellModel(sim.snapshot()).holdUpgrade;
-    expect(done?.currentTier).toBe("Stronghold");
+    const model = buildShellModel(sim.snapshot());
+    const done = model.holdUpgrade;
+    expect(done?.currentTier).toBe("Outpost");
     expect(done?.inProgress).toBeNull();
+    const camp = model.buildings.find((entry) => entry.buildingType === "camp");
+    expect(camp?.tier).toBe("Outpost");
+    expect(camp?.maxHitPoints).toBe(600);
+  });
+
+  test("the Hold fires arrows to defend itself against nearby raiders", () => {
+    const sim = createAshenGateSim({ seed: 7 });
+    // Remove the starting captain so only the Hold itself can fight.
+    const save = JSON.parse(sim.serialize()) as {
+      state?: {
+        units?: Array<{ id: string }>;
+      };
+    };
+    if (save.state?.units !== undefined) {
+      save.state.units = save.state.units.filter(
+        (unit) => unit.id !== "ashen-captain",
+      );
+    }
+    sim.load(JSON.stringify(save));
+
+    // Step past the first scout wave (90s) + travel time so raiders reach Camp.
+    let sawProjectile = false;
+    let sawKills = false;
+    for (let tick = 0; tick < 3_600; tick += 1) {
+      sim.step(1);
+      const model = buildShellModel(sim.snapshot());
+      if (model.fx.some((effect) => effect.kind === "projectile")) {
+        sawProjectile = true;
+      }
+      if ((model.stats?.kills ?? 0) >= 2) {
+        sawKills = true;
+        break;
+      }
+    }
+    expect(sawProjectile).toBe(true);
+    expect(sawKills).toBe(true);
   });
 });

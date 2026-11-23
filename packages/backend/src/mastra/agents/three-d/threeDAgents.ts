@@ -72,7 +72,14 @@ export class ThreeDDesignAgent {
         design = result.toolOutput;
       }
       return this.generator.generate(
-        { ...input, design, kind, provider },
+        {
+          ...input,
+          design,
+          extraAnimations: input.extraAnimations,
+          kind,
+          provider,
+          sourceAssetId: input.sourceAssetId,
+        },
         deadline,
       );
     });

@@ -30,6 +30,25 @@ export interface CircleVolume {
   readonly radius: number;
 }
 
+/** Visual and structural archetype for an impassable battlefield landmark. */
+export type TerrainFeatureKind =
+  | "basalt_ridge"
+  | "magma_fissure"
+  | "obsidian_spire"
+  | "ruin_wall";
+
+/**
+ * One impassable terrain formation on the playable map. Clusters of these
+ * carve ridges, canyons, and defensive choke points across the plateau.
+ */
+export interface TerrainFeature extends CircleVolume {
+  /** Tallness in world units, used by the 3D renderer for silhouette variety. */
+  readonly height: number;
+  readonly id: string;
+  readonly kind: TerrainFeatureKind;
+  readonly label?: string;
+}
+
 export interface EmberVentsHazard {
   readonly kind: "ember_vents";
   /** Burn damage per sim-second while standing inside a vent. */

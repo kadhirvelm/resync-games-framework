@@ -6,9 +6,12 @@ export const CLASS_COUNTER_BONUS = 1.5;
 const COUNTER_TARGETS: Readonly<Record<CombatClassId, readonly ClassId[]>> = {
   adept: ["hunter"],
   breaker: ["warden"],
+  cultivator: ["raider", "adept"],
+  formation_master: ["hunter", "raider"],
   hunter: ["warden"],
   raider: ["hunter", "adept", "breaker"],
   rider: [],
+  sword_sage: ["warden", "breaker"],
   warden: ["raider", "rider"],
 };
 

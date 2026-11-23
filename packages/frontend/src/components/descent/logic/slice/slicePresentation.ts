@@ -42,7 +42,8 @@ import {
   workerSlots,
 } from "../economy/tables";
 import { activeWorkers } from "../economy/villagers";
-import { worldVentVolumes } from "../layers/hazards";
+import { worldTerrainObstacles, worldVentVolumes } from "../layers/hazards";
+import { calculatePlayerScores } from "../scoring";
 import { TICKS_PER_SECOND } from "../sim/constants";
 import type { SimWorldState } from "../sim/world";
 import type { ClassId, ResourceStockpile, SchoolId } from "../types";
@@ -55,6 +56,12 @@ import {
   layerSchoolModifier,
   openCultivation,
 } from "./sliceCultivation";
+import {
+  describeQiArt,
+  ensureCultivatorPower,
+  isCultivatorClass,
+  isInsideSpiritArray,
+} from "./sliceCultivatorPowers";
 import { readFogOfWar } from "./sliceFog";
 import {
   type AshenGateSliceState,
@@ -64,6 +71,9 @@ import {
 } from "./sliceState";
 import {
   BARRACKS_CLASSES,
+  CLASS_REQUIRED_TIER,
+  CULTIVATOR_SANCTUM_CLASSES,
+  isClassUnlocked,
   isTrainingShortfall,
   trainingBlocker,
   trainingPlan,
@@ -71,7 +81,12 @@ import {
 } from "./sliceTraining";
 import { unitRoute } from "./sliceWaypoints";
 
-const TIER_ORDER: readonly HoldTier[] = ["Camp", "Stronghold", "Citadel"];
+const TIER_ORDER: readonly HoldTier[] = [
+  "Camp",
+  "Outpost",
+  "Stronghold",
+  "Citadel",
+];
 
 /**
  * Publishes the complete read model consumed by the Descent shell under
@@ -114,9 +129,7 @@ export function publishPresentation(world: SimWorldState): void {
     onboarding: onboarding(state),
     outcome: outcomeReadout(state.outcome),
     pillFeeds: pillFeeds(world, cultivation),
-    players: Object.values(state.players ?? {}).sort(
-      (left, right) => left.slotIndex - right.slotIndex,
-    ),
+    players: calculatePlayerScores(world),
     pop: { cap: getPopCap(host), used: getPopUsed(host) },
     rationOptions,
     rations: rationOptions[0] ?? null,
@@ -127,6 +140,7 @@ export function publishPresentation(world: SimWorldState): void {
       lost: state.stats.lost,
     },
     telegraphs: telegraphs(waves),
+    terrain: worldTerrainObstacles(world).map((obstacle) => ({ ...obstacle })),
     trainOptions: trainOptions(world),
     treasures: [],
     units: unitReadouts(world, state, waves, cultivation),
@@ -257,8 +271,32 @@ function holdUnitReadout(
     unit.ownerId,
   );
   const active = record.activeBreakthrough;
+  const cultivatorFields = isCultivatorClass(unit.classId)
+    ? (() => {
+        const power = ensureCultivatorPower(world, unit.id);
+        const spec = describeQiArt(unit.classId, record.school, record.rank);
+        return {
+          inSpiritArray: isInsideSpiritArray(world, unit.x, unit.y),
+          maxQi: power.maxQi,
+          meditating: power.meditating,
+          qi: Math.floor(power.qi),
+          qiArt: {
+            cooldownSeconds: Math.ceil(power.cooldownSeconds),
+            description: spec.description,
+            name: spec.name,
+            qiCost: spec.qiCost,
+            ready: power.cooldownSeconds <= 0.05 && power.qi >= spec.qiCost,
+            school: spec.school,
+          },
+          surgeActive: power.surgeSeconds > 0,
+        };
+      })()
+    : {};
   return {
     ...readout,
+    ...cultivatorFields,
+    breakthroughReady:
+      view.meritToNext > 0 && view.missingRequirements.length === 0,
     channel: active
       ? 1 - active.remainingSeconds / channelSeconds(active.sourceRank)
       : undefined,
@@ -410,7 +448,7 @@ function buildingReadouts(
             ownerId: record.ownerId,
             ownerName: owner?.name,
           }),
-      tier: record.tier,
+      tier: record.buildingType === "camp" ? host.economy.tier : record.tier,
     };
     if (record.constructing) {
       readout.progress = record.buildTicksDone / Math.max(1, record.buildTicks);
@@ -475,18 +513,21 @@ function buildingReadouts(
 }
 
 /**
- * Tier-gated building choices with placement hints.
+ * Tier-gated building choices with placement hints. Only buildings unlocked
+ * at the Hold's current tier are published so the menu grows gradually as the
+ * Hold upgrades.
  * @param world - Sim world
  * @returns Build menu entries
  */
 function buildOptions(world: SimWorldState): BuildReadout[] {
   const tier = getHoldTier(economyHost(world, ECONOMY_STEP_TICKS));
   return listBuildingDefs()
-    .filter((definition) =>
-      (ASHEN_GATE_BUILDINGS as readonly string[]).includes(definition.id),
+    .filter(
+      (definition) =>
+        (ASHEN_GATE_BUILDINGS as readonly string[]).includes(definition.id) &&
+        tierIndex(tier) >= tierIndex(definition.tier),
     )
     .map((definition) => {
-      const tierUnlocked = tierIndex(tier) >= tierIndex(definition.tier);
       const affordable = canAfford(world.resources, definition.cost);
       const hints: string[] = [];
       if (definition.veinBonus) hints.push("Bonus on a Spirit Vein.");
@@ -512,9 +553,7 @@ function buildOptions(world: SimWorldState): BuildReadout[] {
           hints.push("Grows on its own; a villager harvests it when ripe.");
         }
       }
-      let lockedReason: string | undefined;
-      if (!tierUnlocked) lockedReason = `Needs ${definition.tier}`;
-      else if (!affordable) lockedReason = "Not enough resources";
+      const lockedReason = affordable ? undefined : "Not enough resources";
       return {
         buildingType: definition.id,
         cost: { ...definition.cost },
@@ -524,41 +563,49 @@ function buildOptions(world: SimWorldState): BuildReadout[] {
         lockedReason,
         name: definition.name,
         tier: definition.tier,
-        unlocked: tierUnlocked && affordable,
+        unlocked: affordable,
       };
     });
 }
 
 /**
- * Training choices: five classes at each Barracks, villagers at the Camp.
+ * Training choices: soldiers at each Barracks, cultivators at each Cultivator
+ * Sanctum, and villagers at the Camp, filtered to classes unlocked at the
+ * current Hold tier.
  * @param world - Sim world
  * @returns Train options
  */
 function trainOptions(world: SimWorldState): TrainReadout[] {
+  const tier = getHoldTier(economyHost(world, ECONOMY_STEP_TICKS));
   return world.buildings.flatMap((building) => {
     const record = asBuilding(building);
     let classes: readonly ClassId[] = [];
     if (record.buildingType === "barracks") classes = BARRACKS_CLASSES;
+    if (record.buildingType === "cultivator_sanctum") {
+      classes = CULTIVATOR_SANCTUM_CLASSES;
+    }
     if (record.buildingType === "camp") classes = ["villager"];
-    return classes.map((classId) => {
-      const plan = trainingPlan(classId);
-      const reason = trainingBlocker(world, record.id, classId);
-      return {
-        allowed: reason === null,
-        buildingId: record.id,
-        classId,
-        cost: { ...plan.cost },
-        count: plan.count,
-        detail: `${plan.count > 1 ? `×${plan.count} · ` : ""}${costLabel(plan.cost)} · ${Math.round(plan.seconds)}s`,
-        food: plan.cost.food ?? 0,
-        label: plan.count > 1 ? `${className(classId)}s` : className(classId),
-        pop: plan.pop,
-        reason: reason ?? undefined,
-        seconds: plan.seconds,
-        shortfall: isTrainingShortfall(reason),
-        water: plan.cost.water ?? 0,
-      };
-    });
+    return classes
+      .filter((classId) => isClassUnlocked(tier, classId))
+      .map((classId) => {
+        const plan = trainingPlan(classId);
+        const reason = trainingBlocker(world, record.id, classId);
+        return {
+          allowed: reason === null,
+          buildingId: record.id,
+          classId,
+          cost: { ...plan.cost },
+          count: plan.count,
+          detail: `${plan.count > 1 ? `×${plan.count} · ` : ""}${costLabel(plan.cost)} · ${Math.round(plan.seconds)}s`,
+          food: plan.cost.food ?? 0,
+          label: plan.count > 1 ? `${className(classId)}s` : className(classId),
+          pop: plan.pop,
+          reason: reason ?? undefined,
+          seconds: plan.seconds,
+          shortfall: isTrainingShortfall(reason),
+          water: plan.cost.water ?? 0,
+        };
+      });
   });
 }
 
@@ -678,6 +725,27 @@ function rationReadouts(world: SimWorldState): RationReadout[] {
 }
 
 /**
+ * Summarizes the buildings and unit classes newly unlocked at `targetTier`.
+ * @param targetTier - Next Hold tier
+ * @returns Player-facing unlock summary, or undefined when none
+ */
+function tierUnlockSummary(targetTier: HoldTier): string | undefined {
+  const buildings = listBuildingDefs()
+    .filter(
+      (definition) =>
+        (ASHEN_GATE_BUILDINGS as readonly string[]).includes(definition.id) &&
+        definition.tier === targetTier,
+    )
+    .map((definition) => definition.name);
+  const units = [...BARRACKS_CLASSES, ...CULTIVATOR_SANCTUM_CLASSES]
+    .filter((classId) => CLASS_REQUIRED_TIER[classId] === targetTier)
+    .map((classId) => `${className(classId)}s`);
+  const items = [...buildings, ...units];
+  if (items.length === 0) return undefined;
+  return `Unlocks ${items.join(", ")}.`;
+}
+
+/**
  * The next Hold tier upgrade.
  * @param world - Sim world
  * @returns Readout, or null at Citadel
@@ -703,6 +771,7 @@ function holdUpgrade(world: SimWorldState): HoldUpgradeReadout | null {
     reason,
     shortfall: !pending && !affordable,
     targetTier: target,
+    unlocks: tierUnlockSummary(target),
   };
 }
 
@@ -869,19 +938,24 @@ function objectives(
     },
     { done: soldiers >= 6, id: "train", label: "Train five soldiers" },
     {
+      done: tier !== "Camp",
+      id: "outpost",
+      label: "Upgrade the Hold to Outpost",
+    },
+    {
       done: has("omen_tower"),
       id: "omen",
       label: "Raise an Omen Tower to read waves",
     },
     {
-      done: tier !== "Camp",
+      done: tier === "Stronghold" || tier === "Citadel",
       id: "stronghold",
       label: "Upgrade the Hold to Stronghold",
     },
     {
-      done: has("alchemy_furnace") && has("cultivation_hall"),
+      done: has("cultivation_hall"),
       id: "hall",
-      label: "Build an Alchemy Furnace and Cultivation Hall",
+      label: "Build a Cultivation Hall",
     },
     { done: sworn, id: "sworn", label: "Promote a soldier to Sworn" },
     {

@@ -84,7 +84,8 @@ const BUILDING_GUIDES: Record<string, BuildingGuide> = {
   },
   barracks: {
     category: "military",
-    description: "Trains Wardens, Hunters, Raiders, Breakers, and Adepts.",
+    description:
+      "Trains the Hold's soldiers; upgrading the Hold unlocks more classes.",
     tone: "war",
   },
   calamity_altar: {
@@ -95,6 +96,12 @@ const BUILDING_GUIDES: Record<string, BuildingGuide> = {
   cultivation_hall: {
     category: "cultivation",
     description: "Lets trained units attempt cultivation breakthroughs.",
+    tone: "mystic",
+  },
+  cultivator_sanctum: {
+    category: "cultivation",
+    description:
+      "Trains Sword, Flying-Sword, and Formation Cultivators to wield Qi Arts and ascend.",
     tone: "mystic",
   },
   ember_forge: {
@@ -137,6 +144,12 @@ const BUILDING_GUIDES: Record<string, BuildingGuide> = {
     description: "Raises the population cap for more workers and soldiers.",
     tone: "economy",
   },
+  meditation_pavilion: {
+    category: "cultivation",
+    description:
+      "Seclusion chamber that feeds nearby Cultivators steady Essence, Merit, and faster recovery.",
+    tone: "mystic",
+  },
   mess_hall: {
     category: "economy",
     description: "Turns Food and Water into rations that strengthen a squad.",
@@ -151,6 +164,12 @@ const BUILDING_GUIDES: Record<string, BuildingGuide> = {
     category: "economy",
     description: "Produces a raid-proof trickle of Food and Water.",
     tone: "economy",
+  },
+  spirit_array: {
+    category: "cultivation",
+    description:
+      "Expands sect territory, passively gathers Essence, and doubles nearby Cultivator Qi regen.",
+    tone: "mystic",
   },
   spirit_herb_garden: {
     category: "economy",

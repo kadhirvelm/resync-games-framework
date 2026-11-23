@@ -1,4 +1,8 @@
-import { CombatSimulation, createCombatUnit } from "../combat/combatSimulation";
+import {
+  CombatSimulation,
+  compareIds,
+  createCombatUnit,
+} from "../combat/combatSimulation";
 import { getClassCounterMultiplier } from "../combat/counters";
 import type {
   CombatBuilding,
@@ -9,14 +13,20 @@ import type {
 import { getUnitDefinition } from "../combat/unitCatalog";
 import { damageBuilding } from "../economy/actions";
 import { footprintBodyRadius } from "../economy/footprint";
-import type { EconomyUnit } from "../economy/model";
+import type { EconomyUnit, HoldTier } from "../economy/model";
 import { addItem } from "../economy/queries";
 import { asBuilding, economyHost, isEconomyUnit } from "../economy/records";
 import { buildingDef } from "../economy/tables";
-import { environmentAt, worldVentVolumes } from "../layers/hazards";
+import {
+  environmentAt,
+  worldTerrainObstacles,
+  worldVentVolumes,
+} from "../layers/hazards";
 import { LAYER_TABLE } from "../layers/layerTable";
 import type { HazardId, LayerBuilding } from "../layers/layerTypes";
 import type { HurtDisk } from "../pathing/avoidHurt";
+import { pushOutOfObstacles } from "../pathing/terrainNav";
+import { creditPlayerMilitary, unitResourceValue } from "../scoring";
 import { TICK_MS, TICKS_PER_SECOND } from "../sim/constants";
 import type { TickContext } from "../sim/modules";
 import type { SimWorldState } from "../sim/world";
@@ -31,6 +41,11 @@ import {
   openCultivation,
   saveCultivation,
 } from "./sliceCultivation";
+import {
+  readCultivatorPower,
+  SPIRIT_SURGE_DAMAGE_BONUS,
+  SPIRIT_SURGE_SPEED_BONUS,
+} from "./sliceCultivatorPowers";
 import {
   type AshenGateSliceState,
   ECONOMY_STEP_TICKS,
@@ -55,6 +70,58 @@ const WARD_TOWER = {
   projectileSpeed: 16,
   vision: 9,
 };
+
+/** Self-defense turret stats for the Hold (`camp`) at each tier. */
+const HOLD_TURRET_BY_TIER: Readonly<
+  Record<
+    HoldTier,
+    {
+      armor: number;
+      attackRange: number;
+      attacksPerSecond: number;
+      damage: number;
+      projectileSpeed: number;
+      vision: number;
+    }
+  >
+> = {
+  Camp: {
+    armor: 4,
+    attackRange: 8,
+    attacksPerSecond: 0.75,
+    damage: 10,
+    projectileSpeed: 16,
+    vision: 10,
+  },
+  Citadel: {
+    armor: 9,
+    attackRange: 11,
+    attacksPerSecond: 1.25,
+    damage: 28,
+    projectileSpeed: 18,
+    vision: 14,
+  },
+  Outpost: {
+    armor: 5,
+    attackRange: 9,
+    attacksPerSecond: 0.9,
+    damage: 14,
+    projectileSpeed: 16,
+    vision: 11,
+  },
+  Stronghold: {
+    armor: 7,
+    attackRange: 10,
+    attacksPerSecond: 1.05,
+    damage: 20,
+    projectileSpeed: 18,
+    vision: 12,
+  },
+};
+
+/** Bonus Hold arrow damage per garrisoned villager, up to the cap. */
+const GARRISON_DAMAGE_PER_VILLAGER = 2;
+const GARRISON_DAMAGE_CAP = 10;
 
 /** Armor every non-tower building uses against attacks. */
 const BUILDING_ARMOR = 4;
@@ -105,12 +172,15 @@ export function runCombatTick(context: TickContext): void {
   refreshHoldStats(world);
   const roster = buildRoster(world, state);
   const targets = buildingTargets(world);
+  const terrainObstacles = worldTerrainObstacles(world);
   const simulation = new CombatSimulation({
     buildings: targets,
     hurtZones: worldVentVolumes(world),
+    mapSize: world.map,
     obstacles: buildingObstacles(world),
     pendingProjectiles: state.combat.projectiles,
     startTick: state.combat.tick,
+    terrainObstacles,
     tickMs: TICK_MS,
     units: roster,
   });
@@ -152,17 +222,34 @@ function buildRoster(
   state: AshenGateSliceState,
 ): CombatUnit[] {
   const saved = state.combat.bodies;
+  const owners = state.combat.owners ?? {};
+  state.combat.owners = owners;
   const roster: CombatUnit[] = [];
   for (const unit of world.units) {
     if (!isEconomyUnit(unit) || unit.hp <= 0) continue;
+    if (unit.ownerId !== undefined) owners[unit.id] = unit.ownerId;
     roster.push(holdBody(world, unit, saved[unit.id]));
   }
+  const host = economyHost(world, ECONOMY_STEP_TICKS);
+  const garrisonedCount = world.units.filter(
+    (unit) => isEconomyUnit(unit) && unit.hp > 0 && unit.garrisoned,
+  ).length;
   for (const building of world.buildings) {
     const record = asBuilding(building);
-    if (record.buildingType !== "ward_tower" || !record.completed) continue;
-    roster.push(towerBody(record, saved[TOWER_PREFIX + record.id]));
+    if (!isArmedBuilding(record)) continue;
+    if (record.ownerId !== undefined) {
+      owners[TOWER_PREFIX + record.id] = record.ownerId;
+    }
+    const prior = saved[TOWER_PREFIX + record.id];
+    roster.push(
+      record.buildingType === "camp"
+        ? holdTurretBody(record, host.economy.tier, garrisonedCount, prior)
+        : towerBody(record, prior),
+    );
   }
-  for (const unit of waveState(world).units) {
+  const waves = waveState(world);
+  assignHordeRallyTargets(world, state, waves.units);
+  for (const unit of waves.units) {
     roster.push(
       hordeBody(world, unit, saved[unit.id], rallyPointFor(world, unit)),
     );
@@ -193,6 +280,11 @@ function holdBody(
   const definition = getUnitDefinition(unit.classId as CombatClassId);
   const record = cultivationRecord(world, unit.id);
   const stats = cultivationStats(record);
+  const power = readCultivatorPower(world, unit.id);
+  const surgeDamage =
+    (power?.surgeSeconds ?? 0) > 0 ? 1 + SPIRIT_SURGE_DAMAGE_BONUS : 1;
+  const surgeSpeed =
+    (power?.surgeSeconds ?? 0) > 0 ? 1 + SPIRIT_SURGE_SPEED_BONUS : 1;
   const schoolBoost = record?.school
     ? layerSchoolModifier(world, record.school) * stats.schoolEffect
     : 1;
@@ -205,14 +297,16 @@ function holdBody(
     });
   return {
     ...base,
-    damage: round(definition.damage * stats.damage * schoolBoost),
+    damage: round(definition.damage * stats.damage * schoolBoost * surgeDamage),
     hasLongLife: record?.rank === "Champion" || record?.rank === "Ascended",
     hitPoints: unit.hp,
     maxHitPoints: unit.maxHp,
     position: { x: unit.x, y: unit.y },
     rankTitle: record?.rank ?? "Ashborn",
     school: record?.school,
-    speed: round(definition.speed * stats.moveSpeed),
+    speed: power?.meditating
+      ? 0
+      : round(definition.speed * stats.moveSpeed * surgeSpeed),
   };
 }
 
@@ -242,6 +336,62 @@ function villagerTemplate(unit: EconomyUnit): CombatUnit {
     statuses: {},
     structureDamageMultiplier: 0,
     vision: -1,
+  };
+}
+
+/**
+ * @param record - Economy building record
+ * @returns Whether this building fires projectiles via a turret combat body
+ */
+function isArmedBuilding(record: ReturnType<typeof asBuilding>): boolean {
+  return (
+    record.completed &&
+    (record.buildingType === "ward_tower" || record.buildingType === "camp")
+  );
+}
+
+/**
+ * Self-defense turret for the Hold (`camp`). Scales with Hold tier and gains
+ * extra arrow damage from garrisoned villagers.
+ * @param hold - Completed Camp/Hold building
+ * @param tier - Current Hold tier
+ * @param garrisonedCount - Living villagers sheltered inside
+ * @param saved - Last tick's turret, if any
+ * @returns Static ranged body
+ */
+function holdTurretBody(
+  hold: ReturnType<typeof asBuilding>,
+  tier: HoldTier,
+  garrisonedCount: number,
+  saved: CombatUnit | undefined,
+): CombatUnit {
+  const stats = HOLD_TURRET_BY_TIER[tier];
+  const garrisonBonus = Math.min(
+    GARRISON_DAMAGE_CAP,
+    garrisonedCount * GARRISON_DAMAGE_PER_VILLAGER,
+  );
+  return {
+    armor: stats.armor,
+    attackCooldownMs: saved?.attackCooldownMs ?? 0,
+    attackKind: "projectile",
+    attackRange: stats.attackRange,
+    attacksPerSecond: stats.attacksPerSecond,
+    bodyRadius: footprintBodyRadius(hold.buildingType),
+    classId: "hunter",
+    damage: stats.damage + garrisonBonus,
+    factionId: HOLD_FACTION,
+    hitPoints: hold.hp,
+    id: TOWER_PREFIX + hold.id,
+    maxHitPoints: hold.maxHp,
+    merit: 0,
+    popCost: 0,
+    position: { x: hold.x, y: hold.y },
+    projectileSpeed: stats.projectileSpeed,
+    rankTitle: "Ashborn",
+    speed: 0,
+    statuses: saved?.statuses ?? {},
+    structureDamageMultiplier: 0,
+    vision: stats.vision,
   };
 }
 
@@ -330,26 +480,76 @@ function hordeBody(
 }
 
 /**
- * Where a horde unit marches: the nearest standing Camp, else the nearest
- * Hold building. In co-op matches with multiple Camps, each horde unit
- * converges on whichever allied Camp is closest to it.
+ * Gives each co-op horde body a stable Camp assignment. Existing assignments
+ * are kept while their Camp stands; new and orphaned bodies follow one saved
+ * roster cursor, so clearing a wave never resets who gets the next attackers.
  * @param world - Sim world
- * @param from - Horde unit position
+ * @param state - Slice state identifying a co-op match and its cursor
+ * @param units - Living horde bodies in deterministic spawn order
+ */
+function assignHordeRallyTargets(
+  world: SimWorldState,
+  state: AshenGateSliceState,
+  units: readonly WaveUnit[],
+): void {
+  if (state.players === undefined) return;
+  const players = Object.values(state.players).sort(
+    (left, right) =>
+      left.slotIndex - right.slotIndex || compareIds(left.id, right.id),
+  );
+  if (players.length === 0) return;
+  const camps = world.buildings.filter(
+    (entry) => entry.buildingType === "camp",
+  );
+  const livingCampIds = new Set(camps.map((camp) => camp.id));
+  const campByOwner = new Map<string, (typeof camps)[number]>();
+  for (const camp of camps) {
+    if (camp.ownerId === undefined || campByOwner.has(camp.ownerId)) continue;
+    campByOwner.set(camp.ownerId, camp);
+  }
+  for (const unit of units) {
+    if (
+      unit.rallyTargetId !== undefined &&
+      livingCampIds.has(unit.rallyTargetId)
+    ) {
+      continue;
+    }
+    for (let offset = 0; offset < players.length; offset += 1) {
+      const index =
+        ((state.nextHordeTargetCursor ?? 0) + offset) % players.length;
+      const player = players[index];
+      if (player === undefined) continue;
+      const target = campByOwner.get(player.id);
+      if (target === undefined) continue;
+      unit.rallyTargetId = target.id;
+      state.nextHordeTargetCursor = (index + 1) % players.length;
+      break;
+    }
+  }
+}
+
+/**
+ * Where a horde unit marches: its assigned co-op Camp, the nearest standing
+ * Camp in solo play, or the nearest Hold building when no Camp remains.
+ * @param world - Sim world
+ * @param unit - Horde unit with its position and optional co-op assignment
  * @returns March destination
  */
 function rallyPointFor(
   world: SimWorldState,
-  from: { x: number; y: number },
+  unit: WaveUnit,
 ): { x: number; y: number } {
   const camps = world.buildings.filter(
     (entry) => entry.buildingType === "camp",
   );
+  const assigned = camps.find((camp) => camp.id === unit.rallyTargetId);
+  if (assigned !== undefined) return { x: assigned.x, y: assigned.y };
   const candidates = camps.length > 0 ? camps : world.buildings;
   let nearest = candidates[0];
   let bestDistance = Number.POSITIVE_INFINITY;
   for (const candidate of candidates) {
-    const dx = candidate.x - from.x;
-    const dy = candidate.y - from.y;
+    const dx = candidate.x - unit.x;
+    const dy = candidate.y - unit.y;
     const dist = dx * dx + dy * dy;
     if (dist < bestDistance) {
       bestDistance = dist;
@@ -369,7 +569,7 @@ function rallyPointFor(
 function buildingTargets(world: SimWorldState): CombatBuilding[] {
   return world.buildings.flatMap((building) => {
     const record = asBuilding(building);
-    if (record.buildingType === "ward_tower" && record.completed) return [];
+    if (isArmedBuilding(record)) return [];
     return [
       {
         armor: BUILDING_ARMOR,
@@ -657,8 +857,33 @@ function applyWaveEvent(context: TickContext, event: WaveEvent): void {
 }
 
 /**
+ * Resolves the co-op owner of a killing unit or Ward Tower turret. The
+ * remembered combat roster is checked first so delayed burns and towers that
+ * fell earlier in the same tick still credit their original owner.
+ * @param world - Sim world
+ * @param killerId - Combat body that landed the last hit, if known
+ * @returns Owning roster player id, or undefined for the environment/solo
+ */
+function combatantOwnerId(
+  world: SimWorldState,
+  killerId: string | undefined,
+): string | undefined {
+  if (killerId === undefined) return undefined;
+  const rememberedOwner = sliceState(world).combat.owners?.[killerId];
+  if (rememberedOwner !== undefined) return rememberedOwner;
+  const unitOwner = world.units.find((unit) => unit.id === killerId)?.ownerId;
+  if (unitOwner !== undefined || !killerId.startsWith(TOWER_PREFIX)) {
+    return unitOwner;
+  }
+  const buildingId = killerId.slice(TOWER_PREFIX.length);
+  return world.buildings.find((building) => building.id === buildingId)
+    ?.ownerId;
+}
+
+/**
  * Credits the killer and nearby allies with merit, personal essence, and
- * combat proof — the only way to fill the breakthrough bars.
+ * combat proof — the only way to fill the breakthrough bars. Also attributes
+ * the victim's training value to the killer owner's multiplayer score.
  * @param world - Sim world
  * @param victim - Horde body that died
  * @param killerId - Body that landed the last hit, if known
@@ -670,6 +895,10 @@ function rewardKill(
 ): void {
   const state = sliceState(world);
   state.stats.kills += 1;
+  const ownerId = combatantOwnerId(world, killerId);
+  if (ownerId !== undefined) {
+    creditPlayerMilitary(world, ownerId, unitResourceValue(victim.classId));
+  }
   const reward = KILL_REWARDS[victim.role];
   const cultivation = openCultivation(world);
   for (const unit of world.units) {
@@ -875,6 +1104,20 @@ function separateBodies(world: SimWorldState): void {
     });
   }
   resolveOverlaps(bodies, world.map);
+  const terrainObstacles = worldTerrainObstacles(world);
+  if (terrainObstacles.length > 0) {
+    for (const entry of bodies) {
+      if (entry.fixed) continue;
+      const adjusted = pushOutOfObstacles(
+        entry.body,
+        entry.radius,
+        terrainObstacles,
+        world.map,
+      );
+      entry.body.x = round(adjusted.x);
+      entry.body.y = round(adjusted.y);
+    }
+  }
   const barriers = world.buildings.filter(isBarrier);
   if (barriers.length === 0) return;
   horde.forEach((unit, index) => {

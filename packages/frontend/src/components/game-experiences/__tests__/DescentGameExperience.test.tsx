@@ -52,6 +52,7 @@ describe("DescentGameExperience", () => {
 
   afterEach(async () => {
     window.localStorage.removeItem(saveSlotKey(AUTOSAVE_SLOT));
+    window.location.href = "https://localhost:3000/descent";
     if (!mounted) return;
     const current = mounted;
     mounted = undefined;
@@ -92,5 +93,28 @@ describe("DescentGameExperience", () => {
     expect(buttonNamed(mounted.container, "Continue")).toBeTruthy();
     expect(buttonNamed(mounted.container, "New game")).toBeTruthy();
     expect(mounted.container.textContent).not.toContain("autosave");
+  });
+
+  test("rejoins multiplayer directly when the URL contains a room code", async () => {
+    window.location.href = "https://localhost:3000/descent?room=abc234";
+
+    mounted = await mountExperience();
+
+    expect(
+      mounted.container.querySelector('[data-testid="descent-rejoining"]'),
+    ).toBeTruthy();
+    expect(mounted.container.textContent).toContain("Rejoining room ABC234");
+
+    await act(async () => {
+      buttonNamed(
+        mounted?.container ?? document,
+        "Back to Descent title",
+      ).click();
+    });
+
+    expect(window.location.search).toBe("");
+    expect(
+      mounted.container.querySelector('[data-testid="descent-title-artwork"]'),
+    ).toBeTruthy();
   });
 });

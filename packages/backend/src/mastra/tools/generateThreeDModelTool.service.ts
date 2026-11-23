@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { createTool } from "@mastra/core/tools";
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import {
@@ -5,6 +6,7 @@ import {
   type ThreeDAsset,
   type ThreeDAssetKind,
   type ThreeDDesign,
+  type ThreeDExtraAnimation,
   type ThreeDProvider,
 } from "@resync-game-framework/api";
 import {
@@ -12,18 +14,26 @@ import {
   demoThreeDDesign,
 } from "src/asset-classes/three-d/compileThreeDDesign";
 import { MeshyProvider } from "src/asset-classes/three-d/meshyProvider";
-import { ThreeDAssetStore } from "src/asset-classes/three-d/threeDAssetStore";
+import {
+  THREE_D_STORAGE,
+  ThreeDAssetStore,
+} from "src/asset-classes/three-d/threeDAssetStore";
 import { ThreeDJobs } from "src/asset-classes/three-d/threeDJobs";
-import { threeDDesignSchema } from "src/asset-classes/three-d/threeDSchemas";
+import {
+  threeDDesignSchema,
+  threeDExtraAnimationSchema,
+} from "src/asset-classes/three-d/threeDSchemas";
 import { z } from "zod";
 
 /** Owned structured generation input; provider and budget never come from executable code. */
 const schema = z.object({
   design: threeDDesignSchema.optional(),
+  extraAnimations: z.array(threeDExtraAnimationSchema).max(5).optional(),
   generationId: z.uuid(),
   kind: z.enum(["prop", "environment", "character"]),
   prompt: z.string().min(1).max(4000),
   provider: z.enum(["demo", "design", "meshy"]),
+  sourceAssetId: z.uuid().optional(),
 });
 /** Shared registry tool that compiles or downloads models, validates and persists them. */
 @Injectable()
@@ -61,6 +71,8 @@ export class GenerateThreeDModelToolService {
       provider: ThreeDProvider;
       prompt: string;
       design?: ThreeDDesign;
+      sourceAssetId?: string;
+      extraAnimations?: ThreeDExtraAnimation[];
     },
     signal: AbortSignal,
   ): Promise<ThreeDAsset> {
@@ -73,11 +85,31 @@ export class GenerateThreeDModelToolService {
     let bytes: Uint8Array;
     let jobIds: string[] = [];
     let design = request.design;
+    let assetNameOverride: string | undefined;
     if (request.provider === "meshy") {
       if (previousJob?.providerSubmissionPending)
         throw new BadRequestException(
           "Meshy submission outcome is unknown. Inspect the provider dashboard before retrying with a new generation id.",
         );
+      let sourceGlbBytes: Uint8Array | undefined;
+      if (request.sourceAssetId) {
+        if (request.kind !== "character")
+          throw new BadRequestException(
+            "sourceAssetId is only supported for character models.",
+          );
+        const sourceAsset = await this.store.read(
+          request.kind,
+          request.sourceAssetId,
+        );
+        sourceGlbBytes = await readFile(
+          THREE_D_STORAGE[request.kind].filePath(
+            request.sourceAssetId,
+            "model.glb",
+          ),
+        );
+        assetNameOverride = sourceAsset.name;
+        design = design ?? sourceAsset.design;
+      }
       const report = async (stage: string, progress: number, id?: string) => {
         if (id) jobIds.push(id);
         await this.jobs.progress(
@@ -98,6 +130,10 @@ export class GenerateThreeDModelToolService {
               report,
               resumeJobIds,
               beforeSubmit,
+              {
+                extraAnimations: request.extraAnimations,
+                sourceGlbBytes,
+              },
             )
           : await this.meshy.generate(
               request.prompt,
@@ -133,13 +169,16 @@ export class GenerateThreeDModelToolService {
         design,
         id: request.generationId,
         kind: request.kind,
-        name: design?.name ?? this.assetName(request.prompt),
+        name:
+          assetNameOverride ?? design?.name ?? this.assetName(request.prompt),
         prompt: request.prompt,
         provenance: {
           elapsedMs: Date.now() - started,
           estimatedCredits: this.estimatedCredits(
             request.provider,
             request.kind,
+            Boolean(request.sourceAssetId),
+            request.extraAnimations?.length ?? 0,
           ),
           jobIds,
           provider: request.provider,
@@ -172,8 +211,12 @@ export class GenerateThreeDModelToolService {
   private estimatedCredits(
     provider: ThreeDProvider,
     kind: ThreeDAssetKind,
+    reusedMesh = false,
+    extraClipCount = 0,
   ): number | null {
     if (provider !== "meshy") return null;
-    return kind === "character" ? 50 : 30;
+    if (kind !== "character") return 30;
+    const rigAndAnim = 5 + (5 + extraClipCount) * 3;
+    return reusedMesh ? rigAndAnim : 30 + rigAndAnim;
   }
 }

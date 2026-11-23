@@ -53,6 +53,46 @@
       "veinBonus": { "amount": 0.15, "id": "train_speed" }
     },
     {
+      "buildTicks": 30,
+      "cost": { "stone": 25, "wood": 35 },
+      "footprint": 5,
+      "id": "cultivator_sanctum",
+      "job": "Train Sword, Flying-Sword, and Formation Cultivators",
+      "maxHp": 220,
+      "name": "Cultivator Sanctum",
+      "tier": "Outpost",
+      "veinBonus": { "amount": 0.15, "id": "train_speed" }
+    },
+    {
+      "auraRadius": 6,
+      "buildTicks": 24,
+      "cost": { "stone": 25, "wood": 20 },
+      "footprint": 3,
+      "id": "spirit_array",
+      "job": "Gathers Essence passively and doubles nearby Cultivator Qi regen",
+      "maxHp": 170,
+      "name": "Spirit Gathering Array",
+      "production": {
+        "everyTicks": 24,
+        "input": {},
+        "output": { "essence": 1 }
+      },
+      "tier": "Outpost",
+      "veinBonus": { "amount": 1, "id": "essence_harvest" }
+    },
+    {
+      "auraRadius": 5,
+      "buildTicks": 28,
+      "cost": { "iron": 10, "stone": 35, "wood": 30 },
+      "footprint": 3,
+      "id": "meditation_pavilion",
+      "job": "Seclusion chamber: grants nearby Cultivators steady Essence, Merit, and injury recovery",
+      "maxHp": 200,
+      "name": "Seclusion Pavilion",
+      "tier": "Stronghold",
+      "veinBonus": { "amount": 0.5, "id": "meditation_rate" }
+    },
+    {
       "buildTicks": 20,
       "cost": { "wood": 20 },
       "footprint": 3,
@@ -72,7 +112,7 @@
       "maxHp": 220,
       "name": "Ward Tower",
       "overlapBonus": { "amount": 0.1, "id": "ward_damage_aura" },
-      "tier": "Camp"
+      "tier": "Outpost"
     },
     {
       "blocksAlly": true,
@@ -94,7 +134,7 @@
       "job": "Funnels hordes and reduces Ember vent burn nearby",
       "maxHp": 320,
       "name": "Fire-ward Wall",
-      "tier": "Camp"
+      "tier": "Outpost"
     },
     {
       "blocksAlly": false,
@@ -105,7 +145,7 @@
       "job": "Ally passage in a wall",
       "maxHp": 260,
       "name": "Gate",
-      "tier": "Camp"
+      "tier": "Outpost"
     },
     {
       "buildTicks": 24,
@@ -124,7 +164,7 @@
         "water": 10,
         "windowTicks": 180
       },
-      "tier": "Camp"
+      "tier": "Outpost"
     },
     {
       "buildTicks": 24,
@@ -135,7 +175,7 @@
       "job": "Trade Food, Water, and Wood for Coin",
       "maxHp": 160,
       "name": "Hell Market",
-      "tier": "Camp"
+      "tier": "Stronghold"
     },
     {
       "buildTicks": 18,
@@ -167,7 +207,7 @@
         "output": { "food": 8 },
         "workers": 1
       },
-      "tier": "Camp"
+      "tier": "Outpost"
     },
     {
       "buildTicks": 24,
@@ -183,7 +223,7 @@
         "output": { "wood": 6 },
         "workers": 1
       },
-      "tier": "Camp"
+      "tier": "Outpost"
     },
     {
       "buildTicks": 24,
@@ -199,7 +239,7 @@
         "input": { "water": 10 },
         "output": { "spirit_herbs": 2 }
       },
-      "tier": "Camp"
+      "tier": "Citadel"
     },
     {
       "buildTicks": 20,
@@ -211,7 +251,7 @@
       "maxHp": 140,
       "name": "Forward Shrine",
       "respawn": true,
-      "tier": "Camp"
+      "tier": "Outpost"
     },
     {
       "buildTicks": 24,
@@ -221,7 +261,7 @@
       "job": "Shows the next wave class mix",
       "maxHp": 160,
       "name": "Omen Tower",
-      "tier": "Camp"
+      "tier": "Outpost"
     },
     {
       "buildTicks": 20,
@@ -231,7 +271,7 @@
       "job": "Raid-immune food and water trickle",
       "maxHp": 160,
       "name": "Root Cellar",
-      "tier": "Camp"
+      "tier": "Outpost"
     },
     {
       "buildTicks": 8,
@@ -289,7 +329,7 @@
       "job": "Brew pills",
       "maxHp": 180,
       "name": "Alchemy Furnace",
-      "tier": "Stronghold",
+      "tier": "Citadel",
       "veinBonus": { "amount": 0.1, "id": "brew_essence" },
       "volatileDamage": 40
     },
@@ -318,7 +358,7 @@
       "job": "Forge treasures",
       "maxHp": 200,
       "name": "Artifact Forge",
-      "tier": "Stronghold"
+      "tier": "Citadel"
     },
     {
       "buildTicks": 36,
@@ -345,13 +385,18 @@
   "holdTiers": [
     { "id": "Camp", "upgradeCost": {}, "upgradeTicks": 0 },
     {
+      "id": "Outpost",
+      "upgradeCost": { "stone": 30, "wood": 20 },
+      "upgradeTicks": 15
+    },
+    {
       "id": "Stronghold",
-      "upgradeCost": { "stone": 40, "wood": 40 },
-      "upgradeTicks": 20
+      "upgradeCost": { "iron": 10, "stone": 55, "wood": 50 },
+      "upgradeTicks": 22
     },
     {
       "id": "Citadel",
-      "upgradeCost": { "essence": 10, "iron": 30, "stone": 80, "wood": 60 },
+      "upgradeCost": { "essence": 12, "iron": 25, "stone": 90, "wood": 70 },
       "upgradeTicks": 30
     }
   ],
@@ -359,9 +404,12 @@
   "trainingCosts": {
     "adept": { "food": 20, "water": 30 },
     "breaker": { "food": 40, "water": 20 },
+    "cultivator": { "food": 25, "water": 25 },
+    "formation_master": { "food": 20, "water": 35 },
     "hunter": { "food": 25, "water": 20 },
     "raider": { "food": 35, "water": 10 },
     "rider": { "food": 45, "water": 25 },
+    "sword_sage": { "food": 25, "water": 30 },
     "villager": { "food": 10, "water": 8 },
     "warden": { "food": 30, "water": 15 }
   }
