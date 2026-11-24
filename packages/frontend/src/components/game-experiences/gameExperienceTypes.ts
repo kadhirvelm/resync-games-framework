@@ -17,6 +17,8 @@ export type GameExperienceStatus = "Playable" | "Prototype";
 export interface GameExperienceArtwork {
   accent: string;
   glow: string;
+  /** Optional public painting that replaces the monogram tile. */
+  image?: string;
   label: string;
   monogram: string;
 }
@@ -41,6 +43,8 @@ export interface GameExperienceDefinition {
   entry: ComponentType<GameExperienceEntryProps>;
   /** Short kind-of-game label shown on the library card. */
   genre: string;
+  /** Keeps the game reachable by path but leaves it off the library. */
+  hiddenFromLibrary?: boolean;
   id: GameExperienceId;
   launchLabel: string;
   name: string;

@@ -70,6 +70,9 @@ describe("pruneInspectTarget and inspectRing", () => {
     expect(
       pruneInspectTarget(features, { id: "missing", kind: "scenery" }),
     ).toBeNull();
+    expect(
+      pruneInspectTarget(features, { id: "rim-north-0", kind: "scenery" }),
+    ).toBeNull();
     expect(inspectRing(features, target)).toBeNull();
   });
 });
@@ -166,19 +169,20 @@ describe("describeSelection", () => {
     expect(vent.title).toBe("Ember vent");
   });
 
-  test("identifies scenery and makes its lack of gameplay explicit", () => {
+  test("explains the Horde Gate as the timed-wave approach", () => {
     const card = describeSelection(model, EMPTY_SELECTION, {
       id: "horde-gate",
       kind: "scenery",
     });
     expect(card.kind).toBe("scenery");
     expect(card.title).toBe("Horde Gate");
-    expect(card.subtitle).toContain("No gameplay effect");
+    expect(card.subtitle).toContain("Wave origin");
     expect(card.facts).toContainEqual({
-      label: "Gameplay effect",
-      value: "None",
+      label: "Gameplay role",
+      value: "Timed wave approach",
     });
-    expect(card.tips.join(" ")).toContain("cannot be harvested");
+    expect(card.summary).toContain("waves enter");
+    expect(card.tips.join(" ")).toContain("countdown");
   });
 });
 

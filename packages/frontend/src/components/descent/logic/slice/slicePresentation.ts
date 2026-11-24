@@ -3,6 +3,7 @@ import {
   ASHEN_GATE_CONTENT,
   ASHEN_GATE_STARTING_VILLAGERS,
 } from "../../data/layers/ashen_gate";
+import { isLiveBrewablePill, pillEffectLabel } from "../../views/pillGuidance";
 import type {
   BossReadout,
   BrewReadout,
@@ -25,7 +26,7 @@ import { PILLS } from "../cultivation/data";
 import type { CultivationView } from "../cultivation/types";
 import { footprintDistance } from "../economy/footprint";
 import { growthFraction } from "../economy/harvest";
-import type { EconomyUnit, HoldTier } from "../economy/model";
+import type { EconomyUnit, HoldTier, ResourceNode } from "../economy/model";
 import {
   getHoldTier,
   getHoldUpgrade,
@@ -44,22 +45,36 @@ import {
   workerSlots,
 } from "../economy/tables";
 import {
+  explorationPresentation,
+  formatExplorationReward,
+  isExplorationBossCampCleared,
+} from "../exploration";
+import { isFogVisible } from "../fog";
+import {
   worldTerrainBridges,
+  worldTerrainHills,
   worldTerrainObstacles,
   worldVentVolumes,
 } from "../layers/hazards";
+import { LAYER_TABLE } from "../layers/layerTable";
 import { calculatePlayerScores } from "../scoring";
 import { TICKS_PER_SECOND } from "../sim/constants";
 import type { SimWorldState } from "../sim/world";
 import type { ClassId, ResourceStockpile, SchoolId } from "../types";
 import { getBossDefinition, getSchedule, isLayerId } from "../waves/catalog";
 import { readOmen, ticksUntilWave } from "../waves/clock";
+import {
+  pressureStatMultiplier,
+  wavePowerMultiplier,
+} from "../waves/modifiers";
 import type { WaveClockState, WaveDefinition } from "../waves/types";
 import { TOWER_PREFIX } from "./sliceCombat";
 import {
   type CompletedHallIndex,
   canUseCaptainBattlefieldBreakthrough,
   indexCompletedHalls,
+  isStartingCaptain,
+  layerRankCap,
   layerSchoolModifier,
   openCultivation,
   resolveCompletedHall,
@@ -69,6 +84,7 @@ import {
   ensureCultivatorPower,
   isCultivatorClass,
   isInsideSpiritArray,
+  sacredGroundAt,
 } from "./sliceCultivatorPowers";
 import { readFogOfWar } from "./sliceFog";
 import {
@@ -146,8 +162,9 @@ export function publishPresentation(world: SimWorldState): void {
   const rationOptions = rationReadouts(world);
   const ownerIds = holdOwnerIds(world, state);
   world.meta.ui = {
-    boss: bossReadout(waves),
-    bossGateCleared: waves.bossGateCleared,
+    boss: bossReadout(world, waves),
+    bossGateCleared:
+      waves.bossGateCleared && isExplorationBossCampCleared(world),
     brewOptions: brewOptions(world),
     buildings: buildingReadouts(world, state),
     buildOptions: buildOptions(world),
@@ -155,9 +172,11 @@ export function publishPresentation(world: SimWorldState): void {
       ownerIds.map((ownerId) => [ownerId, buildOptions(world, ownerId)]),
     ),
     calamities: [],
+    exploration: explorationPresentation(world),
     fog: readFogOfWar(world),
     fx: state.fx,
     hellPressure: waves.hellPressure,
+    hills: worldTerrainHills(world).map((hill) => ({ ...hill })),
     holdTier: getHoldTier(host),
     holdTiers: Object.fromEntries(
       ownerIds.map((ownerId) => [ownerId, getHoldTier(host, ownerId)]),
@@ -170,9 +189,16 @@ export function publishPresentation(world: SimWorldState): void {
     nodes: host.economy.nodes
       .filter((node) => node.remaining > 0)
       .map((node) => ({
+        description:
+          node.explorationCacheId === undefined
+            ? undefined
+            : explorationCacheDescription(world, node),
+        explorationCacheId: node.explorationCacheId,
         gatherers: gatherers.get(node.id) ?? 0,
         id: node.id,
-        label: `${resourceName(node.resourceId)} ${Math.ceil(node.remaining)}`,
+        label:
+          node.label ??
+          `${resourceName(node.resourceId)} ${Math.ceil(node.remaining)}`,
         remaining: Math.ceil(node.remaining),
         resource: node.resourceId,
         x: node.x,
@@ -182,7 +208,7 @@ export function publishPresentation(world: SimWorldState): void {
     objectives: objectives(world, state, waves),
     omen: readOmen(waves),
     onboarding: onboarding(state),
-    outcome: outcomeReadout(state.outcome),
+    outcome: outcomeReadout(state),
     pillFeeds: pillFeeds(world, cultivation),
     players: calculatePlayerScores(world),
     pop: { cap: getPopCap(host), used: getPopUsed(host) },
@@ -260,6 +286,25 @@ function gathererCounts(units: SimWorldState["units"]): Map<string, number> {
     counts.set(nodeId, (counts.get(nodeId) ?? 0) + 1);
   }
   return counts;
+}
+
+/**
+ * Explains a cache's exact resource and required storage delivery without
+ * exposing undiscovered camps through the ordinary resource-node panel.
+ * @param world - Sim world with exploration state
+ * @param node - Resource-backed exploration cache
+ * @returns Player-facing cache instructions, delivered stock, and camp prize
+ */
+function explorationCacheDescription(
+  world: SimWorldState,
+  node: Pick<ResourceNode, "explorationCacheId" | "remaining" | "resourceId">,
+): string {
+  const delivery = `Haul to Camp or a Storehouse to deliver ${Math.ceil(node.remaining)} ${resourceName(node.resourceId)}.`;
+  const camp = sliceState(world).exploration?.camps.find(
+    (entry) => entry.id === node.explorationCacheId,
+  );
+  if (camp === undefined) return delivery;
+  return `${delivery} Camp prize: ${formatExplorationReward(camp.reward)}`;
 }
 
 /**
@@ -409,11 +454,13 @@ function holdUnitReadout(
     unit.classId as Exclude<ClassId, "villager">,
   );
   const readout: UnitReadout = {
+    carrying: unit.carry?.resourceId ?? null,
+    carryingAmount: unit.carry?.amount ?? 0,
     factionId: "hold",
     fed,
     hitPoints: Math.max(0, Math.round(unit.hp)),
     maxHitPoints: Math.round(unit.maxHp),
-    name: definition.name.replace("Hold ", ""),
+    name: unit.name ?? definition.name.replace("Hold ", ""),
     ...ownerFields,
     ...routeField(world, unit),
   };
@@ -422,7 +469,7 @@ function holdUnitReadout(
   const hall = resolveCompletedHall(completedHalls, unit.ownerId);
   const captainBattlefield =
     hall === null && canUseCaptainBattlefieldBreakthrough(world, unit.id);
-  const view = captainBattlefield
+  const baseView = captainBattlefield
     ? cachedBypassCultivation(world, cultivationCache).getCultivationView(
         unit.id,
       )
@@ -434,6 +481,7 @@ function holdUnitReadout(
         ).getCultivationView(unit.id),
         hall !== null,
       );
+  const view = withScenarioRankCap(world, baseView);
   const active = record.activeBreakthrough;
   const cultivatorFields = isCultivatorClass(unit.classId)
     ? (() => {
@@ -452,6 +500,7 @@ function holdUnitReadout(
             ready: power.cooldownSeconds <= 0.05 && power.qi >= spec.qiCost,
             school: spec.school,
           },
+          sacredGround: sacredGroundAt(world, unit.x, unit.y),
           surgeActive: power.surgeSeconds > 0,
         };
       })()
@@ -474,8 +523,10 @@ function holdUnitReadout(
           ),
         )
       : undefined,
+    ...(isStartingCaptain(unit.id) ? { captain: true } : {}),
     cultivation: view,
     injured: (state.injuries[unit.id] ?? 0) > 0,
+    injurySeconds: Math.max(0, Math.ceil(state.injuries[unit.id] ?? 0)),
     rank: record.rank,
     school: record.school,
     schoolModifier: record.school
@@ -515,6 +566,35 @@ function withHallRequirement(
       ...view.missingRequirements,
       "Build a Cultivation Hall.",
     ],
+  };
+}
+
+/**
+ * Replaces generic next-rank requirements with the live scenario's cap.
+ * @param world - Sim world whose layer owns the rank cap
+ * @param view - Cultivation view before scenario presentation
+ * @returns A cap-aware view with no misleading next-rank grind
+ */
+function withScenarioRankCap(
+  world: SimWorldState,
+  view: CultivationView,
+): CultivationView {
+  const cap = layerRankCap(world);
+  if (view.rank !== cap) return view;
+  const layer = LAYER_TABLE.layers.find(
+    (candidate) => candidate.id === world.layerId,
+  );
+  return {
+    ...view,
+    combatProofToNext: 0,
+    essenceToNext: 0,
+    meritToNext: 0,
+    missingRequirements: [],
+    nextRank: undefined,
+    rankCap: cap,
+    rankCapLabel: layer?.name ?? "Current scenario",
+    rankCapReached: true,
+    successChance: 1,
   };
 }
 
@@ -630,6 +710,10 @@ function buildingReadouts(
         ? state.players?.[record.ownerId]
         : undefined;
     const readout: BuildingReadout = {
+      breakthroughSuccessBonus:
+        record.bonuses.vein?.id === "breakthrough_success"
+          ? record.bonuses.vein.amount
+          : undefined,
       constructing: record.constructing,
       factionId: "hold",
       hitPoints: Math.max(0, Math.round(record.hp)),
@@ -830,21 +914,27 @@ function brewOptions(world: SimWorldState): BrewReadout[] {
     if (furnace.buildingType !== "alchemy_furnace" || !furnace.completed) {
       return [];
     }
-    return listPillRecipes().map((recipe) => {
-      const affordable = canAfford(world.resources, recipe.ingredients);
-      const idle = furnace.brew === null;
-      let reason: string | undefined;
-      if (!idle) reason = "Furnace is already brewing";
-      else if (!affordable) reason = "Ingredients are missing";
-      return {
-        allowed: reason === undefined,
-        detail: `${costLabel(recipe.ingredients)} · ${Math.round(recipe.brewTicks / 2)}s`,
-        furnaceId: furnace.id,
-        name: recipe.name,
-        pillId: recipe.id,
-        reason,
-      };
-    });
+    return listPillRecipes()
+      .filter((recipe) => isLiveBrewablePill(recipe.id))
+      .map((recipe) => {
+        const affordable = canAfford(world.resources, recipe.ingredients);
+        const idle = furnace.brew === null;
+        let reason: string | undefined;
+        if (!idle) reason = "Furnace is already brewing";
+        else if (!affordable) reason = "Ingredients are missing";
+        return {
+          allowed: reason === undefined,
+          detail: `${costLabel(recipe.ingredients)} · ${Math.round(recipe.brewTicks / 2)}s`,
+          effectLabel: pillEffectLabel(
+            recipe.id,
+            PILLS.find((pill) => pill.id === recipe.id)?.effect.amount ?? 0,
+          ),
+          furnaceId: furnace.id,
+          name: recipe.name,
+          pillId: recipe.id,
+          reason,
+        };
+      });
   });
 }
 
@@ -862,6 +952,7 @@ function pillFeeds(
   const stocked = PILLS.filter(
     (pill) =>
       (pill.role === "permanent" || pill.role === "dao") &&
+      isLiveBrewablePill(pill.id) &&
       getItemCount(host, pill.id) > 0,
   );
   if (stocked.length === 0) return [];
@@ -870,6 +961,7 @@ function pillFeeds(
     return stocked.map((pill) => {
       const preview = cultivation.previewPill(unit.id, pill.id);
       return {
+        effectLabel: pillEffectLabel(pill.id, preview.projectedAmount),
         pillName: pill.name,
         preview,
         schoolMatchLabel: schoolMatchLabel(pill.school, preview.schoolMatch),
@@ -1016,13 +1108,14 @@ function upgradeProgress(
  * @returns Wave readout, or null when no layer is running
  */
 function waveReadout(waves: WaveClockState): WaveReadout | null {
-  if (!isLayerId(waves.layerId)) return null;
+  if (waves.scheduledWaves === false || !isLayerId(waves.layerId)) return null;
   const schedule = getSchedule(waves.layerId).waves;
   const nextIndex = schedule.findIndex(
     (wave) => !waves.spawnedWaveIds.includes(wave.id),
   );
   const live = waves.units.length;
   const waveHeld = waves.waveHeld === true;
+  const powerLabel = wavePowerLabel(waves);
   if (nextIndex < 0) {
     return {
       canCallEarly: false,
@@ -1030,6 +1123,7 @@ function waveReadout(waves: WaveClockState): WaveReadout | null {
       index: schedule.length,
       label: waves.bossGateCleared ? "The gate is open" : "Final wave",
       live,
+      powerLabel,
       total: schedule.length,
       type: "boss",
       waveHeld: false,
@@ -1051,10 +1145,33 @@ function waveReadout(waves: WaveClockState): WaveReadout | null {
     index: nextIndex + 1,
     label: waveLabel(wave),
     live,
+    powerLabel,
     total: schedule.length,
     type: wave.type,
     waveHeld,
   };
+}
+
+/**
+ * Explains the two ordinary siege multipliers in one visible HUD string.
+ * @param waves - Current scheduled wave clock
+ * @returns Base strength or the combined percentage bonus
+ */
+function wavePowerLabel(waves: WaveClockState): string {
+  const layer = LAYER_TABLE.layers.find(
+    (candidate) => candidate.id === waves.layerId,
+  );
+  const grade = layer?.essenceGrade ?? 1;
+  const essencePower = wavePowerMultiplier(waves.collectedEssence, grade);
+  const pressurePower = pressureStatMultiplier(waves.hellPressure);
+  const essenceBonus = Math.round((essencePower - 1) * 100);
+  const pressureBonus = Math.round((pressurePower - 1) * 100);
+  const bonus = Math.round((essencePower * pressurePower - 1) * 100);
+  if (bonus <= 0) return "Base enemy strength";
+  const reasons: string[] = [];
+  if (essenceBonus > 0) reasons.push(`Essence +${essenceBonus}%`);
+  if (pressureBonus > 0) reasons.push(`Pressure +${pressureBonus}%`);
+  return `+${bonus}% enemy stats (${reasons.join(" · ")})`;
 }
 
 /**
@@ -1072,13 +1189,17 @@ function waveLabel(wave: WaveDefinition): string {
 }
 
 /**
- * The living boss, for the boss health bar.
+ * The living, currently visible boss, for the boss health bar.
+ * @param world - Sim world, used to enforce fog of war
  * @param waves - Wave clock
- * @returns Readout, or null when no boss is on the field
+ * @returns Readout, or null when no boss is on the field or in sight
  */
-function bossReadout(waves: WaveClockState): BossReadout | null {
+function bossReadout(
+  world: SimWorldState,
+  waves: WaveClockState,
+): BossReadout | null {
   const boss = waves.units.find((unit) => unit.role === "boss" && unit.bossId);
-  if (!boss?.bossId) return null;
+  if (!boss?.bossId || !isFogVisible(readFogOfWar(world), boss)) return null;
   const definition = getBossDefinition(boss.bossId);
   return {
     hitPoints: Math.max(0, Math.round(boss.hitPoints)),
@@ -1125,6 +1246,43 @@ function objectives(
   state: AshenGateSliceState,
   waves: WaveClockState,
 ): ObjectiveReadout[] {
+  if (state.exploration !== undefined) {
+    const camps = state.exploration.camps;
+    const cleared = camps.filter((camp) => camp.cleared).length;
+    const captain = state.cultivation.units.find(
+      (unit) => unit.unitId === "ashen-captain",
+    );
+    return [
+      {
+        done: cleared >= 1,
+        id: "explore-first-camp",
+        label:
+          "Select your Captain and Rider; attack-move to the Threat I camp",
+      },
+      {
+        done: captain !== undefined && captain.rank !== "Ashborn",
+        id: "explore-breakthrough",
+        label: "After your first camp, promote the Captain to Sworn",
+      },
+      {
+        done: state.cultivation.units.some(
+          (unit) => unit.appliedPills.length > 0,
+        ),
+        id: "explore-pill",
+        label: "Claim a pill, then select a soldier and feed it",
+      },
+      {
+        done: cleared === camps.length,
+        id: "explore-camps",
+        label: `Clear guarded camps (${cleared}/${camps.length})`,
+      },
+      {
+        done: waves.bossGateCleared,
+        id: "boss",
+        label: `Defeat ${ASHEN_GATE_CONTENT.bossName}, then finish the expedition`,
+      },
+    ];
+  }
   /**
    * @param type - Building type
    * @returns Whether a completed one stands
@@ -1239,14 +1397,23 @@ function publishedNotices(
 
 /**
  * Terminal overlay copy.
- * @param outcome - Slice outcome
+ * @param state - Slice outcome and optional exploration progress
  * @returns Readout, or null while playing
  */
 function outcomeReadout(
-  outcome: AshenGateSliceState["outcome"],
+  state: AshenGateSliceState,
 ): SliceOutcomeReadout | null {
-  if (outcome === "playing") return null;
-  if (outcome === "victory") {
+  if (state.outcome === "playing") return null;
+  if (state.outcome === "victory") {
+    const camps = state.exploration?.camps;
+    if (camps !== undefined) {
+      const cleared = camps.filter((camp) => camp.cleared).length;
+      return {
+        body: `Cinderjaw has fallen. You cleared ${cleared}/${camps.length} guarded camps and escaped with every prize you claimed.`,
+        kind: "victory",
+        title: "Expedition complete",
+      };
+    }
     return {
       body: ASHEN_GATE_CONTENT.victory,
       kind: "victory",

@@ -170,4 +170,44 @@ describe("shift-queued waypoints", () => {
       { attack: true, ...second },
     ]);
   });
+
+  test("assign_gather clears queued waypoints so villagers keep their gather order", () => {
+    const sim = createAshenGateSim({ seed: 7 });
+    const start = sim.snapshot();
+    const camp = campOf(start);
+    const villager = start.units.find((unit) => unit.classId === "villager");
+    if (!villager) throw new Error("no villager");
+
+    sim.enqueue({
+      type: "order_move",
+      unitIds: [villager.id],
+      x: camp.x - 6,
+      y: camp.y + 6,
+    });
+    sim.enqueue({
+      queue: true,
+      type: "order_move",
+      unitIds: [villager.id],
+      x: camp.x - 6,
+      y: camp.y - 4,
+    });
+    sim.step(1);
+    expect(slice(sim).waypoints?.[villager.id]).toHaveLength(1);
+
+    sim.enqueue({
+      nodeId: "ashen-food-near",
+      type: "assign_gather",
+      unitIds: [villager.id],
+    });
+    sim.step(1);
+
+    expect(slice(sim).waypoints?.[villager.id]).toBeUndefined();
+    const updated = sim
+      .snapshot()
+      .units.find((entry) => entry.id === villager.id) as
+      | { preferredNodeId?: string | null; task?: { kind: string } | null }
+      | undefined;
+    expect(updated?.preferredNodeId).toBe("ashen-food-near");
+    expect(updated?.task?.kind).not.toBe("move");
+  });
 });

@@ -74,6 +74,7 @@ export function addCinderFlock(
   bodyMaterial.diffuseColor = Color3.FromHexString("#17110f");
   bodyMaterial.emissiveColor = Color3.FromHexString("#3d1c0c");
   bodyMaterial.specularColor = Color3.Black();
+  bodyMaterial.freeze();
 
   const birds: {
     root: TransformNode;

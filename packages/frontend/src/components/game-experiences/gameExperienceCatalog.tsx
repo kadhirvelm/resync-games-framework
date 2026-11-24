@@ -64,7 +64,9 @@ export const gameExperienceCatalog = [
     artwork: {
       accent: "#79c99e",
       glow: "#efd07b",
-      label: "A watercolor tower rising through mist",
+      image: "/towers-of-coreborn/library-card.webp",
+      label:
+        "A jade cultivation tower rising through mist above mountain peaks",
       monogram: "塔",
     },
     capabilities: { generatedAssets: true, localSaves: true },
@@ -90,6 +92,7 @@ export const gameExperienceCatalog = [
       "Build a 3D world in the Blueprint Workshop, explore its arena, and awaken its aether beacons.",
     entry: ThreeDSandboxGame,
     genre: "3D sandbox",
+    hiddenFromLibrary: true,
     id: "three-d-sandbox",
     launchLabel: "Launch sandbox",
     name: "3D Sandbox",
@@ -100,7 +103,8 @@ export const gameExperienceCatalog = [
     artwork: {
       accent: "#e0603a",
       glow: "#f2b544",
-      label: "An ember-lit shaft descending into dark rock",
+      image: "/descent/title-ashen-gate.webp",
+      label: "The Ashen Gate fortress above a lava-filled abyss",
       monogram: "獄",
     },
     capabilities: { generatedAssets: true, localSaves: true },
@@ -111,14 +115,15 @@ export const gameExperienceCatalog = [
     id: "descent",
     launchLabel: "Begin the descent",
     name: "Descent",
-    players: "Solo",
+    players: "Multiplayer",
     status: "Playable",
   },
   {
     artwork: {
       accent: "#d69b42",
       glow: "#ffcf70",
-      label: "A round stone door lit by five warm torches",
+      image: "/crossword-crypt/library-card.webp",
+      label: "A round crossword-carved vault door lit by warm torches",
       monogram: "門",
     },
     capabilities: { generatedAssets: true, localSaves: true },
@@ -133,6 +138,15 @@ export const gameExperienceCatalog = [
     status: "Prototype",
   },
 ] as const satisfies readonly GameExperienceDefinition[];
+
+/**
+ * Games shown in the home-route library. Hidden games, such as the 3D sandbox
+ * the Blueprint Workshop opens for previews, keep their paths.
+ */
+export const libraryGameExperiences: readonly GameExperienceDefinition[] =
+  gameExperienceCatalog.filter(
+    (experience: GameExperienceDefinition) => !experience.hiddenFromLibrary,
+  );
 
 /**
  * Resolves one registered game experience.

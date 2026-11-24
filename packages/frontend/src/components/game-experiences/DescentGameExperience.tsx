@@ -17,9 +17,15 @@ import {
 import { unlockDescentAudio } from "@/components/descent/audio/descentAudioEngine";
 import { useDescentAudio } from "@/components/descent/audio/useDescentAudio";
 import {
+  DEFAULT_GAME_SETUP,
+  type DescentGameSetup,
+  type DescentSoloMode,
+} from "@/components/descent/data/layers/ashen_gate/gameSetup";
+import {
   ASHEN_GATE_SLICE_MODULE_ID,
   createAshenGateSim,
   isAshenGateSliceSnapshot,
+  isExplorationSnapshot,
 } from "@/components/descent/logic/ashenGateSlice";
 import {
   AUTOSAVE_SLOT,
@@ -52,6 +58,8 @@ import {
   syncDescentRoomInUrl,
 } from "@/components/descent/multiplayer/roomLocation";
 import { useDescentMultiplayer } from "@/components/descent/multiplayer/useDescentMultiplayer";
+import { DescentSetupScreen } from "@/components/descent/solo/DescentSetupScreen";
+import { SoloCampaignExperience } from "@/components/descent/solo/SoloCampaignExperience";
 import { DescentView } from "@/components/descent/views";
 import { buildShellModel } from "@/components/descent/views/shellModel";
 import { useFullscreen } from "@/components/descent/views/useFullscreen";
@@ -60,6 +68,7 @@ import type { GameExperienceEntryProps } from "./gameExperienceTypes";
 
 interface PlayableDescentSession {
   hasSavedRun: boolean;
+  setup: DescentGameSetup;
   sim: DescentSim;
 }
 
@@ -70,6 +79,8 @@ interface DescentStartScreenProps {
   onContinue: () => void;
   onExit: () => void;
   onMultiplayer: () => void;
+  onCampaign: () => void;
+  onExplore: () => void;
   onNewGame: () => void;
   /** Enters or leaves fullscreen; the button hides without it. */
   onToggleFullscreen?: () => void;
@@ -123,19 +134,33 @@ function createPlayableSession(
   shouldHoldWave: (world: SimWorldState, nextWaveIndex: number) => boolean,
 ): PlayableDescentSession {
   const sim = createAshenGateSim({ seed: createRunSeed(), shouldHoldWave });
-  if (typeof window === "undefined") return { hasSavedRun: false, sim };
+  if (typeof window === "undefined") {
+    return { hasSavedRun: false, setup: DEFAULT_GAME_SETUP, sim };
+  }
   const saved = readSaveSlot(window.localStorage, AUTOSAVE_SLOT);
-  if (saved === null) return { hasSavedRun: false, sim };
+  if (saved === null) {
+    return { hasSavedRun: false, setup: DEFAULT_GAME_SETUP, sim };
+  }
   try {
     sim.load(saved);
     if (isAshenGateSliceSnapshot(sim.snapshot())) {
-      return { hasSavedRun: true, sim };
+      const restoredMode: DescentSoloMode = isExplorationSnapshot(
+        sim.snapshot(),
+      )
+        ? "exploration"
+        : "siege";
+      return {
+        hasSavedRun: true,
+        setup: { ...DEFAULT_GAME_SETUP, mode: restoredMode },
+        sim,
+      };
     }
   } catch {
     /* A stale or malformed save starts a new slice. */
   }
   return {
     hasSavedRun: false,
+    setup: DEFAULT_GAME_SETUP,
     sim: createAshenGateSim({ seed: createRunSeed(), shouldHoldWave }),
   };
 }
@@ -195,29 +220,46 @@ function useDescentSim(
     };
   }, [active, sim]);
 
-  /** Clears the saved run and replaces the mounted sim. */
-  const restart = useCallback(() => {
-    try {
-      window.localStorage.removeItem(saveSlotKey(AUTOSAVE_SLOT));
-    } catch {
-      /* Storage can be blocked; a fresh in-memory run still starts. */
-    }
-    setRunId((current) => current + 1);
-    setSession({
-      hasSavedRun: false,
-      sim: createAshenGateSim({
-        seed: createRunSeed(),
-        shouldHoldWave: (world, nextWaveIndex) =>
-          tutorialActiveRef.current &&
-          shouldHoldWaveForTutorial(world, nextWaveIndex),
-      }),
-    });
-  }, [tutorialActiveRef]);
+  /** Clears the saved run and replaces the mounted sim with the chosen setup. */
+  const restart = useCallback(
+    (nextSetup?: Partial<DescentGameSetup>) => {
+      try {
+        window.localStorage.removeItem(saveSlotKey(AUTOSAVE_SLOT));
+      } catch {
+        /* Storage can be blocked; a fresh in-memory run still starts. */
+      }
+      const merged: DescentGameSetup = {
+        ...session.setup,
+        ...nextSetup,
+      };
+      const seed =
+        nextSetup?.seed !== undefined && nextSetup.seed !== null
+          ? nextSetup.seed
+          : createRunSeed();
+      setRunId((current) => current + 1);
+      setSession({
+        hasSavedRun: false,
+        setup: merged,
+        sim: createAshenGateSim({
+          difficulty: merged.difficulty,
+          mapType: merged.mapType,
+          mode: merged.mode,
+          seed,
+          shouldHoldWave: (world, nextWaveIndex) =>
+            tutorialActiveRef.current &&
+            shouldHoldWaveForTutorial(world, nextWaveIndex),
+          startingResources: merged.startingResources,
+        }),
+      });
+    },
+    [session.setup, tutorialActiveRef],
+  );
 
   return {
     hasSavedRun: session.hasSavedRun,
     restart,
     runId,
+    setup: session.setup,
     sim,
     snapshot,
   };
@@ -234,6 +276,8 @@ function DescentStartScreen({
   onContinue,
   onExit,
   onMultiplayer,
+  onCampaign,
+  onExplore,
   onNewGame,
   onToggleFullscreen,
 }: DescentStartScreenProps) {
@@ -277,6 +321,19 @@ function DescentStartScreen({
             type="button"
           >
             <span>{hasSavedRun ? "New game" : "Start"}</span>
+            <small>
+              Configure map terrain, difficulty, mode, and starting resources
+            </small>
+          </button>
+          <button onClick={onExplore} type="button">
+            <span>Exploration mode</span>
+            <small>
+              No timed waves · find guarded camps, rescue allies, and claim
+              pills
+            </small>
+          </button>
+          <button onClick={onCampaign} type="button">
+            <span>Solo Campaign</span>
           </button>
           <button onClick={onMultiplayer} type="button">
             <span>Co-op Multiplayer</span>
@@ -551,9 +608,9 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
       ? null
       : readDescentRoomFromSearch(window.location.search),
   );
-  const [mode, setMode] = useState<"multiplayer" | "solo" | "title">(() =>
-    initialRoomCode === null ? "title" : "multiplayer",
-  );
+  const [mode, setMode] = useState<
+    "campaign" | "multiplayer" | "setup" | "solo" | "title"
+  >(() => (initialRoomCode === null ? "title" : "multiplayer"));
   const [battlefieldReady, setBattlefieldReady] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [soloTutorialActive, setSoloTutorialActive] = useState(
@@ -565,7 +622,7 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
   const screen = useFullscreen();
   const toggleFullscreen = screen.available ? screen.toggle : undefined;
   const isSoloPlaying = mode === "solo";
-  const { hasSavedRun, restart, runId, sim, snapshot } = useDescentSim(
+  const { hasSavedRun, restart, runId, setup, sim, snapshot } = useDescentSim(
     isSoloPlaying && battlefieldReady,
     soloTutorialRef,
   );
@@ -575,6 +632,7 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
     if (
       !isSoloPlaying ||
       !soloTutorialActive ||
+      shellModel.exploration !== null ||
       soloTutorialMarkedDoneRef.current
     ) {
       return;
@@ -583,7 +641,7 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
       soloTutorialMarkedDoneRef.current = true;
       markSoloTutorialDone();
     }
-  }, [isSoloPlaying, soloTutorialActive, snapshot]);
+  }, [isSoloPlaying, shellModel.exploration, soloTutorialActive, snapshot]);
 
   /** Dismisses the solo tutorial guide and releases any held tutorial waves. */
   const dismissSoloTutorial = useCallback(() => {
@@ -600,11 +658,14 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
     snapshot,
   });
 
-  /** Starts a fresh run; its battlefield loads again before the clock runs. */
-  const restartRun = useCallback(() => {
-    setBattlefieldReady(false);
-    restart();
-  }, [restart]);
+  /** Starts a fresh run with the current or selected setup, reloading its battlefield. */
+  const restartRun = useCallback(
+    (nextSetup?: Partial<DescentGameSetup>) => {
+      setBattlefieldReady(false);
+      restart(nextSetup);
+    },
+    [restart],
+  );
 
   /** Enqueues one player command against the active solo sim. */
   const handleSoloCommand = useCallback(
@@ -635,6 +696,18 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
     [sim],
   );
 
+  if (mode === "campaign") {
+    return (
+      <SoloCampaignExperience
+        fullscreen={screen.fullscreen}
+        onBack={() => setMode("title")}
+        onSetSoundEnabled={setSoundEnabled}
+        onToggleFullscreen={toggleFullscreen}
+        soundEnabled={soundEnabled}
+      />
+    );
+  }
+
   if (mode === "multiplayer") {
     return (
       <DescentMultiplayerExperience
@@ -652,24 +725,42 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
     );
   }
 
+  if (mode === "setup") {
+    return (
+      <DescentSetupScreen
+        initialSetup={setup}
+        onBack={() => setMode("title")}
+        onLaunch={(chosen) => {
+          unlockDescentAudio();
+          restartRun(chosen);
+          setMode("solo");
+        }}
+      />
+    );
+  }
+
   if (!isSoloPlaying) {
     return (
       <DescentStartScreen
         fullscreen={screen.fullscreen}
         hasSavedRun={hasSavedRun}
+        onCampaign={() => setMode("campaign")}
         onContinue={() => {
           unlockDescentAudio();
           setMode("solo");
         }}
         onExit={onExit}
+        onExplore={() => {
+          unlockDescentAudio();
+          restartRun({ mode: "exploration" });
+          setMode("solo");
+        }}
         onMultiplayer={() => {
           unlockDescentAudio();
           setMode("multiplayer");
         }}
         onNewGame={() => {
-          unlockDescentAudio();
-          restartRun();
-          setMode("solo");
+          setMode("setup");
         }}
         onToggleFullscreen={toggleFullscreen}
       />
@@ -682,8 +773,12 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
       key={runId}
       onCommand={handleSoloCommand}
       onDismissTutorial={dismissSoloTutorial}
+      onExit={() => {
+        setBattlefieldReady(false);
+        setMode("title");
+      }}
       onLoaded={handleSoloLoaded}
-      onRestart={restartRun}
+      onRestart={() => restartRun()}
       onSetPaused={handleSoloSetPaused}
       onSetSoundEnabled={setSoundEnabled}
       onSetSpeed={handleSoloSetSpeed}
@@ -691,7 +786,7 @@ export const DescentGameExperience = ({ onExit }: GameExperienceEntryProps) => {
       shellModel={shellModel}
       snapshot={snapshot}
       soundEnabled={soundEnabled}
-      tutorialMode={soloTutorialActive}
+      tutorialMode={soloTutorialActive && shellModel.exploration === null}
     />
   );
 };

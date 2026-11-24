@@ -18,8 +18,10 @@ import type { EconomyUnit, HoldTier } from "../economy/model";
 import { addItem, getHoldTier } from "../economy/queries";
 import { asBuilding, economyHost, isEconomyUnit } from "../economy/records";
 import { buildingDef } from "../economy/tables";
+import { isExplorationCarrierTask } from "../economy/villagers";
 import {
   environmentAt,
+  worldTerrainHills,
   worldTerrainObstacles,
   worldVentVolumes,
 } from "../layers/hazards";
@@ -135,6 +137,9 @@ const REGEN_PER_SECOND = 0.02;
 /** Radius of an ordinary body. Two ordinary bodies keep 0.7 cells apart. */
 export const BODY_RADIUS = 0.35;
 
+/** Camp guards disengage beyond this multiple of their vision and walk home. */
+const EXPLORATION_LEASH_VISION_RATIO = 1.5;
+
 /** Radius of a layer boss's body. */
 export const BOSS_BODY_RADIUS = BODY_RADIUS * BOSS_SIZE_SCALE;
 
@@ -197,6 +202,7 @@ export function runCombatTick(context: TickContext): void {
   const terrainObstacles = worldTerrainObstacles(world);
   const simulation = new CombatSimulation({
     buildings: targets,
+    hills: worldTerrainHills(world),
     hurtZones: worldVentVolumes(world),
     mapSize: world.map,
     obstacles: buildingObstacles(world),
@@ -230,6 +236,38 @@ export function runCombatTick(context: TickContext): void {
   for (const unit of after.units) {
     if (unit.hitPoints <= 0) continue;
     state.combat.bodies[unit.id] = unit;
+  }
+  pruneDeadOwners(world, state);
+}
+
+/**
+ * Removes remembered combatant owners once the unit or tower is gone and no
+ * active burn or in-flight projectile still attributes damage to it.
+ * @param world - Sim world
+ * @param state - Slice state whose `combat.owners` map is pruned in place
+ */
+function pruneDeadOwners(
+  world: SimWorldState,
+  state: AshenGateSliceState,
+): void {
+  const owners = state.combat.owners;
+  if (owners === undefined) return;
+  const referenced = new Set<string>();
+  for (const unit of world.units) {
+    if (isEconomyUnit(unit) && unit.hp > 0) referenced.add(unit.id);
+  }
+  for (const building of world.buildings) {
+    referenced.add(TOWER_PREFIX + building.id);
+  }
+  for (const body of Object.values(state.combat.bodies)) {
+    const burnSource = body.statuses.burn?.sourceId;
+    if (burnSource !== undefined) referenced.add(burnSource);
+  }
+  for (const projectile of state.combat.projectiles) {
+    referenced.add(projectile.sourceId);
+  }
+  for (const id of Object.keys(owners)) {
+    if (!referenced.has(id)) delete owners[id];
   }
 }
 
@@ -340,18 +378,21 @@ function holdBody(
       id: unit.id,
       position: { x: unit.x, y: unit.y },
     });
+  const hauling = isExplorationCarrierTask(unit);
   return {
     ...base,
     damage: round(definition.damage * stats.damage * schoolBoost * surgeDamage),
     hasLongLife: record?.rank === "Champion" || record?.rank === "Ascended",
     hitPoints: unit.hp,
     maxHitPoints: unit.maxHp,
+    order: hauling ? undefined : base.order,
     position: { x: unit.x, y: unit.y },
     rankTitle: record?.rank ?? "Ashborn",
     school: record?.school,
-    speed: power?.meditating
-      ? 0
-      : round(definition.speed * stats.moveSpeed * surgeSpeed),
+    speed:
+      hauling || power?.meditating
+        ? 0
+        : round(definition.speed * stats.moveSpeed * surgeSpeed),
   };
 }
 
@@ -507,6 +548,19 @@ function hordeBody(
         speed: fresh.speed,
       }
     : fresh;
+  if (unit.guardHome !== undefined) {
+    const homeDistance = Math.hypot(
+      unit.x - unit.guardHome.x,
+      unit.y - unit.guardHome.y,
+    );
+    const leash = Math.max(6, unit.vision * EXPLORATION_LEASH_VISION_RATIO);
+    const returningHome = saved?.order?.type === "move";
+    if (homeDistance > leash || (returningHome && homeDistance > 0.75)) {
+      // A plain move cannot acquire another target until the guard is home.
+      body.order = { destination: { ...unit.guardHome }, type: "move" };
+      return body;
+    }
+  }
   if (unit.preferredTarget === "wall" && barriers !== undefined) {
     const wall = nearestBuilding(barriers, unit);
     if (wall) {
@@ -553,6 +607,7 @@ function assignHordeRallyTargets(
     campByOwner.set(camp.ownerId, camp);
   }
   for (const unit of units) {
+    if (unit.guardHome !== undefined) continue;
     if (
       unit.rallyTargetId !== undefined &&
       livingCampIds.has(unit.rallyTargetId)
@@ -588,6 +643,7 @@ function rallyPointFor(
   camps: readonly SimWorldState["buildings"][number][],
   campById: ReadonlyMap<string, SimWorldState["buildings"][number]>,
 ): { x: number; y: number } {
+  if (unit.guardHome !== undefined) return { ...unit.guardHome };
   const assigned =
     unit.rallyTargetId !== undefined
       ? campById.get(unit.rallyTargetId)
@@ -848,6 +904,7 @@ function writeHorde(
 ): WaveEvent[] {
   const world = context.world;
   const waves = waveState(world);
+  if (waves.units.length === 0) return [];
   const lastHitter = new Map<string, string>();
   const spellOnly = new Map<string, boolean>();
   for (const event of events) {
@@ -861,6 +918,7 @@ function writeHorde(
     );
   }
   const waveEvents: WaveEvent[] = [];
+  let cultivation: ReturnType<typeof openCultivation> | undefined;
   for (const unit of [...waves.units]) {
     const body = bodies.get(unit.id);
     if (!body) continue;
@@ -882,7 +940,11 @@ function writeHorde(
     const died = !waves.units.some((entry) => entry.id === unit.id);
     if (!died) continue;
     pushFx(world, { kind: "death", x: unit.x, y: unit.y });
-    rewardKill(world, unit, lastHitter.get(unit.id));
+    cultivation ??= openCultivation(world);
+    rewardKill(world, unit, lastHitter.get(unit.id), cultivation);
+  }
+  if (cultivation !== undefined) {
+    saveCultivation(world, cultivation);
   }
   return waveEvents;
 }
@@ -946,11 +1008,13 @@ function combatantOwnerId(
  * @param world - Sim world
  * @param victim - Horde body that died
  * @param killerId - Body that landed the last hit, if known
+ * @param cultivation - Batched cultivation system saved once at tick end
  */
 function rewardKill(
   world: SimWorldState,
   victim: WaveUnit,
   killerId: string | undefined,
+  cultivation: ReturnType<typeof openCultivation>,
 ): void {
   const state = sliceState(world);
   state.stats.kills += 1;
@@ -959,7 +1023,6 @@ function rewardKill(
     creditPlayerMilitary(world, ownerId, unitResourceValue(victim.classId));
   }
   const reward = KILL_REWARDS[victim.role];
-  const cultivation = openCultivation(world);
   for (const unit of world.units) {
     if (!isEconomyUnit(unit) || unit.hp <= 0) continue;
     if (!cultivation.hasUnit(unit.id)) continue;
@@ -974,7 +1037,6 @@ function rewardKill(
     cultivation.awardMerit(unit.id, Math.ceil(reward.merit / 3));
     cultivation.awardEssence(unit.id, Math.ceil(reward.essence / 3));
   }
-  saveCultivation(world, cultivation);
 }
 
 /**

@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource react */
-import { useEffect, useId, useRef, useState } from "react";
+import { Swords, Trash2, X } from "lucide-react";
+import { memo, useEffect, useId, useRef, useState } from "react";
 import type { FormationId } from "../logic/types";
 import styles from "./bottomHud.module.scss";
 import { CostRow } from "./CostRow";
@@ -139,6 +140,60 @@ function isBlocked(button: CardButton): boolean {
 }
 
 /**
+ * Icon glyph or painted image for one command-card tile.
+ * @param props - Button and optional formation preset
+ * @returns The icon element
+ */
+function ActionTileIcon({
+  button,
+  formation,
+}: {
+  button: CardButton;
+  formation: FormationId | null;
+}) {
+  if (formation !== null) return <FormationIcon formation={formation} />;
+  if (button.intent.type === "attack_move") {
+    return (
+      <Swords
+        aria-hidden="true"
+        className={styles.actionIcon}
+        size={26}
+        strokeWidth={1.9}
+      />
+    );
+  }
+  if (button.intent.type === "disband") {
+    return (
+      <Trash2
+        aria-hidden="true"
+        className={styles.actionIcon}
+        size={25}
+        strokeWidth={1.8}
+      />
+    );
+  }
+  if (button.intent.type === "cancel_construction") {
+    return (
+      <X
+        aria-hidden="true"
+        className={styles.actionIcon}
+        size={28}
+        strokeWidth={1.9}
+      />
+    );
+  }
+  return (
+    // biome-ignore lint/performance/noImgElement: Tiny local icons must work in the offline game shell without URL transformation.
+    <img
+      alt=""
+      aria-hidden="true"
+      className={styles.actionIcon}
+      src={commandIconSrc(button)}
+    />
+  );
+}
+
+/**
  * One square action tile, AoE-style: just the icon and its hotkey. Name,
  * price, and any blocker live in the tooltip. A blocked tile stays hoverable
  * and clickable so it can say why it is blocked and how to fix it.
@@ -178,7 +233,7 @@ function ActionTile({
       aria-describedby={describedBy}
       aria-disabled={blocked ? true : undefined}
       aria-label={buttonAriaLabel(shown)}
-      aria-pressed={formation === null ? undefined : button.pressed}
+      aria-pressed={button.pressed}
       className={`${styles.action} ${button.pressed === true ? formationStyles.active : ""}`}
       data-active={button.pressed === true}
       data-blocked={blocked}
@@ -214,17 +269,7 @@ function ActionTile({
       onPointerLeave={() => onHint(null)}
       type="button"
     >
-      {formation === null ? (
-        // biome-ignore lint/performance/noImgElement: Tiny local icons must work in the offline game shell without URL transformation.
-        <img
-          alt=""
-          aria-hidden="true"
-          className={styles.actionIcon}
-          src={commandIconSrc(button)}
-        />
-      ) : (
-        <FormationIcon formation={formation} />
-      )}
+      <ActionTileIcon button={button} formation={formation} />
       <span className={styles.srOnly}>
         {training ? button.label.replace(/^Train /, "") : button.label}
       </span>
@@ -353,7 +398,7 @@ function useShiftHeld(): boolean {
  * @param props - Buttons, activators, stock, and the name of what they act on
  * @returns The command card
  */
-export function CommandCard({
+export const CommandCard = memo(function CommandCard({
   buttons,
   onActivate,
   onBlocked,
@@ -436,4 +481,4 @@ export function CommandCard({
       )}
     </section>
   );
-}
+});

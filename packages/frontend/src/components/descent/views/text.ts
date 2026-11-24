@@ -61,11 +61,12 @@ export const RESOURCE_COPY: Record<ResourceId, ResourceCopy> = {
     use: "Heroes and later ranks.",
   },
   essence: {
-    description: "Condensed cultivation energy drawn from the Ashen Gate.",
+    description:
+      "The Hold's shared cultivation energy, separate from each soldier's Personal Essence.",
     more: "Right-click a well. Kills drop some.",
     name: "Essence",
     slang: "ember",
-    use: "Pills and breakthroughs.",
+    use: "Shared stockpile for pills and breakthroughs.",
   },
   food: {
     description: "Meals and preserved stores that keep the Hold supplied.",

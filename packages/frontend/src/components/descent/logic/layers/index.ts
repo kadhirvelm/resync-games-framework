@@ -1,3 +1,21 @@
+export {
+  DOWNHILL_MAX_SPEED_MULTIPLIER,
+  DOWNHILL_SLOPE_FACTOR,
+  type ElevationGradient,
+  elevationAt,
+  elevationGradientAt,
+  HIGH_GROUND_DAMAGE_BONUS,
+  HIGH_GROUND_RANGED_BONUS,
+  HIGH_GROUND_THRESHOLD,
+  highGroundDamageMultiplier,
+  highGroundRangeBonus,
+  isOnHighGround,
+  LOW_GROUND_DAMAGE_PENALTY,
+  MAX_HILL_ELEVATION,
+  slopeSpeedMultiplier,
+  UPHILL_MIN_SPEED_MULTIPLIER,
+  UPHILL_SLOPE_FACTOR,
+} from "./elevation";
 export { activeHazardsAt, rotationSlotAt } from "./hazardRotation";
 export {
   baseEssencePerKill,
@@ -14,6 +32,7 @@ export {
   ventBurnPerSecondAt,
   visionMultiplierAt,
   worldTerrainBridges,
+  worldTerrainHills,
   worldTerrainObstacles,
   worldVentVolumes,
 } from "./hazards";

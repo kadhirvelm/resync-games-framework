@@ -55,6 +55,56 @@ export function unitOutlineWidth(
   );
 }
 
+/** Generated 3D character roles belonging to unique Qi cultivators. */
+const CULTIVATOR_ASSET_ROLES = new Set([
+  "bloodCultivator",
+  "cultivator",
+  "emberCultivator",
+  "formationMaster",
+  "rimeCultivator",
+  "swordSage",
+]);
+
+/**
+ * Checks whether a 3D asset role represents a unique cultivator hero unit.
+ * @param role - Generated character role
+ * @returns True for Sword, Flying-Sword, Formation, and school-attuned cultivators
+ */
+export function isCultivatorAssetRole(role: string): boolean {
+  return CULTIVATOR_ASSET_ROLES.has(role);
+}
+
+/**
+ * Target world height for a generated unit model so unique cultivators stand
+ * noticeably taller than rank-and-file soldiers while staying below bosses.
+ * @param role - Generated character role
+ * @returns Target height in world units
+ */
+export function unitTargetHeight(role: string): number {
+  if (isCultivatorAssetRole(role)) return 2.25;
+  return 1.8;
+}
+
+/**
+ * Scale multiplier applied to procedural fallback unit figures.
+ * @param role - Generated character role
+ * @returns Uniform scale multiplier
+ */
+export function unitFallbackScale(role: string): number {
+  if (isCultivatorAssetRole(role)) return 1.25;
+  return 1;
+}
+
+/**
+ * Overhead height for a unit's health bar in world units.
+ * @param role - Generated character role
+ * @returns Y coordinate above ground
+ */
+export function unitHealthBarHeight(role: string): number {
+  if (isCultivatorAssetRole(role)) return 2.2;
+  return 1.75;
+}
+
 /**
  * Width of the dark foot marker under one figure.
  * @param role - Generated character role
@@ -62,6 +112,7 @@ export function unitOutlineWidth(
  */
 export function unitMarkerDiameter(role: string): number {
   if (role === "cinderjaw") return 2.35;
+  if (isCultivatorAssetRole(role)) return 1.9;
   return 1.55;
 }
 

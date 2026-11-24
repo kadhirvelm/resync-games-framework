@@ -15,6 +15,7 @@ import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
 import type { Scene } from "@babylonjs/core/scene";
 import type { AshenGateTextureSet } from "../data/layers/ashen_gate/environmentArt";
 import type { AshenGateSceneryRole } from "../data/layers/ashen_gate/threeDAssets";
+import type { TerrainHill } from "../logic/layers/layerTypes";
 import {
   ABYSS_DEPTH,
   type AshenSceneryPlacement,
@@ -23,6 +24,7 @@ import {
   LAVA_TILE_SIZE,
   PLATEAU_RIM,
 } from "./ashenTerrainLayout";
+import { applyHillsToGroundMesh, hillsSignature } from "./hillMesh";
 import { type TrackLoad, untrackedLoad } from "./loadingProgress";
 
 /** Deep cavern dark behind everything. Matches the scene clear color. */
@@ -46,6 +48,16 @@ export interface AshenBackdropHandle {
   revealStandIns: (revealedIds: ReadonlySet<string>) => void;
   /** Fixed placements for generated scenery, in world space. */
   placements: readonly AshenSceneryPlacement[];
+  /**
+   * Sculpts walkable Age of Empires-style hills into the plateau ground mesh.
+   * @param hills - Walkable hills on the current layer
+   */
+  setHills: (hills: readonly TerrainHill[]) => void;
+  /**
+   * Pauses or resumes ambient backdrop particle emission when the sim pauses.
+   * @param paused - Whether ambient backdrop particles should hold still
+   */
+  setPaused: (paused: boolean) => void;
   /**
    * Swaps procedural surfaces for generated paintings as they load.
    * @param textures - Image URLs keyed by surface
@@ -87,10 +99,16 @@ export function addAshenBackdrop(
 
   const plateau = CreateGround(
     "ashen-plateau",
-    { height: plateauDepth, subdivisions: 2, width: plateauWidth },
+    {
+      height: plateauDepth,
+      subdivisions: 96,
+      updatable: true,
+      width: plateauWidth,
+    },
     scene,
   );
   plateau.position.set(mapWidth / 2, -0.1, mapHeight / 2);
+  let appliedHillsSignature = "";
   plateau.isPickable = false;
   plateau.receiveShadows = true;
   const plateauMaterial = new StandardMaterial("ashen-plateau-material", scene);
@@ -129,6 +147,7 @@ export function addAshenBackdrop(
     layer.wrapV = Texture.CLAMP_ADDRESSMODE;
   }
   plateau.material = plateauMaterial;
+  plateauMaterial.freeze();
 
   const cliffMaterials = addCliffs(scene, mapWidth, mapHeight, glow);
 
@@ -157,7 +176,8 @@ export function addAshenBackdrop(
   const placements = ashenSceneryPlacements(mapWidth, mapHeight);
   const standIns = addStandIns(scene, placements);
   const replacedRoles = new Set<AshenGateSceneryRole>();
-  if (!reducedMotion) addEmbers(scene, mapWidth, mapHeight);
+  const embers = reducedMotion ? null : addEmbers(scene, mapWidth, mapHeight);
+  let backdropPaused = false;
 
   /**
    * Loads one generated painting and swaps it in once it decodes, so the
@@ -209,11 +229,29 @@ export function addAshenBackdrop(
         }
       }
     },
+    setHills: (hills) => {
+      const nextSignature = hillsSignature(hills);
+      if (nextSignature === appliedHillsSignature) return;
+      appliedHillsSignature = nextSignature;
+      applyHillsToGroundMesh(plateau, hills, mapHeight, true);
+    },
+    setPaused: (paused) => {
+      backdropPaused = paused;
+      if (embers === null) return;
+      if (paused) {
+        embers.stop();
+        embers.updateSpeed = 0;
+      } else {
+        embers.updateSpeed = EMBER_UPDATE_SPEED;
+        if (!embers.isStarted()) embers.start();
+      }
+    },
     setTextures: async (textures, track = untrackedLoad) => {
       const loads: Promise<void>[] = [];
       if (textures.ground && textures.ground !== applied.ground) {
         loads.push(
           loadPainting(textures.ground, "Basalt ground", track, (texture) => {
+            plateauMaterial.unfreeze();
             plateauMaterial.diffuseTexture?.dispose();
             plateauMaterial.diffuseTexture = settleGround(
               tiled(
@@ -222,6 +260,7 @@ export function addAshenBackdrop(
                 plateauDepth / GROUND_TILE_SIZE,
               ),
             );
+            plateauMaterial.freeze();
           }),
         );
       }
@@ -247,10 +286,12 @@ export function addAshenBackdrop(
               const cliff = texture.clone();
               cliff.uScale = repeat;
               cliff.wrapV = Texture.CLAMP_ADDRESSMODE;
+              material.unfreeze();
               material.diffuseTexture?.dispose();
               material.emissiveTexture?.dispose();
               material.diffuseTexture = cliff;
               material.emissiveTexture = cliffGlow(cliff);
+              material.freeze();
             }
             texture.dispose();
           }),
@@ -260,7 +301,7 @@ export function addAshenBackdrop(
       await Promise.all(loads);
     },
     update: (deltaMs) => {
-      if (reducedMotion) return;
+      if (reducedMotion || backdropPaused) return;
       lavaTexture.uOffset += deltaMs * 0.0000035;
       lavaTexture.vOffset += deltaMs * 0.0000021;
     },
@@ -346,7 +387,7 @@ function addCliffs(
       z: mapHeight / 2,
     },
   ];
-  return walls.map((wall, index) => {
+  const result = walls.map((wall, index) => {
     const mesh = CreatePlane(
       `ashen-cliff-${index}`,
       {
@@ -373,10 +414,13 @@ function addCliffs(
     material.emissiveColor = Color3.Black();
     material.specularColor = Color3.Black();
     material.backFaceCulling = false;
+    material.freeze();
     mesh.material = material;
     glow.addExcludedMesh(mesh);
     return { material, repeat };
   });
+  fallback.dispose();
+  return result;
 }
 
 /**
@@ -403,11 +447,17 @@ function addStandIns(
   placements: readonly AshenSceneryPlacement[],
 ): Map<AshenGateSceneryRole, TransformNode[]> {
   const rock = flatMaterial(scene, "ashen-standin-rock", "#2a2c33");
+  rock.freeze();
   const darkRock = flatMaterial(scene, "ashen-standin-dark-rock", "#1b1c21");
+  darkRock.freeze();
   const bronze = flatMaterial(scene, "ashen-standin-bronze", "#9c6b33");
+  bronze.freeze();
   const ember = glowMaterial(scene, "ashen-standin-ember", "#ff7a2e");
+  ember.freeze();
   const portal = glowMaterial(scene, "ashen-standin-portal", "#ff4a1c");
+  portal.freeze();
   const crystal = glowMaterial(scene, "ashen-standin-crystal", "#4fe0e6");
+  crystal.freeze();
   const byRole = new Map<AshenGateSceneryRole, TransformNode[]>();
 
   for (const placement of placements) {
@@ -415,11 +465,12 @@ function addStandIns(
     root.metadata = { placementId: placement.id };
     root.position.set(placement.x, placement.y, placement.z);
     root.rotation.y = placement.rotation;
+    const interactive = placement.role === "hordeGate";
     const { footprint: size, height } = placement;
     const add = (mesh: Mesh, material: StandardMaterial): void => {
       mesh.parent = root;
       mesh.material = material;
-      mesh.isPickable = true;
+      mesh.isPickable = interactive;
       mesh.receiveShadows = true;
     };
 
@@ -548,13 +599,21 @@ function addStandIns(
   return byRole;
 }
 
+/** Normal simulation speed for rising abyss embers. */
+const EMBER_UPDATE_SPEED = 0.012;
+
 /**
  * Sends embers rising out of the abyss just beyond the plateau edges.
  * @param scene - Descent battlefield
  * @param mapWidth - Playable ground width
  * @param mapHeight - Playable ground height
+ * @returns The active particle system so callers can pause or resume it
  */
-function addEmbers(scene: Scene, mapWidth: number, mapHeight: number): void {
+function addEmbers(
+  scene: Scene,
+  mapWidth: number,
+  mapHeight: number,
+): ParticleSystem {
   const embers = new ParticleSystem("ashen-embers", 900, scene);
   embers.particleTexture = procedural(scene, "ashen-ember", 64, paintEmber);
   embers.emitter = new Vector3(mapWidth / 2, -ABYSS_DEPTH, mapHeight / 2);
@@ -595,8 +654,9 @@ function addEmbers(scene: Scene, mapWidth: number, mapHeight: number): void {
   embers.color2 = new Color4(1, 0.36, 0.1, 1);
   embers.colorDead = new Color4(0.4, 0.05, 0.02, 0);
   embers.blendMode = ParticleSystem.BLENDMODE_ADD;
-  embers.updateSpeed = 0.012;
+  embers.updateSpeed = EMBER_UPDATE_SPEED;
   embers.start();
+  return embers;
 }
 
 /**

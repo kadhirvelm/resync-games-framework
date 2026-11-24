@@ -1,0 +1,354 @@
+$ash: #100b0a;
+$ember: #e0603a;
+$ember-deep: #7f2418;
+$cinder: #f2b544;
+$bone: #efe4d6;
+$display: var(--font-display, "Iowan Old Style", georgia, serif);
+$descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, sans-serif);
+
+.screen {
+  align-items: center;
+  background:
+    radial-gradient(circle at 75% 22%, rgba($ember, 0.2), transparent 42%),
+    linear-gradient(145deg, #17100e 0%, $ash 58%, #050303 100%);
+  color: $bone;
+  display: flex;
+  flex: 1;
+  font-family: $descent;
+  isolation: isolate;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: clamp(20px, 4vw, 48px);
+  position: relative;
+  width: 100%;
+}
+
+.backdrop {
+  background-image: url("/descent/title-ashen-gate.webp");
+  background-position: center;
+  background-size: cover;
+  filter: blur(6px) brightness(0.26);
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 0;
+}
+
+.panel {
+  background: rgba(#140e0d, 0.92);
+  border: 1px solid rgba($cinder, 0.28);
+  border-radius: 12px;
+  box-shadow: 0 28px 80px rgba(#000, 0.65);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 1040px;
+  padding: clamp(22px, 3vw, 34px);
+  position: relative;
+  width: 100%;
+  z-index: 1;
+}
+
+.header {
+  align-items: flex-start;
+  border-bottom: 1px solid rgba($bone, 0.1);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding-bottom: 16px;
+
+  h1 {
+    font-family: $display;
+    font-size: clamp(1.5rem, 2.6vw, 2.1rem);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    margin: 2px 0 0;
+  }
+}
+
+.eyebrow {
+  color: $cinder;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.backButton {
+  background: transparent;
+  border: 1px solid rgba($bone, 0.22);
+  border-radius: 6px;
+  color: rgba($bone, 0.78);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 8px 14px;
+  transition: border-color 140ms ease, color 140ms ease;
+
+  &:hover {
+    border-color: rgba($cinder, 0.65);
+    color: $bone;
+  }
+}
+
+.columns {
+  display: grid;
+  gap: 26px;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+
+  @media (width <= 840px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  h2 {
+    color: rgba($bone, 0.92);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    margin: 0;
+    text-transform: uppercase;
+  }
+}
+
+.sectionHeader {
+  align-items: baseline;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+
+  span {
+    color: rgba($cinder, 0.88);
+    font-size: 0.78rem;
+  }
+}
+
+.mapGrid {
+  border: 0;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+
+  @media (width <= 540px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.mapCard {
+  background: rgba(#1f1614, 0.78);
+  border: 1px solid rgba($bone, 0.14);
+  border-radius: 8px;
+  color: $bone;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  font: inherit;
+  gap: 8px;
+  padding: 14px;
+  text-align: left;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+
+  &:hover {
+    border-color: rgba($cinder, 0.55);
+  }
+
+  &[data-active="true"] {
+    background: linear-gradient(160deg, rgba($ember-deep, 0.42), rgba(#241714, 0.92));
+    border-color: $cinder;
+    box-shadow: 0 0 0 1px rgba($cinder, 0.35);
+  }
+
+  p {
+    color: rgba($bone, 0.74);
+    font-size: 0.8rem;
+    line-height: 1.4;
+    margin: 0;
+  }
+
+  small {
+    color: rgba($cinder, 0.85);
+    font-size: 0.72rem;
+    margin-top: auto;
+  }
+}
+
+.mapCardHead {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+
+  strong {
+    font-size: 0.95rem;
+  }
+}
+
+.badge {
+  background: rgba($cinder, 0.14);
+  border: 1px solid rgba($cinder, 0.32);
+  border-radius: 999px;
+  color: $cinder;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.controlsColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.pillRow {
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+
+.pill {
+  background: rgba(#1f1614, 0.8);
+  border: 1px solid rgba($bone, 0.18);
+  border-radius: 6px;
+  color: rgba($bone, 0.82);
+  cursor: pointer;
+  flex: 1 1 auto;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 9px 12px;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+
+  &:hover:not(:disabled) {
+    border-color: rgba($cinder, 0.55);
+    color: $bone;
+  }
+
+  &[data-active="true"] {
+    background: rgba($ember, 0.25);
+    border-color: $cinder;
+    color: $bone;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.42;
+  }
+}
+
+.hint {
+  color: rgba($bone, 0.65);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.seedLabel {
+  color: rgba($bone, 0.92);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+
+  span {
+    color: rgba($bone, 0.52);
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+}
+
+.seedRow {
+  display: flex;
+  gap: 8px;
+}
+
+.seedInput {
+  background: rgba(#0c0807, 0.85);
+  border: 1px solid rgba($bone, 0.2);
+  border-radius: 6px;
+  color: $bone;
+  flex: 1;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 8px 12px;
+
+  &:focus {
+    border-color: $cinder;
+    outline: none;
+  }
+}
+
+.seedButton {
+  background: rgba(#251b18, 0.9);
+  border: 1px solid rgba($bone, 0.2);
+  border-radius: 6px;
+  color: rgba($bone, 0.86);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 8px 12px;
+
+  &:hover {
+    border-color: rgba($cinder, 0.55);
+    color: $bone;
+  }
+}
+
+.footer {
+  align-items: center;
+  border-top: 1px solid rgba($bone, 0.1);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
+  padding-top: 18px;
+}
+
+.summaryStrip {
+  align-items: center;
+  color: rgba($bone, 0.76);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.84rem;
+  gap: 8px;
+
+  strong {
+    color: $cinder;
+  }
+}
+
+.launchButton {
+  background: linear-gradient(135deg, $ember 0%, $ember-deep 100%);
+  border: 1px solid rgba($cinder, 0.75);
+  border-radius: 8px;
+  color: $bone;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 12px 28px;
+  text-transform: uppercase;
+  transition: filter 140ms ease, transform 140ms ease;
+
+  &:hover {
+    filter: brightness(1.1);
+    transform: translateY(-1px);
+  }
+}

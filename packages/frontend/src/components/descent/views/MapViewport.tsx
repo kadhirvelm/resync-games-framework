@@ -3,6 +3,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { isCultivatorClass } from "../logic/slice/sliceCultivatorPowers";
 import type { Command } from "../logic/types";
 import { buildingIconSrc } from "./buildingIcons";
 import {
@@ -18,6 +19,7 @@ import {
   type Camera,
   clientToWorld,
   type MapPoint,
+  ordersForAttackMove,
   ordersForRightClick,
   type Selection,
   type SelectionBox,
@@ -34,6 +36,8 @@ export interface CameraFocusRequest {
 
 /** Props for the map viewport. */
 export interface MapViewportProps {
+  /** Whether Attack-Move targeting cursor is armed (left-click issues order_attack_move). */
+  attackMoving?: boolean;
   camera: Camera;
   /**
    * Asks the view to center on a map point. A new `id` re-centers even when
@@ -48,6 +52,12 @@ export interface MapViewportProps {
   /** Expanding under-attack rings drawn on the minimap. */
   pings?: readonly MinimapPing[];
   onCameraChange: (camera: Camera) => void;
+  /** Cancels active attack-move targeting (e.g. on right-click or after issuing). */
+  onCancelAttackMove?: () => void;
+  /** Cancels active building placement (e.g. on right-click). */
+  onCancelPlacement?: () => void;
+  /** Cancels active rally-point targeting (e.g. on right-click). */
+  onCancelRally?: () => void;
   onCommand: (command: Command) => void;
   onCursor: (point: MapPoint | null) => void;
   onPlace: (point: MapPoint, queue?: boolean) => void;
@@ -128,12 +138,16 @@ function BuildingTokenMark({
  * @returns The viewport
  */
 export function MapViewport({
+  attackMoving = false,
   camera,
   focusRequest = null,
   localPlayerId,
   minimapHost,
   model,
   onCameraChange,
+  onCancelAttackMove,
+  onCancelPlacement,
+  onCancelRally,
   onCommand,
   onCursor,
   onPlace,
@@ -150,11 +164,15 @@ export function MapViewport({
   status,
 }: MapViewportProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
-  const dragOrigin = useRef<{ additive: boolean; x: number; y: number } | null>(
-    null,
-  );
+  const dragOrigin = useRef<{
+    additive: boolean;
+    pointerId: number;
+    x: number;
+    y: number;
+  } | null>(null);
   const [drag, setDrag] = useState<SelectionBox | null>(null);
   const [viewportSize, setViewportSize] = useState({ height: 0, width: 0 });
+  const targetingMode = placing || settingRally || attackMoving;
   const focusId = focusRequest?.id ?? null;
   const focusPoint = useRef<MapPoint | null>(null);
   focusPoint.current = focusRequest?.point ?? null;
@@ -200,6 +218,26 @@ export function MapViewport({
     );
   };
 
+  /**
+   * Cancels whichever active targeting mode takes priority on right-click.
+   * @returns True when an active mode was cancelled
+   */
+  const cancelActiveModeOnRightClick = (): boolean => {
+    if (placing) {
+      onCancelPlacement?.();
+      return true;
+    }
+    if (attackMoving) {
+      onCancelAttackMove?.();
+      return true;
+    }
+    if (settingRally) {
+      onCancelRally?.();
+      return true;
+    }
+    return false;
+  };
+
   return (
     <div
       aria-label="Hold map"
@@ -207,6 +245,7 @@ export function MapViewport({
       data-testid="descent-map"
       onContextMenu={(event) => {
         event.preventDefault();
+        if (cancelActiveModeOnRightClick()) return;
         const ground = pointFrom(event);
         if (rallyBuildingId !== null) {
           onSetRally(ground);
@@ -225,6 +264,18 @@ export function MapViewport({
         });
         for (const order of orders) onCommand(order);
       }}
+      onPointerCancel={(event) => {
+        const origin = dragOrigin.current;
+        dragOrigin.current = null;
+        setDrag(null);
+        if (
+          origin !== null &&
+          event.currentTarget.hasPointerCapture?.(origin.pointerId)
+        ) {
+          event.currentTarget.releasePointerCapture(origin.pointerId);
+        }
+        onCursor(null);
+      }}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         const point = pointFrom(event);
@@ -236,12 +287,25 @@ export function MapViewport({
           onPlace(point, event.shiftKey);
           return;
         }
+        if (attackMoving) {
+          const orders = ordersForAttackMove(
+            model,
+            selection.unitIds,
+            point,
+            event.shiftKey,
+            localPlayerId,
+          );
+          for (const order of orders) onCommand(order);
+          if (!event.shiftKey) onCancelAttackMove?.();
+          return;
+        }
         dragOrigin.current = {
           additive: event.shiftKey,
+          pointerId: event.pointerId,
           x: point.x,
           y: point.y,
         };
-        event.currentTarget.setPointerCapture(event.pointerId);
+        event.currentTarget.setPointerCapture?.(event.pointerId);
       }}
       onPointerLeave={() => onCursor(null)}
       onPointerMove={(event) => {
@@ -253,9 +317,13 @@ export function MapViewport({
       }}
       onPointerUp={(event) => {
         const origin = dragOrigin.current;
+        if (origin === null) return;
+        if (event.button !== 0 || event.pointerId !== origin.pointerId) return;
         dragOrigin.current = null;
         setDrag(null);
-        if (origin === null) return;
+        if (event.currentTarget.hasPointerCapture?.(origin.pointerId)) {
+          event.currentTarget.releasePointerCapture(origin.pointerId);
+        }
         const point = pointFrom(event);
         const dragged =
           Math.hypot(point.x - origin.x, point.y - origin.y) > 0.75;
@@ -301,6 +369,19 @@ export function MapViewport({
             }}
           />
         )}
+        {model.hills.map((hill) => (
+          <span
+            aria-hidden="true"
+            className={styles.hill}
+            key={hill.id}
+            style={{
+              height: hill.radius * 2 * model.scale,
+              left: (hill.x - hill.radius) * model.scale,
+              top: (hill.y - hill.radius) * model.scale,
+              width: hill.radius * 2 * model.scale,
+            }}
+          />
+        ))}
         {model.terrain.map((feature) => (
           <span
             className={styles.terrain}
@@ -356,10 +437,14 @@ export function MapViewport({
             data-node-resource={node.resource}
             key={node.id}
             onClick={(event) => {
+              if (targetingMode) return;
               event.stopPropagation();
               onInspect({ id: node.id, kind: "node" });
             }}
-            onPointerDown={(event) => event.stopPropagation()}
+            onPointerDown={(event) => {
+              if (targetingMode) return;
+              event.stopPropagation();
+            }}
             style={{
               left: node.x * model.scale,
               top: node.y * model.scale,
@@ -369,6 +454,54 @@ export function MapViewport({
             {node.label}
           </button>
         ))}
+        {model.exploration?.camps
+          .filter((camp) => !camp.cleared)
+          .map((camp) => (
+            <button
+              aria-label={`Inspect ${camp.name}, Threat ${camp.threat}. ${camp.rewardLabel}`}
+              aria-pressed={isInspected(inspected, "camp", camp.id)}
+              className={
+                isInspected(inspected, "camp", camp.id)
+                  ? `${styles.explorationCamp} ${styles.explorationCampSelected}`
+                  : styles.explorationCamp
+              }
+              data-camp-id={camp.id}
+              data-cleared={camp.cleared}
+              key={camp.id}
+              onClick={(event) => {
+                if (targetingMode) return;
+                event.stopPropagation();
+                onInspect({ id: camp.id, kind: "camp" });
+              }}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (cancelActiveModeOnRightClick()) return;
+                const orders = ordersForAttackMove(
+                  model,
+                  selection.unitIds,
+                  { x: camp.x, y: camp.y },
+                  event.shiftKey,
+                  localPlayerId,
+                );
+                for (const order of orders) onCommand(order);
+              }}
+              onPointerDown={(event) => {
+                if (targetingMode) return;
+                event.stopPropagation();
+              }}
+              style={{
+                left: camp.x * model.scale,
+                top: camp.y * model.scale,
+              }}
+              type="button"
+            >
+              <span aria-hidden="true" className={styles.explorationCampMark}>
+                {camp.cleared ? "✓" : `T${camp.threat}`}
+              </span>
+              <span className={styles.explorationCampName}>{camp.name}</span>
+            </button>
+          ))}
         {model.telegraphs.map((ring) => (
           <span
             className={styles.telegraph}
@@ -395,12 +528,14 @@ export function MapViewport({
             data-building-id={building.id}
             key={building.id}
             onClick={(event) => {
+              if (targetingMode) return;
               event.stopPropagation();
               onSelectBuilding(building.id);
             }}
             onContextMenu={(event) => {
               event.preventDefault();
               event.stopPropagation();
+              if (cancelActiveModeOnRightClick()) return;
               if (rallyBuildingId !== null) {
                 onSetRally({ x: building.x, y: building.y });
                 return;
@@ -418,7 +553,10 @@ export function MapViewport({
               });
               for (const order of orders) onCommand(order);
             }}
-            onPointerDown={(event) => event.stopPropagation()}
+            onPointerDown={(event) => {
+              if (targetingMode) return;
+              event.stopPropagation();
+            }}
             style={{
               ...(building.ownerColor === undefined
                 ? {}
@@ -461,6 +599,10 @@ export function MapViewport({
           const selected = selection.unitIds.includes(unit.id);
           const factionClass =
             unit.factionId === "horde" ? styles.tokenHorde : styles.tokenHold;
+          const cultivatorClass =
+            unit.factionId === "hold" && isCultivatorClass(unit.classId)
+              ? styles.tokenCultivator
+              : "";
           const selectedClass = selected ? styles.tokenSelected : "";
           return (
             <button
@@ -470,17 +612,19 @@ export function MapViewport({
                   : `${unit.name} (${unit.ownerName})`
               }
               aria-pressed={selected}
-              className={`${styles.token} ${factionClass} ${selectedClass}`}
+              className={`${styles.token} ${factionClass} ${cultivatorClass} ${selectedClass}`}
               data-owner-color={unit.ownerColor}
               data-unit-id={unit.id}
               key={unit.id}
               onClick={(event) => {
+                if (targetingMode) return;
                 event.stopPropagation();
                 onSelectUnits([unit.id], event.shiftKey ? "toggle" : "replace");
               }}
               onContextMenu={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
+                if (cancelActiveModeOnRightClick()) return;
                 if (rallyBuildingId !== null) {
                   onSetRally({ x: unit.x, y: unit.y });
                   return;
@@ -499,6 +643,7 @@ export function MapViewport({
                 for (const order of orders) onCommand(order);
               }}
               onDoubleClick={(event) => {
+                if (targetingMode) return;
                 event.stopPropagation();
                 const rect = viewportRef.current?.getBoundingClientRect();
                 const visibleIds =
@@ -526,7 +671,10 @@ export function MapViewport({
                   event.shiftKey ? "add" : "replace",
                 );
               }}
-              onPointerDown={(event) => event.stopPropagation()}
+              onPointerDown={(event) => {
+                if (targetingMode) return;
+                event.stopPropagation();
+              }}
               style={{
                 ...(unit.factionId === "hold" && unit.ownerColor !== undefined
                   ? {
@@ -557,11 +705,29 @@ export function MapViewport({
       </div>
       {dockMinimap(
         <DescentMinimap
+          attackMoving={attackMoving}
           model={model}
+          onCancelAttackMove={onCancelAttackMove}
           onNavigate={(point) => {
             onCameraChange(centeredCamera(point, model, viewportSize));
           }}
           onOrder={(point, queue) => {
+            if (attackMoving) {
+              const orders = ordersForAttackMove(
+                model,
+                selection.unitIds,
+                point,
+                queue,
+                localPlayerId,
+              );
+              for (const order of orders) onCommand(order);
+              if (!queue) onCancelAttackMove?.();
+              return;
+            }
+            if (selection.unitIds.length === 0 && rallyBuildingId !== null) {
+              onSetRally(point);
+              return;
+            }
             const orders = ordersForRightClick({
               buildings: model.buildings,
               ground: point,

@@ -30,6 +30,7 @@ import type {
   TerrainBridge,
   TerrainFeature,
   TerrainFeatureKind,
+  TerrainHill,
 } from "../../../logic/layers";
 import {
   angleBetween,
@@ -42,6 +43,7 @@ import {
   type MapPoint,
   nearestDistance,
   pickBest,
+  placeHills,
   placeWaterways,
   poissonDiskSample,
   polarOffset,
@@ -53,6 +55,7 @@ import {
 } from "../../../logic/mapgen";
 import type { SimRng } from "../../../logic/sim/rng";
 import { SPAWN_EAST_INSET } from "../../../logic/waves/constants";
+import type { AshenGateMapType } from "./gameSetup";
 import {
   ASHEN_GATE_MAP_SIZE,
   ASHEN_GATE_NODE_SLOTS,
@@ -123,25 +126,29 @@ interface LayoutFrame {
 /**
  * Builds a reachable, fair Ashen Gate map for one run.
  * @param seed - Run seed
- * @param options - `waterways: false` leaves the map dry (no rivers or pond)
+ * @param options - Optional map archetype (`mapType`) and `waterways: false`
  * @returns A complete map package; the same seed always returns the same map
  */
 export function generateAshenGateMap(
   seed: number,
-  options: { waterways?: boolean } = {},
+  options: { mapType?: AshenGateMapType; waterways?: boolean } = {},
 ): AshenGateMap {
-  const waterways = options.waterways !== false;
+  const mapType = options.mapType ?? "ashen_crossings";
+  const waterways =
+    options.waterways !== false &&
+    mapType !== "king_of_the_hill" &&
+    mapType !== "open_steppe";
   let best: AshenGateMap | null = null;
   let bestProblems = Number.POSITIVE_INFINITY;
   for (let attempt = 0; attempt < MAX_LAYOUT_ATTEMPTS; attempt += 1) {
-    const map = layoutAttempt(seed, attempt, waterways);
+    const map = layoutAttempt(seed, attempt, waterways, mapType);
     const problems = validateAshenGateMap(map).length;
     if (problems === 0) return map;
     if (problems >= bestProblems) continue;
     best = map;
     bestProblems = problems;
   }
-  return best ?? layoutAttempt(seed, 0, waterways);
+  return best ?? layoutAttempt(seed, 0, waterways, mapType);
 }
 
 /**
@@ -287,6 +294,7 @@ function layoutAttempt(
   seed: number,
   attempt: number,
   waterways: boolean,
+  mapType: AshenGateMapType,
 ): AshenGateMap {
   const { height, width } = ASHEN_GATE_MAP_SIZE;
   const rng = createMapRng(seed, `ashen_gate:layout:${attempt}`);
@@ -311,6 +319,7 @@ function layoutAttempt(
     spawn,
     vents,
     waterways,
+    mapType,
   );
   const frame = {
     camp,
@@ -323,6 +332,16 @@ function layoutAttempt(
   };
   const veins = placeVeins(frame);
   const nodes = placeNodes(frame, veins);
+  const hillRng = createMapRng(seed, `ashen_gate:hills:${attempt}`);
+  const hills = placeAshenHills(
+    hillRng,
+    camp,
+    spawn,
+    vents,
+    obstacles,
+    bridges,
+    mapType,
+  );
   return {
     bridges,
     buildings: [
@@ -338,6 +357,7 @@ function layoutAttempt(
       ...extraChokes,
     ],
     height,
+    hills,
     nodes,
     obstacles,
     stockpile: { ...ASHEN_GATE_STOCKPILE },
@@ -346,6 +366,144 @@ function layoutAttempt(
     vents,
     width,
   };
+}
+
+/**
+ * Places Age of Empires-style walkable hills across Ashen Gate, favoring
+ * tactical overlooks beside bridges and approaches while keeping the Camp
+ * apron, water channels, bridges, and spawn clearing flat.
+ * @param rng - Hill RNG stream
+ * @param camp - Camp center
+ * @param spawn - Horde spawn point
+ * @param vents - Placed ember vents
+ * @param obstacles - Placed terrain obstacles (including deep water)
+ * @param bridges - Placed bridges across rivers
+ * @returns Walkable hills for this layout
+ */
+function placeAshenHills(
+  rng: SimRng,
+  camp: MapPoint,
+  spawn: MapPoint,
+  vents: readonly CircleVolume[],
+  obstacles: readonly TerrainFeature[],
+  bridges: readonly TerrainBridge[],
+  mapType: AshenGateMapType,
+): TerrainHill[] {
+  const { height, width } = ASHEN_GATE_MAP_SIZE;
+  const waterDisks = obstacles.filter((entry) => entry.kind === "deep_water");
+  const canPlace = (x: number, y: number, radius: number): boolean => {
+    const point = { x, y };
+    if (distance(point, camp) < BUILD_APRON + radius + 3) return false;
+    if (
+      x + radius >= width - SPAWN_CLEARING_COLUMNS - 2 &&
+      Math.abs(y - spawn.y) <= SPAWN_CLEARING_ROWS + radius
+    ) {
+      return false;
+    }
+    if (
+      waterDisks.some(
+        (disk) => distance(point, disk) < disk.radius + radius + 2,
+      )
+    ) {
+      return false;
+    }
+    if (
+      bridges.some(
+        (bridge) => distance(point, bridge) < bridge.length / 2 + radius + 2,
+      )
+    ) {
+      return false;
+    }
+    if (
+      vents.some((vent) => distance(point, vent) < vent.radius + radius * 0.65)
+    ) {
+      return false;
+    }
+    return true;
+  };
+  const preferredCenters: MapPoint[] = [];
+  for (const bridge of bridges) {
+    preferredCenters.push({ x: bridge.x - 19, y: bridge.y - 16 });
+    preferredCenters.push({ x: bridge.x + 19, y: bridge.y + 16 });
+  }
+  if (mapType === "highlands") {
+    return placeHills({
+      canPlace,
+      count: 18,
+      crownChance: 0.55,
+      height,
+      heightRange: { max: 3.1, min: 2.1 },
+      idPrefix: "ashen-highland",
+      preferredCenters,
+      radiusRange: { max: 19, min: 11 },
+      rng,
+      width,
+    });
+  }
+  if (mapType === "king_of_the_hill") {
+    const centerX = Math.round(width * 0.48);
+    const centerY = Math.round(height * 0.5);
+    const fixedHills: TerrainHill[] = [
+      {
+        height: 2.6,
+        id: "ashen-crown-base",
+        label: "Crown Plateau",
+        plateauRadius: 12,
+        radius: 26,
+        x: centerX,
+        y: centerY,
+      },
+      {
+        height: 1.4,
+        id: "ashen-crown-summit",
+        label: "Crown Summit",
+        plateauRadius: 6,
+        radius: 14,
+        x: centerX,
+        y: centerY,
+      },
+    ];
+    return placeHills({
+      canPlace,
+      count: 12,
+      crownChance: 0.25,
+      fixedHills,
+      height,
+      heightRange: { max: 2.2, min: 1.5 },
+      idPrefix: "ashen-crown",
+      preferredCenters: [
+        { x: centerX - 38, y: centerY - 34 },
+        { x: centerX - 38, y: centerY + 34 },
+        { x: centerX + 38, y: centerY - 34 },
+        { x: centerX + 38, y: centerY + 34 },
+      ],
+      radiusRange: { max: 16, min: 10 },
+      rng,
+      width,
+    });
+  }
+  if (mapType === "open_steppe") {
+    return placeHills({
+      canPlace,
+      count: 7,
+      crownChance: 0,
+      height,
+      heightRange: { max: 1.8, min: 1.3 },
+      idPrefix: "ashen-steppe",
+      radiusRange: { max: 15, min: 10 },
+      rng,
+      width,
+    });
+  }
+  return placeHills({
+    canPlace,
+    count: 11,
+    height,
+    idPrefix: "ashen",
+    preferredCenters,
+    rng,
+    width,
+  });
 }
 
 /**
@@ -816,7 +974,7 @@ function startingUnits(camp: MapPoint, heading: number): UnitInit[] {
     {
       classId: "cultivator",
       id: "ashen-captain",
-      maxHp: 135,
+      maxHp: getUnitDefinition("cultivator").maxHitPoints,
       popKind: "soldier",
       realmId: "qi_gathering",
       ...insideMap(polarOffset(camp, heading, footprintRadius("camp") + 2), 1),
@@ -926,6 +1084,7 @@ function placeTerrainObstacles(
   spawn: MapPoint,
   vents: readonly CircleVolume[],
   waterways: boolean,
+  mapType: AshenGateMapType,
 ): {
   bridges: TerrainBridge[];
   extraChokes: { id: string; label: string; x: number; y: number }[];
@@ -947,6 +1106,13 @@ function placeTerrainObstacles(
     }
     const point = { x, y };
     if (distance(point, camp) < BUILD_APRON + radius + 5) return false;
+    // Leave the central summit open on Crown Plateau so armies contest the hilltop.
+    if (
+      mapType === "king_of_the_hill" &&
+      distance(point, { x: width * 0.48, y: height * 0.5 }) < 24 + radius
+    ) {
+      return false;
+    }
     if (
       vents.some((vent) => distance(point, vent) < vent.radius + radius + 3.5)
     ) {
@@ -1167,6 +1333,13 @@ function placeTerrainObstacles(
     );
   };
   const pondSide = camp.y > height / 2 ? -1 : 1;
+  const rivers =
+    mapType === "highlands"
+      ? [{ bridgeCount: 3, centerShare: 0.44 }]
+      : [
+          { bridgeCount: 2, centerShare: 0.285 },
+          { bridgeCount: 2, centerShare: 0.565 },
+        ];
   const { bridges, water } = placeWaterways({
     canPlace: canFlood,
     height,
@@ -1178,10 +1351,7 @@ function placeTerrainObstacles(
         y: clamp(laneYAt(width * 0.2) + pondSide * 38, 14, height - 14),
       },
     ],
-    rivers: [
-      { bridgeCount: 2, centerShare: 0.285 },
-      { bridgeCount: 2, centerShare: 0.565 },
-    ],
+    rivers,
     rng,
     width,
   });

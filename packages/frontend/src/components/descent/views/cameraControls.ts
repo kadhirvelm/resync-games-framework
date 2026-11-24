@@ -149,6 +149,30 @@ function pointerInsideRect(
 }
 
 /**
+ * Reports whether a browser pointer lies inside the active edge-scroll band of
+ * a canvas rectangle (within `edgeSize` pixels of any edge, and inside the rect).
+ * @param pointer - Current browser pointer position, or null
+ * @param rect - Cached canvas rectangle in client coordinates
+ * @param edgeSize - Width of the active band in pixels
+ * @returns True when the pointer is inside the edge-scroll band
+ */
+export function isPointerInEdgeScrollBand(
+  pointer: EdgeScrollPointer | null,
+  rect: EdgeScrollRect,
+  edgeSize = EDGE_SCROLL_MARGIN_PX,
+): boolean {
+  if (pointer === null || !pointerInsideRect(pointer, rect)) return false;
+  const band = Math.max(0, edgeSize);
+  if (band === 0) return false;
+  return (
+    pointer.x < rect.left + band ||
+    pointer.x >= rect.right - band ||
+    pointer.y < rect.top + band ||
+    pointer.y >= rect.bottom - band
+  );
+}
+
+/**
  * Computes camera-relative panning from a pointer near the viewport edges.
  * A null/outside pointer, HUD hit, interior pointer, or opposing edge input
  * produces zero movement. The result uses the same heading and speed pathway

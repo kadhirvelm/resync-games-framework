@@ -22,16 +22,34 @@ export const SIM_SAVE_MIGRATIONS: Readonly<Record<number, SimSaveMigration>> =
   {};
 
 /**
- * Serializes the full world in the versioned envelope.
+ * Serializes the full world in the versioned envelope, omitting transient
+ * presentation state under `meta.ui` that is regenerated on load/tick.
  * @param world - World to write
  * @returns A JSON string `{ format, state, version }`
  */
 export function serializeWorld(world: SimWorldState): string {
+  const state =
+    "ui" in world.meta
+      ? { ...world, meta: omitTransientMeta(world.meta) }
+      : world;
   return JSON.stringify({
     format: SIM_SAVE_FORMAT,
-    state: world,
+    state,
     version: SIM_SAVE_VERSION,
   });
+}
+
+/**
+ * Copies `world.meta` without transient presentation fields that should not
+ * bloat persisted saves.
+ * @param meta - World metadata bag
+ * @returns Shallow copy without `ui`
+ */
+function omitTransientMeta(
+  meta: Record<string, unknown>,
+): Record<string, unknown> {
+  const { ui: _ui, ...persisted } = meta;
+  return persisted;
 }
 
 /**

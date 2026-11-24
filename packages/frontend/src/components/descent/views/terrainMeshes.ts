@@ -88,11 +88,12 @@ function makeMaterial(
 
 /**
  * Allocates the shared terrain material palette once per Babylon scene.
+ * Static materials are frozen to skip per-frame uniform and define checks.
  * @param scene - Descent Babylon scene
  * @returns Reusable material set
  */
 export function createTerrainMaterials(scene: Scene): TerrainMaterials {
-  return {
+  const materials: TerrainMaterials = {
     basaltCap: makeMaterial(scene, "terrain-basalt-cap", "#4b4246", {
       specular: 0.1,
     }),
@@ -150,6 +151,21 @@ export function createTerrainMaterials(scene: Scene): TerrainMaterials {
       specular: 0.22,
     }),
   };
+  // Water stays unfrozen because its diffuse texture is swapped and scrolled.
+  materials.basaltCap.freeze();
+  materials.basaltDark.freeze();
+  materials.brazierGlow.freeze();
+  materials.magmaCore.freeze();
+  materials.magmaCrust.freeze();
+  materials.obsidian.freeze();
+  materials.obsidianVein.freeze();
+  materials.plank.freeze();
+  materials.plankDark.freeze();
+  materials.ruinStone.freeze();
+  materials.ruinTrim.freeze();
+  materials.shadowSkirt.freeze();
+  materials.waterBank.freeze();
+  return materials;
 }
 
 /** Options controlling terrain landmark construction. */

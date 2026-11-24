@@ -8,7 +8,9 @@ import type {
 import { useState } from "react";
 import { Dialog, Flex } from "@/lib/radix";
 import styles from "./Assets.module.scss";
+import { TOWERS_OF_COREBORN_TAG } from "./assetGameTags";
 import { CopyableError } from "./CopyableError";
+import { GameTagList } from "./GameTagList";
 import { type PendingJob, PendingJobCard } from "./PendingJobCard";
 
 interface PlayableCardListProps {
@@ -140,6 +142,7 @@ function PlayableCardTile({ card, onOpen }: PlayableCardTileProps) {
         <span className={styles.playableCardKind}>
           {KIND_LABELS[card.kind]}
         </span>
+        <GameTagList tags={[TOWERS_OF_COREBORN_TAG]} />
         {card.effects.map((effect) => (
           <span className={styles.playableCardEffect} key={effect.kind}>
             {effect.text}

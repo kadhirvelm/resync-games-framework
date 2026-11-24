@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { slotPosition } from "../../logic/waves/spawn";
 import {
   ABYSS_DEPTH,
   ashenBackdropPieces,
   ashenSceneryPlacements,
   PLATEAU_RIM,
 } from "../ashenTerrainLayout";
+import { mapYToWorldZ } from "../mapOrientation";
 
 const WIDTH = 168;
 const HEIGHT = 104;
@@ -55,8 +57,9 @@ describe("ashen terrain layout", () => {
     );
 
     expect(gates).toHaveLength(1);
-    expect(gates[0]?.x).toBeGreaterThan(WIDTH);
-    expect(gates[0]?.z).toBe(HEIGHT / 2);
+    const spawn = slotPosition(0, { height: HEIGHT, width: WIDTH });
+    expect(gates[0]?.x).toBeGreaterThan(spawn.x);
+    expect(gates[0]?.z).toBe(mapYToWorldZ(spawn.y, HEIGHT));
   });
 
   test("repeats the same layout on every load", () => {

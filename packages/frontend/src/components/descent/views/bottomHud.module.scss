@@ -226,6 +226,40 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   }
 }
 
+.cultivationGuide {
+  border-top: 1px solid rgb(198 154 85 / 16%);
+  color: #b9a685;
+  font-size: 11px;
+  grid-column: 1 / -1;
+  line-height: 1.45;
+  padding-top: 5px;
+
+  summary {
+    color: #d7bd89;
+    cursor: pointer;
+    font-weight: 700;
+  }
+
+  summary:focus-visible {
+    outline: 2px solid var(--bronze-bright);
+    outline-offset: 2px;
+  }
+
+  ol {
+    margin: 6px 0;
+    padding-left: 18px;
+  }
+
+  li + li {
+    margin-top: 3px;
+  }
+
+  p {
+    color: #d1b98c;
+    margin: 5px 0 0;
+  }
+}
+
 .facts {
   display: flex;
   flex-wrap: wrap;
@@ -264,8 +298,8 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
 .bars {
   display: grid;
   gap: 6px 12px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  max-width: 520px;
+  grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
+  max-width: 620px;
 }
 
 .fillBar {
@@ -717,7 +751,7 @@ $tile-gap: 4px;
   pointer-events: none;
   position: absolute;
   width: 360px;
-  z-index: 10;
+  z-index: 16;
 }
 
 .tooltip {
@@ -968,4 +1002,59 @@ $tile-gap: 4px;
     height: 25px;
     width: 25px;
   }
+}
+
+// ── Control group tabs ──────────────────────────────────────────────────
+
+.controlGroupBar {
+  bottom: calc(100% + 4px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  left: 8px;
+  pointer-events: none;
+  position: absolute;
+  z-index: 15;
+}
+
+.controlGroupPill {
+  align-items: center;
+  appearance: none;
+  background: rgb(22 17 11 / 92%);
+  border: 1px solid rgb(198 154 85 / 55%);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 45%);
+  color: #f4e4c2;
+  cursor: pointer;
+  display: inline-flex;
+  font-family: $descent;
+  font-size: 11px;
+  font-weight: 700;
+  gap: 5px;
+  padding: 3px 7px 3px 4px;
+  pointer-events: auto;
+
+  &:hover,
+  &:focus-visible {
+    background: rgb(48 34 21 / 96%);
+    border-color: var(--bronze-bright);
+    outline: none;
+  }
+}
+
+.controlGroupKey {
+  background: rgb(12 9 7 / 90%);
+  border: 1px solid rgb(232 191 106 / 45%);
+  border-radius: 3px;
+  color: #f7dfb0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 2px 4px;
+}
+
+.controlGroupCount {
+  color: #e8dcc5;
+  font-variant-numeric: tabular-nums;
 }

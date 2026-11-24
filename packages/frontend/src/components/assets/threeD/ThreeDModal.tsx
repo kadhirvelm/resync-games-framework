@@ -18,11 +18,33 @@ export function ThreeDModal({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     const dialog = ref.current;
     const previousFocus = document.activeElement;
     dialog?.showModal();
+
+    /** Closes the modal when the user clicks on its backdrop outside the box. */
+    const handleBackdropClick = (event: MouseEvent) => {
+      if (dialog === null || event.target !== dialog) {
+        return;
+      }
+      const rect = dialog.getBoundingClientRect();
+      const clickedOutside =
+        event.clientX < rect.left ||
+        event.clientX > rect.right ||
+        event.clientY < rect.top ||
+        event.clientY > rect.bottom;
+      if (clickedOutside) {
+        onCloseRef.current();
+      }
+    };
+
+    dialog?.addEventListener("click", handleBackdropClick);
     return () => {
+      dialog?.removeEventListener("click", handleBackdropClick);
       dialog?.close();
       if (previousFocus instanceof HTMLElement && previousFocus.isConnected)
         previousFocus.focus();

@@ -25,7 +25,8 @@ import {
 /** Cells from the Camp's center to the edge of its square. */
 const CAMP_EDGE = footprintRadius("camp");
 
-const SEEDS = Array.from({ length: 100 }, (_, index) => index * 7919 + 1);
+/** Fuzz seeds; 40 is enough to catch layout regressions without slowing CI. */
+const SEEDS = Array.from({ length: 40 }, (_, index) => index * 7919 + 1);
 
 /** Maps for `SEEDS`, generated once and shared by every test. */
 const MAPS = new Map<number, AshenGateMap>();
@@ -77,7 +78,7 @@ describe("generateAshenGateMap", () => {
   });
 
   test("different seeds spread the Hold and deposits differently", () => {
-    const maps = SEEDS.slice(0, 40).map(mapFor);
+    const maps = SEEDS.map(mapFor);
     const camps = new Set(maps.map((map) => JSON.stringify(campOf(map))));
     const nearFood = new Set(
       maps.map((map) => JSON.stringify(nodeOf(map, "ashen-food-near"))),

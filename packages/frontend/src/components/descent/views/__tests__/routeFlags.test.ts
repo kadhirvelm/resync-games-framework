@@ -47,11 +47,38 @@ describe("routePlan", () => {
     expect(plan.flags[0]?.y).toBeCloseTo(10, 5);
   });
 
-  test("units sent to far-apart points keep separate flags", () => {
+  test("units sent to far-apart points keep separate flags without averaging into empty space", () => {
     const plan = routePlan([
       { route: [{ attack: false, x: 0, y: 30 }], x: 0, y: 0 },
       { route: [{ attack: false, x: 30, y: 0 }], x: 0, y: 0 },
     ]);
     expect(plan.flags).toHaveLength(2);
+    expect(plan.path).toEqual([]);
+  });
+
+  test("keeps the unified prefix path when a later leg splits into disjoint clusters", () => {
+    const plan = routePlan([
+      {
+        route: [
+          { attack: false, x: 10, y: 10 },
+          { attack: false, x: 0, y: 30 },
+        ],
+        x: 0,
+        y: 0,
+      },
+      {
+        route: [
+          { attack: false, x: 10, y: 11 },
+          { attack: true, x: 30, y: 0 },
+        ],
+        x: 0,
+        y: 2,
+      },
+    ]);
+    expect(plan.flags).toHaveLength(3);
+    expect(plan.path).toEqual([
+      { x: 0, y: 1 },
+      { x: 10, y: 10.5 },
+    ]);
   });
 });

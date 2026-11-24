@@ -36,7 +36,7 @@ const TICK_BROADCAST_MS = 100;
 /** Valid simulation speeds matching `SIM_SPEEDS` in Descent. */
 const VALID_SPEEDS = new Set([1, 2, 4]);
 /** How often an active match verifies its Redis room still has members. */
-const MEMBERSHIP_CHECK_MS = 60 * 1_000;
+const MEMBERSHIP_CHECK_MS = 5 * 1_000;
 /** Empty rooms remain replayable through the shared reconnect grace window. */
 const EMPTY_MATCH_GRACE_MS = 2 * 60 * 1_000;
 /** Largest serialized command accepted from one client. */
@@ -616,6 +616,16 @@ export class DescentService implements OnModuleDestroy {
     match.checkingMembership = true;
     match.nextMembershipCheckAt = Date.now() + MEMBERSHIP_CHECK_MS;
     try {
+      const exists = await this.gameRoomStore.roomExists(
+        match.roomId,
+        DESCENT_GAME_ID,
+      );
+      if (this.matches.get(match.roomId) !== match) return;
+      if (!exists) {
+        // Everyone explicitly left, which deletes the room: stop ticking now.
+        this.stopMatch(match.roomId);
+        return;
+      }
       const hasMembers = await this.gameRoomStore.hasConnectedMembers(
         match.roomId,
         DESCENT_GAME_ID,

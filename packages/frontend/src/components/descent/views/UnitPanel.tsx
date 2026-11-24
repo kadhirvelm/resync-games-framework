@@ -1,10 +1,12 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource react */
 
+import { memo } from "react";
 import { MAX_QUEUE } from "../logic/slice/sliceTraining";
 import type { ClassId } from "../logic/types";
 import styles from "./bottomHud.module.scss";
 import { UNIT_TRAINING_GUIDES } from "./card";
+import { cultivationGuidance } from "./cultivationGuidance";
 import type { SelectionCard, SelectionFact } from "./inspect";
 import type { TrainingQueueReadout } from "./presentation";
 import { isLocalPlayerOwned, type SelectionGroup } from "./selection";
@@ -49,7 +51,7 @@ export interface HoldUpgradeProgress {
  * @param props - The card to show plus the selection details it summarizes
  * @returns The selection panel
  */
-export function UnitPanel({
+export const UnitPanel = memo(function UnitPanel({
   building,
   card,
   groups = [],
@@ -126,7 +128,7 @@ export function UnitPanel({
       </ul>
     </section>
   );
-}
+});
 
 /**
  * Qi, Merit, and Essence bars plus one status line: ready to break through,
@@ -153,9 +155,18 @@ function CultivationBars({ unit }: { unit: ShellUnit }) {
       )}
       {maxRank ? null : (
         <FillBar
-          label="Essence"
+          label="Personal Essence"
           max={cultivation.essenceToNext}
           value={cultivation.essence}
+        />
+      )}
+      {maxRank ||
+      cultivation.combatProof === undefined ||
+      cultivation.combatProofToNext === undefined ? null : (
+        <FillBar
+          label="Proof"
+          max={cultivation.combatProofToNext}
+          value={cultivation.combatProof}
         />
       )}
       {unit.breakthroughProgress !== null ? (
@@ -165,6 +176,7 @@ function CultivationBars({ unit }: { unit: ShellUnit }) {
         />
       ) : null}
       <CultivationStatus maxRank={maxRank} missing={missing} unit={unit} />
+      <CultivationGuide unit={unit} />
     </div>
   );
 }
@@ -228,6 +240,13 @@ function CultivationStatus({
       </p>
     );
   }
+  if (unit.injurySeconds > 0) {
+    return (
+      <p className={styles.statusLine} data-tone="blocked">
+        Breakthrough injury · {unit.injurySeconds}s recovery
+      </p>
+    );
+  }
   if (unit.breakthroughReady) {
     return (
       <p className={styles.statusLine} data-tone="ready">
@@ -238,27 +257,59 @@ function CultivationStatus({
   if (unit.meditating) {
     return (
       <p className={styles.statusLine} data-tone="calm">
-        In Seclusion{unit.inSpiritArray ? " · Spirit Array 2.5×" : ""}
+        In Seclusion{unit.sacredGround !== null ? " · Sacred ground 2.5×" : ""}
       </p>
     );
   }
   if (maxRank) {
+    const cap = unit.cultivation;
+    if (cap?.rank === "Sworn" && cap.school === undefined) {
+      return (
+        <p className={styles.statusLine} data-tone="ready">
+          Choose a school to finish this promotion
+        </p>
+      );
+    }
     return (
       <p className={styles.statusLine} data-tone="calm">
-        Highest rank reached
+        {cap?.rankCapReached === true
+          ? `${cap.rank} · ${cap.rankCapLabel ?? "Scenario"} rank cap reached`
+          : "Highest rank reached"}
       </p>
     );
   }
   const lines = unit.cultivation?.missingRequirements ?? [];
+  const guidance = cultivationGuidance(unit);
   return (
     <p
       className={styles.statusLine}
       data-tone="blocked"
       title={lines.join("\n")}
     >
-      Next breakthrough: {missing} {missing === 1 ? "step" : "steps"} left
-      {lines[0] === undefined ? "" : ` · ${lines[0]}`}
+      Next: {guidance?.nextStep ?? `${missing} breakthrough steps left`}
     </p>
+  );
+}
+
+/**
+ * Explains the cultivation loop in place and lists pills already consumed.
+ * @param props - Selected cultivating unit
+ * @returns A collapsible guide, or nothing when the view is unavailable
+ */
+function CultivationGuide({ unit }: { unit: ShellUnit }) {
+  const guidance = cultivationGuidance(unit);
+  if (guidance === null) return null;
+  return (
+    <details className={styles.cultivationGuide}>
+      <summary>How cultivation works</summary>
+      <p>{guidance.classNote}</p>
+      <ol>
+        {guidance.steps.map((step) => (
+          <li key={step}>{step}</li>
+        ))}
+      </ol>
+      <p>{guidance.pillSummary}</p>
+    </details>
   );
 }
 

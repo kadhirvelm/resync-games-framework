@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { GameSelector } from "./GameSelector";
-import { gameExperienceCatalog } from "./gameExperienceCatalog";
+import { libraryGameExperiences } from "./gameExperienceCatalog";
 import type { GameExperienceId } from "./gameExperienceTypes";
 import { readBrowserResumeExperienceIds } from "./resumeAvailability";
 
@@ -17,7 +17,7 @@ export function GameLibrary() {
 
   return (
     <GameSelector
-      experiences={gameExperienceCatalog}
+      experiences={libraryGameExperiences}
       resumeExperienceIds={resumeExperienceIds}
     />
   );

@@ -133,17 +133,17 @@ export const DESCENT_TUTORIAL_STEPS: readonly TutorialStepDefinition[] = [
   },
   {
     detail:
-      "Cultivation makes soldiers stronger. For this lesson, build a Cultivation Hall.",
+      "Cultivation makes soldiers stronger. Your Captain can reach Sworn without a Hall; other soldiers need one.",
     hotkeys: ["B"],
     id: "cultivate",
     instructions: [
-      "Select your Camp to check your base. After the Outpost upgrade, you can build a Cultivation Hall.",
-      "Select a Villager, press B, choose Cultivation, then Cultivation Hall. Place it near your base and finish construction.",
-      "Later, select a soldier and inspect Breakthrough to learn its requirements for advancing rank.",
+      "Click Select Cultivator to focus your starting Captain. Every soldier cultivates; Qi classes can also cast and meditate.",
+      "Inspect the Captain's Breakthrough. After the first scout wave, the Captain has enough Merit, Personal Essence, and Combat Proof to try it without a Hall.",
+      "For other soldiers, build a Cultivation Hall at Outpost before attempting their first promotion. A Hall on a Spirit Vein improves success.",
     ],
-    targetHint: "camp",
-    tip: "A soldier who already advanced also completes this lesson. You do not need to learn schools or attempt a breakthrough right now.",
-    title: "Build a Cultivation Hall",
+    targetHint: "cultivator",
+    tip: "The Captain's first promotion needs no Hall or pill. Any soldier who already advanced also completes this lesson.",
+    title: "Promote Your Captain",
   },
   {
     detail:
@@ -222,18 +222,14 @@ function countLivingSoldiers(snapshot: TutorialWorldView): number {
 }
 
 /**
- * Checks whether any Hold unit has ascended past Ashborn or chosen a school.
+ * Checks whether any Hold unit has actually advanced beyond Ashborn.
  * @param slice - Ashen Gate slice state, if initialized
- * @returns True when any cultivated Hold unit reached Sworn+ or picked a school
+ * @returns True when a cultivated Hold unit reached Sworn or higher
  */
 function hasBreakthroughUnit(slice: AshenGateSliceState | null): boolean {
   const units = slice?.cultivation?.units;
   if (!Array.isArray(units)) return false;
-  for (const unit of units) {
-    if (unit.rank !== "Ashborn") return true;
-    if (unit.school !== undefined) return true;
-  }
-  return false;
+  return units.some((unit) => unit.rank !== "Ashborn");
 }
 
 /**
@@ -362,7 +358,7 @@ export function evaluateTutorialProgress(
         towerCount >= 1 ? "Ward Tower active" : "0 / 1 Ward Tower built",
     },
     cultivate: {
-      completed: hallCount >= 1 || breakthroughReached,
+      completed: breakthroughReached,
       progressLabel: formatCultivateLabel(
         breakthroughReached,
         hallCount,

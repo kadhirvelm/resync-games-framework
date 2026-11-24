@@ -5,6 +5,7 @@
 export {
   beginLayer,
   buyCoinSink,
+  cancelConstruction,
   damageBuilding,
   issueRations,
   payTraining,

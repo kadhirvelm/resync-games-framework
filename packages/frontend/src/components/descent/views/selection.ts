@@ -1,4 +1,4 @@
-import type { Command } from "../logic/types";
+import type { Command, ResourceId } from "../logic/types";
 
 /** A point in sim map space. */
 export interface MapPoint {
@@ -31,6 +31,8 @@ export interface Camera {
 
 /** Fields the order helper needs from a unit. */
 export interface OrderUnit {
+  /** Cache/resource currently being hauled, if any. */
+  carrying?: { amount: number; resource: ResourceId } | null;
   classId: string;
   factionId: "hold" | "horde";
   id: string;
@@ -42,6 +44,8 @@ export interface OrderUnit {
 
 /** Fields the order helper needs from a building. */
 export interface OrderBuilding {
+  /** Stable building type used to recognize cache drop-offs. */
+  buildingType?: string;
   factionId: "hold" | "horde";
   id: string;
   /** Owning player id in multiplayer matches; omitted in solo play. */
@@ -65,6 +69,8 @@ export function isLocalPlayerOwned(
 
 /** Fields the order helper needs from a resource node. */
 export interface OrderNode {
+  /** Identifies a one-time guarded cache eligible for villager and Qi hauling. */
+  explorationCacheId?: string;
   id: string;
   x: number;
   y: number;
@@ -165,13 +171,62 @@ export function pruneSelection(
 }
 
 /**
- * Applies a click or drag to the selection.
+ * Applies a click or drag to the selection. When `units` is supplied, Hold and
+ * Horde units are kept separate so shift-clicking never mixes enemies into a
+ * friendly selection (friendly Hold units take precedence).
  * @param selection - Current selection
  * @param unitIds - Units the gesture hit
  * @param mode - Replace, add, or toggle membership
+ * @param units - Optional unit roster with faction ids to prevent faction mixing
  * @returns The next selection, with any building cleared
  */
 export function nextUnitSelection(
+  selection: Selection,
+  unitIds: readonly string[],
+  mode: "add" | "replace" | "toggle",
+  units?: readonly Pick<OrderUnit, "factionId" | "id">[],
+): Selection {
+  if (units === undefined) {
+    return applyUnitSelectionMode(selection, unitIds, mode);
+  }
+  const factionById = new Map(units.map((unit) => [unit.id, unit.factionId]));
+  const incomingHold = unitIds.filter((id) => factionById.get(id) === "hold");
+  const incomingHorde = unitIds.filter((id) => factionById.get(id) === "horde");
+  if (mode === "replace") {
+    const cleaned = incomingHold.length > 0 ? incomingHold : unitIds;
+    return { buildingId: null, unitIds: [...cleaned] };
+  }
+  const existingHasHold = selection.unitIds.some(
+    (id) => factionById.get(id) === "hold",
+  );
+  const existingHasHorde = selection.unitIds.some(
+    (id) => factionById.get(id) === "horde",
+  );
+  if (incomingHold.length > 0) {
+    const base = existingHasHorde
+      ? {
+          buildingId: null,
+          unitIds: selection.unitIds.filter(
+            (id) => factionById.get(id) !== "horde",
+          ),
+        }
+      : selection;
+    return applyUnitSelectionMode(base, incomingHold, mode);
+  }
+  if (incomingHorde.length > 0 && existingHasHold) {
+    return { buildingId: null, unitIds: [...selection.unitIds] };
+  }
+  return applyUnitSelectionMode(selection, unitIds, mode);
+}
+
+/**
+ * Applies replace, add, or toggle membership without faction filtering.
+ * @param selection - Current selection
+ * @param unitIds - Incoming unit ids
+ * @param mode - Selection update mode
+ * @returns Updated selection with building cleared
+ */
+function applyUnitSelectionMode(
   selection: Selection,
   unitIds: readonly string[],
   mode: "add" | "replace" | "toggle",
@@ -270,7 +325,7 @@ export function ordersForRightClick(input: {
     if (soldierIds.length === 0) return [];
     return [{ targetId: enemyId, type: "order_attack", unitIds: soldierIds }];
   }
-  const villagerOrder = villagerTarget(input, villagerIds);
+  const villagerOrder = villagerTarget(input, villagerIds, actors);
   const queue = input.queue === true ? { queue: true } : {};
   if (villagerOrder === null) {
     return [
@@ -282,16 +337,77 @@ export function ordersForRightClick(input: {
       },
     ];
   }
-  if (soldierIds.length === 0) return [villagerOrder];
+  const cache = nodeNear(input.nodes, input.ground);
+  const movementIds =
+    cache?.explorationCacheId === undefined
+      ? soldierIds
+      : actors
+          .filter((unit) => !isExplorationCarrierClass(unit.classId))
+          .map((unit) => unit.id);
+  if (movementIds.length === 0) return [villagerOrder];
   return [
     villagerOrder,
     {
       type: "order_move",
-      unitIds: soldierIds,
+      unitIds: movementIds,
       ...queue,
       ...groundPoint(input.ground),
     },
   ];
+}
+
+/**
+ * Builds attack-move commands for the current selection. Locally owned
+ * military units receive `order_attack_move`; locally owned villagers in a
+ * mixed selection receive `order_move` toward the same destination.
+ * @param model - Model slice containing the current units
+ * @param selectedIds - Currently selected unit ids
+ * @param point - Destination in map space
+ * @param queue - Whether to append as a Shift-queued waypoint
+ * @param localOwnerId - Local player id in multiplayer, or undefined in solo
+ * @returns Commands to enqueue, empty when no controllable Hold unit is selected
+ */
+export function ordersForAttackMove(
+  model: { units: readonly OrderUnit[] },
+  selectedIds: readonly string[],
+  point: MapPoint,
+  queue = false,
+  localOwnerId?: string,
+): Command[] {
+  const selected = new Set(selectedIds);
+  const actors = model.units.filter(
+    (unit) =>
+      selected.has(unit.id) &&
+      unit.factionId === "hold" &&
+      isLocalPlayerOwned(unit, localOwnerId),
+  );
+  if (actors.length === 0) return [];
+  const soldierIds = actors
+    .filter((unit) => unit.classId !== "villager")
+    .map((unit) => unit.id);
+  const villagerIds = actors
+    .filter((unit) => unit.classId === "villager")
+    .map((unit) => unit.id);
+  const queueField = queue ? { queue: true } : {};
+  const destination = groundPoint(point);
+  const commands: Command[] = [];
+  if (soldierIds.length > 0) {
+    commands.push({
+      type: "order_attack_move",
+      unitIds: soldierIds,
+      ...queueField,
+      ...destination,
+    });
+  }
+  if (villagerIds.length > 0) {
+    commands.push({
+      type: "order_move",
+      unitIds: villagerIds,
+      ...queueField,
+      ...destination,
+    });
+  }
+  return commands;
 }
 
 /**
@@ -324,11 +440,27 @@ function enemyTarget(input: {
 }
 
 /**
+/**
+ * Checks whether a class may haul exploration caches.
+ * @param classId - Unit class id
+ * @returns True for villagers and Qi cultivator classes
+ */
+function isExplorationCarrierClass(classId: OrderUnit["classId"]): boolean {
+  return (
+    classId === "villager" ||
+    classId === "cultivator" ||
+    classId === "sword_sage" ||
+    classId === "formation_master"
+  );
+}
+
+/**
  * The job a right-click offers villagers: a Hold building to build, repair,
- * or deposit at, or a resource node to gather.
+ * or deposit at, or a resource node to gather. Qi cultivators may haul caches.
  * @param input - Right-click targets
  * @param villagerIds - Selected villagers
- * @returns A villager command, or null when the click is plain ground
+ * @param actors - Full selected Hold roster, including possible Qi carriers
+ * @returns A gather/build command, or null when the click is plain ground
  */
 function villagerTarget(
   input: {
@@ -338,12 +470,31 @@ function villagerTarget(
     targetBuildingId: string | null;
   },
   villagerIds: string[],
+  actors: readonly OrderUnit[],
 ): Command | null {
-  if (villagerIds.length === 0) return null;
   const building = input.buildings.find(
     (entry) => entry.id === input.targetBuildingId,
   );
   if (building !== undefined && building.factionId === "hold") {
+    const cacheCarrierIds = actors
+      .filter(
+        (unit) =>
+          unit.carrying !== null &&
+          unit.carrying !== undefined &&
+          isExplorationCarrierClass(unit.classId),
+      )
+      .map((unit) => unit.id);
+    const isDropOff =
+      building.buildingType === "camp" ||
+      building.buildingType === "storehouse";
+    if (cacheCarrierIds.length > 0 && isDropOff) {
+      return {
+        buildingId: building.id,
+        type: "assign_build",
+        unitIds: [...villagerIds, ...cacheCarrierIds],
+      };
+    }
+    if (villagerIds.length === 0) return null;
     return {
       buildingId: building.id,
       type: "assign_build",
@@ -352,6 +503,15 @@ function villagerTarget(
   }
   const node = nodeNear(input.nodes, input.ground);
   if (node === null) return null;
+  if (node.explorationCacheId !== undefined) {
+    const carrierIds = actors
+      .filter((unit) => isExplorationCarrierClass(unit.classId))
+      .map((unit) => unit.id);
+    if (carrierIds.length > 0) {
+      return { nodeId: node.id, type: "assign_gather", unitIds: carrierIds };
+    }
+  }
+  if (villagerIds.length === 0) return null;
   return { nodeId: node.id, type: "assign_gather", unitIds: villagerIds };
 }
 

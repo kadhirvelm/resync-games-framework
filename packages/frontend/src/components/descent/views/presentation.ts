@@ -1,6 +1,6 @@
 import type { CultivationView, PillPreview } from "../logic/cultivation/types";
 import { type FogOfWarState, isFogOfWarState } from "../logic/fog";
-import type { TerrainFeatureKind } from "../logic/layers";
+import type { TerrainFeatureKind, TerrainHill } from "../logic/layers";
 import type { PlayerScoreBreakdown } from "../logic/scoring";
 import type {
   ClassId,
@@ -31,6 +31,8 @@ export interface UnitReadout {
   /** Seconds remaining on an active breakthrough channel, when channeling. */
   breakthroughRemainingSeconds?: number;
   calamity?: boolean;
+  /** True for the solo or co-op starting Captain with the Hall-free lesson. */
+  captain?: boolean;
   /** Resource a villager is carrying home. */
   carrying?: ResourceId | null;
   /** How much of `carrying` the villager holds. */
@@ -41,6 +43,8 @@ export interface UnitReadout {
   factionId?: "hold" | "horde";
   /** Whether rations are active on this unit. */
   fed?: boolean;
+  /** Source of the 2.5× Meditation bonus, when one is nearby. */
+  sacredGround?: "array" | "pavilion" | "vein" | null;
   hero?: boolean;
   hitPoints?: number;
   /** A villager with no job and no shelter, waiting for orders. */
@@ -49,6 +53,8 @@ export interface UnitReadout {
   inSpiritArray?: boolean;
   /** Recovering from a failed breakthrough. */
   injured?: boolean;
+  /** Whole seconds left on a failed-breakthrough injury. */
+  injurySeconds?: number;
   maxHitPoints?: number;
   /** Maximum Qi pool for cultivators. */
   maxQi?: number;
@@ -96,6 +102,8 @@ export interface RouteReadout {
 export interface BuildingReadout {
   /** What the building is busy with, e.g. "Training 5 Wardens". */
   activity?: string;
+  /** Spirit Vein breakthrough chance bonus offered by a Cultivation Hall. */
+  breakthroughSuccessBonus?: number;
   constructing?: boolean;
   factionId?: "hold" | "horde";
   hitPoints?: number;
@@ -196,6 +204,38 @@ export type FxReadout =
       y: number;
     };
 
+/** One guarded prize the player has found in exploration mode. */
+export interface ExplorationCampReadout {
+  cleared: boolean;
+  /** Static class counts, shown before engagement. */
+  guardComposition: Partial<Record<ClassId, number>>;
+  guardsRemaining: number;
+  guardsTotal: number;
+  /** Additional summoned bodies beyond the original camp roster. */
+  reinforcements: number;
+  /** True once the cache has reached storage and paid out. */
+  rewardCollected: boolean;
+  id: string;
+  name: string;
+  rewardLabel: string;
+  /** 1-based visible difficulty; camp stats never scale secretly. */
+  threat: number;
+  x: number;
+  y: number;
+}
+
+/** Fog-safe exploration progress and discovered camp readouts. */
+export interface ExplorationReadout {
+  /** True once Cinderjaw dies, even if summoned guards still block his prize. */
+  bossDefeated: boolean;
+  camps: readonly ExplorationCampReadout[];
+  clearedCamps: number;
+  /** Cleared camps whose cache still needs to reach storage. */
+  pendingCaches: number;
+  totalCamps: number;
+  undiscoveredCamps: number;
+}
+
 /** The next scheduled wave. The countdown is public; the mix needs an Omen. */
 export interface WaveReadout {
   /** Whether the player may call the next wave early for a supply bonus. */
@@ -211,6 +251,8 @@ export interface WaveReadout {
   live: number;
   total: number;
   type: "boss" | "elite" | "scout" | "swarm";
+  /** Visible stat bonus from gathered Essence and Hell Pressure. */
+  powerLabel?: string;
   /** Whether the wave clock is paused by an external hold (e.g. tutorial). */
   waveHeld?: boolean;
 }
@@ -284,6 +326,8 @@ export interface TrainReadout {
 export interface BrewReadout {
   allowed: boolean;
   detail: string;
+  /** Actual implemented effect granted by this recipe. */
+  effectLabel?: string;
   furnaceId: string;
   name: string;
   pillId: string;
@@ -295,6 +339,8 @@ export interface BrewReadout {
  * `schoolMatchLabel` is display copy for `preview.schoolMatch`.
  */
 export interface PillFeedReadout {
+  /** Concrete projected effect, e.g. +10% maximum health. */
+  effectLabel?: string;
   pillName: string;
   preview: PillPreview;
   schoolMatchLabel: string;
@@ -373,6 +419,10 @@ export interface TreasureReadout {
 
 /** Map node marker. Remaining yield is a label, not a gather rule. */
 export interface NodeReadout {
+  /** Cache-specific description and reward shown on inspection. */
+  description?: string;
+  /** Set for a guarded cache that must be hauled to storage. */
+  explorationCacheId?: string;
   /** Villagers currently assigned to work this node. */
   gatherers?: number;
   id: string;
@@ -467,9 +517,13 @@ export interface DescentPresentation {
   buildings?: Readonly<Record<string, BuildingReadout>>;
   calamities?: readonly CalamityReadout[];
   /** What the Hold has explored and can see now; null shows everything. */
+  /** Self-paced camp progress; null or absent in timed siege mode. */
+  exploration?: ExplorationReadout | null;
   fog?: FogOfWarState | null;
   fx?: readonly FxReadout[];
   hellPressure?: number;
+  /** Walkable Age of Empires-style hills on the current layer. */
+  hills?: readonly TerrainHill[];
   /** Current tier even at Citadel, where there is no next upgrade readout. */
   holdTier?: string;
   /** Current co-op tiers keyed by owner, including owners without a Camp. */
@@ -511,9 +565,11 @@ export interface ReadPresentation {
   buildOptionsByOwner: Readonly<Record<string, readonly BuildReadout[]>>;
   buildings: Readonly<Record<string, BuildingReadout>>;
   calamities: readonly CalamityReadout[];
+  exploration: ExplorationReadout | null;
   fog: FogOfWarState | null;
   fx: readonly FxReadout[];
   hellPressure: number;
+  hills: readonly TerrainHill[];
   holdTier: string | null;
   holdTiers: Readonly<Record<string, string>>;
   holdUpgrade: HoldUpgradeReadout | null;
@@ -740,9 +796,11 @@ export function readPresentation(
     buildOptions: readArray<BuildReadout>(ui.buildOptions),
     buildOptionsByOwner,
     calamities: readArray<CalamityReadout>(ui.calamities),
+    exploration: readObject<ExplorationReadout>(ui.exploration),
     fog: isFogOfWarState(ui.fog) ? ui.fog : null,
     fx: readArray<FxReadout>(ui.fx),
     hellPressure,
+    hills: readArray<TerrainHill>(ui.hills),
     holdTier: typeof ui.holdTier === "string" ? ui.holdTier : null,
     holdTiers,
     holdUpgrade:

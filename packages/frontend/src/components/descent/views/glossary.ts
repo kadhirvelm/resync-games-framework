@@ -14,8 +14,14 @@ export const GLOSSARY = [
     term: "Hold",
   },
   {
-    meaning: "Fuel for pills and breakthroughs",
+    meaning:
+      "Shared stockpile for pills and breakthroughs; separate from each soldier's Personal Essence",
     term: "Essence",
+  },
+  {
+    meaning:
+      "Sword, Flying-Sword, and Formation classes with Qi Arts (C) and Meditation (M); every soldier cultivates",
+    term: "Qi Cultivator",
   },
   {
     meaning: "Ember, Rime, or Blood affinity",
@@ -59,12 +65,12 @@ export const GLOSSARY = [
   },
   {
     meaning:
-      "Meditate in place (press M) to absorb Essence & Merit — 2.5× near Veins or Arrays",
+      "Meditate in place (press M) to absorb Personal Essence & Merit — 2.5× near Veins, Arrays, or Seclusion Pavilions",
     term: "Seclusion",
   },
   {
     meaning:
-      "Formation pillar that gathers Essence and doubles nearby Cultivator Qi regen",
+      "Produces shared Essence; nearby Qi cultivators gain 2× Qi regen, faster cooldowns, stronger arts, and 2.5× Meditation gains",
     term: "Spirit Gathering Array",
   },
 ] as const satisfies readonly GlossaryEntry[];

@@ -82,6 +82,17 @@ export function startSimDriver(
   let running = true;
   let handle = 0;
 
+  /** Drops elapsed wall-clock time when returning from a backgrounded tab. */
+  const onVisibilityChange = () => {
+    if (typeof document === "undefined" || document.hidden) return;
+    previousMs = null;
+    accumulatorMs = 0;
+  };
+
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", onVisibilityChange);
+  }
+
   /** @param timeMs - Frame timestamp */
   const frame = (timeMs: number) => {
     if (!running) return;
@@ -103,5 +114,8 @@ export function startSimDriver(
   return () => {
     running = false;
     scheduler.cancel(handle);
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    }
   };
 }

@@ -5,6 +5,7 @@ import {
   type EdgeScrollRect,
   edgeScrollPanDirection,
   emptyCameraKeys,
+  isPointerInEdgeScrollBand,
 } from "../cameraControls";
 
 const OPENING_ALPHA = -Math.PI / 2;
@@ -129,5 +130,20 @@ describe("edgeScrollPanDirection", () => {
         isPointerOverHud: () => false,
       }),
     ).toEqual(ZERO);
+  });
+});
+
+describe("isPointerInEdgeScrollBand", () => {
+  test("tests all four 24px edges against the canvas rect rather than window bounds", () => {
+    expect(isPointerInEdgeScrollBand(null, VIEWPORT)).toBe(false);
+    // Offset canvas: top is 50, bottom is 650.
+    expect(isPointerInEdgeScrollBand({ x: 500, y: 55 }, VIEWPORT)).toBe(true);
+    expect(isPointerInEdgeScrollBand({ x: 500, y: 645 }, VIEWPORT)).toBe(true);
+    expect(isPointerInEdgeScrollBand({ x: 105, y: 300 }, VIEWPORT)).toBe(true);
+    expect(isPointerInEdgeScrollBand({ x: 895, y: 300 }, VIEWPORT)).toBe(true);
+    // Interior and outside the canvas rect are inactive.
+    expect(isPointerInEdgeScrollBand({ x: 500, y: 300 }, VIEWPORT)).toBe(false);
+    expect(isPointerInEdgeScrollBand({ x: 500, y: 20 }, VIEWPORT)).toBe(false);
+    expect(isPointerInEdgeScrollBand({ x: 500, y: 660 }, VIEWPORT)).toBe(false);
   });
 });

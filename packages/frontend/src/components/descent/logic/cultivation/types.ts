@@ -143,11 +143,25 @@ export interface RegisterCultivationUnitInput {
 
 /** Read model consumed by the unit panel. */
 export interface CultivationView {
+  /** Qualifying kills toward the next rank; published by the live system. */
+  combatProof?: number;
+  /** Proof required by the next rank, or 0 at the rank cap. */
+  combatProofToNext?: number;
   rank: RankTitle;
   merit: number;
   meritToNext: number;
   essence: number;
   essenceToNext: number;
+  /** Rank this checklist promotes into; absent at the cap and in old previews. */
+  nextRank?: RankTitle;
+  /** Names of permanent and Dao pills already fed to this unit. */
+  pillNames?: string[];
+  /** Current scenario's highest legal rank, when capped. */
+  rankCap?: RankTitle;
+  /** Player-facing scenario name for the cap, such as Ashen Gate. */
+  rankCapLabel?: string;
+  /** True when this unit is already at the live scenario's cap. */
+  rankCapReached?: boolean;
   school?: SchoolId;
   toxicity: number;
   toxicityCap: number;

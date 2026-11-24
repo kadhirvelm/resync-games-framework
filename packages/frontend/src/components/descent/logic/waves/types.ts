@@ -161,6 +161,10 @@ export interface WaveUnit {
   damage: number;
   definitionId: string;
   factionId: string;
+  /** Exploration camp this guard belongs to; siege bodies omit it. */
+  guardCampId?: string;
+  /** Fixed home a camp guard returns to instead of marching on the Hold. */
+  guardHome?: { x: number; y: number };
   hitPoints: number;
   id: string;
   lifesteal: boolean;
@@ -282,6 +286,8 @@ export interface WaveClockState {
    * `shouldHoldWave`, negative when pulled forward by `callNextWaveEarly`.
    */
   scheduleOffsetTicks?: number;
+  /** False in exploration: no timed waves, Essence power, or Hell Pressure. */
+  scheduledWaves?: boolean;
   spawnedWaveIds: string[];
   summonAt: Record<string, number>;
   trackedUnitIds: string[];

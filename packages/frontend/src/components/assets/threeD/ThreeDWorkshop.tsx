@@ -15,6 +15,14 @@ import { useClientServiceCallers } from "@/services/clientServiceCallers";
 import { readGlbUpload, threeDAssetCaller } from "@/services/threeDService";
 import { readReducedMotionPreference } from "../../babylonGame/reducedMotionPreference";
 import { ASHEN_GATE_3D_ASSETS } from "../../descent/data/layers/ashen_gate/threeDAssets";
+import {
+  type AssetGameId,
+  type AssetGameTag,
+  THREE_D_SANDBOX_TAG,
+  threeDAssetGameTags,
+} from "../assetGameTags";
+import { GameFilterBar } from "../GameFilterBar";
+import { GameTagList } from "../GameTagList";
 import { ThreeDModal } from "./ThreeDModal";
 import styles from "./threeDWorkshop.module.scss";
 
@@ -101,12 +109,16 @@ export function ThreeDWorkshop({
   const [busy, setBusy] = useState("");
   const [planningId, setPlanningId] = useState<string>();
   const [selectedId, setSelectedId] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [jobsOpen, setJobsOpen] = useState(false);
   const [preview, setPreview] = useState<ThreeDAsset>();
   const [edit, setEdit] = useState<ThreeDAsset>();
   const [designText, setDesignText] = useState("");
   const [query, setQuery] = useState("");
   const [providerFilter, setProviderFilter] = useState("all");
-  const [showRoster, setShowRoster] = useState(true);
+  const [gameFilter, setGameFilter] = useState<AssetGameId | "all">("all");
+  const [showRoster, setShowRoster] = useState(false);
+  const [rosterMissingOnly, setRosterMissingOnly] = useState(true);
   const [rosterBusyId, setRosterBusyId] = useState("");
   const [jobStartTimes] = useState(() => new Map<string, number>());
   const mounted = useRef(true);
@@ -119,6 +131,9 @@ export function ThreeDWorkshop({
     if (isWorldWorkshop) return job.prototypeId !== undefined;
     return job.prototypeId === undefined && job.kind === kind;
   });
+  const visibleRunningCount = visibleJobs.filter(
+    (job) => job.state === "running",
+  ).length;
 
   const providerOptions = useMemo(() => {
     const providers = new Set<string>();
@@ -126,13 +141,34 @@ export function ThreeDWorkshop({
     return [...providers].sort();
   }, [assets]);
 
+  const taggedVisibleAssets = useMemo(
+    () =>
+      visibleAssets.map((asset) => ({
+        asset,
+        tags: threeDAssetGameTags(asset, prototypes),
+      })),
+    [visibleAssets, prototypes],
+  );
+
+  const availableGameTags = useMemo(() => {
+    const seen = new Map<AssetGameId, AssetGameTag>();
+    for (const entry of taggedVisibleAssets) {
+      for (const tag of entry.tags) {
+        seen.set(tag.id, tag);
+      }
+    }
+    return [...seen.values()];
+  }, [taggedVisibleAssets]);
+
   const filteredAssets = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return visibleAssets.filter((asset) => {
+    return taggedVisibleAssets.filter(({ asset, tags }) => {
       if (
         providerFilter !== "all" &&
         asset.provenance.provider !== providerFilter
       )
+        return false;
+      if (gameFilter !== "all" && !tags.some((tag) => tag.id === gameFilter))
         return false;
       if (needle === "") return true;
       return (
@@ -140,7 +176,7 @@ export function ThreeDWorkshop({
         asset.prompt.toLowerCase().includes(needle)
       );
     });
-  }, [visibleAssets, query, providerFilter]);
+  }, [taggedVisibleAssets, query, providerFilter, gameFilter]);
 
   const rosterRows = useMemo(
     () =>
@@ -187,7 +223,10 @@ export function ThreeDWorkshop({
     const params = new URLSearchParams(window.location.search);
     const initialPrompt = params.get("prompt");
     const initialProvider = params.get("provider");
-    if (initialPrompt) setPrompt(initialPrompt);
+    if (initialPrompt) {
+      setPrompt(initialPrompt);
+      setCreateOpen(true);
+    }
     if (
       initialProvider === "meshy" ||
       initialProvider === "design" ||
@@ -251,11 +290,11 @@ export function ThreeDWorkshop({
     return result.generationId;
   };
 
-  /** Prefills the composer from a saved asset so the next run remixes it. */
+  /** Prefills the composer from a saved asset and opens the create dialog. */
   const remixAsset = (asset: ThreeDAsset) => {
     setPrompt(asset.prompt);
     setProvider(asset.provenance.provider as ThreeDProvider);
-    window.scrollTo({ behavior: "smooth", top: 0 });
+    setCreateOpen(true);
   };
 
   /** Builds missing slots sequentially to keep cost and resource use predictable. */
@@ -327,191 +366,222 @@ export function ThreeDWorkshop({
     [preview],
   );
 
-  return (
-    <main className={styles.studio}>
-      <div className={styles.layout}>
-        <section className={styles.panel}>
-          <div className={styles.heading}>
-            <h2>
-              {isWorldWorkshop ? "Plan a 3D world" : `Create a 3D ${kind}`}
-            </h2>
-            <a href={threeDSandboxHref()}>Playground ↗</a>
-          </div>
-          {isWorldWorkshop ? (
-            <label>
-              World name
-              <input
-                maxLength={80}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="The moonlit garden"
-                value={name}
-              />
-            </label>
-          ) : null}
-          <label>
-            Creative brief
-            <textarea
-              maxLength={4000}
-              onChange={(event) => setPrompt(event.target.value)}
-              rows={5}
-              value={prompt}
-            />
-          </label>
-          <div className={styles.chips}>
-            {examples.map((example, index) => (
-              <button
-                key={example}
-                onClick={() => setPrompt(example)}
-                type="button"
-              >
-                Idea {index + 1}
-              </button>
-            ))}
-          </div>
-          <label>
-            Generation route
-            <select
-              onChange={(event) =>
-                setProvider(event.target.value as ThreeDProvider)
-              }
-              value={provider}
-            >
-              <option value="design">Low-poly AI · existing model setup</option>
-              <option value="demo">Curated demo · no model calls</option>
-              <option disabled={!meshyConfigured} value="meshy">
-                Meshy · detailed models{" "}
-                {!meshyConfigured ? "(needs backend key)" : ""}
-              </option>
-            </select>
-          </label>
-          <p className={styles.hint}>
-            {generationHint(provider, kind, isWorldWorkshop)}{" "}
-            {!meshyConfigured
-              ? "For detailed props, set MESHY_API_KEY on the backend and restart it."
-              : ""}
-          </p>
-          <label className={styles.checkbox}>
-            <input
-              checked={useLore}
-              onChange={(event) => setUseLore(event.target.checked)}
-              type="checkbox"
-            />{" "}
-            Ground AI model designs in ProductNow lore
-          </label>
-          {isWorldWorkshop ? (
-            <div className={styles.actions}>
-              <button
-                className={styles.primary}
-                disabled={Boolean(busy) || !prompt.trim()}
-                onClick={() =>
-                  void perform("Planning world…", () => createPackage())
-                }
-                type="button"
-              >
-                Plan world
-              </button>
-              <button
-                disabled={Boolean(busy)}
-                onClick={() =>
-                  void perform("Building demo world…", () =>
-                    createPackage(true),
-                  )
-                }
-                type="button"
-              >
-                Try complete demo
-              </button>
-            </div>
-          ) : (
-            <>
-              <button
-                className={styles.primary}
-                disabled={
-                  Boolean(busy) || !prompt.trim() || running.length >= 2
-                }
-                onClick={() =>
-                  void perform("Starting generation…", async () => {
-                    await generate(kind, prompt);
-                  })
-                }
-                type="button"
-              >
-                Generate {kind}
-              </button>
-              <label className={styles.upload}>
-                Import a {kind} .glb
-                <input
-                  accept=".glb"
-                  disabled={Boolean(busy)}
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (!file) return;
-                    void perform("Validating GLB…", async () => {
-                      const result = await threeDAssetCaller(
-                        callers,
-                        kind,
-                      ).ingest({
-                        fileName: file.name,
-                        glbBase64: await readGlbUpload(file),
-                        name: file.name.replace(/\.glb$/i, ""),
-                      });
-                      if (isServiceError(result))
-                        throw new Error(result.message);
-                      setPreview(result);
-                    });
-                    event.target.value = "";
-                  }}
-                  type="file"
-                />
-              </label>
-              <p className={styles.hint}>
-                Up to 20 MiB. Embedded PNG/JPEG textures, core glTF 2.0 only.
-                {kind === "character"
-                  ? " Characters need a skin and idle, walk, attack, hit, and death clips."
-                  : ""}
-              </p>
-            </>
-          )}
-          {busy ? (
-            <p aria-live="polite" role="status">
-              {busy}
-            </p>
-          ) : null}
-          {error ? (
-            <p className={styles.error} role="alert">
-              {error}
-            </p>
-          ) : null}
-          {isWorldWorkshop && planningId ? (
+  const createFormContent = (
+    <>
+      {isWorldWorkshop ? (
+        <label>
+          World name
+          <input
+            maxLength={80}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="The moonlit garden"
+            value={name}
+          />
+        </label>
+      ) : null}
+      <label>
+        Creative brief
+        <textarea
+          maxLength={4000}
+          onChange={(event) => setPrompt(event.target.value)}
+          rows={5}
+          value={prompt}
+        />
+      </label>
+      <div className={styles.chips}>
+        {examples.map((example, index) => (
+          <button
+            key={example}
+            onClick={() => setPrompt(example)}
+            type="button"
+          >
+            Idea {index + 1}
+          </button>
+        ))}
+      </div>
+      <label>
+        Generation route
+        <select
+          onChange={(event) =>
+            setProvider(event.target.value as ThreeDProvider)
+          }
+          value={provider}
+        >
+          <option value="design">Low-poly AI · existing model setup</option>
+          <option value="demo">Curated demo · no model calls</option>
+          <option disabled={!meshyConfigured} value="meshy">
+            Meshy · detailed models{" "}
+            {!meshyConfigured ? "(needs backend key)" : ""}
+          </option>
+        </select>
+      </label>
+      <p className={styles.hint}>
+        {generationHint(provider, kind, isWorldWorkshop)}{" "}
+        {!meshyConfigured
+          ? "For detailed props, set MESHY_API_KEY on the backend and restart it."
+          : ""}
+      </p>
+      <label className={styles.checkbox}>
+        <input
+          checked={useLore}
+          onChange={(event) => setUseLore(event.target.checked)}
+          type="checkbox"
+        />{" "}
+        Ground AI model designs in ProductNow lore
+      </label>
+      {isWorldWorkshop ? (
+        <div className={styles.actions}>
+          <button
+            className={styles.primary}
+            disabled={Boolean(busy) || !prompt.trim()}
+            onClick={() =>
+              void perform("Planning world…", async () => {
+                await createPackage();
+                setCreateOpen(false);
+              })
+            }
+            type="button"
+          >
+            Plan world
+          </button>
+          <button
+            disabled={Boolean(busy)}
+            onClick={() =>
+              void perform("Building demo world…", async () => {
+                await createPackage(true);
+                setCreateOpen(false);
+              })
+            }
+            type="button"
+          >
+            Try complete demo
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className={styles.actions}>
             <button
+              className={styles.primary}
+              disabled={Boolean(busy) || !prompt.trim() || running.length >= 2}
               onClick={() =>
-                void callers.threeDWorkshop.cancel({ generationId: planningId })
+                void perform("Starting generation…", async () => {
+                  await generate(kind, prompt);
+                  setCreateOpen(false);
+                })
               }
               type="button"
             >
-              Stop planning
+              Generate {kind}
             </button>
-          ) : null}
-        </section>
+          </div>
+          <label className={styles.upload}>
+            Import a {kind} .glb
+            <input
+              accept=".glb"
+              disabled={Boolean(busy)}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                void perform("Validating GLB…", async () => {
+                  const result = await threeDAssetCaller(callers, kind).ingest({
+                    fileName: file.name,
+                    glbBase64: await readGlbUpload(file),
+                    name: file.name.replace(/\.glb$/i, ""),
+                  });
+                  if (isServiceError(result)) throw new Error(result.message);
+                  setCreateOpen(false);
+                  setPreview(result);
+                });
+                event.target.value = "";
+              }}
+              type="file"
+            />
+          </label>
+          <p className={styles.hint}>
+            Up to 20 MiB. Embedded PNG/JPEG textures, core glTF 2.0 only.
+            {kind === "character"
+              ? " Characters need a skin and idle, walk, attack, hit, and death clips."
+              : ""}
+          </p>
+        </>
+      )}
+      {busy ? (
+        <p aria-live="polite" role="status">
+          {busy}
+        </p>
+      ) : null}
+      {error ? (
+        <p className={styles.error} role="alert">
+          {error}
+        </p>
+      ) : null}
+      {isWorldWorkshop && planningId ? (
+        <button
+          onClick={() =>
+            void callers.threeDWorkshop.cancel({ generationId: planningId })
+          }
+          type="button"
+        >
+          Stop planning
+        </button>
+      ) : null}
+    </>
+  );
+
+  return (
+    <main className={styles.studio}>
+      <div className={styles.stackLayout}>
         <section className={styles.workspace}>
           {isWorldWorkshop ? (
             <div className={styles.panel}>
               <div className={styles.heading}>
-                <h2>Your 3D worlds</h2>
-                <select
-                  aria-label="Select prototype"
-                  onChange={(event) => setSelectedId(event.target.value)}
-                  value={selected?.id ?? ""}
-                >
-                  <option disabled={true} value="">
-                    Choose a world
-                  </option>
-                  {prototypes.map((prototype) => (
-                    <option key={prototype.id} value={prototype.id}>
-                      {prototype.name}
+                <div className={styles.headingGroup}>
+                  <h2>Your 3D worlds</h2>
+                  <GameTagList tags={[THREE_D_SANDBOX_TAG]} />
+                </div>
+                <div className={styles.actions}>
+                  {visibleJobs.length > 0 ? (
+                    <button
+                      className={styles.jobsTrigger}
+                      onClick={() => setJobsOpen(true)}
+                      type="button"
+                    >
+                      {visibleRunningCount > 0 ? (
+                        <>
+                          <span
+                            aria-hidden="true"
+                            className={styles.jobsSpinner}
+                          />
+                          {visibleRunningCount} generating
+                        </>
+                      ) : (
+                        `Jobs (${visibleJobs.length})`
+                      )}
+                    </button>
+                  ) : null}
+                  <a href={threeDSandboxHref()}>Playground ↗</a>
+                  <button
+                    className={styles.primary}
+                    onClick={() => setCreateOpen(true)}
+                    type="button"
+                  >
+                    + Plan 3D world
+                  </button>
+                  <select
+                    aria-label="Select prototype"
+                    onChange={(event) => setSelectedId(event.target.value)}
+                    value={selected?.id ?? ""}
+                  >
+                    <option disabled={true} value="">
+                      Choose a world
                     </option>
-                  ))}
-                </select>
+                    {prototypes.map((prototype) => (
+                      <option key={prototype.id} value={prototype.id}>
+                        {prototype.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
               {selected ? (
                 <>
@@ -655,23 +725,163 @@ export function ThreeDWorkshop({
           {!isWorldWorkshop ? (
             <section className={styles.panel}>
               <div className={styles.heading}>
-                <h2>Descent roster</h2>
+                <div className={styles.headingGroup}>
+                  <h2>{kindTitle} library</h2>
+                  <span>
+                    {filteredAssets.length}/{visibleAssets.length} assets
+                  </span>
+                </div>
                 <div className={styles.actions}>
+                  {visibleJobs.length > 0 ? (
+                    <button
+                      className={styles.jobsTrigger}
+                      onClick={() => setJobsOpen(true)}
+                      type="button"
+                    >
+                      {visibleRunningCount > 0 ? (
+                        <>
+                          <span
+                            aria-hidden="true"
+                            className={styles.jobsSpinner}
+                          />
+                          {visibleRunningCount} generating
+                        </>
+                      ) : (
+                        `Jobs (${visibleJobs.length})`
+                      )}
+                    </button>
+                  ) : null}
+                  <a href={threeDSandboxHref()}>Playground ↗</a>
+                  <button
+                    className={styles.primary}
+                    onClick={() => setCreateOpen(true)}
+                    type="button"
+                  >
+                    + Create {kind}
+                  </button>
+                </div>
+              </div>
+              <GameFilterBar
+                activeGameId={gameFilter}
+                availableTags={availableGameTags}
+                onChange={setGameFilter}
+              />
+              <div className={styles.libraryFilters}>
+                <input
+                  aria-label="Search saved models"
+                  className={styles.librarySearch}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search names or prompts…"
+                  type="text"
+                  value={query}
+                />
+                <select
+                  aria-label="Filter by provider"
+                  onChange={(event) => setProviderFilter(event.target.value)}
+                  value={providerFilter}
+                >
+                  <option value="all">All providers</option>
+                  {providerOptions.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className={styles.library}>
+                {filteredAssets.map(({ asset, tags }) => (
+                  <article className={styles.asset} key={asset.id}>
+                    <button
+                      className={styles.thumbnailButton}
+                      onClick={() => setPreview(asset)}
+                      type="button"
+                    >
+                      <Image
+                        alt={`Inspect ${asset.name}`}
+                        height={320}
+                        loading="lazy"
+                        src={asset.thumbnailUrl}
+                        unoptimized={true}
+                        width={320}
+                      />
+                    </button>
+                    <h3>{asset.name}</h3>
+                    <GameTagList fallbackLabel="General" tags={tags} />
+                    <p>
+                      {Math.round(asset.validation.triangles).toLocaleString()}{" "}
+                      triangles · {(asset.validation.bytes / 1024).toFixed(0)}{" "}
+                      KiB
+                    </p>
+                    <span>✓ Validated · {asset.provenance.provider}</span>
+                    <div className={styles.actions}>
+                      <a href={asset.url} rel="noreferrer" target="_blank">
+                        GLB ↗
+                      </a>
+                      <a
+                        href={threeDSandboxHref({
+                          asset: asset.id,
+                          kind: asset.kind,
+                        })}
+                      >
+                        Try in playground
+                      </a>
+                      <button onClick={() => remixAsset(asset)} type="button">
+                        Remix
+                      </button>
+                      {asset.design ? (
+                        <button
+                          onClick={() => {
+                            setEdit(asset);
+                            setDesignText(
+                              JSON.stringify(asset.design, null, 2),
+                            );
+                          }}
+                          type="button"
+                        >
+                          Edit design
+                        </button>
+                      ) : null}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
+          {!isWorldWorkshop && rosterRows.length > 0 ? (
+            <section className={styles.panel}>
+              <div className={styles.heading}>
+                <div className={styles.headingGroup}>
+                  <h2>Descent roster</h2>
                   <span>
                     {rosterRows.length - rosterMissingCount}/{rosterRows.length}{" "}
                     filled
                   </span>
+                </div>
+                <div className={styles.actions}>
+                  {showRoster ? (
+                    <button
+                      onClick={() => setRosterMissingOnly(!rosterMissingOnly)}
+                      type="button"
+                    >
+                      {rosterMissingOnly
+                        ? `Show all (${rosterRows.length})`
+                        : `Missing only (${rosterMissingCount})`}
+                    </button>
+                  ) : null}
                   <button
                     onClick={() => setShowRoster(!showRoster)}
                     type="button"
                   >
-                    {showRoster ? "Hide" : "Show"}
+                    {showRoster ? "Hide roster" : "Show roster"}
                   </button>
                 </div>
               </div>
               {showRoster ? (
                 <div className={styles.roster}>
-                  {rosterRows.map(({ definition, match }) => {
+                  {(rosterMissingOnly
+                    ? rosterRows.filter((row) => !row.match)
+                    : rosterRows
+                  ).map(({ definition, match }) => {
                     const runningJob = visibleJobs.find(
                       (job) =>
                         job.state === "running" &&
@@ -747,144 +957,73 @@ export function ThreeDWorkshop({
               ) : null}
             </section>
           ) : null}
-          {visibleJobs.length ? (
-            <section className={styles.panel}>
-              <h2>Generation desk</h2>
-              {visibleJobs.slice(0, 8).map((job) => (
-                <div className={styles.job} key={job.generationId}>
-                  <div>
-                    <strong>
-                      {job.kind} · {job.provider}
-                    </strong>
-                    <p>
-                      {job.stage}
-                      {job.error ? ` · ${job.error}` : ""}
-                      {job.state === "running"
-                        ? ` · ${Math.round(
-                            (Date.now() -
-                              (jobStartTimes.get(job.generationId) ??
-                                Date.now())) /
-                              1000,
-                          )}s elapsed`
-                        : ""}
-                    </p>
-                    <progress max={100} value={job.progress} />
-                  </div>
-                  {job.state === "running" ? (
-                    <button
-                      onClick={() =>
-                        void perform("Stopping…", async () => {
-                          const result = await callers.threeDWorkshop.cancel({
-                            generationId: job.generationId,
-                          });
-                          if (isServiceError(result))
-                            throw new Error(result.message);
-                        })
-                      }
-                      type="button"
-                    >
-                      Stop
-                    </button>
-                  ) : null}
-                  {job.asset ? (
-                    <button onClick={() => setPreview(job.asset)} type="button">
-                      Inspect
-                    </button>
-                  ) : null}
-                </div>
-              ))}
-            </section>
-          ) : null}
-          {!isWorldWorkshop ? (
-            <section className={styles.panel}>
-              <div className={styles.heading}>
-                <h2>{kindTitle} library</h2>
-                <span>
-                  {filteredAssets.length}/{visibleAssets.length} assets
-                </span>
-              </div>
-              <div className={styles.libraryFilters}>
-                <input
-                  aria-label="Search saved models"
-                  className={styles.librarySearch}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search names or prompts…"
-                  type="text"
-                  value={query}
-                />
-                <select
-                  aria-label="Filter by provider"
-                  onChange={(event) => setProviderFilter(event.target.value)}
-                  value={providerFilter}
-                >
-                  <option value="all">All providers</option>
-                  {providerOptions.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className={styles.library}>
-                {filteredAssets.map((asset) => (
-                  <article className={styles.asset} key={asset.id}>
-                    <button
-                      className={styles.thumbnailButton}
-                      onClick={() => setPreview(asset)}
-                      type="button"
-                    >
-                      <Image
-                        alt={`Inspect ${asset.name}`}
-                        height={320}
-                        loading="lazy"
-                        src={asset.thumbnailUrl}
-                        unoptimized={true}
-                        width={320}
-                      />
-                    </button>
-                    <h3>{asset.name}</h3>
-                    <p>
-                      {Math.round(asset.validation.triangles).toLocaleString()}{" "}
-                      triangles · {(asset.validation.bytes / 1024).toFixed(0)}{" "}
-                      KiB
-                    </p>
-                    <span>✓ Validated · {asset.provenance.provider}</span>
-                    <div className={styles.actions}>
-                      <a href={asset.url} rel="noreferrer" target="_blank">
-                        GLB ↗
-                      </a>
-                      <a
-                        href={threeDSandboxHref({
-                          asset: asset.id,
-                          kind: asset.kind,
-                        })}
-                      >
-                        Try in playground
-                      </a>
-                      <button onClick={() => remixAsset(asset)} type="button">
-                        Remix
-                      </button>
-                      {asset.design ? (
-                        <button
-                          onClick={() => {
-                            setEdit(asset);
-                            setDesignText(
-                              JSON.stringify(asset.design, null, 2),
-                            );
-                          }}
-                          type="button"
-                        >
-                          Edit design
-                        </button>
-                      ) : null}
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </section>
-          ) : null}
         </section>
       </div>
+      {jobsOpen ? (
+        <ThreeDModal onClose={() => setJobsOpen(false)} title="Generation jobs">
+          {visibleJobs.length === 0 ? (
+            <p>No recent jobs.</p>
+          ) : (
+            visibleJobs.slice(0, 12).map((job) => (
+              <div className={styles.job} key={job.generationId}>
+                <div>
+                  <strong>
+                    {job.kind} · {job.provider}
+                  </strong>
+                  <p>
+                    {job.stage}
+                    {job.error ? ` · ${job.error}` : ""}
+                    {job.state === "running"
+                      ? ` · ${Math.round(
+                          (Date.now() -
+                            (jobStartTimes.get(job.generationId) ??
+                              Date.now())) /
+                            1000,
+                        )}s elapsed`
+                      : ""}
+                  </p>
+                  <progress max={100} value={job.progress} />
+                </div>
+                {job.state === "running" ? (
+                  <button
+                    onClick={() =>
+                      void perform("Stopping…", async () => {
+                        const result = await callers.threeDWorkshop.cancel({
+                          generationId: job.generationId,
+                        });
+                        if (isServiceError(result))
+                          throw new Error(result.message);
+                      })
+                    }
+                    type="button"
+                  >
+                    Stop
+                  </button>
+                ) : null}
+                {job.asset ? (
+                  <button
+                    onClick={() => {
+                      setJobsOpen(false);
+                      setPreview(job.asset);
+                    }}
+                    type="button"
+                  >
+                    Inspect
+                  </button>
+                ) : null}
+              </div>
+            ))
+          )}
+        </ThreeDModal>
+      ) : null}
+      {createOpen ? (
+        <ThreeDModal
+          onClose={() => setCreateOpen(false)}
+          title={isWorldWorkshop ? "Plan a 3D world" : `Create a 3D ${kind}`}
+        >
+          {createFormContent}
+        </ThreeDModal>
+      ) : null}
       {preview && previewInput ? (
         <ThreeDModal onClose={() => setPreview(undefined)} title={preview.name}>
           <div className={styles.previewScene}>

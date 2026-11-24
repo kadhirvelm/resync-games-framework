@@ -45,12 +45,11 @@ function pointHurts(
 }
 
 /**
- * Reports whether the open segment from `from` to `to` crosses a disk.
- * The start point is not tested, so a unit already inside can still step out.
+ * Reports whether the closed segment from `from` to `to` touches a disk.
  * @param from - Segment start
  * @param to - Segment end
  * @param disks - Disks the segment must miss
- * @returns True when any sample along the segment is inside a disk
+ * @returns True when any point along the segment is inside a disk
  */
 function segmentHits(
   from: { x: number; y: number },
@@ -58,13 +57,29 @@ function segmentHits(
   disks: readonly HurtDisk[],
 ): boolean {
   if (disks.length === 0) return false;
-  const length = Math.hypot(to.x - from.x, to.y - from.y);
-  const samples = Math.max(1, Math.ceil(length / 0.25));
-  for (let index = 1; index <= samples; index += 1) {
-    const t = index / samples;
-    const x = from.x + (to.x - from.x) * t;
-    const y = from.y + (to.y - from.y) * t;
-    if (pointHurts(disks, x, y, CLEARANCE)) return true;
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const squaredLength = dx * dx + dy * dy;
+  for (const disk of disks) {
+    const projection =
+      squaredLength === 0
+        ? 0
+        : Math.max(
+            0,
+            Math.min(
+              1,
+              ((disk.x - from.x) * dx + (disk.y - from.y) * dy) / squaredLength,
+            ),
+          );
+    if (
+      pointHurts(
+        [disk],
+        from.x + dx * projection,
+        from.y + dy * projection,
+        CLEARANCE,
+      )
+    )
+      return true;
   }
   return false;
 }
@@ -94,28 +109,86 @@ function clearStep(
   return null;
 }
 
+/** Number of fixed escape rays; fixed ordering makes overlap exits deterministic. */
+const ESCAPE_RAYS = Array.from({ length: 64 }, (_, index) => ({
+  x: Math.cos((index * 2 * Math.PI) / 64),
+  y: Math.sin((index * 2 * Math.PI) / 64),
+}));
+
 /**
- * Steps away from the center of the disk the unit is standing in.
- * @param from - Point inside `disk`
- * @param step - Distance to move
- * @param disk - Disk to leave
- * @param disks - Other disks the exit must miss
- * @returns The exit step, or `from` when the way out is blocked
+ * Measures distance to the occupied union's boundary along a unit ray.
+ * All supplied disks contain the start, so their ray intervals are connected.
+ * @param from - Current point
+ * @param direction - Unit escape ray
+ * @param occupied - Disks containing the point, including clearance
+ * @returns Distance until the ray has left every occupied disk
  */
-function leaveDisk(
+function exitDistance(
+  from: { x: number; y: number },
+  direction: { x: number; y: number },
+  occupied: readonly HurtDisk[],
+): number {
+  let distance = 0;
+  for (const disk of occupied) {
+    const dx = from.x - disk.x;
+    const dy = from.y - disk.y;
+    const projection = dx * direction.x + dy * direction.y;
+    const radius = disk.radius + CLEARANCE;
+    const discriminant =
+      projection * projection + radius * radius - dx * dx - dy * dy;
+    distance = Math.max(
+      distance,
+      -projection + Math.sqrt(Math.max(0, discriminant)),
+    );
+  }
+  return distance;
+}
+
+/**
+ * Takes a bounded step toward the nearest safe sampled exit from the union.
+ * Remaining ray distance decreases with movement, even in concave overlaps
+ * where getting out requires initially moving deeper into one occupied disk.
+ * Never enters a disk that did not already contain the starting point.
+ * @param from - Point inside the expanded obstacle union
+ * @param step - Maximum movement distance
+ * @param disks - All obstacles
+ * @returns A safe escape step, or the start when no sampled ray is safe
+ */
+function leaveDisks(
   from: { x: number; y: number },
   step: number,
-  disk: HurtDisk,
   disks: readonly HurtDisk[],
 ): { x: number; y: number } {
-  const others = disks.filter((entry) => entry !== disk);
-  const rx = from.x - disk.x;
-  const ry = from.y - disk.y;
-  const radial = Math.hypot(rx, ry);
-  if (radial < 1e-9) {
-    return clearStep(from, 1, 0, step, others) ?? from;
+  const occupied = disks.filter((disk) =>
+    pointHurts([disk], from.x, from.y, CLEARANCE),
+  );
+  const others = disks.filter((disk) => !occupied.includes(disk));
+  let best = from;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  let bestExits = false;
+  for (const direction of ESCAPE_RAYS) {
+    const distance = exitDistance(from, direction, occupied);
+    const exitLength = distance + CLEARANCE;
+    const exits = !segmentHits(
+      from,
+      {
+        x: from.x + direction.x * exitLength,
+        y: from.y + direction.y * exitLength,
+      },
+      others,
+    );
+    // Prefer an unobstructed exit over repeatedly approaching a nearby blocker.
+    if (bestExits && !exits) continue;
+    if (exits === bestExits && distance >= bestDistance - 1e-9) continue;
+    // Do not let a long movement order make distant obstacles block a local exit.
+    const length = Math.min(step, exitLength);
+    const next = clearStep(from, direction.x, direction.y, length, others);
+    if (!next) continue;
+    best = next;
+    bestDistance = distance;
+    bestExits = exits;
   }
-  return clearStep(from, rx / radial, ry / radial, step, others) ?? from;
+  return best;
 }
 
 /**
@@ -151,8 +224,9 @@ export function stepAroundHurt(
   if (disks.length === 0) return proposed;
   const step = Math.hypot(proposed.x - from.x, proposed.y - from.y);
   if (step === 0) return proposed;
-  const occupied = diskAt(disks, from.x, from.y);
-  if (occupied) return leaveDisk(from, step, occupied, disks);
+  if (pointHurts(disks, from.x, from.y, CLEARANCE)) {
+    return leaveDisks(from, step, disks);
+  }
   if (!segmentHits(from, proposed, disks)) return proposed;
   const blocker = disks.find((disk) => segmentHits(from, proposed, [disk]));
   if (!blocker) return proposed;

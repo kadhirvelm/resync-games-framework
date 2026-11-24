@@ -1,5 +1,15 @@
 $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, sans-serif);
 
+// Z-index layers:
+// - Stage/canvas (.mapFrame): 0
+// - Stage overlays (.topLeftHud, .strategicHud, .mapStatus, .coachDock, .errorToasts): 2–4
+// - TutorialGuide (.topRightHud): 13
+// - TierUnlockBanner: 14
+// - .topHud & .bottomHud (and their tooltips): 15–16
+// - Modals (.backdrop): 30
+// - Match outcome (.outcome): 35
+// - Loading screen: 100 (in loadingScreen.module.scss)
+
 .shell {
   --bronze: #c69a55;
   --bronze-bright: #efc977;
@@ -20,13 +30,19 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   flex: 1;
   flex-direction: column;
   font-family: $descent;
-  height: 100%;
+  height: 100dvh;
   isolation: isolate;
-  min-height: 720px;
-  min-width: 900px;
+  min-height: 0;
+  min-width: 0;
   overflow: hidden;
   position: relative;
+  user-select: none;
   width: 100%;
+
+  input,
+  textarea {
+    user-select: text;
+  }
 }
 
 .srOnly {
@@ -51,16 +67,7 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   flex: 0 0 44px;
   min-height: 44px;
   position: relative;
-  z-index: 2;
-}
-
-.panelKicker {
-  color: var(--bronze);
-  display: block;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
+  z-index: 15;
 }
 
 .resources {
@@ -90,10 +97,10 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   color: inherit;
   cursor: default;
   display: flex;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   font: inherit;
   gap: 5px;
-  min-width: 78px;
+  min-width: 72px;
   padding: 2px 8px 2px 4px;
   position: relative;
   text-align: left;
@@ -150,7 +157,7 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
     visibility 120ms ease;
   visibility: hidden;
   width: max-content;
-  z-index: 8;
+  z-index: 16;
 
   &::before {
     content: "";
@@ -213,6 +220,90 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   line-height: 1.1;
 }
 
+.idleVillagerButton {
+  align-items: center;
+  appearance: none;
+  background: linear-gradient(180deg, rgb(214 148 54 / 32%), rgb(138 78 24 / 40%));
+  border: 1px solid var(--bronze-bright);
+  border-radius: 6px;
+  box-shadow: 0 0 12px rgb(239 201 119 / 22%);
+  color: #fff3da;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 5px;
+  height: 28px;
+  margin-left: 6px;
+  padding: 0 7px 0 5px;
+
+  &:hover {
+    background: linear-gradient(180deg, rgb(232 168 68 / 45%), rgb(164 96 32 / 52%));
+  }
+}
+
+.idleVillagerIcon {
+  display: block;
+  height: 18px;
+  object-fit: contain;
+  width: 18px;
+}
+
+.idleVillagerCount {
+  color: #ffe3a3;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.idleVillagerKey {
+  background: rgb(12 9 7 / 85%);
+  border: 1px solid rgb(239 201 119 / 45%);
+  border-radius: 3px;
+  color: #f7dfb0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 1px 4px;
+}
+
+.topBarRight {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.topBarMeta {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.holdTierBadge {
+  background: rgb(198 154 85 / 14%);
+  border: 1px solid rgb(198 154 85 / 42%);
+  border-radius: 4px;
+  color: var(--bronze-bright);
+  font-size: 10.5px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  padding: 3px 7px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.simClock {
+  color: #d7c7aa;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  min-width: 40px;
+  text-align: right;
+  white-space: nowrap;
+}
+
 .clockControls {
   align-items: center;
   background: rgb(7 6 4 / 46%);
@@ -230,9 +321,7 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
 
 .controlButton,
 .pauseButton,
-.speed,
-.intelButton,
-.closeButton {
+.speed {
   background: linear-gradient(#3a2b1c, #24190f);
   border: 1px solid #75512a;
   color: #e8dcc5;
@@ -341,6 +430,7 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   overflow: hidden;
   position: absolute;
   width: 100%;
+  z-index: 0;
 }
 
 .mapFrame::after {
@@ -419,90 +509,6 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   position: absolute;
 }
 
-.minimapMarker {
-  pointer-events: none;
-  position: absolute;
-  transform: translate(-50%, -50%);
-}
-
-.minimapVein {
-  background: #59d5ef;
-  border-radius: 999px;
-  box-shadow: 0 0 5px rgb(89 213 239 / 80%);
-  height: 5px;
-  width: 5px;
-}
-
-.minimapVent {
-  background: rgb(238 83 62 / 20%);
-  border: 1px solid rgb(238 83 62 / 75%);
-  border-radius: 999px;
-  min-height: 4px;
-  min-width: 4px;
-}
-
-.minimapTerrain {
-  background: rgb(56 48 54 / 85%);
-  border: 1px solid rgb(124 108 116 / 80%);
-  border-radius: 30%;
-  min-height: 4px;
-  min-width: 4px;
-}
-
-.minimapTerrain[data-terrain-kind="magma_fissure"] {
-  background: rgb(214 82 34 / 75%);
-  border-color: #ff9c54;
-}
-
-.minimapTerrain[data-terrain-kind="obsidian_spire"] {
-  background: rgb(42 28 58 / 90%);
-  border-color: #a96de0;
-}
-
-.minimapTerrain[data-terrain-kind="deep_water"] {
-  background: rgb(47 127 154 / 80%);
-  border-color: rgb(120 190 214 / 70%);
-  border-radius: 50%;
-}
-
-.minimapTerrain[data-terrain-kind="bridge"] {
-  background: rgb(139 106 69 / 95%);
-  border-color: #d3b080;
-  border-radius: 2px;
-  z-index: 1;
-}
-
-.minimapNode {
-  background: #8eb678;
-  border: 1px solid #d0e0a9;
-  border-radius: 999px;
-  height: 4px;
-  width: 4px;
-}
-
-.minimapBuilding {
-  background: #e0b35d;
-  border: 1px solid #fff0bb;
-  height: 7px;
-  width: 7px;
-}
-
-.minimapUnit {
-  border-radius: 999px;
-  height: 4px;
-  width: 4px;
-}
-
-.minimapHold {
-  background: #f4dc93;
-  box-shadow: 0 0 4px rgb(244 220 147 / 80%);
-}
-
-.minimapHorde {
-  background: #ee533e;
-  box-shadow: 0 0 4px rgb(238 83 62 / 88%);
-}
-
 .minimapCamera {
   border: 1px solid rgb(255 245 209 / 92%);
   box-shadow:
@@ -551,16 +557,25 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
 
 .mapStatus,
 .pauseOverlay {
-  background: rgb(21 17 12 / 90%);
+  background: rgb(21 17 12 / 92%);
   border: 1px solid var(--bronze);
   box-shadow: 0 5px 18px rgb(0 0 0 / 40%);
   color: #f4e7cc;
-  left: 14px;
   margin: 0;
-  padding: 7px 10px;
+  padding: 7px 12px;
   pointer-events: none;
   position: absolute;
-  top: 14px;
+}
+
+.mapStatus {
+  font-size: 12.5px;
+  font-weight: 600;
+  left: 50%;
+  max-width: min(560px, calc(100% - 32px));
+  text-align: center;
+  top: 12px;
+  transform: translateX(-50%);
+  z-index: 4;
 }
 
 .pauseOverlay {
@@ -571,6 +586,7 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   letter-spacing: 0.14em;
   top: 45%;
   transform: translate(-50%, -50%);
+  z-index: 4;
 }
 
 .node,
@@ -604,9 +620,78 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   box-shadow: 0 0 0 2px #9a6a31, 0 0 16px #f0c66d;
 }
 
+.explorationCamp {
+  align-items: center;
+  appearance: none;
+  background: rgb(37 22 14 / 92%);
+  border: 1px solid #c69a55;
+  color: #f4dfac;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  font: inherit;
+  gap: 2px;
+  max-width: 112px;
+  padding: 5px 7px;
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+}
+
+.explorationCamp[data-cleared="true"] {
+  border-color: #789b72;
+  color: #bfd2ae;
+  opacity: 0.78;
+}
+
+.explorationCampSelected {
+  box-shadow: 0 0 0 2px #9a6a31, 0 0 18px #f0c66d;
+}
+
+.explorationCampMark {
+  align-items: center;
+  background: #6e321f;
+  border: 1px solid #efc977;
+  border-radius: 50%;
+  display: flex;
+  font-size: 10px;
+  font-weight: 800;
+  height: 25px;
+  justify-content: center;
+  width: 25px;
+}
+
+.explorationCamp[data-cleared="true"] .explorationCampMark {
+  background: #36523a;
+  border-color: #a8c696;
+}
+
+.explorationCampName {
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.2;
+  max-width: 98px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .vent {
   background: rgb(224 122 61 / 35%);
   border: 1px dashed #e07a3d;
+}
+
+.hill {
+  background: radial-gradient(
+    circle,
+    rgb(186 156 116 / 30%) 0%,
+    rgb(138 114 88 / 18%) 52%,
+    rgb(92 78 68 / 0%) 100%
+  );
+  border: 1px dashed rgb(196 168 128 / 34%);
+  border-radius: 50%;
+  pointer-events: none;
+  position: absolute;
 }
 
 .terrain {
@@ -673,6 +758,12 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
 
 .token {
   width: 28px;
+}
+
+.tokenCultivator {
+  font-weight: 700;
+  height: 34px;
+  width: 34px;
 }
 
 .buildingToken {
@@ -749,27 +840,55 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   }
 }
 
-.strategicHud {
-  align-items: stretch;
+// Top-left stack: co-op HUD + battlefield info notices never overlap.
+.topLeftHud {
+  align-items: flex-start;
   display: flex;
-  gap: 0;
+  flex-direction: column;
+  gap: 8px;
+  left: 12px;
+  max-width: calc(100% - 24px);
+  pointer-events: none;
+  position: absolute;
+  top: 10px;
+  z-index: 3;
+}
+
+// Top-right stack: strategic status + TutorialGuide never collide at any height.
+.topRightHud {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: calc(100% - 20px);
   max-width: calc(100% - 20px);
-  min-height: 0;
   pointer-events: none;
   position: absolute;
   right: 10px;
   top: 10px;
+  z-index: 13;
+}
+
+.strategicHud {
+  align-items: stretch;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0;
+  max-width: min(540px, calc(100vw - 320px));
+  min-height: 0;
+  pointer-events: none;
+  position: relative;
   width: max-content;
-  z-index: 2;
+  z-index: 3;
 }
 
 .strategicHud:has(.threatCluster) {
   min-height: 88px;
-  width: min(405px, calc(100% - 20px));
+  width: min(405px, calc(100vw - 320px));
 }
 
 .strategicHud[data-has-training="true"]:has(.threatCluster) {
-  width: min(760px, calc(100% - 20px));
+  width: min(540px, calc(100vw - 320px));
 }
 
 .strategicHud > * {
@@ -784,9 +903,6 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
 }
 
 .strategicHud,
-.panel,
-.commands,
-.menu,
 .coach {
   background:
     linear-gradient(145deg, rgb(255 255 255 / 3%), transparent 38%),
@@ -800,7 +916,7 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
 .trainingTracker {
   border-left: 3px solid var(--bronze-bright);
   display: grid;
-  flex: 1 1 360px;
+  flex: 1 1 280px;
   gap: 8px;
   grid-template-columns: auto minmax(0, 1fr);
   min-width: 0;
@@ -845,7 +961,7 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
 .trainingTrackerList {
   display: grid;
   gap: 6px;
-  grid-auto-columns: minmax(200px, 1fr);
+  grid-auto-columns: minmax(180px, 1fr);
   grid-auto-flow: column;
   margin: 0;
   min-width: 0;
@@ -919,20 +1035,17 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   width: 100%;
 }
 
-.trainingTrackerProgress::-webkit-meter-bar,
-.trainingProgress::-webkit-meter-bar {
+.trainingTrackerProgress::-webkit-meter-bar {
   background: #0f0c09;
   border: 0;
 }
 
-.trainingTrackerProgress::-webkit-meter-optimum-value,
-.trainingProgress::-webkit-meter-optimum-value {
+.trainingTrackerProgress::-webkit-meter-optimum-value {
   background: linear-gradient(90deg, #c2672d, #f2c66c);
   box-shadow: 0 0 7px rgb(236 160 67 / 48%);
 }
 
-.trainingTrackerProgress::-moz-meter-bar,
-.trainingProgress::-moz-meter-bar {
+.trainingTrackerProgress::-moz-meter-bar {
   background: linear-gradient(90deg, #c2672d, #f2c66c);
 }
 
@@ -1019,7 +1132,7 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   align-content: center;
   box-sizing: border-box;
   display: grid;
-  flex: 0 0 160px;
+  flex: 0 0 150px;
   padding: 10px 12px;
 }
 
@@ -1039,8 +1152,7 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   font-size: 16px;
 }
 
-.meter,
-.bar {
+.meter {
   appearance: none;
   background: #0f0c09;
   border: 1px solid #4c3823;
@@ -1050,8 +1162,7 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   inline-size: 100%;
 }
 
-.meter::-webkit-meter-bar,
-.bar::-webkit-meter-bar {
+.meter::-webkit-meter-bar {
   background: #0f0c09;
   border: 0;
 }
@@ -1060,14 +1171,17 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   background: linear-gradient(90deg, #722b24, #e26f3e);
 }
 
-.bar::-webkit-meter-optimum-value {
-  background: linear-gradient(90deg, #8c642f, #e0b968);
+.pressureHint {
+  color: var(--parchment-muted);
+  font-size: 10px;
+  line-height: 1.35;
+  margin: 0;
 }
 
 .omenPanel {
   box-sizing: border-box;
   display: flex;
-  flex: 0 0 240px;
+  flex: 0 0 230px;
   flex-direction: column;
   gap: 7px;
   justify-content: center;
@@ -1132,9 +1246,17 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   margin: 0;
 }
 
-.intelButton {
+.waveName {
+  color: #d8c6a5;
+  font-size: 12px;
+  margin: 0;
+}
+
+.wavePower {
+  color: #e4a47e;
   font-size: 11px;
-  padding: 4px 6px;
+  line-height: 1.35;
+  margin: 0;
 }
 
 /* Quiet round help mark that sits beside a HUD panel title. */
@@ -1187,11 +1309,11 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
 }
 
 .coachDock {
-  bottom: 10px;
+  bottom: 44px;
   left: 10px;
   max-width: 260px;
   position: absolute;
-  z-index: 2;
+  z-index: 4;
 }
 
 .coach {
@@ -1228,7 +1350,7 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   min-height: 0;
   padding: 6px 8px;
   position: relative;
-  z-index: 5;
+  z-index: 15;
 }
 
 .minimapWell {
@@ -1245,7 +1367,7 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   overflow: hidden;
   padding: 4px;
   position: relative;
-  width: 236px;
+  width: clamp(168px, 18vw, 236px);
 
   // The docked minimap fills the well instead of floating over the map.
   > .minimap {
@@ -1262,908 +1384,6 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   }
 }
 
-.panel,
-.commands {
-  min-height: 0;
-  overflow: auto;
-  padding: 6px;
-}
-
-.unitPanel {
-  position: relative;
-}
-
-.unitHeader {
-  align-items: center;
-  border-bottom: 1px solid rgb(198 154 85 / 20%);
-  display: grid;
-  gap: 6px;
-  grid-template-columns: 36px minmax(0, 1fr) auto;
-  margin-bottom: 4px;
-  padding-bottom: 4px;
-}
-
-.unitPortrait {
-  align-items: center;
-  background:
-    radial-gradient(circle at 35% 30%, #be8050, transparent 27%),
-    linear-gradient(145deg, #613523, #231710);
-  border: 2px solid var(--bronze);
-  color: #f8dd9f;
-  display: flex;
-  font-family: $descent;
-  font-size: 20px;
-  font-weight: 700;
-  height: 32px;
-  justify-content: center;
-  width: 32px;
-}
-
-.resourcePanelIcon {
-  display: block;
-  height: 28px;
-  object-fit: contain;
-  width: 28px;
-}
-
-.unitHeading {
-  min-width: 0;
-}
-
-.selectionCount {
-  color: var(--bronze);
-  font-size: 11px;
-}
-
-.selectionGroups {
-  display: grid;
-  gap: 4px;
-  grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
-  list-style: none;
-  margin: 2px 0 0;
-  padding: 0;
-}
-
-.selectionGroup {
-  aspect-ratio: 1;
-  background: linear-gradient(145deg, #3a2618, #1d140e);
-  border: 1px solid #6b4a2b;
-  cursor: pointer;
-  display: block;
-  padding: 3px;
-  position: relative;
-  width: 100%;
-
-  &:hover,
-  &:focus-visible {
-    border-color: var(--bronze-bright);
-    outline: none;
-  }
-}
-
-.selectionGroupEnemy {
-  border-color: #8e3a2a;
-}
-
-.selectionGroupIcon {
-  display: block;
-  height: 100%;
-  object-fit: contain;
-  width: 100%;
-}
-
-.selectionGroupCount {
-  background: rgb(20 13 9 / 85%);
-  bottom: 1px;
-  color: #f6deb0;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  padding: 1px 3px;
-  position: absolute;
-  right: 1px;
-}
-
-.unitEmpty {
-  color: #aa9b84;
-  font-size: 13px;
-  margin: 8px 3px;
-}
-
-.unitSummary {
-  display: grid;
-  gap: 6px;
-  grid-template-columns: 0.7fr 1.3fr;
-}
-
-.resourceSelectionSummary {
-  align-items: start;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(150px, 0.8fr) minmax(240px, 1.3fr);
-}
-
-.resourceDescription {
-  color: var(--parchment-muted);
-  font-size: 11.5px;
-  line-height: 1.35;
-  margin: 0;
-
-  strong {
-    color: var(--bronze-bright);
-    display: block;
-    font-size: 10.5px;
-    letter-spacing: 0.08em;
-    margin-bottom: 2px;
-    text-transform: uppercase;
-  }
-}
-
-.resourceActions {
-  display: grid;
-  gap: 5px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin: 0;
-
-  div {
-    border-left: 2px solid rgb(198 154 85 / 50%);
-    padding-left: 6px;
-  }
-
-  dt {
-    color: var(--bronze-bright);
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-  }
-
-  dd {
-    color: var(--parchment);
-    font-size: 11.5px;
-    line-height: 1.3;
-    margin: 2px 0 0;
-  }
-}
-
-.buildingSummary {
-  display: grid;
-  gap: 5px;
-}
-
-.buildingStatusLine,
-.trainingHeader {
-  align-items: center;
-  color: #c0af93;
-  display: flex;
-  font-size: 10.5px;
-  justify-content: space-between;
-  text-transform: capitalize;
-}
-
-.trainingActivity {
-  display: grid;
-  gap: 4px;
-  grid-template-columns: minmax(0, 0.8fr) minmax(90px, 1.2fr);
-}
-
-.trainingActivity span {
-  color: #eadcbe;
-  font-size: 11.5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.trainingSummary {
-  background: linear-gradient(90deg, rgb(185 99 38 / 13%), transparent 70%);
-  border: 1px solid rgb(198 154 85 / 32%);
-  border-left: 3px solid var(--bronze-bright);
-  padding: 4px 5px;
-}
-
-.trainingHeader strong {
-  color: #f6deb0;
-  font-weight: 750;
-}
-
-.trainingLive {
-  align-items: center;
-  display: flex;
-  gap: 5px;
-}
-
-.trainingQueue {
-  display: grid;
-  gap: 4px;
-  grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
-  list-style: none;
-  margin: 3px 0 0;
-  padding: 0;
-}
-
-.trainingQueueItem {
-  align-content: center;
-  background: #251912;
-  border: 1px solid #5b4027;
-  color: #c9b793;
-  display: grid;
-  font-size: 11px;
-  gap: 2px 4px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  min-height: 31px;
-  padding: 3px 5px;
-}
-
-.trainingQueueName {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.unitCarry {
-  align-items: center;
-  color: var(--parchment-muted);
-  display: flex;
-  font-size: 12px;
-  gap: 5px;
-  margin: 4px 0 0;
-
-  strong {
-    color: var(--parchment);
-  }
-}
-
-.trainingQueueItem .trainingProgress {
-  grid-column: 1 / -1;
-}
-
-.trainingQueueCancel {
-  align-self: start;
-  background: transparent;
-  border: 1px solid transparent;
-  color: #a58b6a;
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
-  padding: 0 3px;
-
-  &:hover,
-  &:focus-visible {
-    border-color: var(--danger);
-    color: #ffb4a3;
-  }
-}
-
-.trainingQueueActive {
-  background: linear-gradient(90deg, rgb(185 99 38 / 22%), #281a11);
-  border-color: #b47a35;
-  box-shadow: inset 0 0 12px rgb(239 178 74 / 8%);
-}
-
-.trainingQueueEmpty {
-  color: #5e5143;
-  place-items: center;
-}
-
-.trainingQueuePercent {
-  color: #ffd98c;
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-}
-
-.trainingQueueState {
-  color: #927e61;
-  font-size: 10px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.trainingProgress {
-  appearance: none;
-  background: #0f0c09;
-  border: 1px solid #5e4022;
-  grid-column: 1 / -1;
-  height: 7px;
-  width: 100%;
-}
-
-.unitIdentity {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin: 0;
-}
-
-.unitIdentity span {
-  background: #392719;
-  border: 1px solid #654729;
-  color: #d1bea0;
-  font-size: 11px;
-  padding: 3px 6px;
-  text-transform: capitalize;
-}
-
-.statBar {
-  min-width: 0;
-}
-
-.statBarLabel {
-  color: #c0af93;
-  display: block;
-  font-size: 10.5px;
-  margin-bottom: 2px;
-}
-
-.unitStats {
-  display: grid;
-  gap: 3px 8px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 7px;
-}
-
-.unitStats span {
-  color: #a99a83;
-  font-size: 11px;
-}
-
-.unitStats strong {
-  color: #eadcbe;
-  font-weight: 600;
-}
-
-.cultivationBars {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 6px;
-}
-
-.unitDetails {
-  color: #b6a68d;
-  font-size: 11.5px;
-  margin-top: 6px;
-}
-
-.unitDetails summary {
-  color: var(--bronze);
-  cursor: pointer;
-}
-
-.detailColumns {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.detailColumns h4 {
-  color: #dac7a6;
-  margin: 6px 0 2px;
-}
-
-.detailColumns p,
-.detailColumns ul {
-  margin: 0;
-}
-
-.detailColumns ul {
-  padding-left: 14px;
-}
-
-.commands {
-  display: block;
-}
-
-.commandsWithTraining {
-  display: grid;
-  gap: 5px;
-  grid-template-rows: auto minmax(0, 1fr);
-}
-
-.commandsWithTraining .commandGrid {
-  grid-template-columns: repeat(6, minmax(78px, 110px));
-}
-
-.commandGrid {
-  align-content: start;
-  display: grid;
-  gap: 5px;
-  grid-template-columns: repeat(6, minmax(78px, 1fr));
-  min-width: 0;
-  overflow: auto;
-}
-
-.commandButton {
-  align-items: center;
-  background:
-    linear-gradient(145deg, rgb(255 255 255 / 5%), transparent 44%),
-    #322317;
-  border: 1px solid #70502c;
-  color: #eee0c5;
-  cursor: pointer;
-  display: grid;
-  gap: 1px 5px;
-  grid-template-columns: 36px minmax(0, 1fr);
-  min-height: 44px;
-  padding: 4px;
-  text-align: left;
-}
-
-.commandButton:hover {
-  background: #49301a;
-  border-color: var(--bronze-bright);
-  box-shadow: inset 0 0 12px rgb(235 185 94 / 10%);
-}
-
-.commandIcon {
-  background: #120d09;
-  border: 1px solid #8b6334;
-  grid-row: 1 / 3;
-  height: 36px;
-  object-fit: cover;
-  width: 36px;
-}
-
-.commandLabel {
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1.15;
-}
-
-.trainingChoices {
-  min-height: 0;
-  overflow: auto hidden;
-}
-
-.trainingChoiceHeader {
-  align-items: baseline;
-  display: flex;
-  gap: 8px;
-  margin: 0 1px 4px;
-}
-
-.trainingChoiceHeader strong {
-  color: #f2dfbd;
-  font-family: $descent;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.trainingChoiceHeader span {
-  color: #a9977d;
-  font-size: 10.5px;
-}
-
-.trainingChoiceGrid {
-  display: grid;
-  gap: 5px;
-  grid-template-columns: repeat(5, minmax(132px, 1fr));
-  min-width: 680px;
-}
-
-.trainingChoice {
-  align-items: stretch;
-  background:
-    linear-gradient(145deg, rgb(255 255 255 / 6%), transparent 45%),
-    #2b1e14;
-  border: 1px solid #70502c;
-  color: #eee0c5;
-  cursor: pointer;
-  display: grid;
-  gap: 6px;
-  grid-template-columns: 50px minmax(0, 1fr);
-  min-height: 92px;
-  padding: 5px;
-  text-align: left;
-}
-
-.trainingChoice:hover:not(:disabled) {
-  background: #49301a;
-  border-color: var(--bronze-bright);
-  box-shadow: inset 0 0 14px rgb(235 185 94 / 12%);
-}
-
-.trainingChoice:disabled {
-  filter: grayscale(0.5);
-  opacity: 0.56;
-}
-
-.trainingChoiceImage {
-  align-self: center;
-  background: #120d09;
-  border: 1px solid #8b6334;
-  height: 66px;
-  object-fit: cover;
-  width: 48px;
-}
-
-.trainingChoiceCopy {
-  align-content: start;
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.trainingChoiceTitle {
-  color: #f5e5c5;
-  font-size: 11.5px;
-  font-weight: 800;
-  line-height: 1.1;
-}
-
-.trainingChoiceRole {
-  color: #f0b85f;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-
-.trainingChoiceDescription {
-  color: #c5b59b;
-  font-size: 10px;
-  line-height: 1.2;
-}
-
-.trainingChoiceCost {
-  color: #d2a65d;
-  font-size: 10px;
-  line-height: 1.15;
-  margin-top: 1px;
-}
-
-.menu {
-  bottom: 184px;
-  left: min(38%, 520px);
-  max-height: min(480px, calc(100% - 230px));
-  overflow: auto;
-  padding: 12px;
-  position: absolute;
-  right: 14px;
-  z-index: 4;
-}
-
-.buildMenuHeader {
-  align-items: center;
-  border-bottom: 1px solid rgb(198 154 85 / 25%);
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
-}
-
-.buildMenuActions {
-  display: flex;
-  gap: 6px;
-}
-
-.buildMenuSubtitle {
-  color: #aa987c;
-  font-size: 11px;
-  margin: 2px 0 0;
-}
-
-.buildBackButton {
-  align-items: center;
-  background: #2b1e14;
-  border: 1px solid #70502c;
-  color: #d9c39b;
-  display: flex;
-  font-size: 11px;
-  gap: 4px;
-  padding: 4px 7px;
-}
-
-.buildBackButton:hover {
-  background: #49301a;
-  border-color: var(--bronze-bright);
-  color: #ffe2a0;
-}
-
-.closeButton {
-  font-size: 20px;
-  height: 27px;
-  line-height: 1;
-  width: 29px;
-}
-
-.buildCategoryGrid {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(2, minmax(260px, 1fr));
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.buildCategoryChoice {
-  align-items: center;
-  background:
-    linear-gradient(145deg, rgb(255 255 255 / 4%), transparent 46%),
-    #21170f;
-  border: 1px solid #5d4225;
-  color: #eadabe;
-  display: grid;
-  gap: 12px;
-  grid-template-columns: 64px minmax(0, 1fr);
-  min-height: 92px;
-  padding: 12px;
-  text-align: left;
-  width: 100%;
-}
-
-.buildCategoryChoice:hover {
-  background:
-    linear-gradient(135deg, rgb(230 179 87 / 14%), transparent 52%),
-    #382516;
-  border-color: var(--bronze-bright);
-  box-shadow: inset 0 0 20px rgb(235 185 94 / 8%);
-}
-
-.buildCategoryIcon {
-  align-items: center;
-  background:
-    radial-gradient(circle at 35% 28%, rgb(255 226 158 / 18%), transparent 34%),
-    #17100b;
-  border: 1px solid #896236;
-  box-shadow:
-    inset 0 0 15px rgb(255 205 111 / 7%),
-    0 4px 12px rgb(0 0 0 / 30%);
-  color: #e7ba66;
-  display: flex;
-  height: 64px;
-  justify-content: center;
-  width: 64px;
-}
-
-.buildCategoryCopy {
-  display: grid;
-  gap: 4px;
-}
-
-.buildCategoryCopy strong {
-  color: #f3dfbb;
-  font-family: $descent;
-  font-size: 17px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.buildCategoryCopy span {
-  color: #bdad93;
-  font-size: 11.5px;
-  line-height: 1.3;
-}
-
-.buildCategoryCopy small {
-  color: #d6aa5a;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.buildGrid {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(3, minmax(220px, 1fr));
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.buildOption {
-  background:
-    linear-gradient(145deg, rgb(255 255 255 / 3%), transparent 42%),
-    #21170f;
-  border: 1px solid #4f3923;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.buildChoice {
-  align-items: start;
-  background: transparent;
-  border: 0;
-  color: #eadabe;
-  display: grid;
-  gap: 9px;
-  grid-template-columns: 52px minmax(0, 1fr);
-  height: 100%;
-  padding: 9px;
-  text-align: left;
-  width: 100%;
-}
-
-.buildChoice:hover:not(:disabled) {
-  background:
-    linear-gradient(135deg, rgb(230 179 87 / 12%), transparent 48%),
-    #382516;
-  box-shadow: inset 0 0 18px rgb(235 185 94 / 7%);
-}
-
-.buildIcon {
-  align-items: center;
-  background:
-    radial-gradient(circle at 35% 28%, rgb(255 226 158 / 18%), transparent 34%),
-    #17100b;
-  border: 1px solid #896236;
-  box-shadow:
-    inset 0 0 12px rgb(255 205 111 / 7%),
-    0 3px 9px rgb(0 0 0 / 28%);
-  color: #e7ba66;
-  display: flex;
-  height: 52px;
-  justify-content: center;
-  transition:
-    border-color 120ms ease,
-    color 120ms ease,
-    transform 120ms ease;
-  width: 52px;
-}
-
-.buildIconImage {
-  height: 42px;
-  object-fit: contain;
-  width: 42px;
-}
-
-.buildIconGlyph {
-  color: #f8dd9f;
-  font-family: $descent;
-  font-size: 22px;
-  line-height: 1;
-}
-
-.buildCategoryIcon[data-tone="defense"],
-.buildIcon[data-tone="defense"] {
-  background-color: #251713;
-  border-color: #985242;
-  color: #e77c62;
-}
-
-.buildCategoryIcon[data-tone="economy"],
-.buildIcon[data-tone="economy"] {
-  background-color: #1c2115;
-  border-color: #73743d;
-  color: #c8bd67;
-}
-
-.buildCategoryIcon[data-tone="mystic"],
-.buildIcon[data-tone="mystic"] {
-  background-color: #142228;
-  border-color: #477a83;
-  color: #74c5c9;
-}
-
-.buildCategoryIcon[data-tone="war"],
-.buildIcon[data-tone="war"] {
-  background-color: #271c12;
-  border-color: #a16b36;
-  color: #e6a450;
-}
-
-.buildChoice:hover:not(:disabled) .buildIcon {
-  border-color: #efc372;
-  color: #ffe2a3;
-  transform: translateY(-1px);
-}
-
-.buildChoiceCopy {
-  display: grid;
-  font-size: 11.5px;
-  gap: 3px;
-  min-width: 0;
-}
-
-.buildChoiceHeader {
-  align-items: baseline;
-  display: flex;
-  gap: 6px;
-  justify-content: space-between;
-}
-
-.buildChoiceHeader strong {
-  color: #f3dfbb;
-  font-family: $descent;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.1;
-}
-
-.buildTier {
-  color: #a99575;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.buildDescription {
-  color: #cab99d;
-  font-size: 10.5px;
-  line-height: 1.3;
-}
-
-.buildHints {
-  display: grid;
-  gap: 1px;
-}
-
-.buildHint {
-  color: #76bbb9;
-  font-size: 10px;
-  line-height: 1.25;
-}
-
-.buildHint::before {
-  color: #56a5a7;
-  content: "✦ ";
-}
-
-.buildCost {
-  color: #dfb968;
-  display: flex;
-  font-size: 10.5px;
-  font-weight: 700;
-  margin-top: 3px;
-}
-
-// Grid hotkey badge in the corner of a category or building button.
-.buildHotkey,
-.buildBackHotkey {
-  background: rgb(0 0 0 / 50%);
-  border: 1px solid #896236;
-  color: #ffd27a;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  padding: 3px 5px;
-}
-
-.buildHotkey {
-  pointer-events: none;
-  position: absolute;
-  right: 6px;
-  top: 6px;
-}
-
-.buildBackHotkey {
-  margin-left: 4px;
-  padding: 1px 4px;
-}
-
-.buildChoice,
-.buildCategoryChoice {
-  position: relative;
-}
-
-// Keep the tier label clear of the hotkey badge.
-.buildChoice .buildChoiceHeader {
-  padding-right: 26px;
-}
-
-.hint,
-.lockReason {
-  color: #aa9a81;
-  font-size: 10.5px;
-  line-height: 1.2;
-  margin: 2px 1px;
-}
-
-.lockReason {
-  background: rgb(93 36 29 / 36%);
-  border-top: 1px solid rgb(174 92 73 / 24%);
-  color: #d38270;
-  margin: 0;
-  padding: 4px 8px;
-}
-
-.locked {
-  filter: saturate(0.45);
-  opacity: 0.62;
-}
-
 .backdrop {
   align-items: center;
   background: rgb(8 6 4 / 78%);
@@ -2171,7 +1391,7 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   inset: 0;
   justify-content: center;
   position: absolute;
-  z-index: 6;
+  z-index: 30;
 }
 
 .dialog {
@@ -2185,6 +1405,7 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   max-width: 520px;
   overflow: auto;
   padding: 19px;
+  user-select: text;
 }
 
 .dialog h2 {
@@ -2206,6 +1427,59 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
 
 .dialog button + button {
   margin-left: 6px;
+}
+
+.tradeAmountLabel {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  margin: 0 0 12px;
+
+  input {
+    background: #140f0a;
+    border: 1px solid var(--bronze);
+    color: var(--parchment);
+    font: inherit;
+    padding: 4px 8px;
+    width: 84px;
+  }
+}
+
+.hotkeyList {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+}
+
+.hotkeyRow {
+  align-items: center;
+  border-bottom: 1px solid rgb(198 154 85 / 14%);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding-bottom: 5px;
+}
+
+.keycap {
+  background: rgb(12 9 7 / 90%);
+  border: 1px solid rgb(232 191 106 / 42%);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: #f7dfb0;
+  flex: 0 0 auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.hotkeyAction {
+  color: #dfd0b8;
+  font-size: 12.5px;
+  text-align: right;
 }
 
 .toast button {
@@ -2255,6 +1529,13 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   z-index: 3;
 }
 
+// When nested inside `.topLeftHud`, info toasts flow below `.coopHud` cleanly.
+.topLeftHud .toasts {
+  left: auto;
+  position: static;
+  top: auto;
+}
+
 .toast {
   align-items: baseline;
   background: rgb(12 9 6 / 62%);
@@ -2286,9 +1567,7 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   pointer-events: none;
   position: absolute;
   transform: translateX(-50%);
-  width: min(640px, calc(100% - 520px));
-
-  // Under the bottom HUD (z 5), so a pinned command tooltip stays readable.
+  width: min(560px, calc(100% - 32px));
   z-index: 4;
 }
 
@@ -2345,7 +1624,7 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   top: 50%;
   transform: translate(-50%, -50%);
   width: calc(100% - 48px);
-  z-index: 7;
+  z-index: 35;
 }
 
 .outcome h2 {
@@ -2382,23 +1661,28 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
 }
 
 @media (width <= 1180px) {
-  .resourceLedger {
-    grid-template-columns: repeat(9, minmax(54px, 1fr));
+  .resource {
+    gap: 4px;
+    min-width: 56px;
+    padding: 3px 6px;
   }
 
-  .commandGrid {
-    grid-template-columns: repeat(4, minmax(88px, 1fr));
+  .resourceAmount {
+    font-size: 13px;
   }
 
-  .buildGrid {
-    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  .strategicHud,
+  .strategicHud:has(.threatCluster),
+  .strategicHud[data-has-training="true"]:has(.threatCluster) {
+    max-width: min(460px, calc(100vw - 20px));
+    width: min(460px, calc(100vw - 20px));
   }
 }
 
 @media (width <= 680px) {
   .strategicHud[data-has-training="true"]:has(.threatCluster) {
     flex-wrap: wrap;
-    width: min(520px, calc(100% - 20px));
+    width: min(460px, calc(100vw - 20px));
   }
 
   .strategicHud[data-has-training="true"]:has(.threatCluster) .trainingTracker {
@@ -2418,21 +1702,12 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
 
 @media (height <= 820px) {
   .topHud {
-    flex-basis: 48px;
-    min-height: 48px;
-  }
-
-  .topHud {
     flex-basis: 40px;
     min-height: 40px;
   }
 
   .bottomHud {
     flex-basis: 160px;
-  }
-
-  .menu {
-    bottom: 168px;
   }
 }
 
@@ -2518,11 +1793,10 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   display: flex;
   flex-direction: column;
   gap: 8px;
-  left: 12px;
-  max-width: calc(100% - 24px);
-  position: absolute;
-  top: 10px;
-  z-index: 12;
+  max-width: 100%;
+  pointer-events: auto;
+  position: static;
+  z-index: 3;
 }
 
 .coopBar {
@@ -2545,6 +1819,7 @@ $descent: var(--font-descent, "Plus Jakarta Sans", system-ui, -apple-system, san
   border-right: 1px solid rgb(232 191 106 / 26%);
   letter-spacing: 0.06em;
   padding-right: 8px;
+  user-select: text;
 }
 
 .coopLeaveButton {

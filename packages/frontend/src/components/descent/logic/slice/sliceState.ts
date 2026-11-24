@@ -4,6 +4,7 @@ import type {
   PendingProjectile,
 } from "../combat/types";
 import type { CultivationSystemState } from "../cultivation/types";
+import type { ExplorationState } from "../exploration/model";
 import type { SimWorldState } from "../sim/world";
 import type { ClassId, ResourceStockpile, SchoolId } from "../types";
 import { isWaveClockState } from "../waves/clock";
@@ -164,6 +165,8 @@ export interface AshenGateSliceState {
     tick: number;
   };
   cultivation: CultivationSystemState;
+  /** Self-paced guarded camps; absent in timed siege and co-op scenarios. */
+  exploration?: ExplorationState;
   /** Per-cultivator active Qi pool, cooldowns, and seclusion meditation state. */
   cultivatorPowers?: Record<string, CultivatorPowerState>;
   fx: SliceFx[];
@@ -188,6 +191,8 @@ export interface AshenGateSliceState {
   rallyPoints?: Record<string, TrainingRallyPoint>;
   stats: { kills: number; lost: number };
   training: TrainingJob[];
+  /** Personal names already issued to cultivators in this run so every build is unique. */
+  usedCultivatorNames?: string[];
   /** Shift-queued move legs per unit, oldest first. */
   waypoints?: Record<string, QueuedWaypoint[]>;
   version: typeof SLICE_STATE_VERSION;
@@ -220,6 +225,7 @@ export function createSliceState(): AshenGateSliceState {
     scoreProgress: {},
     stats: { kills: 0, lost: 0 },
     training: [],
+    usedCultivatorNames: [],
     version: SLICE_STATE_VERSION,
     waypoints: {},
   };

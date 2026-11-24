@@ -31,12 +31,6 @@ export const GameSelector = ({
 
   return (
     <main className={styles.library}>
-      <div aria-hidden="true" className={styles.backdrop}>
-        <span className={styles.blobOne} />
-        <span className={styles.blobTwo} />
-        <span className={styles.blobThree} />
-      </div>
-
       <header className={styles.topBar}>
         <span className={styles.brand}>
           <span aria-hidden="true" className={styles.brandMark}>
@@ -48,16 +42,7 @@ export const GameSelector = ({
       </header>
 
       <section className={styles.hero}>
-        <p className={styles.eyebrow}>
-          Game library · {experiences.length} games
-        </p>
-        <h1>
-          Pick a game <span className={styles.heroAccent}>to play</span>
-        </h1>
-        <p className={styles.heroCopy}>
-          Every card below is a game. Click one to jump in. The{" "}
-          <em>All games</em> button brings you back here any time.
-        </p>
+        <h1>Pick a game</h1>
         <SurpriseMeButton
           ids={experiences.map((experience) => experience.id)}
         />

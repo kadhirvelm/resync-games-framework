@@ -7,8 +7,10 @@ import type {
 import { useState } from "react";
 import { Dialog, Flex } from "@/lib/radix";
 import styles from "./Assets.module.scss";
+import { TOWERS_OF_COREBORN_TAG } from "./assetGameTags";
 import { CopyableError } from "./CopyableError";
 import { EnemyPatternDetail, EnemyPatternSummary } from "./EnemyPattern";
+import { GameTagList } from "./GameTagList";
 import { type PendingJob, PendingJobCard } from "./PendingJobCard";
 
 interface EnemyListProps {
@@ -96,6 +98,7 @@ export function EnemyList({
                   {enemy.maxHitPoints} HP
                 </span>
               </span>
+              <GameTagList tags={[TOWERS_OF_COREBORN_TAG]} />
               <span className={styles.enemyDescription}>
                 {enemy.description}
               </span>

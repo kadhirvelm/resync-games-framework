@@ -19,7 +19,7 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Plane } from "@babylonjs/core/Maths/math.plane";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
-import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
 import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder";
 import { CreateDisc } from "@babylonjs/core/Meshes/Builders/discBuilder";
@@ -45,10 +45,12 @@ import {
   assetRoleForBuilding,
   assetRoleForResource,
   assetRoleForUnit,
+  assetRoleForVent,
   isResourceAssetRole,
   isSceneryAssetRole,
 } from "../data/layers/ashen_gate/threeDAssets";
 import { isFogVisible } from "../logic/fog";
+import { elevationAt } from "../logic/layers/elevation";
 import { ASHEN_HAZE, ASHEN_VOID, addAshenBackdrop } from "./ashenBackdrop";
 import { addCinderFlock } from "./ashenCinders";
 import { PLATEAU_RIM } from "./ashenTerrainLayout";
@@ -59,10 +61,12 @@ import {
   type EdgeScrollPointer,
   edgeScrollPanDirection,
   emptyCameraKeys,
+  isPointerInEdgeScrollBand,
 } from "./cameraControls";
 import { createCarryIconLayer } from "./carryIcons";
 import type { MinimapView } from "./DescentMinimap";
 import { createFogOverlay } from "./fogOverlay";
+import { applyHillsToGroundMesh, hillsSignature } from "./hillMesh";
 import { type TrackLoad, untrackedLoad } from "./loadingProgress";
 import {
   cameraAlphaToMinimapRotation,
@@ -106,9 +110,12 @@ import {
   SILHOUETTE_OUTLINE_COLOR,
   selectionRingDiameter,
   UNIT_MARKER_RING,
+  unitFallbackScale,
+  unitHealthBarHeight,
   unitMarkerDiameter,
   unitOutlineWidth,
   unitOwnerRingColor,
+  unitTargetHeight,
 } from "./unitContrast";
 import { isTypingTarget } from "./useHotkeys";
 
@@ -118,6 +125,16 @@ export interface DescentScenePick {
   point: MapPoint;
   sceneryId: string | null;
   unitId: string | null;
+}
+
+/** Optional callbacks and overrides for the Babylon scene adapter. */
+export interface DescentBabylonSceneOptions {
+  /** Explicitly enable or disable edge scrolling (defaults to fullscreen-only). */
+  edgeScrollEnabled?: boolean;
+  /** Called when the browser reports WebGL context loss. */
+  onContextLost?: () => void;
+  /** Called when the browser restores the WebGL context. */
+  onContextRestored?: () => void;
 }
 
 /** Screen-space box used by the React input adapter. */
@@ -635,6 +652,7 @@ function playAction(
  * @param initialAssets - Generated model roster, which may be empty
  * @param status - Non-fatal loading status callback
  * @param onCameraView - Publishes the camera footprint for the minimap
+ * @param options - Optional edge-scroll and WebGL context lifecycle callbacks
  * @returns An imperative adapter used only by the React view boundary
  */
 export function createDescentBabylonScene(
@@ -644,6 +662,7 @@ export function createDescentBabylonScene(
   initialAssets: AshenGateAssetSet,
   status: (message: string) => void,
   onCameraView: (view: MinimapView) => void,
+  options?: DescentBabylonSceneOptions,
 ): DescentBabylonSceneHandle {
   const engine = new Engine(
     canvas,
@@ -651,8 +670,16 @@ export function createDescentBabylonScene(
     { preserveDrawingBuffer: false, stencil: true },
     true,
   );
-  const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-  if (dpr > 1.5) engine.setHardwareScalingLevel(dpr / 1.5);
+  /**
+   * Caps effective render density at 1.5x DPR so Retina displays stay crisp
+   * without over-rendering pixels.
+   */
+  const applyHardwareScaling = (): void => {
+    const dpr =
+      typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+    engine.setHardwareScalingLevel(1 / Math.min(dpr, 1.5));
+  };
+  applyHardwareScaling();
   try {
     const scene = new Scene(engine);
     scene.skipPointerMovePicking = true;
@@ -704,7 +731,7 @@ export function createDescentBabylonScene(
     camera.upperBetaLimit = Math.PI / 3.15;
     camera.wheelDeltaPercentage = 0.015;
     camera.inertia = 0.84;
-    camera.attachControl(canvas, true);
+    camera.attachControl(canvas, false);
     camera.inputs.removeByType("ArcRotateCameraPointersInput");
     // Babylon's keyboard input orbits on the arrow keys, which fought the RTS
     // pan. The scene reads held keys itself so panning follows the heading.
@@ -718,6 +745,30 @@ export function createDescentBabylonScene(
       Vector3.Up(),
     );
 
+    let canvasRect: DOMRect = canvas.getBoundingClientRect();
+    /** Refreshes the cached canvas client rect after resize or scroll. */
+    const updateCanvasRect = (): void => {
+      canvasRect = canvas.getBoundingClientRect();
+    };
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => {
+            if (disposed) return;
+            applyHardwareScaling();
+            engine.resize();
+            updateCanvasRect();
+          })
+        : null;
+    resizeObserver?.observe(canvas);
+    window.addEventListener("resize", updateCanvasRect, { passive: true });
+    window.addEventListener("scroll", updateCanvasRect, { passive: true });
+
+    /** Prevents browser page scrolling while zooming with the wheel over the canvas. */
+    const onCanvasWheel = (event: WheelEvent): void => {
+      event.preventDefault();
+    };
+    canvas.addEventListener("wheel", onCanvasWheel, { passive: false });
+
     /**
      * Tracks held camera keys on the window so panning works without canvas
      * focus. Text fields and modified shortcuts are left alone.
@@ -729,6 +780,9 @@ export function createDescentBabylonScene(
       const pressed = event.type === "keydown";
       if (pressed && isTypingTarget(event.target)) return;
       if (pressed && (event.altKey || event.ctrlKey || event.metaKey)) return;
+      if (event.key.startsWith("Arrow")) {
+        event.preventDefault();
+      }
       cameraKeys[key] = pressed;
     };
 
@@ -758,7 +812,43 @@ export function createDescentBabylonScene(
       passive: true,
     });
     canvas.addEventListener("pointerleave", releaseEdgeScrollPointer);
+    document.addEventListener("mouseleave", releaseEdgeScrollPointer);
     window.addEventListener("blur", releaseEdgeScrollPointer);
+
+    let middleDragAnchor: Vector3 | null = null;
+    let middleDragPointerId: number | null = null;
+
+    /**
+     * Ends an active middle-mouse drag pan and releases pointer capture.
+     * @param event - Optional pointer event to match pointer id
+     */
+    const releaseMiddleDrag = (event?: PointerEvent): void => {
+      if (
+        event !== undefined &&
+        middleDragPointerId !== null &&
+        event.pointerId !== middleDragPointerId
+      ) {
+        return;
+      }
+      if (middleDragPointerId !== null) {
+        try {
+          canvas.releasePointerCapture?.(middleDragPointerId);
+        } catch {
+          // Pointer capture may already have been released by the browser.
+        }
+      }
+      middleDragPointerId = null;
+      middleDragAnchor = null;
+    };
+
+    /** Clears held camera state when the browser tab becomes hidden. */
+    const onVisibilityChange = (): void => {
+      if (!document.hidden) return;
+      releaseCameraKeys();
+      releaseEdgeScrollPointer();
+      releaseMiddleDrag();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     const ambient = new HemisphericLight(
       "ashen-ambient",
@@ -792,7 +882,8 @@ export function createDescentBabylonScene(
       "ashen-ground",
       {
         height: initialModel.map.height,
-        subdivisions: 2,
+        subdivisions: 64,
+        updatable: true,
         width: initialModel.map.width,
       },
       scene,
@@ -818,6 +909,21 @@ export function createDescentBabylonScene(
       : addCinderFlock(scene, initialModel.map.width, initialModel.map.height);
     const fogOverlay = createFogOverlay(scene, PLATEAU_RIM, glow);
     const terrainMaterials = createTerrainMaterials(scene);
+
+    let appliedGroundHillsSignature = "";
+    /** Evaluates walkable ground Y at a map coordinate for entity placement. */
+    const groundY = (x: number, y: number): number =>
+      elevationAt(currentModel.hills, x, y);
+    /** Syncs sculpted hill geometry across plateau, fog sheet, and pick ground. */
+    const syncHills = (model: ShellModel): void => {
+      backdrop.setHills(model.hills);
+      fogOverlay.setHills(model.hills);
+      const nextSignature = hillsSignature(model.hills);
+      if (nextSignature === appliedGroundHillsSignature) return;
+      appliedGroundHillsSignature = nextSignature;
+      applyHillsToGroundMesh(ground, model.hills, model.map.height, false);
+    };
+    syncHills(initialModel);
 
     const holdMaterial = material(scene, "hold-bronze", "#d0aa66");
     holdMaterial.freeze();
@@ -1100,10 +1206,18 @@ export function createDescentBabylonScene(
       { assetId: string; done: Promise<void> }
     >();
     const decorationMotions: DecorationMotion[] = [];
+    const decorationEntries = new Map<
+      string,
+      {
+        motions: DecorationMotion[];
+        node: TransformNode;
+        visualSignature: string;
+      }
+    >();
     const telegraphMotions: DecorationMotion[] = [];
     const transientEffects: TransientEffect[] = [];
     const seenEffects = new Set<number>();
-    let decorationRoot = new TransformNode("map-decoration", scene);
+    const decorationRoot = new TransformNode("map-decoration", scene);
     let telegraphRoot = new TransformNode("map-telegraphs", scene);
     let decorationAssetsDirty = false;
     let decorationSignature = "";
@@ -1125,7 +1239,8 @@ export function createDescentBabylonScene(
     let presentationPaused = false;
 
     /**
-     * Freezes or resumes Babylon clips alongside the manual world clock.
+     * Freezes or resumes Babylon clips and ambient backdrop particles alongside
+     * the manual world clock.
      * @param paused - Whether every world animation should hold its frame
      * @returns Nothing
      */
@@ -1133,6 +1248,7 @@ export function createDescentBabylonScene(
       if (presentationPaused === paused) return;
       presentationPaused = paused;
       scene.animationsEnabled = !paused;
+      backdrop.setPaused(paused);
     };
 
     let outlinedAtRadius = Number.NaN;
@@ -1197,7 +1313,7 @@ export function createDescentBabylonScene(
       }
       inspectMarker.position.set(
         ring.x,
-        0.08,
+        groundY(ring.x, ring.y) + 0.08,
         mapYToWorldZ(ring.y, currentModel.map.height),
       );
       inspectMarker.scaling.set(ring.radius, 1, ring.radius);
@@ -1223,10 +1339,12 @@ export function createDescentBabylonScene(
       placementMaterial.diffuseColor.copyFrom(tint);
       placementMaterial.emissiveColor.copyFrom(tint.scale(0.55));
       placementPreview.scaling.set(footprint, 1, footprint);
+      const snappedX = Math.round(point.x);
+      const snappedY = Math.round(point.y);
       placementPreview.position.set(
-        Math.round(point.x),
-        0.04,
-        mapYToWorldZ(Math.round(point.y), currentModel.map.height),
+        snappedX,
+        groundY(snappedX, snappedY) + 0.04,
+        mapYToWorldZ(snappedY, currentModel.map.height),
       );
       placementPreview.setEnabled(true);
     };
@@ -1245,6 +1363,7 @@ export function createDescentBabylonScene(
         const ghost = placementPreview.clone(
           `placement-line-${lineGhosts.length}`,
         );
+        ghost.scaling.set(1, 1, 1);
         ghost.isPickable = false;
         lineGhosts.push(ghost);
       }
@@ -1268,7 +1387,7 @@ export function createDescentBabylonScene(
         ghost.material = ghostMaterial;
         ghost.position.set(
           cell.x,
-          0.04,
+          groundY(cell.x, cell.y) + 0.04,
           mapYToWorldZ(cell.y, currentModel.map.height),
         );
         ghost.setEnabled(true);
@@ -1562,7 +1681,11 @@ export function createDescentBabylonScene(
       if (visual.health !== null) return visual.health;
       const health = unitHealthTemplate.createInstance(`health-${visual.id}`);
       health.parent = visual.root;
-      health.position.set(-(1 - visual.healthRatio) * 0.45, 1.75, 0);
+      health.position.set(
+        -(1 - visual.healthRatio) * 0.45,
+        unitHealthBarHeight(visual.role),
+        0,
+      );
       health.scaling.x = visual.healthRatio;
       health.billboardMode = Mesh.BILLBOARDMODE_ALL;
       health.isPickable = false;
@@ -1576,12 +1699,13 @@ export function createDescentBabylonScene(
      * @param visual - Unit visual
      */
     const ensureChannelBars = (visual: EntityVisual): void => {
+      const channelY = unitHealthBarHeight(visual.role) + 0.17;
       if (visual.channelTrack === null) {
         const track = channelTrackTemplate.createInstance(
           `channel-track-${visual.id}`,
         );
         track.parent = visual.root;
-        track.position.set(0, 1.92, 0);
+        track.position.set(0, channelY, 0);
         track.billboardMode = Mesh.BILLBOARDMODE_ALL;
         track.isPickable = false;
         visual.channelTrack = track;
@@ -1591,7 +1715,7 @@ export function createDescentBabylonScene(
           `channel-fill-${visual.id}`,
         );
         fill.parent = visual.root;
-        fill.position.set(0, 1.92, 0);
+        fill.position.set(0, channelY, 0);
         fill.billboardMode = Mesh.BILLBOARDMODE_ALL;
         fill.isPickable = false;
         visual.channelFill = fill;
@@ -1631,7 +1755,7 @@ export function createDescentBabylonScene(
       const depth = Math.max(0.01, (max[2] ?? 1) - (min[2] ?? 0));
       const scale =
         visual.kind === "unit"
-          ? getCharacterModelScale(asset, 1.8)
+          ? getCharacterModelScale(asset, unitTargetHeight(visual.role))
           : buildingModelScale(
               visual.role,
               visual.span,
@@ -1692,6 +1816,56 @@ export function createDescentBabylonScene(
       root: TransformNode,
       nodeMaterial: StandardMaterial,
     ): void => {
+      if (role === "explorerCache") {
+        const base = CreateBox(
+          `${root.name}-cache-base`,
+          { depth: 0.85, height: 0.58, width: 1.35 },
+          scene,
+        );
+        base.parent = root;
+        base.position.y = 0.31;
+        base.material = holdDarkMaterial;
+        base.isPickable = false;
+        const lid = CreateBox(
+          `${root.name}-cache-lid`,
+          { depth: 0.94, height: 0.18, width: 1.43 },
+          scene,
+        );
+        lid.parent = root;
+        lid.position.y = 0.69;
+        lid.material = holdDarkMaterial;
+        lid.isPickable = false;
+        for (const x of [-0.46, 0.46]) {
+          const band = CreateBox(
+            `${root.name}-cache-band-${x}`,
+            { depth: 0.9, height: 0.72, width: 0.09 },
+            scene,
+          );
+          band.parent = root;
+          band.position.set(x, 0.38, 0);
+          band.material = nodeMaterial;
+          band.isPickable = false;
+        }
+        const clasp = CreateBox(
+          `${root.name}-cache-clasp`,
+          { depth: 0.08, height: 0.2, width: 0.2 },
+          scene,
+        );
+        clasp.parent = root;
+        clasp.position.set(0, 0.46, 0.47);
+        clasp.material = nodeMaterial;
+        clasp.isPickable = false;
+        const runes = CreateTorus(
+          `${root.name}-cache-runes`,
+          { diameter: 2.25, tessellation: 28, thickness: 0.045 },
+          scene,
+        );
+        runes.parent = root;
+        runes.position.y = 0.025;
+        runes.material = nodeMaterial;
+        runes.isPickable = false;
+        return;
+      }
       if (role === "resourceTree") {
         const trunk = CreateCylinder(
           `${root.name}-trunk`,
@@ -1715,6 +1889,31 @@ export function createDescentBabylonScene(
         log.position.set(0.65, 0.25, 0.35);
         log.rotation.z = Math.PI / 2;
         log.material = nodeMaterial;
+        return;
+      }
+      if (role === "resourceEssence") {
+        const ring = CreateTorus(
+          `${root.name}-essence-ring`,
+          { diameter: 1.55, tessellation: 24, thickness: 0.08 },
+          scene,
+        );
+        ring.parent = root;
+        ring.position.y = 0.12;
+        ring.material = nodeMaterial;
+        for (const [index, point] of [
+          { x: -0.38, y: 0.38, z: 0.08 },
+          { x: 0.08, y: 0.62, z: -0.2 },
+          { x: 0.42, y: 0.32, z: 0.22 },
+        ].entries()) {
+          const mote = CreateSphere(
+            `${root.name}-essence-mote-${index}`,
+            { diameter: 0.34, segments: 6 },
+            scene,
+          );
+          mote.parent = root;
+          mote.position.set(point.x, point.y, point.z);
+          mote.material = nodeMaterial;
+        }
         return;
       }
       if (role === "resourceWell") {
@@ -1741,6 +1940,29 @@ export function createDescentBabylonScene(
         spring.material = nodeMaterial;
         return;
       }
+      if (role === "resourceSpiritHerbs") {
+        for (const [index, x] of [-0.6, -0.3, 0, 0.3, 0.6].entries()) {
+          const height = 0.38 + (index % 3) * 0.12;
+          const stem = CreateCylinder(
+            `${root.name}-herb-stem-${index}`,
+            { diameter: 0.07, height, tessellation: 6 },
+            scene,
+          );
+          stem.parent = root;
+          stem.position.set(x, height / 2, index % 2 === 0 ? -0.16 : 0.16);
+          stem.material = holdDarkMaterial;
+          const leaf = CreateSphere(
+            `${root.name}-herb-leaf-${index}`,
+            { diameter: 0.3, segments: 6 },
+            scene,
+          );
+          leaf.parent = root;
+          leaf.position.set(x, height, stem.position.z);
+          leaf.scaling.set(1.35, 0.45, 0.8);
+          leaf.material = nodeMaterial;
+        }
+        return;
+      }
       if (role === "resourceGrove") {
         for (const [index, x] of [-0.48, 0, 0.48].entries()) {
           const stem = CreateCylinder(
@@ -1760,6 +1982,32 @@ export function createDescentBabylonScene(
           cap.position.set(x, 0.62 + index * 0.14, stem.position.z);
           cap.scaling.y = 0.45;
           cap.material = nodeMaterial;
+        }
+        return;
+      }
+      if (role === "resourceCoin") {
+        const ruin = CreateBox(
+          `${root.name}-coin-ruin`,
+          { depth: 1.25, height: 0.22, width: 1.05 },
+          scene,
+        );
+        ruin.parent = root;
+        ruin.position.y = 0.11;
+        ruin.rotation.y = 0.25;
+        ruin.material = holdDarkMaterial;
+        for (let index = 0; index < 6; index += 1) {
+          const coin = CreateCylinder(
+            `${root.name}-coin-${index}`,
+            { diameter: 0.42, height: 0.07, tessellation: 12 },
+            scene,
+          );
+          coin.parent = root;
+          coin.position.set(
+            -0.4 + (index % 3) * 0.38,
+            0.27 + Math.floor(index / 3) * 0.09,
+            index < 3 ? -0.12 : 0.24,
+          );
+          coin.material = nodeMaterial;
         }
         return;
       }
@@ -1840,6 +2088,20 @@ export function createDescentBabylonScene(
     };
 
     /**
+     * Removes a node and all of its descendant meshes from the shadow generator
+     * before disposal so deleted props do not leak shadow-caster references.
+     * @param node - Root node about to be disposed
+     */
+    const removeShadowCasters = (node: Node): void => {
+      if (node instanceof AbstractMesh) {
+        shadows.removeShadowCaster(node);
+      }
+      for (const mesh of node.getChildMeshes()) {
+        shadows.removeShadowCaster(mesh);
+      }
+    };
+
+    /**
      * Places every fixed scenery copy of one generated model around the
      * plateau and hides that role's stand-ins.
      * @param role - Scenery role that just loaded
@@ -1854,7 +2116,10 @@ export function createDescentBabylonScene(
       if (!isSceneryAssetRole(role)) return;
       sceneryRoot ??= new TransformNode("ashen-scenery", scene);
       for (const node of sceneryRoot.getChildren()) {
-        if (node.name.startsWith(`scenery-${role}-`)) node.dispose();
+        if (node.name.startsWith(`scenery-${role}-`)) {
+          removeShadowCasters(node);
+          node.dispose();
+        }
       }
       for (const placement of backdrop.placements) {
         if (placement.role === role) sceneryNodes.delete(placement.id);
@@ -1867,6 +2132,7 @@ export function createDescentBabylonScene(
         );
         root.parent = sceneryRoot;
         root.metadata = { placementId: placement.id };
+        const interactive = placement.role === "hordeGate";
         root.position.set(placement.x, placement.y, placement.z);
         root.rotation.y = placement.rotation;
         root.setEnabled(revealedScenery.has(placement.id));
@@ -1879,7 +2145,9 @@ export function createDescentBabylonScene(
           placement.footprint,
           placement.height,
         );
-        for (const mesh of root.getChildMeshes()) mesh.isPickable = true;
+        for (const mesh of root.getChildMeshes()) {
+          mesh.isPickable = interactive;
+        }
       }
       backdrop.hideStandIns(role);
     };
@@ -1922,7 +2190,9 @@ export function createDescentBabylonScene(
             isResourceAssetRole(role) ||
             role === "emberVent" ||
             role === "plankBridge" ||
-            role === "riverRocks"
+            role === "riverRocks" ||
+            role === "explorerCache" ||
+            isSceneryAssetRole(role)
           ) {
             decorationAssetsDirty = true;
           }
@@ -1983,7 +2253,7 @@ export function createDescentBabylonScene(
       const buildingScale = span / BUILDING_REFERENCE_SPAN;
       const root = new TransformNode(`${kind}-${entity.id}`, scene);
       const worldZ = mapYToWorldZ(entity.y, currentModel.map.height);
-      root.position.set(entity.x, 0, worldZ);
+      root.position.set(entity.x, groundY(entity.x, entity.y), worldZ);
       root.scaling.setAll(reducedMotion ? 1 : 0.18);
       const presentation = new TransformNode(
         `presentation-${entity.id}`,
@@ -2002,6 +2272,10 @@ export function createDescentBabylonScene(
           ? createConstructionFrame(entity.id, root)
           : null;
       if (kind === "building") fallback.scaling.setAll(buildingScale);
+      if (kind === "unit") {
+        const unitScale = unitFallbackScale(role);
+        if (unitScale !== 1) fallback.scaling.setAll(unitScale);
+      }
       if (construction !== null) {
         construction.scaling.setAll(buildingScale);
         construction.setEnabled(true);
@@ -2204,258 +2478,537 @@ export function createDescentBabylonScene(
       for (const vent of model.vents) {
         signature += `${vent.id},${vent.x},${vent.y},${vent.radius};`;
       }
+      signature += "|camps:";
+      for (const camp of model.exploration?.camps ?? []) {
+        signature += `${camp.id},${camp.x},${camp.y},${camp.cleared};`;
+      }
       return signature;
     };
 
-    /** Rebuilds non-interactive veins, vents, terrain landmarks, and resource nodes. */
+    /**
+     * Incrementally reconciles non-interactive veins, vents, terrain landmarks,
+     * and resource nodes keyed by stable feature id so fog reveals only build
+     * newly uncovered features instead of tearing down the entire map.
+     * @param model - Latest shell model
+     */
     const syncDecorations = (model: ShellModel): void => {
       const signature = buildDecorationSignature(model);
-      if (signature === decorationSignature) return;
+      if (signature === decorationSignature && !decorationAssetsDirty) return;
       decorationSignature = signature;
-      decorationRoot.dispose();
-      decorationMotions.length = 0;
-      decorationRoot = new TransformNode("map-decoration", scene);
+
+      const activeKeys = new Set<string>();
+      let motionsDirty = false;
+
+      /**
+       * Creates or replaces one decoration entry only when it is missing or its
+       * visual signature has changed.
+       * @param key - Stable map feature key
+       * @param visualSignature - Signature covering position, geometry, and loaded asset id
+       * @param build - Builds the feature root and returns any ambient motions
+       */
+      const upsertEntry = (
+        key: string,
+        visualSignature: string,
+        build: () => { motions: DecorationMotion[]; node: TransformNode },
+      ): void => {
+        activeKeys.add(key);
+        const existing = decorationEntries.get(key);
+        if (existing !== undefined) {
+          if (existing.visualSignature === visualSignature) return;
+          removeShadowCasters(existing.node);
+          existing.node.dispose();
+          decorationEntries.delete(key);
+          motionsDirty = true;
+        }
+        const built = build();
+        decorationEntries.set(key, {
+          motions: built.motions,
+          node: built.node,
+          visualSignature,
+        });
+        if (built.motions.length > 0) motionsDirty = true;
+      };
+
       const bridgeAsset = currentAssets.plankBridge;
       const bridgeContainer = containers.get("plankBridge");
+      const bridgeAssetId =
+        bridgeAsset !== undefined && bridgeContainer !== undefined
+          ? bridgeAsset.id
+          : "";
       const riverRocksAsset = currentAssets.riverRocks;
       const riverRocksContainer = containers.get("riverRocks");
       const useGeneratedRiverRocks =
         riverRocksAsset !== undefined && riverRocksContainer !== undefined;
+      const riverRocksAssetId = useGeneratedRiverRocks
+        ? riverRocksAsset.id
+        : "";
+
       for (const feature of model.terrain) {
-        const worldZ = mapYToWorldZ(feature.y, model.map.height);
-        const useGeneratedBridge =
-          feature.kind === "bridge" &&
-          bridgeAsset !== undefined &&
-          bridgeContainer !== undefined;
-        if (useGeneratedBridge) {
-          const bridgeRoot = new TransformNode(`terrain-${feature.id}`, scene);
-          bridgeRoot.parent = decorationRoot;
-          bridgeRoot.position.set(feature.x, 0, worldZ);
-          bridgeRoot.rotation.y = feature.angle ?? 0;
-          // The model is one short, roughly square span whose rails run along
-          // its z axis: turn it 90° and tile it along the crossing.
-          const deckWidth = feature.width ?? 3.6;
-          const spans = Math.max(
-            1,
-            Math.round((feature.radius * 2) / deckWidth),
-          );
-          const spacing = (feature.radius * 2) / spans;
-          for (let span = 0; span < spans; span += 1) {
-            const spanRoot = new TransformNode(
-              `terrain-${feature.id}-span-${span}`,
+        const key = `terrain:${feature.id}`;
+        let visualSignature = `${feature.kind},${feature.x},${feature.y},${feature.radius},${feature.height},${feature.width ?? ""},${feature.angle ?? ""}`;
+        if (feature.kind === "bridge") {
+          visualSignature += `,b:${bridgeAssetId}`;
+        } else if (feature.kind === "deep_water") {
+          // Include nearby water/bridge ids so shoreline rock placement updates
+          // if an adjacent river disk or crossing is revealed.
+          let neighbors = "";
+          for (const other of model.terrain) {
+            if (other.id === feature.id) continue;
+            if (other.kind !== "deep_water" && other.kind !== "bridge") {
+              continue;
+            }
+            const maxRange = feature.radius * 1.2 + other.radius + 1.5;
+            if (
+              Math.hypot(feature.x - other.x, feature.y - other.y) <= maxRange
+            ) {
+              neighbors += `${other.id};`;
+            }
+          }
+          visualSignature += `,r:${riverRocksAssetId},${neighbors}`;
+        }
+
+        upsertEntry(key, visualSignature, () => {
+          const worldZ = mapYToWorldZ(feature.y, model.map.height);
+          const entryMotions: DecorationMotion[] = [];
+          const useGeneratedBridge =
+            feature.kind === "bridge" &&
+            bridgeAsset !== undefined &&
+            bridgeContainer !== undefined;
+          if (useGeneratedBridge) {
+            const bridgeRoot = new TransformNode(
+              `terrain-${feature.id}`,
               scene,
             );
-            spanRoot.parent = bridgeRoot;
-            spanRoot.position.x = -feature.radius + spacing * (span + 0.5);
-            spanRoot.rotation.y = Math.PI / 2;
-            instantiateDecorationProp(
-              `${feature.id}-${span}`,
-              bridgeAsset,
-              bridgeContainer,
-              spanRoot,
-              Math.max(deckWidth, spacing),
-              2.2,
+            bridgeRoot.parent = decorationRoot;
+            bridgeRoot.position.set(
+              feature.x,
+              groundY(feature.x, feature.y),
+              worldZ,
             );
+            bridgeRoot.rotation.y = feature.angle ?? 0;
+            // The model is one short, roughly square span whose rails run along
+            // its z axis: turn it 90° and tile it along the crossing.
+            const deckWidth = feature.width ?? 3.6;
+            const spans = Math.max(
+              1,
+              Math.round((feature.radius * 2) / deckWidth),
+            );
+            const spacing = (feature.radius * 2) / spans;
+            for (let span = 0; span < spans; span += 1) {
+              const spanRoot = new TransformNode(
+                `terrain-${feature.id}-span-${span}`,
+                scene,
+              );
+              spanRoot.parent = bridgeRoot;
+              spanRoot.position.x = -feature.radius + spacing * (span + 0.5);
+              spanRoot.rotation.y = Math.PI / 2;
+              instantiateDecorationProp(
+                `${feature.id}-${span}`,
+                bridgeAsset,
+                bridgeContainer,
+                spanRoot,
+                Math.max(deckWidth, spacing),
+                2.2,
+              );
+            }
+            return { motions: entryMotions, node: bridgeRoot };
           }
-          continue;
-        }
-        buildTerrainLandmark(
-          scene,
-          decorationRoot,
-          feature,
-          worldZ,
-          terrainMaterials,
-          decorationMotions,
-          {
-            allTerrain: model.terrain,
-            skipProceduralRocks: useGeneratedRiverRocks,
-          },
-        );
-        if (feature.kind === "deep_water" && useGeneratedRiverRocks) {
-          const rocks = riverBankRockPlacements(feature, model.terrain);
-          for (let i = 0; i < rocks.length; i += 1) {
-            const rock = rocks[i];
-            if (rock === undefined) continue;
-            const rockRoot = new TransformNode(
-              `terrain-${feature.id}-rock-${i}`,
-              scene,
-            );
-            rockRoot.parent = decorationRoot;
-            rockRoot.position.set(
-              rock.x,
-              0,
-              mapYToWorldZ(rock.y, model.map.height),
-            );
-            rockRoot.rotation.y = rock.angle;
-            instantiateDecorationProp(
-              `${feature.id}-rock-${i}`,
-              riverRocksAsset,
-              riverRocksContainer,
-              rockRoot,
-              0.9 * rock.scale,
-              0.65 * rock.scale,
-            );
-          }
-        }
-      }
-      for (const vein of model.veins) {
-        const marker = CreateTorus(
-          `vein-ring-${vein.id}`,
-          {
-            diameter: Math.max(1.5, vein.radius * 1.2),
-            tessellation: 28,
-            thickness: 0.055,
-          },
-          scene,
-        );
-        marker.parent = decorationRoot;
-        const worldZ = mapYToWorldZ(vein.y, model.map.height);
-        marker.position.set(vein.x, 0.018, worldZ);
-        marker.material = veinMaterial;
-        marker.isPickable = false;
-        const innerRune = CreateTorus(
-          `vein-rune-${vein.id}`,
-          { diameter: 0.72, tessellation: 6, thickness: 0.045 },
-          scene,
-        );
-        innerRune.parent = decorationRoot;
-        innerRune.position.set(vein.x, 0.022, worldZ);
-        innerRune.material = veinMaterial;
-        innerRune.isPickable = false;
-        decorationMotions.push({
-          amplitude: 0.012,
-          baseY: marker.position.y,
-          mesh: marker,
-          phase: vein.x * 0.27,
-          speed: 1.1,
-          spin: 0.04,
-        });
-        decorationMotions.push({
-          amplitude: 0.008,
-          baseY: innerRune.position.y,
-          mesh: innerRune,
-          phase: vein.y * 0.21,
-          speed: 1.25,
-          spin: -0.09,
-        });
-      }
-      for (const vent of model.vents) {
-        const ring = CreateTorus(
-          `vent-${vent.id}`,
-          {
-            diameter: vent.radius * 2,
-            tessellation: 32,
-            thickness: 0.12,
-          },
-          scene,
-        );
-        ring.parent = decorationRoot;
-        const worldZ = mapYToWorldZ(vent.y, model.map.height);
-        ring.position.set(vent.x, 0.03, worldZ);
-        ring.material = ventMaterial;
-        ring.visibility = 0.52;
-        ring.isPickable = false;
-        const ventRoot = new TransformNode(`vent-prop-${vent.id}`, scene);
-        ventRoot.parent = decorationRoot;
-        ventRoot.position.set(vent.x, 0, worldZ);
-        ventRoot.rotation.y = (vent.x * 0.31 + vent.y * 0.17) % (Math.PI * 2);
-        const ventAsset = currentAssets.emberVent;
-        const ventContainer = containers.get("emberVent");
-        if (ventAsset !== undefined && ventContainer !== undefined) {
-          instantiateDecorationProp(
-            vent.id,
-            ventAsset,
-            ventContainer,
-            ventRoot,
-            Math.min(3.2, vent.radius * 1.35),
-            2.25,
-          );
-        } else {
-          const flame = CreateCylinder(
-            `vent-flame-${vent.id}`,
+
+          const landmarkRoot = buildTerrainLandmark(
+            scene,
+            decorationRoot,
+            feature,
+            worldZ,
+            terrainMaterials,
+            entryMotions,
             {
-              diameterBottom: vent.radius * 0.85,
-              diameterTop: 0.15,
-              height: 0.8,
-              tessellation: 8,
+              allTerrain: model.terrain,
+              skipProceduralRocks: useGeneratedRiverRocks,
+            },
+          );
+          landmarkRoot.position.y = groundY(feature.x, feature.y);
+          if (feature.kind === "deep_water" && useGeneratedRiverRocks) {
+            const rocks = riverBankRockPlacements(feature, model.terrain);
+            for (let i = 0; i < rocks.length; i += 1) {
+              const rock = rocks[i];
+              if (rock === undefined) continue;
+              const rockRoot = new TransformNode(
+                `terrain-${feature.id}-rock-${i}`,
+                scene,
+              );
+              rockRoot.parent = landmarkRoot;
+              rockRoot.position.set(
+                rock.x - feature.x,
+                0,
+                mapYToWorldZ(rock.y, model.map.height) - worldZ,
+              );
+              rockRoot.rotation.y = rock.angle;
+              instantiateDecorationProp(
+                `${feature.id}-rock-${i}`,
+                riverRocksAsset,
+                riverRocksContainer,
+                rockRoot,
+                0.9 * rock.scale,
+                0.65 * rock.scale,
+              );
+            }
+          }
+          return { motions: entryMotions, node: landmarkRoot };
+        });
+      }
+
+      const veinAsset = currentAssets.spiritCrystals;
+      const veinContainer = containers.get("spiritCrystals");
+      const veinAssetId =
+        veinAsset !== undefined && veinContainer !== undefined
+          ? veinAsset.id
+          : "";
+      for (const vein of model.veins) {
+        const key = `vein:${vein.id}`;
+        const visualSignature = `${vein.x},${vein.y},${vein.radius},${veinAssetId}`;
+        upsertEntry(key, visualSignature, () => {
+          const veinRoot = new TransformNode(`vein-entry-${vein.id}`, scene);
+          veinRoot.parent = decorationRoot;
+          const worldZ = mapYToWorldZ(vein.y, model.map.height);
+          veinRoot.position.set(vein.x, groundY(vein.x, vein.y), worldZ);
+          const marker = CreateTorus(
+            `vein-ring-${vein.id}`,
+            {
+              diameter: Math.max(1.5, vein.radius * 1.2),
+              tessellation: 28,
+              thickness: 0.055,
             },
             scene,
           );
-          flame.parent = ventRoot;
-          flame.position.y = 0.36;
-          flame.material = ventMaterial;
-          flame.isPickable = false;
-        }
-        const emberCore = CreateSphere(
-          `vent-ember-${vent.id}`,
-          { diameter: 0.34, segments: 8 },
-          scene,
-        );
-        emberCore.parent = ventRoot;
-        emberCore.position.y = 0.48;
-        emberCore.material = ventMaterial;
-        emberCore.isPickable = false;
-        decorationMotions.push({
-          amplitude: 0.12,
-          baseY: emberCore.position.y,
-          mesh: emberCore,
-          phase: vent.x + vent.y,
-          speed: 3.1,
-          spin: 0.35,
+          marker.parent = veinRoot;
+          marker.position.y = 0.018;
+          marker.material = veinMaterial;
+          marker.isPickable = false;
+          const innerRune = CreateTorus(
+            `vein-rune-${vein.id}`,
+            { diameter: 0.72, tessellation: 6, thickness: 0.045 },
+            scene,
+          );
+          innerRune.parent = veinRoot;
+          innerRune.position.y = 0.022;
+          innerRune.material = veinMaterial;
+          innerRune.isPickable = false;
+          if (veinAsset !== undefined && veinContainer !== undefined) {
+            const crystalRoot = new TransformNode(
+              `vein-crystals-${vein.id}`,
+              scene,
+            );
+            crystalRoot.parent = veinRoot;
+            // Offset the cluster so a building on the vein leaves it visible.
+            crystalRoot.position.set(0.65, 0, 0.35);
+            instantiateDecorationProp(
+              vein.id,
+              veinAsset,
+              veinContainer,
+              crystalRoot,
+              1.2,
+              1.55,
+            );
+          }
+          return {
+            motions: [
+              {
+                amplitude: 0.012,
+                baseY: marker.position.y,
+                mesh: marker,
+                phase: vein.x * 0.27,
+                speed: 1.1,
+                spin: 0.04,
+              },
+              {
+                amplitude: 0.008,
+                baseY: innerRune.position.y,
+                mesh: innerRune,
+                phase: vein.y * 0.21,
+                speed: 1.25,
+                spin: -0.09,
+              },
+            ],
+            node: veinRoot,
+          };
         });
       }
-      for (const node of model.nodes) {
-        let nodeMaterial = nodeMaterials.get(node.resource);
-        if (nodeMaterial === undefined) {
-          const colors: Record<string, string> = {
-            coin: "#e4bd58",
-            essence: "#a56ee2",
-            food: "#91b45d",
-            iron: "#8a9aa5",
-            spirit_herbs: "#d66ca3",
-            stone: "#8d8175",
-            water: "#5ba9c9",
-            wood: "#765038",
-          };
-          nodeMaterial = material(
+
+      for (const vent of model.vents) {
+        const role = assetRoleForVent(vent.id);
+        const ventAsset = currentAssets[role];
+        const ventContainer = containers.get(role);
+        const ventAssetId =
+          ventAsset !== undefined && ventContainer !== undefined
+            ? ventAsset.id
+            : "";
+        const key = `vent:${vent.id}`;
+        const visualSignature = `${vent.x},${vent.y},${vent.radius},${role},${ventAssetId}`;
+        upsertEntry(key, visualSignature, () => {
+          const entryRoot = new TransformNode(`vent-entry-${vent.id}`, scene);
+          entryRoot.parent = decorationRoot;
+          const worldZ = mapYToWorldZ(vent.y, model.map.height);
+          entryRoot.position.set(vent.x, groundY(vent.x, vent.y), worldZ);
+          const ring = CreateTorus(
+            `vent-${vent.id}`,
+            {
+              diameter: vent.radius * 2,
+              tessellation: 32,
+              thickness: 0.12,
+            },
             scene,
-            `node-${node.resource}`,
-            colors[node.resource] ?? "#bbb19a",
-            true,
           );
-          nodeMaterial.freeze();
-          nodeMaterials.set(node.resource, nodeMaterial);
-        }
-        // A colored plate keeps the exact resource readable even when two
-        // economy resources share one harvestable prop family.
-        const plate = CreateCylinder(
-          `node-plate-${node.id}`,
-          { diameter: 2.1, height: 0.05, tessellation: 24 },
-          scene,
-        );
-        plate.parent = decorationRoot;
-        const worldZ = mapYToWorldZ(node.y, model.map.height);
-        plate.position.set(node.x, 0.01, worldZ);
-        plate.material = nodeMaterial;
-        plate.visibility = 0.55;
-        plate.isPickable = false;
-        const resourceRoot = new TransformNode(`node-${node.id}`, scene);
-        resourceRoot.parent = decorationRoot;
-        resourceRoot.position.set(node.x, 0, worldZ);
-        const role = assetRoleForResource(node.resource);
+          ring.parent = entryRoot;
+          ring.position.y = 0.03;
+          ring.material = ventMaterial;
+          ring.visibility = 0.52;
+          ring.isPickable = false;
+          const ventRoot = new TransformNode(`vent-prop-${vent.id}`, scene);
+          ventRoot.parent = entryRoot;
+          ventRoot.rotation.y = (vent.x * 0.31 + vent.y * 0.17) % (Math.PI * 2);
+          if (ventAsset !== undefined && ventContainer !== undefined) {
+            instantiateDecorationProp(
+              vent.id,
+              ventAsset,
+              ventContainer,
+              ventRoot,
+              Math.min(3.2, vent.radius * 1.35),
+              role === "abyssSpire" ? 3.1 : 2.25,
+            );
+          } else {
+            const flame = CreateCylinder(
+              `vent-flame-${vent.id}`,
+              {
+                diameterBottom: vent.radius * 0.85,
+                diameterTop: 0.15,
+                height: 0.8,
+                tessellation: 8,
+              },
+              scene,
+            );
+            flame.parent = ventRoot;
+            flame.position.y = 0.36;
+            flame.material = ventMaterial;
+            flame.isPickable = false;
+          }
+          const emberCore = CreateSphere(
+            `vent-ember-${vent.id}`,
+            { diameter: 0.34, segments: 8 },
+            scene,
+          );
+          emberCore.parent = ventRoot;
+          emberCore.position.y = 0.48;
+          emberCore.material = ventMaterial;
+          emberCore.isPickable = false;
+          return {
+            motions: [
+              {
+                amplitude: 0.12,
+                baseY: emberCore.position.y,
+                mesh: emberCore,
+                phase: vent.x + vent.y,
+                speed: 3.1,
+                spin: 0.35,
+              },
+            ],
+            node: entryRoot,
+          };
+        });
+      }
+
+      for (const node of model.nodes) {
+        const key = `node:${node.id}:${node.resource}`;
+        const role =
+          node.explorationCacheId === undefined
+            ? assetRoleForResource(node.resource, node.id)
+            : "explorerCache";
         const asset = currentAssets[role];
         const container = containers.get(role);
-        if (asset !== undefined && container !== undefined) {
-          instantiateDecorationProp(
-            node.id,
-            asset,
-            container,
-            resourceRoot,
-            2.35,
-            2.7,
+        const assetId =
+          asset !== undefined && container !== undefined ? asset.id : "";
+        const visualSignature = `${node.x},${node.y},${assetId}`;
+        upsertEntry(key, visualSignature, () => {
+          let nodeMaterial = nodeMaterials.get(node.resource);
+          if (nodeMaterial === undefined) {
+            const colors: Record<string, string> = {
+              coin: "#e4bd58",
+              essence: "#a56ee2",
+              food: "#91b45d",
+              iron: "#8a9aa5",
+              spirit_herbs: "#d66ca3",
+              stone: "#8d8175",
+              water: "#5ba9c9",
+              wood: "#765038",
+            };
+            nodeMaterial = material(
+              scene,
+              `node-${node.resource}`,
+              colors[node.resource] ?? "#bbb19a",
+              true,
+            );
+            nodeMaterial.freeze();
+            nodeMaterials.set(node.resource, nodeMaterial);
+          }
+          const entryRoot = new TransformNode(`node-entry-${node.id}`, scene);
+          entryRoot.parent = decorationRoot;
+          const worldZ = mapYToWorldZ(node.y, model.map.height);
+          entryRoot.position.set(node.x, groundY(node.x, node.y), worldZ);
+          // A colored plate keeps the exact resource readable even when two
+          // economy resources share one harvestable prop family.
+          const plate = CreateCylinder(
+            `node-plate-${node.id}`,
+            { diameter: 2.1, height: 0.05, tessellation: 24 },
+            scene,
           );
-        } else {
-          createResourceStandIn(role, resourceRoot, nodeMaterial);
+          plate.parent = entryRoot;
+          plate.position.y = 0.01;
+          plate.material = nodeMaterial;
+          plate.visibility = 0.55;
+          plate.isPickable = false;
+          const resourceRoot = new TransformNode(`node-${node.id}`, scene);
+          resourceRoot.parent = entryRoot;
+          if (asset !== undefined && container !== undefined) {
+            const cache = node.explorationCacheId !== undefined;
+            instantiateDecorationProp(
+              node.id,
+              asset,
+              container,
+              resourceRoot,
+              cache ? 1.65 : 2.35,
+              cache ? 1.35 : 2.7,
+            );
+          } else {
+            createResourceStandIn(role, resourceRoot, nodeMaterial);
+          }
+          return { motions: [], node: entryRoot };
+        });
+      }
+
+      for (const camp of model.exploration?.camps ?? []) {
+        // Guarded prizes become ordinary haulable nodes after combat.
+        if (camp.cleared) continue;
+        const key = `exploration-camp:${camp.id}`;
+        const bossCamp = camp.id === "cinderjaw-hoard";
+        const campAsset = bossCamp ? currentAssets.rimRuin : undefined;
+        const campContainer = bossCamp ? containers.get("rimRuin") : undefined;
+        const campAssetId =
+          campAsset !== undefined && campContainer !== undefined
+            ? campAsset.id
+            : "";
+        const visualSignature = `${camp.x},${camp.y},${camp.cleared},${campAssetId}`;
+        upsertEntry(key, visualSignature, () => {
+          const materialKey = camp.cleared
+            ? "exploration-cleared"
+            : "exploration-guarded";
+          let campMaterial = nodeMaterials.get(materialKey);
+          if (campMaterial === undefined) {
+            campMaterial = material(
+              scene,
+              materialKey,
+              camp.cleared ? "#73946b" : "#d4a74e",
+              true,
+            );
+            campMaterial.freeze();
+            nodeMaterials.set(materialKey, campMaterial);
+          }
+          const campRoot = new TransformNode(
+            `exploration-camp-${camp.id}`,
+            scene,
+          );
+          campRoot.parent = decorationRoot;
+          campRoot.position.set(
+            camp.x,
+            groundY(camp.x, camp.y),
+            mapYToWorldZ(camp.y, model.map.height),
+          );
+          const ring = CreateTorus(
+            `exploration-camp-ring-${camp.id}`,
+            { diameter: 5.2, tessellation: 36, thickness: 0.08 },
+            scene,
+          );
+          ring.parent = campRoot;
+          ring.position.y = 0.025;
+          ring.material = campMaterial;
+          ring.isPickable = false;
+          if (campAsset !== undefined && campContainer !== undefined) {
+            const ruinRoot = new TransformNode(
+              `exploration-camp-ruin-${camp.id}`,
+              scene,
+            );
+            ruinRoot.parent = campRoot;
+            ruinRoot.position.z = -1.4;
+            instantiateDecorationProp(
+              camp.id,
+              campAsset,
+              campContainer,
+              ruinRoot,
+              3,
+              3.8,
+            );
+          } else {
+            const chest = CreateBox(
+              `exploration-camp-chest-${camp.id}`,
+              { depth: 0.9, height: 0.62, width: 1.35 },
+              scene,
+            );
+            chest.parent = campRoot;
+            chest.position.y = 0.34;
+            chest.material = campMaterial;
+            chest.isPickable = false;
+            const lid = CreateBox(
+              `exploration-camp-lid-${camp.id}`,
+              { depth: 0.98, height: 0.22, width: 1.43 },
+              scene,
+            );
+            lid.parent = campRoot;
+            lid.position.y = 0.76;
+            lid.material = campMaterial;
+            lid.isPickable = false;
+          }
+          const beacon = CreateCylinder(
+            `exploration-camp-beacon-${camp.id}`,
+            {
+              diameterBottom: 0.32,
+              diameterTop: 0.08,
+              height: camp.cleared ? 0.45 : 1.2,
+              tessellation: 6,
+            },
+            scene,
+          );
+          beacon.parent = campRoot;
+          beacon.position.set(0, camp.cleared ? 0.95 : 1.3, -0.8);
+          beacon.material = campMaterial;
+          beacon.isPickable = false;
+          return {
+            motions: camp.cleared
+              ? []
+              : [
+                  {
+                    amplitude: 0.025,
+                    baseY: ring.position.y,
+                    mesh: ring,
+                    phase: camp.threat,
+                    speed: 1.4,
+                    spin: 0.12,
+                  },
+                ],
+            node: campRoot,
+          };
+        });
+      }
+
+      for (const [key, entry] of decorationEntries) {
+        if (activeKeys.has(key)) continue;
+        removeShadowCasters(entry.node);
+        entry.node.dispose();
+        decorationEntries.delete(key);
+        if (entry.motions.length > 0) motionsDirty = true;
+      }
+
+      if (motionsDirty) {
+        decorationMotions.length = 0;
+        for (const entry of decorationEntries.values()) {
+          for (const motion of entry.motions) decorationMotions.push(motion);
         }
       }
     };
@@ -2488,7 +3041,7 @@ export function createDescentBabylonScene(
         ring.parent = telegraphRoot;
         ring.position.set(
           warning.x,
-          0.05,
+          groundY(warning.x, warning.y) + 0.05,
           mapYToWorldZ(warning.y, model.map.height),
         );
         ring.material = telegraphMaterial;
@@ -2815,12 +3368,12 @@ export function createDescentBabylonScene(
           }
           const from = new Vector3(
             effect.from.x,
-            0.62,
+            groundY(effect.from.x, effect.from.y) + 0.62,
             mapYToWorldZ(effect.from.y, model.map.height),
           );
           const to = new Vector3(
             effect.to.x,
-            0.62,
+            groundY(effect.to.x, effect.to.y) + 0.62,
             mapYToWorldZ(effect.to.y, model.map.height),
           );
           mesh.position.copyFrom(from);
@@ -2847,7 +3400,7 @@ export function createDescentBabylonScene(
         } else if (effect.kind === "qi_nova") {
           const centerPos = new Vector3(
             effect.x,
-            0.22,
+            groundY(effect.x, effect.y) + 0.22,
             mapYToWorldZ(effect.y, model.map.height),
           );
           const root = new TransformNode(`fx-qi-nova-${effect.id}`, scene);
@@ -3047,7 +3600,11 @@ export function createDescentBabylonScene(
           );
           const x = "x" in effect ? effect.x : 0;
           const y = "y" in effect ? effect.y : 0;
-          ring.position.set(x, 0.12, mapYToWorldZ(y, model.map.height));
+          ring.position.set(
+            x,
+            groundY(x, y) + 0.12,
+            mapYToWorldZ(y, model.map.height),
+          );
           ring.material =
             effect.kind === "damage" ? ventMaterial : telegraphMaterial;
           ring.scaling.setAll(0.25);
@@ -3107,26 +3664,81 @@ export function createDescentBabylonScene(
     const CAMERA_VIEW_EPSILON = 0.01;
 
     /**
-     * Publishes an approximate ground footprint for the strategic minimap when
-     * the camera view has meaningfully changed.
+     * Intersects one viewport corner ray with the y = 0 ground plane.
+     * @param x - Canvas-relative CSS pixel x
+     * @param y - Canvas-relative CSS pixel y
+     * @returns World-space hit on y = 0, or null when the ray is parallel or points away
+     */
+    const groundCornerHit = (x: number, y: number): Vector3 | null => {
+      const ray = scene.createPickingRay(x, y, Matrix.Identity(), camera);
+      const distance = ray.intersectsPlane(groundPlane);
+      if (distance === null || distance <= 0) return null;
+      return ray.origin.add(ray.direction.scale(distance));
+    };
+
+    /**
+     * Publishes the ground-plane camera frustum footprint for the strategic
+     * minimap when the camera view has meaningfully changed, falling back to
+     * the radius heuristic if any corner ray is parallel to the ground.
      * @param now - Current animation timestamp
      */
     const publishCameraView = (now: number): void => {
       if (now - lastCameraViewAt < 100) return;
       lastCameraViewAt = now;
+      const canvasWidth = Math.max(1, canvas.clientWidth);
       const canvasHeight = Math.max(1, canvas.clientHeight);
-      const aspect = Math.max(
-        0.5,
-        Math.min(3, canvas.clientWidth / canvasHeight),
-      );
-      const footprint = camera.radius * 1.3;
-      const nextView: MinimapView = {
-        centerX: camera.target.x,
-        centerY: worldZToMapY(camera.target.z, currentModel.map.height),
-        height: Math.min(currentModel.map.height, footprint),
-        rotation: cameraAlphaToMinimapRotation(camera.alpha),
-        width: Math.min(currentModel.map.width, footprint * aspect),
-      };
+      const rotation = cameraAlphaToMinimapRotation(camera.alpha);
+      const topLeft = groundCornerHit(0, 0);
+      const topRight = groundCornerHit(canvasWidth, 0);
+      const bottomRight = groundCornerHit(canvasWidth, canvasHeight);
+      const bottomLeft = groundCornerHit(0, canvasHeight);
+
+      let nextView: MinimapView;
+      if (
+        topLeft !== null &&
+        topRight !== null &&
+        bottomRight !== null &&
+        bottomLeft !== null
+      ) {
+        const centerWorldX =
+          (topLeft.x + topRight.x + bottomRight.x + bottomLeft.x) / 4;
+        const centerWorldZ =
+          (topLeft.z + topRight.z + bottomRight.z + bottomLeft.z) / 4;
+        const topWidth = Math.hypot(
+          topRight.x - topLeft.x,
+          topRight.z - topLeft.z,
+        );
+        const bottomWidth = Math.hypot(
+          bottomRight.x - bottomLeft.x,
+          bottomRight.z - bottomLeft.z,
+        );
+        const topMidX = (topLeft.x + topRight.x) / 2;
+        const topMidZ = (topLeft.z + topRight.z) / 2;
+        const bottomMidX = (bottomLeft.x + bottomRight.x) / 2;
+        const bottomMidZ = (bottomLeft.z + bottomRight.z) / 2;
+        const frustumWidth = (topWidth + bottomWidth) / 2;
+        const frustumHeight = Math.hypot(
+          topMidX - bottomMidX,
+          topMidZ - bottomMidZ,
+        );
+        nextView = {
+          centerX: centerWorldX,
+          centerY: worldZToMapY(centerWorldZ, currentModel.map.height),
+          height: Math.min(currentModel.map.height, frustumHeight),
+          rotation,
+          width: Math.min(currentModel.map.width, frustumWidth),
+        };
+      } else {
+        const aspect = Math.max(0.5, Math.min(3, canvasWidth / canvasHeight));
+        const footprint = camera.radius * 1.3;
+        nextView = {
+          centerX: camera.target.x,
+          centerY: worldZToMapY(camera.target.z, currentModel.map.height),
+          height: Math.min(currentModel.map.height, footprint),
+          rotation,
+          width: Math.min(currentModel.map.width, footprint * aspect),
+        };
+      }
       if (
         lastPublishedCameraView !== null &&
         Math.abs(nextView.centerX - lastPublishedCameraView.centerX) <=
@@ -3147,6 +3759,20 @@ export function createDescentBabylonScene(
     };
 
     /**
+     * Returns whether edge scrolling is currently enabled (fullscreen by
+     * default, or explicitly overridden in scene options).
+     * @returns True when edge scrolling may pan the camera
+     */
+    const isEdgeScrollEnabled = (): boolean => {
+      if (options?.edgeScrollEnabled !== undefined) {
+        return options.edgeScrollEnabled;
+      }
+      return (
+        typeof document !== "undefined" && document.fullscreenElement !== null
+      );
+    };
+
+    /**
      * Moves the camera focus and heading from the held keys. Panning speed
      * scales with zoom so the screen moves at a steady rate.
      * @param deltaMs - Elapsed frame time in milliseconds
@@ -3156,26 +3782,24 @@ export function createDescentBabylonScene(
       desiredCameraAlpha += cameraRotationInput(cameraKeys) * 1.9 * seconds;
       const keyDirection = cameraPanDirection(cameraKeys, camera.alpha);
       let direction = keyDirection;
-      // Keyboard panning wins; the screen edge pans only when no key is held.
-      if (keyDirection.x === 0 && keyDirection.z === 0) {
-        // The DOM rect is read only while the pointer sits in the edge band,
-        // so an idle interior pointer costs no layout work per frame.
-        const pointer = edgeScrollPointer;
-        const rect =
-          pointer !== null &&
-          (pointer.x <= 24 ||
-            pointer.x >= window.innerWidth - 24 ||
-            pointer.y <= 24 ||
-            pointer.y >= window.innerHeight - 24)
-            ? canvas.getBoundingClientRect()
-            : null;
-        direction =
-          rect === null
-            ? { x: 0, z: 0 }
-            : edgeScrollPanDirection(pointer, rect, camera.alpha, {
-                isPointerOverHud: (position) =>
-                  document.elementFromPoint(position.x, position.y) !== canvas,
-              });
+      // Keyboard panning wins; the screen edge pans only when no key is held,
+      // edge scrolling is active, and the pointer sits inside the cached
+      // canvas rect's 24px edge band.
+      if (
+        keyDirection.x === 0 &&
+        keyDirection.z === 0 &&
+        isEdgeScrollEnabled() &&
+        isPointerInEdgeScrollBand(edgeScrollPointer, canvasRect)
+      ) {
+        direction = edgeScrollPanDirection(
+          edgeScrollPointer,
+          canvasRect,
+          camera.alpha,
+          {
+            isPointerOverHud: (position) =>
+              document.elementFromPoint(position.x, position.y) !== canvas,
+          },
+        );
       }
       if (direction.x === 0 && direction.z === 0) return;
       const speed = camera.radius * 0.95;
@@ -3204,7 +3828,7 @@ export function createDescentBabylonScene(
         now - visual.lastStepAt,
       );
       visual.lastStepAt = now;
-      visual.target.set(x, 0, targetZ);
+      visual.target.set(x, groundY(x, y), targetZ);
       visual.stepFrom.copyFrom(visual.root.position);
       visual.stepStartedAt = now;
       const teleported = Math.hypot(dx, dz) > TELEPORT_DISTANCE;
@@ -3245,7 +3869,7 @@ export function createDescentBabylonScene(
       root.parent = parent;
       root.position.set(
         flag.x,
-        0,
+        groundY(flag.x, flag.y),
         mapYToWorldZ(flag.y, currentModel.map.height),
       );
       const pole = CreateCylinder(
@@ -3361,6 +3985,7 @@ export function createDescentBabylonScene(
       },
     ): void => {
       currentModel = model;
+      syncHills(model);
       setPresentationPaused(model.paused);
       fogOverlay.update(model.fog);
       syncSceneryFog(model);
@@ -3425,7 +4050,7 @@ export function createDescentBabylonScene(
         visual.removeAt = null;
         visual.root.position.set(
           building.x,
-          0,
+          groundY(building.x, building.y),
           mapYToWorldZ(building.y, model.map.height),
         );
         visual.target.copyFrom(visual.root.position);
@@ -3464,7 +4089,7 @@ export function createDescentBabylonScene(
       } else {
         rallyMarker.position.set(
           selectedBuilding.rallyPoint.x,
-          0,
+          groundY(selectedBuilding.rallyPoint.x, selectedBuilding.rallyPoint.y),
           mapYToWorldZ(selectedBuilding.rallyPoint.y, model.map.height),
         );
         rallyMarker.setEnabled(true);
@@ -3522,17 +4147,10 @@ export function createDescentBabylonScene(
 
     scene.onBeforeRenderObservable.add(() => {
       const deltaMs = Math.min(50, engine.getDeltaTime());
-      backdrop.update(deltaMs);
-      if (waterTexture !== null && !reducedMotion) {
-        waterTexture.uOffset += deltaMs * 0.000018;
-        waterTexture.vOffset += deltaMs * 0.000011;
-      }
-      cinders?.update(deltaMs);
       const cameraBlend = reducedMotion ? 1 : motionBlend(deltaMs, 155);
       if (decorationAssetsDirty) {
-        decorationAssetsDirty = false;
-        decorationSignature = "";
         syncDecorations(currentModel);
+        decorationAssetsDirty = false;
       }
       applyCameraKeys(deltaMs);
       camera.alpha = smoothAngle(camera.alpha, desiredCameraAlpha, cameraBlend);
@@ -3553,6 +4171,12 @@ export function createDescentBabylonScene(
         presentationPaused,
       );
       if (presentationPaused) return;
+      backdrop.update(deltaMs);
+      if (waterTexture !== null && !reducedMotion) {
+        waterTexture.uOffset += deltaMs * 0.000018;
+        waterTexture.vOffset += deltaMs * 0.000011;
+      }
+      cinders?.update(deltaMs);
       const now = presentationNow;
       const facingBlend = reducedMotion ? 1 : motionBlend(deltaMs, 110);
       const scaleBlend = reducedMotion ? 1 : motionBlend(deltaMs, 135);
@@ -3599,6 +4223,12 @@ export function createDescentBabylonScene(
           progress,
           visual.root.position,
         );
+        if (currentModel.hills.length > 0) {
+          visual.root.position.y = groundY(
+            visual.root.position.x,
+            worldZToMapY(visual.root.position.z, currentModel.map.height),
+          );
+        }
         // Keep walking through the short wait for the next sim step so the
         // walk clip and gait do not restart on every cell.
         const locomoting =
@@ -3732,6 +4362,60 @@ export function createDescentBabylonScene(
     };
 
     /**
+     * Begins middle-mouse-button ground-plane drag panning and suppresses the
+     * browser's default middle-click autoscroll.
+     * @param event - Canvas pointerdown event
+     */
+    const onMiddlePointerDown = (event: PointerEvent): void => {
+      if (event.button !== 1) return;
+      event.preventDefault();
+      updateCanvasRect();
+      middleDragPointerId = event.pointerId;
+      middleDragAnchor = groundPoint(
+        event.clientX - canvasRect.left,
+        event.clientY - canvasRect.top,
+      );
+      canvas.setPointerCapture?.(event.pointerId);
+    };
+
+    /**
+     * Pans the camera target so the grabbed ground point stays under the cursor.
+     * @param event - Canvas pointermove event
+     */
+    const onMiddlePointerMove = (event: PointerEvent): void => {
+      if (
+        middleDragAnchor === null ||
+        event.pointerId !== middleDragPointerId
+      ) {
+        return;
+      }
+      const current = groundPoint(
+        event.clientX - canvasRect.left,
+        event.clientY - canvasRect.top,
+      );
+      const dx = middleDragAnchor.x - current.x;
+      const dz = middleDragAnchor.z - current.z;
+      if (dx === 0 && dz === 0) return;
+      desiredCameraTarget.x += dx;
+      desiredCameraTarget.z += dz;
+      clampCameraTarget();
+      smoothedCameraTarget.copyFrom(desiredCameraTarget);
+      camera.setTarget(smoothedCameraTarget);
+      camera.getViewMatrix(true);
+    };
+
+    /** Clears an active middle-mouse drag when the window loses focus. */
+    const onMiddleDragBlur = (): void => {
+      releaseMiddleDrag();
+    };
+
+    canvas.addEventListener("pointerdown", onMiddlePointerDown);
+    canvas.addEventListener("pointermove", onMiddlePointerMove);
+    canvas.addEventListener("pointerup", releaseMiddleDrag);
+    canvas.addEventListener("pointercancel", releaseMiddleDrag);
+    window.addEventListener("blur", onMiddleDragBlur);
+
+    /**
      * Converts browser pointer coordinates into a Babylon pick. Babylon's
      * `scene.pick` takes canvas-relative CSS pixels and applies the device
      * pixel ratio itself, so render-pixel coordinates must not be passed.
@@ -3793,25 +4477,30 @@ export function createDescentBabylonScene(
     };
 
     /**
-     * Projects a world position to viewport CSS pixels.
+     * Projects a world position to viewport CSS pixels, returning null when the
+     * point lies behind the camera or beyond the far clip plane.
      * @param position - World-space point
      * @param rect - Canvas client rectangle
-     * @returns The point on screen
+     * @returns The point on screen, or null if outside `[0, 1]` clip depth
      */
-    const projectToClient = (position: Vector3, rect: DOMRect): ScreenPoint => {
-      const viewport = camera.viewport.toGlobal(
-        engine.getRenderWidth(),
-        engine.getRenderHeight(),
-      );
+    const projectToClient = (
+      position: Vector3,
+      rect: DOMRect,
+    ): ScreenPoint | null => {
+      const renderWidth = engine.getRenderWidth();
+      const renderHeight = engine.getRenderHeight();
+      if (renderWidth <= 0 || renderHeight <= 0) return null;
+      const viewport = camera.viewport.toGlobal(renderWidth, renderHeight);
       const projected = Vector3.Project(
         position,
         Matrix.IdentityReadOnly,
         scene.getTransformMatrix(),
         viewport,
       );
+      if (projected.z < 0 || projected.z > 1) return null;
       return {
-        x: rect.left + (projected.x / engine.getRenderWidth()) * rect.width,
-        y: rect.top + (projected.y / engine.getRenderHeight()) * rect.height,
+        x: rect.left + (projected.x / renderWidth) * rect.width,
+        y: rect.top + (projected.y / renderHeight) * rect.height,
       };
     };
 
@@ -3830,9 +4519,12 @@ export function createDescentBabylonScene(
           new Vector3(0, visual.role === "cinderjaw" ? 2.4 : 1.6, 0),
           head,
         );
+        const feet = projectToClient(visual.root.position, rect);
+        const headPoint = projectToClient(head, rect);
+        if (feet === null || headPoint === null) continue;
         targets.push({
-          feet: projectToClient(visual.root.position, rect),
-          head: projectToClient(head, rect),
+          feet,
+          head: headPoint,
           id: visual.id,
         });
       }
@@ -3840,35 +4532,34 @@ export function createDescentBabylonScene(
     };
 
     /**
-     * Projects Hold units into a drag rectangle for box selection.
+     * Projects living Hold units into a drag rectangle for box selection,
+     * skipping dying units and units projected behind the camera.
      * @param box - Drag rectangle in viewport CSS pixels
      * @returns Ids of Hold units whose position falls inside the box
      */
     const unitsInScreenBox = (box: DescentScreenBox): string[] => {
       const rect = canvas.getBoundingClientRect();
-      const viewport = camera.viewport.toGlobal(
-        engine.getRenderWidth(),
-        engine.getRenderHeight(),
-      );
-      const world = Matrix.Identity();
       const left = Math.min(box.left, box.right);
       const right = Math.max(box.left, box.right);
       const top = Math.min(box.top, box.bottom);
       const bottom = Math.max(box.top, box.bottom);
       const selected: string[] = [];
       for (const visual of entities.values()) {
-        if (visual.kind !== "unit" || visual.factionId !== "hold") continue;
-        const projected = Vector3.Project(
-          visual.root.position,
-          world,
-          scene.getTransformMatrix(),
-          viewport,
-        );
-        const x =
-          rect.left + (projected.x / engine.getRenderWidth()) * rect.width;
-        const y =
-          rect.top + (projected.y / engine.getRenderHeight()) * rect.height;
-        if (x >= left && x <= right && y >= top && y <= bottom) {
+        if (
+          visual.kind !== "unit" ||
+          visual.factionId !== "hold" ||
+          visual.removeAt !== null
+        ) {
+          continue;
+        }
+        const projected = projectToClient(visual.root.position, rect);
+        if (projected === null) continue;
+        if (
+          projected.x >= left &&
+          projected.x <= right &&
+          projected.y >= top &&
+          projected.y <= bottom
+        ) {
           selected.push(visual.id);
         }
       }
@@ -3919,6 +4610,32 @@ export function createDescentBabylonScene(
       await Promise.all(tasks);
     };
 
+    let contextLost = false;
+    /** Render callback re-attached after a WebGL context restore. */
+    const restoredRenderLoop = (): void => {
+      if (!disposed) scene.render();
+    };
+    /** Pauses rendering when the browser loses the WebGL context. */
+    const onWebglContextLost = (event: Event): void => {
+      event.preventDefault();
+      if (contextLost || disposed) return;
+      contextLost = true;
+      engine.stopRenderLoop();
+      options?.onContextLost?.();
+    };
+    /** Resizes and resumes rendering once the WebGL context is restored. */
+    const onWebglContextRestored = (): void => {
+      if (!contextLost || disposed) return;
+      contextLost = false;
+      applyHardwareScaling();
+      engine.resize();
+      updateCanvasRect();
+      engine.runRenderLoop(restoredRenderLoop);
+      options?.onContextRestored?.();
+    };
+    canvas.addEventListener("webglcontextlost", onWebglContextLost);
+    canvas.addEventListener("webglcontextrestored", onWebglContextRestored);
+
     const disposeRuntime = attachBabylonRuntimeLifecycle(engine, scene, window);
     update(initialModel, initialSelection, false);
     void setAssets(initialAssets);
@@ -3926,16 +4643,50 @@ export function createDescentBabylonScene(
       dispose: () => {
         if (disposed) return;
         disposed = true;
+        resizeObserver?.disconnect();
+        window.removeEventListener("resize", updateCanvasRect);
+        window.removeEventListener("scroll", updateCanvasRect);
+        canvas.removeEventListener("wheel", onCanvasWheel);
         window.removeEventListener("keydown", onCameraKey);
         window.removeEventListener("keyup", onCameraKey);
         window.removeEventListener("blur", releaseCameraKeys);
         window.removeEventListener("pointermove", onEdgeScrollPointerMove);
         canvas.removeEventListener("pointerleave", releaseEdgeScrollPointer);
+        document.removeEventListener("mouseleave", releaseEdgeScrollPointer);
         window.removeEventListener("blur", releaseEdgeScrollPointer);
+        canvas.removeEventListener("pointerdown", onMiddlePointerDown);
+        canvas.removeEventListener("pointermove", onMiddlePointerMove);
+        canvas.removeEventListener("pointerup", releaseMiddleDrag);
+        canvas.removeEventListener("pointercancel", releaseMiddleDrag);
+        window.removeEventListener("blur", onMiddleDragBlur);
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+        canvas.removeEventListener("webglcontextlost", onWebglContextLost);
+        canvas.removeEventListener(
+          "webglcontextrestored",
+          onWebglContextRestored,
+        );
+        engine.stopRenderLoop(restoredRenderLoop);
         for (const visual of entities.values()) disposeEntityVisual(visual);
         entities.clear();
         for (const effect of transientEffects) disposeTransientEffect(effect);
         transientEffects.length = 0;
+        for (const entry of decorationEntries.values()) {
+          removeShadowCasters(entry.node);
+          entry.node.dispose();
+        }
+        decorationEntries.clear();
+        decorationMotions.length = 0;
+        decorationRoot.dispose();
+        if (sceneryRoot !== null) {
+          removeShadowCasters(sceneryRoot);
+          sceneryRoot.dispose();
+          sceneryRoot = null;
+        }
+        sceneryNodes.clear();
+        for (const container of containers.values()) container.dispose();
+        containers.clear();
+        loadedAssetIds.clear();
+        loadingAssetIds.clear();
         carryIcons.dispose();
         fogOverlay.dispose();
         if (routeLine !== null) {

@@ -98,6 +98,18 @@ function cloneUnit(unit: CultivationUnitState): CultivationUnitState {
 }
 
 /**
+ * Lists the pill names a unit has already consumed for the panel guide.
+ * @param unit - Cultivation record with applied pill effects
+ * @returns Names in consumption order
+ */
+function appliedPillNames(unit: CultivationUnitState): string[] {
+  return unit.appliedPills.map(
+    (effect) =>
+      PILLS.find((pill) => pill.id === effect.pillId)?.name ?? effect.pillId,
+  );
+}
+
+/**
  * Reads one breakthrough roll from a record or function source.
  * @param rolls - Record by unit id, or a roll function
  * @param unitId - Unit whose channel is finishing
@@ -237,12 +249,15 @@ export class CultivationSystem {
     );
     if (!breakthrough) {
       return {
+        combatProof: unit.combatProof,
+        combatProofToNext: 0,
         essence: unit.essence,
         essenceToNext: 0,
         merit: unit.merit,
         meritToNext: 0,
         missingRequirements: [],
         passives,
+        pillNames: appliedPillNames(unit),
         rank: unit.rank,
         school: unit.school,
         successChance: 1,
@@ -251,12 +266,16 @@ export class CultivationSystem {
       };
     }
     return {
+      combatProof: unit.combatProof,
+      combatProofToNext: breakthrough.combatProof,
       essence: unit.essence,
       essenceToNext: breakthrough.essence,
       merit: unit.merit,
       meritToNext: breakthrough.merit,
       missingRequirements: this.missingRequirements(unit, realm),
+      nextRank: breakthrough.targetRank,
       passives,
+      pillNames: appliedPillNames(unit),
       rank: unit.rank,
       school: unit.school,
       successChance: this.successChance(unitId, realm),

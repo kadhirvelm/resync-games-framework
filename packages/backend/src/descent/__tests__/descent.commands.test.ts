@@ -34,7 +34,24 @@ describe("Descent wire commands", () => {
     );
   });
 
-  for (const type of ["toggle_meditate", "cast_qi_art"]) {
+  test("accepts construction cancellation with only its building id", () => {
+    expect(
+      isDescentWireCommand({
+        buildingId: "building-1",
+        type: "cancel_construction",
+      }),
+    ).toBe(true);
+    expect(isDescentWireCommand({ type: "cancel_construction" })).toBe(false);
+    expect(
+      isDescentWireCommand({
+        buildingId: "building-1",
+        jobId: "training-1",
+        type: "cancel_construction",
+      }),
+    ).toBe(false);
+  });
+
+  for (const type of ["toggle_meditate", "cast_qi_art", "disband_units"]) {
     describe(type, () => {
       test("accepts bounded lists of unit ids", () => {
         expect(

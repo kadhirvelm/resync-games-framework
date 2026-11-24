@@ -9,10 +9,12 @@ export interface ControlGroupHotkeyAction {
 
 /** Keyboard actions the desktop shell handles. */
 export type HotkeyAction =
+  | { type: "attack_move" }
   | { type: "build" }
   | { type: "camera"; x: number; y: number }
   | ControlGroupHotkeyAction
   | { type: "close" }
+  | { type: "disband" }
   | { type: "fullscreen" }
   | { type: "hotkeys" }
   | { type: "idle" }
@@ -22,6 +24,7 @@ export type HotkeyAction =
   | { type: "recall" }
   | { type: "release" }
   | { type: "selectCamp" }
+  | { type: "stop" }
   | { type: "train" };
 
 /** The key fields the mapper reads. */
@@ -64,15 +67,11 @@ function controlGroupSlotFromKey(
 export function hotkeyFromInput(input: HotkeyInput): HotkeyAction | null {
   const groupSlot = controlGroupSlotFromKey(input.key, input.code);
   if (groupSlot !== null) {
-    if (
-      input.altKey ||
-      input.metaKey ||
-      input.repeat ||
-      (input.ctrlKey && input.shiftKey === true)
-    ) {
-      return null;
-    }
-    if (input.ctrlKey) {
+    if (input.metaKey || input.repeat) return null;
+    const saveModifier = input.ctrlKey || input.altKey;
+    if (saveModifier && input.shiftKey === true) return null;
+    if (input.ctrlKey && input.altKey) return null;
+    if (saveModifier) {
       return { mode: "save", slot: groupSlot, type: "controlGroup" };
     }
     if (input.shiftKey === true) {
@@ -95,6 +94,9 @@ export function hotkeyFromInput(input: HotkeyInput): HotkeyAction | null {
     return { type: "camera", x: 0, y: CAMERA_STEP };
   }
   if (input.repeat) return null;
+  if (key === "Delete") return { type: "disband" };
+  if (key === "x") return { type: "attack_move" };
+  if (key === "z") return { type: "stop" };
   if (key === "b") return { type: "build" };
   if (key === "c") return { type: "qi_art" };
   if (key === "m") return { type: "meditate" };
@@ -115,10 +117,13 @@ export const HOTKEY_ROWS = [
   { action: "Select", key: "Click / drag" },
   { action: "Select all of a type on screen", key: "Double-click" },
   { action: "Add to selection", key: "Shift+click" },
-  { action: "Save control group", key: "Ctrl+1–9" },
+  { action: "Save control group", key: "Ctrl+1–9 / Alt+1–9" },
   { action: "Add selection to control group", key: "Shift+1–9" },
   { action: "Recall group / double-tap to center", key: "1–9" },
   { action: "Move / gather / build / attack", key: "Right-click" },
+  { action: "Attack-move", key: "X" },
+  { action: "Stop", key: "Z" },
+  { action: "Disband units / cancel construction", key: "Delete" },
   { action: "Queue a waypoint", key: "Shift+right-click" },
   { action: "Send / queue from the minimap", key: "Right-click / Shift+click" },
   { action: "Build menu", key: "B" },

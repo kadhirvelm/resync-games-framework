@@ -29,12 +29,16 @@ export function DescentLoadingScreen({
   onSkip,
   progress,
 }: DescentLoadingScreenProps) {
-  const [shown, setShown] = useState(0);
-  const [canSkip, setCanSkip] = useState(false);
   const fraction = leaving ? 1 : loadingFraction(progress);
+  const [highWater, setHighWater] = useState(fraction);
+  const [canSkip, setCanSkip] = useState(false);
   // New loads can start after earlier ones finish; never draw the bar
   // moving backward.
-  if (fraction > shown) setShown(fraction);
+  const shown = Math.max(highWater, fraction);
+
+  useEffect(() => {
+    setHighWater((current) => (fraction > current ? fraction : current));
+  }, [fraction]);
 
   useEffect(() => {
     const timer = setTimeout(() => setCanSkip(true), SKIP_AFTER_MS);

@@ -11,6 +11,7 @@ import type {
   TerrainBridge,
   TerrainFeature,
   TerrainFeatureKind,
+  TerrainHill,
 } from "./layerTypes";
 
 /** Everything a hazard query needs to know about the current layer and map. */
@@ -315,6 +316,8 @@ export const LAYER_TERRAIN_META_KEY = "layerTerrain";
 /** Terrain a layer generated for one run, saved with the world. */
 export interface LayerTerrain {
   layerId: string;
+  /** Walkable Age of Empires-style hills that grant elevation and slope speed. */
+  hills?: TerrainHill[];
   /** Impassable ridges, spires, ruined walls, and fissures carving choke points. */
   obstacles?: TerrainFeature[];
   /** Walkable bridges across rivers; they never block movement. */
@@ -348,6 +351,9 @@ export function setLayerTerrain(
 ): void {
   world.meta[LAYER_TERRAIN_META_KEY] = {
     layerId: terrain.layerId,
+    ...(terrain.hills !== undefined
+      ? { hills: terrain.hills.map((hill) => ({ ...hill })) }
+      : {}),
     ...(terrain.obstacles !== undefined
       ? { obstacles: terrain.obstacles.map((obstacle) => ({ ...obstacle })) }
       : {}),
@@ -356,6 +362,21 @@ export function setLayerTerrain(
       : {}),
     ventVolumes: terrain.ventVolumes.map((vent) => ({ ...vent })),
   } satisfies LayerTerrain;
+}
+
+/**
+ * Walkable hills generated for this world's current layer.
+ * @param world - Sim world (or any object with its layer id and meta)
+ * @returns Hills in effect; empty on flat worlds or older saves
+ */
+export function worldTerrainHills(
+  world: TerrainHolder,
+): readonly TerrainHill[] {
+  const terrain = world.meta[LAYER_TERRAIN_META_KEY];
+  if (!isLayerTerrain(terrain) || terrain.layerId !== world.layerId) {
+    return [];
+  }
+  return terrain.hills ?? [];
 }
 
 /**
@@ -435,6 +456,10 @@ function isLayerTerrain(value: unknown): value is LayerTerrain {
       Number.isFinite((vent as CircleVolume).radius),
   );
   if (!ventsValid) return false;
+  if (candidate.hills !== undefined) {
+    if (!Array.isArray(candidate.hills)) return false;
+    if (!candidate.hills.every(isTerrainHill)) return false;
+  }
   if (candidate.bridges !== undefined) {
     if (!Array.isArray(candidate.bridges)) return false;
     if (!candidate.bridges.every(isTerrainBridge)) return false;
@@ -442,6 +467,28 @@ function isLayerTerrain(value: unknown): value is LayerTerrain {
   if (candidate.obstacles === undefined) return true;
   if (!Array.isArray(candidate.obstacles)) return false;
   return candidate.obstacles.every(isTerrainFeature);
+}
+
+/**
+ * Narrows one serialized walkable hill.
+ * @param value - Candidate hill record
+ * @returns Whether it is a valid terrain hill
+ */
+function isTerrainHill(value: unknown): value is TerrainHill {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<TerrainHill>;
+  return (
+    typeof candidate.id === "string" &&
+    Number.isFinite(candidate.x) &&
+    Number.isFinite(candidate.y) &&
+    Number.isFinite(candidate.radius) &&
+    (candidate.radius as number) > 0 &&
+    Number.isFinite(candidate.plateauRadius) &&
+    (candidate.plateauRadius as number) >= 0 &&
+    (candidate.plateauRadius as number) < (candidate.radius as number) &&
+    Number.isFinite(candidate.height) &&
+    (candidate.height as number) > 0
+  );
 }
 
 /**

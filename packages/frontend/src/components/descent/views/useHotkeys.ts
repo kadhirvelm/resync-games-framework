@@ -16,11 +16,16 @@ export function isTypingTarget(target: EventTarget | null): boolean {
 /**
  * Listens for the desktop hotkey stub and forwards actions to the shell.
  * @param onAction - Handles one hotkey. The latest callback is used.
+ * @param enabled - Whether hotkeys should intercept keydown events (default true)
  */
-export function useHotkeys(onAction: (action: HotkeyAction) => void): void {
+export function useHotkeys(
+  onAction: (action: HotkeyAction) => void,
+  enabled = true,
+): void {
   const onActionRef = useRef(onAction);
   onActionRef.current = onAction;
   useEffect(() => {
+    if (!enabled) return;
     /**
      * @param event - Keydown on the window
      */
@@ -33,5 +38,5 @@ export function useHotkeys(onAction: (action: HotkeyAction) => void): void {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [enabled]);
 }

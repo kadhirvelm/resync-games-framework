@@ -33,7 +33,7 @@ const FIX_RULES: readonly FixRule[] = [
     pattern: /combat proof/i,
   },
   {
-    fix: "Kill enemies, or Meditate (M) with a cultivator — 2.5× near a Spirit Vein or Array.",
+    fix: "Kill enemies, or Meditate (M) with a Qi cultivator — 2.5× near a Spirit Vein, Array, or Pavilion.",
     pattern: /^essence \d/i,
   },
   {
@@ -53,11 +53,15 @@ const FIX_RULES: readonly FixRule[] = [
     pattern: /breakthrough pill/i,
   },
   {
+    fix: "Each Hold can field only one cultivator per path; a replacement unlocks if they fall.",
+    pattern: /limit 1:/i,
+  },
+  {
     fix: "Build Housing to raise the population cap.",
     pattern: /population/i,
   },
   {
-    fix: "Descend to a deeper layer to raise the cap.",
+    fix: "This scenario is already at its rank cap; use school and pill bonuses instead.",
     pattern: /rank cap/i,
   },
   {

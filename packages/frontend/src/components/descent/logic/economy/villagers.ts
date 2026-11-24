@@ -5,6 +5,8 @@
  * A carried load is delivered before a new job is chosen.
  */
 
+import { slopeSpeedMultiplier } from "../layers/elevation";
+import type { TerrainHill } from "../layers/layerTypes";
 import {
   cellStaysClear,
   escapeHurtCell,
@@ -106,6 +108,7 @@ interface WalkCache {
   readonly cells: Uint8Array;
   readonly disks: readonly HurtDisk[];
   readonly height: number;
+  readonly hills: readonly TerrainHill[];
   readonly obstacles: readonly TerrainObstacle[];
   readonly passable: (x: number, y: number) => boolean;
   readonly width: number;
@@ -130,10 +133,11 @@ function createWalkCache(host: EconomyHost): WalkCache {
   }
   const cells = walkCacheBuffer;
   const disks = host.getVentVolumes();
+  const hills = host.getTerrainHills?.() ?? [];
   const obstacles = host.getTerrainObstacles?.() ?? [];
   const passable = (x: number, y: number): boolean =>
     canWalkCached(host, cells, obstacles, disks, width, height, x, y);
-  return { cells, disks, height, obstacles, passable, width };
+  return { cells, disks, height, hills, obstacles, passable, width };
 }
 
 /**
@@ -270,6 +274,76 @@ export function spreadSettledVillagers(
   }
 }
 
+/** Unit classes that may haul guarded exploration caches. */
+const EXPLORATION_CARRIER_CLASSES = new Set([
+  "cultivator",
+  "formation_master",
+  "sword_sage",
+]);
+
+/**
+ * Reports whether a unit is a Qi cultivator allowed to haul caches.
+ * @param unit - Economy unit to inspect
+ * @returns True for Sword, Flying-Sword, and Formation Cultivators
+ */
+export function isExplorationCarrier(unit: EconomyUnit): boolean {
+  return EXPLORATION_CARRIER_CLASSES.has(unit.classId);
+}
+
+/**
+ * Reports whether a Qi cultivator is currently gathering or delivering a cache.
+ * @param unit - Economy unit with a possible economy task
+ * @returns True while its combat movement should yield to the economy haul
+ */
+export function isExplorationCarrierTask(unit: EconomyUnit): boolean {
+  if (!isExplorationCarrier(unit)) return false;
+  return unit.task?.kind === "gather" || unit.task?.kind === "carry";
+}
+
+/**
+ * Selects villagers and, only for guarded caches, Qi cultivators as gatherers.
+ * @param host - World of units
+ * @param unitIds - Ids the player selected
+ * @param cacheOnly - Whether only exploration-cache carriers are allowed
+ * @returns Eligible gatherer records, in selection order
+ */
+function selectedGatherers(
+  host: EconomyHost,
+  unitIds: readonly string[],
+  cacheOnly: boolean,
+): EconomyUnit[] {
+  const gatherers: EconomyUnit[] = [];
+  for (const unitId of unitIds) {
+    const unit = host.units.find((entry) => entry.id === unitId);
+    if (!unit || !isEconomyUnit(unit) || unit.hp <= 0) continue;
+    if (
+      unit.popKind !== "villager" &&
+      !(cacheOnly && isExplorationCarrier(unit))
+    ) {
+      continue;
+    }
+    gatherers.push(unit);
+  }
+  return gatherers;
+}
+
+/**
+ * Checks whether a Qi cultivator has an outstanding cache order.
+ * @param host - World of resource nodes
+ * @param unit - Possible cache gatherer
+ * @returns True when the ordered node is an exploration cache
+ */
+function hasExplorationCacheOrder(
+  host: EconomyHost,
+  unit: EconomyUnit,
+): boolean {
+  if (!isExplorationCarrier(unit) || !unit.preferredNodeId) return false;
+  return host.economy.nodes.some(
+    (node) =>
+      node.id === unit.preferredNodeId && node.explorationCacheId !== undefined,
+  );
+}
+
 /**
  * Living villagers among the given ids.
  * @param host - World of units
@@ -349,9 +423,13 @@ export function orderVillagersGather(
   nodeId: string,
 ): number {
   const node = host.economy.nodes.find((entry) => entry.id === nodeId);
-  if (!node || node.remaining <= 0) return 0;
-  const villagers = selectedVillagers(host, unitIds);
-  for (const unit of villagers) {
+  if (!node || !hasGatherableStock(host, node)) return 0;
+  const gatherers = selectedGatherers(
+    host,
+    unitIds,
+    node.explorationCacheId !== undefined,
+  );
+  for (const unit of gatherers) {
     unit.preferredNodeId = nodeId;
     unit.workplaceId = null;
     unit.queuedBuild = false;
@@ -361,7 +439,7 @@ export function orderVillagersGather(
     );
     unit.task = null;
   }
-  return villagers.length;
+  return gatherers.length;
 }
 
 /**
@@ -396,7 +474,21 @@ export function orderVillagersBuild(
     unit.workplaceId = building.id;
     unit.preferredNodeId = null;
   }
-  return villagers.length;
+  const cacheCarriers = selectedGatherers(host, unitIds, true).filter(
+    isExplorationCarrier,
+  );
+  let cacheDeliveries = 0;
+  for (const unit of cacheCarriers) {
+    if (unit.carry?.explorationCacheId === undefined || !isDropOff(building)) {
+      continue;
+    }
+    unit.garrisoned = false;
+    unit.queuedBuild = false;
+    unit.workplaceId = null;
+    unit.task = { buildingId, kind: "carry" };
+    cacheDeliveries += 1;
+  }
+  return villagers.length + cacheDeliveries;
 }
 
 /**
@@ -699,9 +791,12 @@ export function releaseVillagers(host: EconomyHost, ownerId?: string): void {
 function assignIdle(host: EconomyHost, policy: VillagerPolicy): void {
   const idle = host.units
     .filter(isEconomyUnit)
-    .filter(
-      (unit) => unit.popKind === "villager" && !unit.garrisoned && !unit.task,
-    )
+    .filter((unit) => {
+      if (unit.garrisoned || unit.task) return false;
+      if (unit.popKind === "villager") return true;
+      if (unit.carry?.explorationCacheId !== undefined) return true;
+      return hasExplorationCacheOrder(host, unit);
+    })
     .sort((left, right) => compareIds(left.id, right.id));
   for (const unit of idle) {
     pruneUnreachable(host, unit);
@@ -721,13 +816,13 @@ function assignIdle(host: EconomyHost, policy: VillagerPolicy): void {
  * @param unit - Idle villager
  */
 function resumeOrderedWork(host: EconomyHost, unit: EconomyUnit): void {
-  if (!unit.workplaceId && !unit.preferredNodeId) return;
   if (unit.carry) {
     const drop = nearestDropOff(host, unit);
     if (!drop) return;
     unit.task = { buildingId: drop.id, kind: "carry" };
     return;
   }
+  if (!unit.workplaceId && !unit.preferredNodeId) return;
   if (resumeWorkplace(host, unit)) return;
   const node = standingNode(host, unit);
   if (!node) return;
@@ -806,7 +901,7 @@ function nearestNodeWithin(
   let best: ResourceNode | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
   for (const node of host.economy.nodes) {
-    if (node.remaining <= 0 || !accept(node)) continue;
+    if (!hasGatherableStock(host, node) || !accept(node)) continue;
     if (isUnreachable(origin, node.id)) continue;
     const distance = chebyshev(node, origin);
     if (distance > radius || distance > bestDistance) continue;
@@ -907,7 +1002,8 @@ function stepOne(
   walkCache: WalkCache,
   locomotion = false,
 ): void {
-  if (unit.hp <= 0 || unit.popKind !== "villager" || !unit.task) return;
+  if (unit.hp <= 0 || !unit.task) return;
+  if (unit.popKind !== "villager" && !isExplorationCarrierTask(unit)) return;
   const task = unit.task;
   if (task.kind === "gather") {
     stepGather(host, unit, task, walkCache, locomotion);
@@ -1052,10 +1148,6 @@ function stepMove(
   const goal = moveGoal(host, task, walkCache);
   const adjacent = chebyshev(unit, goal) <= goal.reach;
   if (adjacent) {
-    if (goal.reach === 1 && walkCache.passable(task.x, task.y)) {
-      unit.x = task.x;
-      unit.y = task.y;
-    }
     unit.task = null;
     return;
   }
@@ -1071,8 +1163,7 @@ function stepMove(
     unit.task = null;
     return;
   }
-  unit.x = next.x;
-  unit.y = next.y;
+  advanceVillagerOnSlope(host, unit, next, goal, goal.reach, walkCache);
 }
 
 /**
@@ -1093,13 +1184,53 @@ function moveGoal(
     !building ||
     cellOpenWithObstacles(host, walkCache.obstacles, task.x, task.y, "ally")
   ) {
-    return { reach: 1, x: task.x, y: task.y };
+    return { reach: 0, x: task.x, y: task.y };
   }
   return { reach: footprintReach(building), x: building.x, y: building.y };
 }
 
 /**
- * @param host - World whose node and stockpile change
+ * Computes stock a cache can still put into a new carry, excluding loads
+ * already being hauled. Ordinary deposits simply use their remaining amount.
+ * @param host - World with carriers whose loads may be in flight
+ * @param node - Node being evaluated
+ * @returns Units of stock a new carrier may collect
+ */
+function availableExplorationStock(
+  host: EconomyHost,
+  node: ResourceNode,
+): number {
+  if (node.explorationCacheId === undefined) return node.remaining;
+  let inFlight = 0;
+  for (const unit of host.units) {
+    if (!isEconomyUnit(unit) || unit.hp <= 0 || !unit.carry) continue;
+    if (unit.carry.explorationCacheId !== node.explorationCacheId) continue;
+    if (unit.carry.resourceId !== node.resourceId) continue;
+    if (
+      unit.carry.explorationCacheNodeId !== undefined &&
+      unit.carry.explorationCacheNodeId !== node.id
+    ) {
+      continue;
+    }
+    inFlight += unit.carry.amount;
+  }
+  return Math.max(0, node.remaining - inFlight);
+}
+
+/**
+ * @param host - World whose nodes and carriers are read
+ * @param node - Node being evaluated
+ * @returns Whether a new gather order could collect anything
+ */
+export function hasGatherableStock(
+  host: EconomyHost,
+  node: ResourceNode,
+): boolean {
+  return availableExplorationStock(host, node) > 0;
+}
+
+/**
+ * @param host - World whose villagers move
  * @param unit - Villager at or walking to a node
  * @param task - Gather order
  * @param walkCache - Per-step lazy passability cache
@@ -1126,13 +1257,30 @@ function stepGather(
   task.gatherTicksLeft -= locomotion ? LOCOMOTION_WORK_FRACTION : 1;
   if (task.gatherTicksLeft > 0) return;
   const capacity = resourceDef(node.resourceId)?.carryAmount ?? 1;
-  const amount = Math.min(capacity, node.remaining);
+  const available = availableExplorationStock(host, node);
+  // Each special cache is one deliberate trip, even when its reward exceeds
+  // an ordinary load. This keeps a camp to a few hauls instead of busywork.
+  const amount =
+    node.explorationCacheId === undefined
+      ? Math.min(capacity, available)
+      : available;
   if (amount <= 0) {
     unit.task = null;
     return;
   }
-  node.remaining -= amount;
-  unit.carry = { amount, resourceId: node.resourceId };
+  // Exploration caches stay in the world until the load reaches storage.
+  // If a carrier dies or is redirected, another villager can still claim it.
+  if (node.explorationCacheId === undefined) node.remaining -= amount;
+  unit.carry = {
+    amount,
+    resourceId: node.resourceId,
+    ...(node.explorationCacheId === undefined
+      ? {}
+      : {
+          explorationCacheId: node.explorationCacheId,
+          explorationCacheNodeId: node.id,
+        }),
+  };
   const drop = nearestDropOff(host, unit);
   if (!drop) {
     unit.task = null;
@@ -1140,6 +1288,59 @@ function stepGather(
   }
   unit.task = { buildingId: drop.id, kind: "carry" };
   stepCarry(host, unit, unit.task, walkCache);
+}
+
+/**
+ * Atomically delivers a cache load to storage and queues its camp's non-resource
+ * prize. The source remains full while carried, so a dead carrier releases the
+ * reservation without losing stock. Ordinary loads return false and use the
+ * original deposit path. A missing legacy/layer source discards the unbacked
+ * load rather than minting resources.
+ * @param host - World whose nodes, stockpile, and claims are updated
+ * @param unit - Carrier with a possible exploration load
+ * @param dropOffId - Storage building receiving the cache
+ * @returns True when this was an exploration cache and delivery was handled
+ */
+function depositExplorationCache(
+  host: EconomyHost,
+  unit: EconomyUnit,
+  dropOffId: string,
+): boolean {
+  const carried = unit.carry;
+  if (carried?.explorationCacheId === undefined) return false;
+  const node =
+    carried.explorationCacheNodeId === undefined
+      ? host.economy.nodes.find(
+          (entry) =>
+            entry.explorationCacheId === carried.explorationCacheId &&
+            entry.resourceId === carried.resourceId,
+        )
+      : host.economy.nodes.find(
+          (entry) =>
+            entry.id === carried.explorationCacheNodeId &&
+            entry.explorationCacheId === carried.explorationCacheId &&
+            entry.resourceId === carried.resourceId,
+        );
+  unit.carry = null;
+  unit.preferredNodeId = null;
+  if (node === undefined) return true;
+  const amount = Math.min(carried.amount, node.remaining);
+  if (amount <= 0) return true;
+  node.remaining -= amount;
+  host.resources[carried.resourceId] =
+    (host.resources[carried.resourceId] ?? 0) + amount;
+  host.economy.explorationClaims.push({
+    amount,
+    campId: carried.explorationCacheId,
+    dropOffId,
+    nodeId: node.id,
+    resourceId: carried.resourceId,
+  });
+  if (node.remaining > 0) return true;
+  host.economy.nodes = host.economy.nodes.filter(
+    (entry) => entry.id !== node.id,
+  );
+  return true;
 }
 
 /**
@@ -1165,6 +1366,10 @@ function stepCarry(
   }
   if (!besideBuilding(unit, drop)) moveToward(host, unit, drop, walkCache);
   if (!besideBuilding(unit, drop) || !unit.carry || !unit.task) return;
+  if (depositExplorationCache(host, unit, drop.id)) {
+    unit.task = null;
+    return;
+  }
   const carried = unit.carry;
   host.resources[carried.resourceId] =
     (host.resources[carried.resourceId] ?? 0) + carried.amount;
@@ -1250,6 +1455,11 @@ function stepGarrison(
     moveToward(host, unit, building, walkCache);
   if (!besideBuilding(unit, building) || !unit.task) return;
   if (unit.carry && isDropOff(building)) {
+    if (depositExplorationCache(host, unit, building.id)) {
+      unit.garrisoned = true;
+      unit.task = null;
+      return;
+    }
     const carried = unit.carry;
     host.resources[carried.resourceId] =
       (host.resources[carried.resourceId] ?? 0) + carried.amount;
@@ -1302,12 +1512,69 @@ function moveToward(
     reach,
   );
   if (next) {
-    unit.x = next.x;
-    unit.y = next.y;
+    advanceVillagerOnSlope(host, unit, next, goal, reach, walkCache);
     return true;
   }
   giveUpOn(host, unit, goal.id);
   return false;
+}
+
+/**
+ * Advances a villager along a path step while scaling speed by hill slope:
+ * uphill steps accumulate fractional progress before stepping, while downhill
+ * steps bank credit for occasional bonus cells.
+ * @param host - Economy host for map bounds
+ * @param unit - Villager moving one step
+ * @param next - First pathfinding cell
+ * @param goal - Target point
+ * @param reach - Arrival reach in Chebyshev cells
+ * @param walkCache - Per-step passability and hills cache
+ */
+function advanceVillagerOnSlope(
+  host: EconomyHost,
+  unit: EconomyUnit,
+  next: Point,
+  goal: Point,
+  reach: number,
+  walkCache: WalkCache,
+): void {
+  if (walkCache.hills.length === 0) {
+    unit.x = next.x;
+    unit.y = next.y;
+    return;
+  }
+  const mult = slopeSpeedMultiplier(
+    walkCache.hills,
+    unit.x,
+    unit.y,
+    next.x - unit.x,
+    next.y - unit.y,
+  );
+  const budget = (unit.slopeBudget ?? 0) + mult;
+  if (budget < 1) {
+    unit.slopeBudget = Math.round(budget * 1000) / 1000;
+    return;
+  }
+  unit.x = next.x;
+  unit.y = next.y;
+  let remaining = budget - 1;
+  if (remaining >= 1 && chebyshev(unit, goal) > reach) {
+    const bonus = nextStep(
+      unit,
+      goal,
+      walkCache.passable,
+      host.map.width,
+      host.map.height,
+      reach,
+    );
+    if (bonus) {
+      unit.x = bonus.x;
+      unit.y = bonus.y;
+      remaining -= 1;
+    }
+  }
+  unit.slopeBudget =
+    remaining > 0.001 ? Math.round(remaining * 1000) / 1000 : undefined;
 }
 
 /**
@@ -1675,7 +1942,9 @@ function preferredNode(
   const node = host.economy.nodes.find(
     (entry) => entry.id === unit.preferredNodeId,
   );
-  if (node && node.remaining > 0 && !isUnreachable(unit, node.id)) return node;
+  if (node && hasGatherableStock(host, node) && !isUnreachable(unit, node.id)) {
+    return node;
+  }
   unit.preferredNodeId = null;
   return null;
 }
@@ -1709,7 +1978,7 @@ function nearestOpenNode(
   let best: ResourceNode | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
   for (const node of host.economy.nodes) {
-    if (node.remaining <= 0) continue;
+    if (!hasGatherableStock(host, node)) continue;
     if (isUnreachable(origin, node.id)) continue;
     if (unreservedOnly && nodeReserved(host, node.id)) continue;
     const distance = chebyshev(node, origin);

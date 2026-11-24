@@ -1,5 +1,6 @@
-import type { AshenGateSceneryRole } from "../data/layers/ashen_gate/threeDAssets";
 import { listBuildingDefs } from "../logic/economy/tables";
+import { isOnHighGround } from "../logic/layers/elevation";
+import type { TerrainHill } from "../logic/layers/layerTypes";
 import { isTrainingBuilding } from "../logic/slice/sliceTraining";
 import type { ResourceId } from "../logic/types";
 import { ashenSceneryPlacements } from "./ashenTerrainLayout";
@@ -23,6 +24,7 @@ import {
  * clicked for details.
  */
 export type InspectTarget =
+  | { id: string; kind: "camp" }
   | { id: string; kind: "node" }
   | { id: string; kind: "scenery" }
   | { id: string; kind: "vein" }
@@ -52,6 +54,7 @@ export interface SelectionCard {
   iconSrc: string | null;
   kind:
     | "building"
+    | "camp"
     | "empty"
     | "group"
     | "node"
@@ -82,39 +85,12 @@ export const NODE_NAME: Record<ResourceId, string> = {
   wood: "Dead Timber",
 };
 
-/** Plain-language identity and lore for decorative Ashen Gate scenery. */
-const SCENERY_COPY: Record<
-  AshenGateSceneryRole,
-  { glyph: string; summary: string; title: string }
-> = {
-  abyssSpire: {
-    glyph: "▲",
-    summary:
-      "A volcanic needle rising from the lava sea beyond the battlefield.",
-    title: "Abyss Spire",
-  },
-  basaltBoulders: {
-    glyph: "◆",
-    summary: "Fire-scarred basalt piled along the edge of the plateau.",
-    title: "Basalt Boulders",
-  },
-  hordeGate: {
-    glyph: "⌂",
-    summary:
-      "A monumental breach on the eastern rim, marking the direction the horde comes from.",
-    title: "Horde Gate",
-  },
-  rimRuin: {
-    glyph: "▥",
-    summary: "The remains of an old Ashen Hold watch post on the plateau rim.",
-    title: "Rim Ruin",
-  },
-  spiritCrystals: {
-    glyph: "✦",
-    summary:
-      "Spirit-lit crystals growing beyond usable ground, too unstable to harvest.",
-    title: "Spirit Crystals",
-  },
+/** Plain-language identity and purpose of the interactive eastern breach. */
+const SCENERY_COPY = {
+  glyph: "⌂",
+  summary:
+    "Timed siege waves enter at the eastern map edge and advance from this breach.",
+  title: "Horde Gate",
 };
 
 /** How close, in map cells, a click must land to pick a Spirit Vein. */
@@ -128,9 +104,15 @@ const VEIN_CLICK_RADIUS = 0.9;
  * @returns The feature to inspect, or null on open ground
  */
 export function inspectTargetAt(
-  model: Pick<ShellModel, "nodes" | "veins" | "vents">,
+  model: Pick<ShellModel, "nodes" | "veins" | "vents"> & {
+    exploration?: ShellModel["exploration"];
+  },
   point: MapPoint,
 ): InspectTarget | null {
+  const camp = model.exploration?.camps.find(
+    (entry) => Math.hypot(entry.x - point.x, entry.y - point.y) <= 3.5,
+  );
+  if (camp !== undefined) return { id: camp.id, kind: "camp" };
   const node = nodeNear(model.nodes, point);
   if (node !== null) return { id: node.id, kind: "node" };
   const vein = model.veins.find(
@@ -155,7 +137,7 @@ export function inspectTargetAt(
  */
 export function isInspected(
   target: InspectTarget | null,
-  kind: "node" | "scenery" | "vein" | "vent",
+  kind: "camp" | "node" | "scenery" | "vein" | "vent",
   id: string,
 ): boolean {
   return target !== null && target.kind === kind && target.id === id;
@@ -169,16 +151,27 @@ export function isInspected(
  * @returns The same target, or null when it is gone
  */
 export function pruneInspectTarget(
-  model: Pick<ShellModel, "map" | "nodes" | "veins" | "vents">,
+  model: Pick<ShellModel, "map" | "nodes" | "veins" | "vents"> & {
+    exploration?: ShellModel["exploration"];
+  },
   target: InspectTarget | null,
 ): InspectTarget | null {
   if (target === null || target.kind === "stockpile") return target;
+  if (target.kind === "camp") {
+    return model.exploration?.camps.some((camp) => camp.id === target.id)
+      ? target
+      : null;
+  }
   if (target.kind === "scenery") {
     const placements = ashenSceneryPlacements(
       model.map.width,
       model.map.height,
     );
-    return placements.some((entry) => entry.id === target.id) ? target : null;
+    return placements.some(
+      (entry) => entry.id === target.id && entry.role === "hordeGate",
+    )
+      ? target
+      : null;
   }
   const list = featureList(model, target.kind);
   return list.some((entry) => entry.id === target.id) ? target : null;
@@ -191,7 +184,9 @@ export function pruneInspectTarget(
  * @returns Center and radius in map space, or null for stockpile entries
  */
 export function inspectRing(
-  model: Pick<ShellModel, "nodes" | "veins" | "vents">,
+  model: Pick<ShellModel, "nodes" | "veins" | "vents"> & {
+    exploration?: ShellModel["exploration"];
+  },
   target: InspectTarget | null,
 ): { radius: number; x: number; y: number } | null {
   if (
@@ -200,6 +195,12 @@ export function inspectRing(
     target.kind === "scenery"
   )
     return null;
+  if (target.kind === "camp") {
+    const camp = model.exploration?.camps.find(
+      (entry) => entry.id === target.id,
+    );
+    return camp === undefined ? null : { radius: 3.5, x: camp.x, y: camp.y };
+  }
   if (target.kind === "node") {
     const node = model.nodes.find((entry) => entry.id === target.id);
     return node === undefined ? null : { radius: 1.6, x: node.x, y: node.y };
@@ -245,7 +246,7 @@ export function describeSelection(
   );
   if (kinds.size > 1) return describeGroup(units);
   const primary = units[units.length - 1] as ShellUnit;
-  return describeUnit(primary, units.length);
+  return describeUnit(primary, units.length, model.hills);
 }
 
 /** Card shown when nothing is selected. */
@@ -291,6 +292,7 @@ function describeTarget(
 ): SelectionCard | null {
   if (target.kind === "stockpile")
     return describeStockpile(model, target.resource);
+  if (target.kind === "camp") return describeCamp(model, target.id);
   if (target.kind === "node") return describeNode(model, target.id);
   if (target.kind === "scenery") return describeScenery(model, target.id);
   if (target.kind === "vein") return describeVein(model, target.id);
@@ -310,22 +312,74 @@ function describeScenery(
     model.map.width,
     model.map.height,
   ).find((entry) => entry.id === sceneryId);
-  if (placement === undefined) return null;
-  const copy = SCENERY_COPY[placement.role];
+  if (placement === undefined || placement.role !== "hordeGate") return null;
   return {
-    facts: [{ label: "Gameplay effect", value: "None" }],
-    glyph: copy.glyph,
+    facts: [{ label: "Gameplay role", value: "Timed wave approach" }],
+    glyph: SCENERY_COPY.glyph,
     health: null,
     iconSrc: null,
     kind: "scenery",
-    subtitle: "Scenery · No gameplay effect",
-    summary: copy.summary,
+    subtitle: "Wave origin · eastern breach",
+    summary: SCENERY_COPY.summary,
     tips: [
-      "Decorative landmark only in the current Ashen Gate layer.",
-      "It cannot be harvested, occupied, attacked, or built on.",
+      "Watch this approach when the next-wave countdown gets close.",
+      "Exploration disables timed waves and replaces them with fixed guarded camps.",
     ],
-    title: copy.title,
-    tone: "neutral",
+    title: SCENERY_COPY.title,
+    tone: "horde",
+  };
+}
+
+/**
+ * Describes a discovered guarded prize without exposing hidden camps.
+ * @param model - Shell model with exploration readouts
+ * @param campId - Camp being inspected
+ * @returns Threat, guards, exact reward, and engagement guidance
+ */
+function describeCamp(model: ShellModel, campId: string): SelectionCard | null {
+  const camp = model.exploration?.camps.find((entry) => entry.id === campId);
+  if (camp === undefined) return null;
+  let glyph = "!";
+  let subtitle = "Guarded prize";
+  let tips = [
+    "Select soldiers, then right-click this camp to attack-move.",
+    "Guards defend their prize and return to it instead of rushing your Camp.",
+    "Camp strength is fixed: gathered Essence and elapsed time do not increase it.",
+  ];
+  if (camp.cleared) {
+    glyph = "◆";
+    subtitle = "Unguarded cache · haul to storage";
+    tips = [
+      "Select a villager or Qi cultivator, then right-click the cache to haul it home.",
+      "The prize unlocks at Camp or a Storehouse, not when the guards die.",
+      "Each resource cache disappears after delivery; bring them all home to finish the camp.",
+    ];
+  }
+  if (camp.rewardCollected) {
+    glyph = "✓";
+    subtitle = "Prize collected";
+    tips = ["This cache has been collected and removed from the map."];
+  }
+  return {
+    facts: [
+      { label: "Threat", value: `${camp.threat}/6` },
+      {
+        label: "Guards",
+        value: camp.cleared
+          ? "Defeated"
+          : `${camp.guardsRemaining}/${camp.guardsTotal}`,
+      },
+      { label: "Strength", value: "Fixed" },
+    ],
+    glyph,
+    health: null,
+    iconSrc: null,
+    kind: "camp",
+    subtitle,
+    summary: camp.rewardLabel,
+    tips,
+    title: camp.name,
+    tone: camp.cleared ? "neutral" : "horde",
   };
 }
 
@@ -369,6 +423,33 @@ function describeStockpile(
 function describeNode(model: ShellModel, nodeId: string): SelectionCard | null {
   const node = model.nodes.find((entry) => entry.id === nodeId);
   if (node === undefined) return null;
+  if (node.explorationCacheId !== undefined) {
+    return {
+      facts: [
+        ...(node.remaining === undefined
+          ? []
+          : [{ label: "Stock", value: String(node.remaining) }]),
+        ...(node.gatherers === undefined
+          ? []
+          : [{ label: "Carriers", value: String(node.gatherers) }]),
+      ],
+      glyph: "◆",
+      health: null,
+      iconSrc: resourceIconSrc(node.resource),
+      kind: "node",
+      subtitle: "Unclaimed cache",
+      summary:
+        node.description ??
+        "Haul this cache to Camp or a Storehouse to claim its prize.",
+      tips: [
+        "Select a villager or Qi cultivator, then right-click this cache to gather it.",
+        "The prize unlocks only when the load reaches Camp or a Storehouse.",
+        "Each cache is one full resource load and disappears when it reaches storage.",
+      ],
+      title: node.label,
+      tone: "neutral",
+    };
+  }
   const copy = RESOURCE_COPY[node.resource];
   const facts: SelectionFact[] = [];
   if (node.remaining !== undefined) {
@@ -582,9 +663,14 @@ function describeGroup(units: readonly ShellUnit[]): SelectionCard {
 /**
  * @param unit - Primary selected unit
  * @param count - How many units of its kind are selected
+ * @param hills - Walkable hills on the current layer
  * @returns The unit card
  */
-function describeUnit(unit: ShellUnit, count: number): SelectionCard {
+function describeUnit(
+  unit: ShellUnit,
+  count: number,
+  hills: readonly TerrainHill[],
+): SelectionCard {
   const guide = UNIT_TRAINING_GUIDES[unit.classId];
   const enemy = unit.factionId === "horde";
   const health =
@@ -594,14 +680,14 @@ function describeUnit(unit: ShellUnit, count: number): SelectionCard {
   const label = CLASS_LABEL[unit.classId];
   const title = count > 1 ? `${count} ${label}s` : unit.name;
   return {
-    facts: unitFacts(unit),
+    facts: unitFacts(unit, hills),
     glyph: unit.name.slice(0, 1),
     health: count > 1 ? null : health,
     iconSrc: guide.iconSrc,
     kind: "unit",
     subtitle: enemy
       ? `Enemy · ${guide.role}`
-      : `${count > 1 ? "Your units" : "Your unit"} · ${guide.role}`,
+      : `${count > 1 ? "Your units" : "Your unit"} · ${unitRoleSubtitle(unit, guide.role)}`,
     summary: guide.description,
     tips: unitTips(unit),
     title,
@@ -610,19 +696,66 @@ function describeUnit(unit: ShellUnit, count: number): SelectionCard {
 }
 
 /**
+ * Distinguishes the starting Captain, Qi classes, and ordinary soldier cultivation.
+ * @param unit - Selected friendly unit
+ * @param fallbackRole - Class's ordinary battlefield role
+ * @returns Player-facing role subtitle
+ */
+function unitRoleSubtitle(unit: ShellUnit, fallbackRole: string): string {
+  if (unit.classId === "villager") return fallbackRole;
+  if (unit.captain) return `Captain · ${CLASS_LABEL[unit.classId]}`;
+  if (unit.qiArt !== null) return `${CLASS_LABEL[unit.classId]} · Qi abilities`;
+  return `${fallbackRole} · Soldier cultivation`;
+}
+
+/**
  * @param unit - Primary selected unit
+ * @param hills - Walkable hills on the current layer
  * @returns Its status values
  */
-function unitFacts(unit: ShellUnit): SelectionFact[] {
-  if (unit.factionId === "horde") return [];
+function unitFacts(
+  unit: ShellUnit,
+  hills: readonly TerrainHill[],
+): SelectionFact[] {
+  const highGroundFact: SelectionFact | null = isOnHighGround(
+    hills,
+    unit.x,
+    unit.y,
+  )
+    ? {
+        label: "Terrain",
+        title:
+          "High ground: +25% downhill damage, -25% uphill damage taken, and +1.25 ranged reach.",
+        value: "High ground (+25%)",
+      }
+    : null;
+  if (unit.factionId === "horde") {
+    return highGroundFact === null ? [] : [highGroundFact];
+  }
   if (unit.classId === "villager") {
     const facts: SelectionFact[] = [
       { label: "Doing", value: villagerActivity(unit) },
     ];
     if (unit.carrying === null) {
       facts.push({ label: "Carrying", value: "Nothing" });
-      return facts;
+    } else {
+      const carried = RESOURCE_COPY[unit.carrying.resource];
+      facts.push({
+        iconAlt: carried.name,
+        iconSrc: resourceIconSrc(unit.carrying.resource),
+        label: "Carrying",
+        value: String(Math.round(unit.carrying.amount)),
+      });
     }
+    if (highGroundFact !== null) facts.push(highGroundFact);
+    return facts;
+  }
+  const cultivation = unit.cultivation;
+  if (cultivation === null) {
+    return highGroundFact === null ? [] : [highGroundFact];
+  }
+  const facts: SelectionFact[] = [];
+  if (unit.carrying !== null) {
     const carried = RESOURCE_COPY[unit.carrying.resource];
     facts.push({
       iconAlt: carried.name,
@@ -630,23 +763,22 @@ function unitFacts(unit: ShellUnit): SelectionFact[] {
       label: "Carrying",
       value: String(Math.round(unit.carrying.amount)),
     });
-    return facts;
   }
-  const cultivation = unit.cultivation;
-  if (cultivation === null) return [];
-  return [
-    { label: "Rank", value: cultivation.rank },
-    { label: "School", value: schoolName(cultivation.school) },
-    {
-      label: "Toxicity",
-      value: `${cultivation.toxicity}/${cultivation.toxicityCap}`,
-    },
-    {
+  facts.push({ label: "Rank", value: cultivation.rank });
+  facts.push({ label: "School", value: schoolName(cultivation.school) });
+  facts.push({
+    label: "Toxicity",
+    value: `${cultivation.toxicity}/${cultivation.toxicityCap}`,
+  });
+  if (cultivation.rankCapReached !== true) {
+    facts.push({
       label: "Break",
       title: "Breakthrough chance",
       value: formatChance(cultivation.successChance),
-    },
-  ];
+    });
+  }
+  if (highGroundFact !== null) facts.push(highGroundFact);
+  return facts;
 }
 
 /**

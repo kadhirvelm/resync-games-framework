@@ -8,6 +8,7 @@ import type {
   CircleVolume,
   TerrainBridge,
   TerrainFeature,
+  TerrainHill,
 } from "../../../logic/layers";
 
 /** A named defensive lane on the Ashen Gate teaching map. */
@@ -25,6 +26,8 @@ export interface AshenGateMap {
   buildings: readonly BuildingInit[];
   chokePoints: readonly AshenGateChokePoint[];
   height: number;
+  /** Walkable Age of Empires-style hills. */
+  hills: readonly TerrainHill[];
   nodes: readonly ResourceNode[];
   obstacles: readonly TerrainFeature[];
   stockpile: NonNullable<EconomyInit["stockpile"]>;

@@ -11,7 +11,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { createAshenGateSim } from "../../logic/ashenGateSlice";
 import type { Command } from "../../logic/types";
 import { DescentView } from "../DescentView";
-import { ERROR_TOAST_DISMISS_MS, ToastList } from "../dialogs";
+import { ERROR_TOAST_DISMISS_MS } from "../dialogs";
 import { GLOSSARY, REQUIRED_GLOSSARY_TERMS } from "../glossary";
 import type { DescentPresentation } from "../presentation";
 import { createAshenGatePreview } from "../preview";
@@ -1004,8 +1004,11 @@ describe("DescentView", () => {
     await click(buttonNamed(container, "Breakthrough"));
     expect(dialog(container).textContent).toContain("Chance");
     expect(dialog(container).textContent).toContain("62%");
-    expect(dialog(container).textContent).toContain("Toxicity");
-    expect(dialog(container).textContent).toContain("School");
+    expect(dialog(container).textContent).toContain("Ashborn → Sworn");
+    expect(dialog(container).textContent).toContain(
+      "No pill or tier materials",
+    );
+    expect(dialog(container).textContent).toContain("injured 45s");
     expect(commands).toEqual([]);
     await click(buttonNamed(dialog(container), "Begin breakthrough"));
     expect(commands).toEqual([
@@ -1036,12 +1039,13 @@ describe("DescentView", () => {
   test("explains a blocked pill feed before it commits", async () => {
     mounted = await mount();
     const { commands, container } = mounted;
-    await click(buttonNamed(container, "OK"));
     await click(unit(container, "adept-1"));
+    await click(buttonNamed(container, "OK"));
     await click(buttonNamed(container, "Feed Ember Dao Pill"));
     const open = dialog(container);
-    expect(open.textContent).toContain("Chance");
-    expect(open.textContent).toContain("41%");
+    expect(open.textContent).toContain("+10% school effect");
+    expect(open.textContent).toContain("Permanent for this run");
+    expect(open.textContent).not.toContain("Chance");
     expect(open.textContent).toContain("Toxicity 3/3");
     expect(open.textContent).toContain("School mismatch");
     expect(commands).toEqual([]);
@@ -1279,31 +1283,6 @@ describe("DescentView", () => {
     expect(mounted.container.textContent).toContain("Newest notice");
   });
 
-  test("drops a notice on its own", async () => {
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    const dismissed: number[] = [];
-    await act(async () => {
-      root.render(
-        <ToastList
-          lifetimeMs={30}
-          onDismiss={(id) => dismissed.push(id)}
-          toasts={[{ id: 4, message: "Wave incoming" }]}
-        />,
-      );
-    });
-    expect(container.textContent).toContain("Wave incoming");
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
-    expect(dismissed).toEqual([4]);
-    await act(async () => {
-      root.unmount();
-    });
-    container.remove();
-  });
-
   test("dismisses a notice on its own", async () => {
     jest.useFakeTimers();
     try {
@@ -1325,7 +1304,8 @@ describe("DescentView", () => {
   test("teaches realm, pill, and school one at a time on Ashen Gate", async () => {
     mounted = await mount();
     const { container } = mounted;
-    expect(container.textContent).toContain("Fill merit and essence");
+    await click(unit(container, "warden-1"));
+    expect(container.textContent).toContain("Earn Merit, Personal Essence");
     expect(container.textContent).not.toContain("Permanent boost");
     await click(buttonNamed(container, "OK"));
     await click(unit(container, "adept-1"));
@@ -1337,6 +1317,58 @@ describe("DescentView", () => {
     await click(unit(container, "sworn-1"));
     expect(container.textContent).toContain("Choose Ember");
     expect(buttonNamed(container, "Ember").tagName).toBe("BUTTON");
+  });
+
+  test("disbands selected units from the command card or Delete key", async () => {
+    mounted = await mount();
+    const { commands, container } = mounted;
+    await click(unit(container, "warden-1"));
+    const disband = container.querySelector('[data-command="disband"]');
+    if (!(disband instanceof HTMLButtonElement)) {
+      throw new Error("Missing Disband command");
+    }
+    await click(disband);
+    expect(commands).toEqual([
+      { type: "disband_units", unitIds: ["warden-1"] },
+    ]);
+
+    commands.length = 0;
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete" }));
+    });
+    expect(commands).toEqual([
+      { type: "disband_units", unitIds: ["warden-1"] },
+    ]);
+  });
+
+  test("cancels construction from the command card or Delete key", async () => {
+    const snapshot = createAshenGatePreview();
+    const uiMeta = snapshot.meta.ui as {
+      buildings?: Record<string, { constructing?: boolean }>;
+    };
+    const barracks = uiMeta.buildings?.["barracks-1"];
+    if (barracks !== undefined) barracks.constructing = true;
+    mounted = await mount(snapshot);
+    const { commands, container } = mounted;
+    await click(building(container, "barracks-1"));
+    const cancel = container.querySelector(
+      '[data-command="cancel_construction"]',
+    );
+    if (!(cancel instanceof HTMLButtonElement)) {
+      throw new Error("Missing Cancel construction command");
+    }
+    await click(cancel);
+    expect(commands).toEqual([
+      { buildingId: "barracks-1", type: "cancel_construction" },
+    ]);
+
+    commands.length = 0;
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete" }));
+    });
+    expect(commands).toEqual([
+      { buildingId: "barracks-1", type: "cancel_construction" },
+    ]);
   });
 
   test("shows a breakthrough loading bar and time remaining while channeling", async () => {

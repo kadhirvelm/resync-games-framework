@@ -3,8 +3,10 @@ import {
   EMPTY_SELECTION,
   idleVillagerIds,
   nextIdleVillager,
+  nextUnitSelection,
   nodeNear,
   orderMarkerFor,
+  ordersForAttackMove,
   ordersForRightClick,
   placementBuilders,
   rallyCommand,
@@ -306,5 +308,84 @@ describe("selectionGroups", () => {
 
   test("skips ids that are no longer on the map", () => {
     expect(selectionGroups(mixed, ["gone"])).toEqual([]);
+  });
+});
+
+describe("nextUnitSelection", () => {
+  test("never mixes Hold and Horde units on add or toggle when roster is provided", () => {
+    const holdSelected = { buildingId: null, unitIds: ["w1"] };
+    expect(nextUnitSelection(holdSelected, ["imp"], "toggle", units)).toEqual({
+      buildingId: null,
+      unitIds: ["w1"],
+    });
+    expect(nextUnitSelection(holdSelected, ["imp"], "add", units)).toEqual({
+      buildingId: null,
+      unitIds: ["w1"],
+    });
+
+    const hordeSelected = { buildingId: null, unitIds: ["imp"] };
+    expect(nextUnitSelection(hordeSelected, ["w1"], "toggle", units)).toEqual({
+      buildingId: null,
+      unitIds: ["w1"],
+    });
+    expect(nextUnitSelection(hordeSelected, ["v1"], "add", units)).toEqual({
+      buildingId: null,
+      unitIds: ["v1"],
+    });
+  });
+
+  test("preserves normal add/toggle behavior among friendly Hold units", () => {
+    const holdSelected = { buildingId: null, unitIds: ["v1"] };
+    expect(nextUnitSelection(holdSelected, ["w1"], "toggle", units)).toEqual({
+      buildingId: null,
+      unitIds: ["v1", "w1"],
+    });
+    expect(nextUnitSelection(holdSelected, ["v1"], "toggle", units)).toEqual({
+      buildingId: null,
+      unitIds: [],
+    });
+  });
+});
+
+describe("ordersForAttackMove", () => {
+  test("emits order_attack_move for military units and order_move for villagers", () => {
+    expect(
+      ordersForAttackMove({ units }, ["v1", "w1", "imp"], { x: 15, y: 25 }),
+    ).toEqual([
+      { type: "order_attack_move", unitIds: ["w1"], x: 15, y: 25 },
+      { type: "order_move", unitIds: ["v1"], x: 15, y: 25 },
+    ]);
+  });
+
+  test("supports Shift-queued waypoints and multiplayer ownership filtering", () => {
+    const ownedUnits = [
+      {
+        classId: "warden",
+        factionId: "hold" as const,
+        id: "w1",
+        ownerId: "p1",
+        x: 3,
+        y: 1,
+      },
+      {
+        classId: "villager",
+        factionId: "hold" as const,
+        id: "v1",
+        ownerId: "p2",
+        x: 1,
+        y: 1,
+      },
+    ];
+    expect(
+      ordersForAttackMove(
+        { units: ownedUnits },
+        ["w1", "v1"],
+        { x: 12, y: 8 },
+        true,
+        "p1",
+      ),
+    ).toEqual([
+      { queue: true, type: "order_attack_move", unitIds: ["w1"], x: 12, y: 8 },
+    ]);
   });
 });

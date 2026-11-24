@@ -10,12 +10,16 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import type { HoldTier } from "../logic/economy/model";
-import { SIM_SPEEDS, type SimSpeed } from "../logic/sim/constants";
+import {
+  SIM_SPEEDS,
+  type SimSpeed,
+  ticksToSeconds,
+} from "../logic/sim/constants";
 import type { ResourceId } from "../logic/types";
 import styles from "./descentView.module.scss";
-import { isLocalPlayerOwned } from "./selection";
+import { idleVillagerIds, isLocalPlayerOwned } from "./selection";
 import type { ShellBuilding, ShellModel } from "./shellModel";
 import {
   CLASS_LABEL,
@@ -71,16 +75,30 @@ export function modelHoldTier(
 }
 
 /**
- * Progressively revealed resources, population, pause, and speed.
+ * Formats a simulation tick count as an elapsed `MM:SS` clock string.
+ * @param tick - Elapsed sim ticks
+ * @returns Elapsed time string
+ */
+export function formatSimClock(tick: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ticksToSeconds(tick)));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+/**
+ * Progressively revealed resources, population, idle villager alert, Hold tier,
+ * elapsed clock, pause, and speed.
  * @param props - Model, optional progression overrides, and sim clock callbacks
  * @returns The resource bar
  */
-export function ResourceBar({
+export const ResourceBar = memo(function ResourceBar({
   discoveredResourceIds,
   fullscreen = false,
   holdTier,
   localPlayerId,
   model,
+  onSelectIdleVillager,
   onSelectResource,
   onSetPaused,
   onSetSpeed,
@@ -98,6 +116,8 @@ export function ResourceBar({
   /** Local co-op owner used for the Camp fallback at Citadel. */
   localPlayerId?: string;
   model: ShellModel;
+  /** Cycles to the next idle villager and centers the camera. */
+  onSelectIdleVillager?: () => void;
   onSelectResource?: (resource: ResourceSelectionId) => void;
   onSetPaused?: (paused: boolean) => void;
   onSetSpeed?: (speed: SimSpeed) => void;
@@ -109,6 +129,11 @@ export function ResourceBar({
 }) {
   const pop = model.pop === null ? "—" : `${model.pop.used}/${model.pop.cap}`;
   const resolvedTier = holdTier ?? modelHoldTier(model, localPlayerId);
+  const idleCount = useMemo(
+    () => idleVillagerIds(model.units, localPlayerId).length,
+    [localPlayerId, model.units],
+  );
+  const elapsedClock = formatSimClock(model.tick);
   const resolvedDiscovered = useMemo(() => {
     if (discoveredResourceIds !== undefined) return discoveredResourceIds;
     return new Set(model.nodes.map((node) => node.resource));
@@ -144,92 +169,133 @@ export function ResourceBar({
           selected={selectedResource === "population"}
           testId="pop"
         />
-      </div>
-      <fieldset className={styles.clockControls}>
-        <legend className={styles.srOnly}>Game controls</legend>
-        {onToggleFullscreen === undefined ? null : (
+        {idleCount > 0 && onSelectIdleVillager !== undefined ? (
           <button
-            aria-keyshortcuts="F"
-            aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-            aria-pressed={fullscreen}
-            className={styles.controlButton}
-            data-testid="descent-fullscreen"
-            onClick={onToggleFullscreen}
-            title={fullscreen ? "Exit fullscreen (F)" : "Fullscreen (F)"}
+            aria-keyshortcuts="."
+            aria-label={`Select idle villager (${idleCount} idle)`}
+            className={styles.idleVillagerButton}
+            data-testid="idle-villager-button"
+            onClick={onSelectIdleVillager}
+            title={`Cycle idle villager (.) · ${idleCount} idle`}
             type="button"
           >
-            {fullscreen ? (
-              <Minimize aria-hidden="true" size={17} strokeWidth={2} />
-            ) : (
-              <Maximize aria-hidden="true" size={17} strokeWidth={2} />
-            )}
-            <span className={styles.srOnly}>
-              {fullscreen ? "Windowed" : "Fullscreen"}
-            </span>
+            {/* biome-ignore lint/performance/noImgElement: bundled game HUD icon */}
+            <img
+              alt=""
+              aria-hidden="true"
+              className={styles.idleVillagerIcon}
+              height="18"
+              src="/descent/command-icons/idle.png"
+              width="18"
+            />
+            <span className={styles.idleVillagerCount}>{idleCount}</span>
+            <kbd className={styles.idleVillagerKey}>.</kbd>
           </button>
-        )}
-        <button
-          aria-label={soundEnabled ? "Mute sound" : "Enable sound"}
-          aria-pressed={!soundEnabled}
-          className={styles.controlButton}
-          data-muted={!soundEnabled}
-          data-testid="descent-sound"
-          onClick={() => onSetSoundEnabled?.(!soundEnabled)}
-          title={soundEnabled ? "Mute sound" : "Enable sound"}
-          type="button"
-        >
-          {soundEnabled ? (
-            <Volume2 aria-hidden="true" size={17} strokeWidth={2} />
-          ) : (
-            <VolumeX aria-hidden="true" size={17} strokeWidth={2} />
-          )}
-          <span className={styles.srOnly}>Sound</span>
-        </button>
-        <button
-          aria-label={model.paused ? "Resume simulation" : "Pause simulation"}
-          aria-pressed={model.paused}
-          className={`${styles.controlButton} ${styles.pauseButton}`}
-          data-testid="descent-pause"
-          onClick={() => onSetPaused?.(!model.paused)}
-          title={model.paused ? "Resume (Space)" : "Pause (Space)"}
-          type="button"
-        >
-          {model.paused ? (
-            <Play aria-hidden="true" size={17} strokeWidth={2.2} />
-          ) : (
-            <Pause aria-hidden="true" size={17} strokeWidth={2.2} />
-          )}
-          <span className={styles.srOnly}>
-            {model.paused ? "Resume" : "Pause"}
+        ) : null}
+      </div>
+      <div className={styles.topBarRight}>
+        <div className={styles.topBarMeta}>
+          <span
+            className={styles.holdTierBadge}
+            data-testid="hold-tier-badge"
+            title={`Hold Tier: ${resolvedTier}`}
+          >
+            {resolvedTier}
           </span>
-        </button>
-        <span aria-hidden="true" className={styles.controlDivider} />
-        <fieldset className={styles.speedGroup}>
-          <legend className={styles.srOnly}>Game speed</legend>
-          <Gauge
-            aria-hidden="true"
-            className={styles.speedIcon}
-            size={15}
-            strokeWidth={2}
-          />
-          {SIM_SPEEDS.map((speed) => (
+          <time
+            className={styles.simClock}
+            data-testid="sim-clock"
+            title={`Elapsed time ${elapsedClock}`}
+          >
+            {elapsedClock}
+          </time>
+        </div>
+        <fieldset className={styles.clockControls}>
+          <legend className={styles.srOnly}>Game controls</legend>
+          {onToggleFullscreen === undefined ? null : (
             <button
-              aria-label={`Set speed to ${speed}×`}
-              aria-pressed={model.speed === speed}
-              className={styles.speed}
-              key={speed}
-              onClick={() => onSetSpeed?.(speed)}
-              title={`${speed}× speed`}
+              aria-keyshortcuts="F"
+              aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+              aria-pressed={fullscreen}
+              className={styles.controlButton}
+              data-testid="descent-fullscreen"
+              onClick={onToggleFullscreen}
+              title={fullscreen ? "Exit fullscreen (F)" : "Fullscreen (F)"}
               type="button"
             >
-              {speed}×
+              {fullscreen ? (
+                <Minimize aria-hidden="true" size={17} strokeWidth={2} />
+              ) : (
+                <Maximize aria-hidden="true" size={17} strokeWidth={2} />
+              )}
+              <span className={styles.srOnly}>
+                {fullscreen ? "Windowed" : "Fullscreen"}
+              </span>
             </button>
-          ))}
+          )}
+          <button
+            aria-label={soundEnabled ? "Mute sound" : "Enable sound"}
+            aria-pressed={!soundEnabled}
+            className={styles.controlButton}
+            data-muted={!soundEnabled}
+            data-testid="descent-sound"
+            onClick={() => onSetSoundEnabled?.(!soundEnabled)}
+            title={soundEnabled ? "Mute sound" : "Enable sound"}
+            type="button"
+          >
+            {soundEnabled ? (
+              <Volume2 aria-hidden="true" size={17} strokeWidth={2} />
+            ) : (
+              <VolumeX aria-hidden="true" size={17} strokeWidth={2} />
+            )}
+            <span className={styles.srOnly}>Sound</span>
+          </button>
+          <button
+            aria-label={model.paused ? "Resume simulation" : "Pause simulation"}
+            aria-pressed={model.paused}
+            className={`${styles.controlButton} ${styles.pauseButton}`}
+            data-testid="descent-pause"
+            onClick={() => onSetPaused?.(!model.paused)}
+            title={model.paused ? "Resume (Space)" : "Pause (Space)"}
+            type="button"
+          >
+            {model.paused ? (
+              <Play aria-hidden="true" size={17} strokeWidth={2.2} />
+            ) : (
+              <Pause aria-hidden="true" size={17} strokeWidth={2.2} />
+            )}
+            <span className={styles.srOnly}>
+              {model.paused ? "Resume" : "Pause"}
+            </span>
+          </button>
+          <span aria-hidden="true" className={styles.controlDivider} />
+          <fieldset className={styles.speedGroup}>
+            <legend className={styles.srOnly}>Game speed</legend>
+            <Gauge
+              aria-hidden="true"
+              className={styles.speedIcon}
+              size={15}
+              strokeWidth={2}
+            />
+            {SIM_SPEEDS.map((speed) => (
+              <button
+                aria-label={`Set speed to ${speed}×`}
+                aria-pressed={model.speed === speed}
+                className={styles.speed}
+                key={speed}
+                onClick={() => onSetSpeed?.(speed)}
+                title={`${speed}× speed`}
+                type="button"
+              >
+                {speed}×
+              </button>
+            ))}
+          </fieldset>
         </fieldset>
-      </fieldset>
+      </div>
     </div>
   );
-}
+});
 
 /**
  * One stockpile chip. Hover or focus shows what it is, what it buys, and
@@ -416,7 +482,7 @@ function trainingBuildingName(building: ShellBuilding): string {
  * @param props - Buildings, the running upgrade, and selection callback
  * @returns The tracker, or nothing when nothing is training, upgrading, or growing
  */
-export function TrainingTracker({
+export const TrainingTracker = memo(function TrainingTracker({
   buildings,
   localPlayerId,
   onSelectBuilding,
@@ -507,6 +573,16 @@ export function TrainingTracker({
       </div>
     </section>
   );
+});
+
+/**
+ * Reads a countdown from either the live wave summary or an older Omen-only preview.
+ * @param model - Shell model with published wave data
+ * @returns Seconds remaining, or null when no upcoming wave is known
+ */
+function publishedWaveEta(model: ShellModel): number | null {
+  if (model.wave !== null) return model.wave.etaSeconds;
+  return model.omen?.etaSeconds ?? null;
 }
 
 /**
@@ -517,11 +593,17 @@ export function TrainingTracker({
  * @returns The chip's accessible name
  */
 function collapsedThreatLabel(model: ShellModel, percent: number): string {
-  if (model.omen === null) {
-    return `Hell Pressure ${percent}%. No wave. Show pressure and omen.`;
+  const wave = model.wave;
+  const etaSeconds = publishedWaveEta(model);
+  if (etaSeconds === null) {
+    if (wave !== null) {
+      return `Hell Pressure ${percent}%. ${wave.label} has spawned. Show wave details.`;
+    }
+    return `Hell Pressure ${percent}%. No scheduled wave. Show pressure and wave details.`;
   }
-  const eta = formatEta(model.omen.etaSeconds, model.paused);
-  return `Hell Pressure ${percent}%. Next wave ${eta}. Show pressure and omen.`;
+  const eta = formatEta(etaSeconds, model.paused);
+  const label = wave?.label ?? "Next wave";
+  return `Hell Pressure ${percent}%. ${label} in ${eta}. Show pressure and wave details.`;
 }
 
 /**
@@ -556,7 +638,7 @@ function Chevron({ direction }: { direction: "down" | "up" }) {
  * @param props - Model and glossary opener
  * @returns The collapsed chip, or the expanded pressure and omen panels
  */
-export function StrategicStatus({
+export const StrategicStatus = memo(function StrategicStatus({
   model,
   onCallWaveEarly,
   onGlossary,
@@ -572,6 +654,7 @@ export function StrategicStatus({
   const canCallEarly =
     model.wave?.canCallEarly === true && onCallWaveEarly !== undefined;
   const bonusLabel = model.wave?.earlyCallBonusLabel;
+  const etaSeconds = publishedWaveEta(model);
   const callEarlyTitle =
     bonusLabel === undefined
       ? "Call the next wave early for bonus supplies"
@@ -591,14 +674,12 @@ export function StrategicStatus({
         >
           <span className={styles.threatChipLabel}>Pressure</span>
           <strong data-testid="threat-chip-percent">{`${percent}%`}</strong>
-          {model.omen === null ? null : (
+          {etaSeconds === null ? null : (
             <>
               <span aria-hidden="true" className={styles.threatChipDivider} />
               <span className={styles.threatChipLabel}>Wave</span>
               <span className={styles.threatChipEta}>
-                {waveHeld
-                  ? "Held"
-                  : formatEta(model.omen.etaSeconds, model.paused)}
+                {waveHeld ? "Held" : formatEta(etaSeconds, model.paused)}
               </span>
             </>
           )}
@@ -630,7 +711,7 @@ export function StrategicStatus({
       />
     </div>
   );
-}
+});
 
 /**
  * Hell Pressure meter. The value is the snapshot's published ratio.
@@ -648,7 +729,76 @@ export function HellPressure({ model }: { model: ShellModel }) {
       <meter className={styles.meter} max={100} min={0} value={percent}>
         {percent}%
       </meter>
+      <p className={styles.pressureHint}>
+        Pressure strengthens the horde. Gathered Essence strengthens new waves.
+      </p>
     </section>
+  );
+}
+
+/**
+ * Renders a live wave summary and/or an older Omen-only composition.
+ * @param props - Shell model with wave and Omen readouts
+ * @returns Forecast details, or an empty-state message
+ */
+function WaveDetails({ model }: { model: ShellModel }) {
+  if (model.wave === null && model.omen === null) {
+    return <p className={styles.omenEmpty}>No scheduled wave</p>;
+  }
+  return (
+    <>
+      {model.wave === null ? null : <WaveSummary model={model} />}
+      <OmenComposition model={model} />
+    </>
+  );
+}
+
+/**
+ * Shows the scheduled wave's public label and current stat explanation.
+ * @param props - Shell model whose wave summary is present
+ * @returns Wave label and optional power breakdown
+ */
+function WaveSummary({ model }: { model: ShellModel }) {
+  const wave = model.wave;
+  if (wave === null) return null;
+  return (
+    <>
+      <p className={styles.waveName}>
+        Wave {wave.index}/{wave.total}: <strong>{wave.label}</strong>
+      </p>
+      {wave.powerLabel === undefined ? null : (
+        <p className={styles.wavePower}>{wave.powerLabel}</p>
+      )}
+    </>
+  );
+}
+
+/**
+ * Shows an Omen composition, or explains how to reveal one.
+ * @param props - Shell model with an optional Omen preview
+ * @returns Class counts or the Omen Tower hint
+ */
+function OmenComposition({ model }: { model: ShellModel }) {
+  const omen = model.omen;
+  if (omen === null) {
+    return (
+      <p className={styles.omenEmpty}>
+        An Omen Tower reveals the army 60s before it arrives.
+      </p>
+    );
+  }
+  return (
+    <ul className={styles.omenArmy}>
+      {CLASS_ORDER.map((classId) => {
+        const count = omen.composition[classId];
+        if (count === undefined) return null;
+        return (
+          <li data-class={classId} key={classId}>
+            {CLASS_LABEL[classId]} {count}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -670,11 +820,12 @@ export function OmenPanel({
   onCollapse?: () => void;
   onGlossary: () => void;
 }) {
-  const omen = model.omen;
-  const waveHeld = model.wave?.waveHeld === true;
+  const wave = model.wave;
+  const waveHeld = wave?.waveHeld === true;
   const canCallEarly =
     model.wave?.canCallEarly === true && onCallWaveEarly !== undefined;
   const bonusLabel = model.wave?.earlyCallBonusLabel;
+  const etaSeconds = publishedWaveEta(model);
   return (
     <section aria-label="Omen panel" className={styles.omenPanel}>
       <div className={styles.omenHeading}>
@@ -688,12 +839,12 @@ export function OmenPanel({
         >
           ?
         </button>
-        {omen === null ? null : (
+        {etaSeconds === null ? null : (
           <p
             className={`${styles.omenEta} ${model.paused || waveHeld ? styles.omenHeld : ""}`}
             data-testid="omen-countdown"
           >
-            {waveHeld ? "Held" : formatEta(omen.etaSeconds, model.paused)}
+            {waveHeld ? "Held" : formatEta(etaSeconds, model.paused)}
           </p>
         )}
         {onCollapse === undefined ? null : (
@@ -710,21 +861,7 @@ export function OmenPanel({
           </button>
         )}
       </div>
-      {omen === null ? (
-        <p className={styles.omenEmpty}>No wave</p>
-      ) : (
-        <ul className={styles.omenArmy}>
-          {CLASS_ORDER.map((classId) => {
-            const count = omen.composition[classId];
-            if (count === undefined) return null;
-            return (
-              <li data-class={classId} key={classId}>
-                {CLASS_LABEL[classId]} {count}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <WaveDetails model={model} />
       {canCallEarly ? (
         <button
           className={styles.callWavePanelButton}

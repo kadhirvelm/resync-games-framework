@@ -45,17 +45,17 @@ const TIER_SUMMARIES: Readonly<
     ],
     headline: "Hold Upgraded: Outpost",
     summary:
-      "Unlocks Hunters & Riders, the Cultivator Sanctum, Spirit Array, and Cultivation Hall for early breakthroughs.",
+      "Unlocks Hunters, Riders, Sword & Flying-Sword Cultivators, Spirit Array, and Cultivation Hall.",
     tier: "Outpost",
-    units: ["Hunters", "Riders"],
+    units: ["Hunters", "Riders", "Sword & Flying-Sword Cultivators"],
   },
   Stronghold: {
     buildings: ["Hell Market", "Meditation Pavilion"],
     headline: "Hold Upgraded: Stronghold",
     summary:
-      "Unlocks Hell Market and Meditation Pavilion for Coin trade and faster cultivation.",
+      "Unlocks Formation Masters, Hell Market, and Meditation Pavilion for Coin trade and faster cultivation.",
     tier: "Stronghold",
-    units: [],
+    units: ["Formation Masters"],
   },
 };
 

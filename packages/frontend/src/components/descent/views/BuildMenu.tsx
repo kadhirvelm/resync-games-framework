@@ -11,7 +11,14 @@ import {
   Warehouse,
   X,
 } from "lucide-react";
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import {
+  memo,
+  type ReactNode,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import hudStyles from "./bottomHud.module.scss";
 import { buildingIconSrc } from "./buildingIcons";
 import { buildMenuKeyAction, buildMenuKeyFor } from "./buildMenuHotkeys";
@@ -612,7 +619,7 @@ function BuildTooltip({ hint, stock }: { hint: BuildHint; stock: CostStock }) {
  * @param props - Options, actions, and what the player can spend
  * @returns The build menu
  */
-export function BuildMenu({
+export const BuildMenu = memo(function BuildMenu({
   onChoose,
   onClose,
   onGlossary,
@@ -793,4 +800,4 @@ export function BuildMenu({
       )}
     </section>
   );
-}
+});

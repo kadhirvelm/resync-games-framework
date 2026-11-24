@@ -79,7 +79,8 @@ export function attachLayerAutosave(
 
 /**
  * Saves a running layer at a bounded sim-time interval so a browser reload
- * resumes the current stockpile, buildings, and unit progression.
+ * resumes the current stockpile, buildings, and unit progression. Also
+ * flushes unsaved progress on `pagehide` and when the tab becomes hidden.
  * @param sim - Sim to watch
  * @param storage - Browser-compatible storage
  * @param intervalSeconds - Sim seconds between writes, default five
@@ -93,10 +94,48 @@ export function attachPeriodicAutosave(
   slot: string = AUTOSAVE_SLOT,
 ): () => void {
   const intervalTicks = Math.max(1, secondsToTicks(intervalSeconds));
+  let lastSavedTick = sim.tick;
   let nextTick = sim.tick + intervalTicks;
-  return sim.subscribe(() => {
+
+  /** Writes the latest state when ticks have advanced since the last save. */
+  const flush = () => {
+    if (sim.tick === lastSavedTick) return;
+    if (!writeSaveSlot(storage, slot, sim)) return;
+    lastSavedTick = sim.tick;
+    nextTick = sim.tick + intervalTicks;
+  };
+
+  const unsubscribe = sim.subscribe(() => {
     if (sim.tick < nextTick) return;
     writeSaveSlot(storage, slot, sim);
+    lastSavedTick = sim.tick;
     nextTick = sim.tick + intervalTicks;
   });
+
+  /** Flushes unsaved progress when the tab is hidden. */
+  const onVisibilityChange = () => {
+    if (typeof document !== "undefined" && document.hidden) flush();
+  };
+
+  /** Flushes unsaved progress when the page is being unloaded or backgrounded. */
+  const onPageHide = () => {
+    flush();
+  };
+
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", onVisibilityChange);
+  }
+  if (typeof window !== "undefined") {
+    window.addEventListener("pagehide", onPageHide);
+  }
+
+  return () => {
+    unsubscribe();
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    }
+    if (typeof window !== "undefined") {
+      window.removeEventListener("pagehide", onPageHide);
+    }
+  };
 }

@@ -3,7 +3,9 @@ import { economyHost, isEconomyUnit } from "../economy/records";
 import { orderVillagersMove } from "../economy/villagers";
 import type { SimWorldState } from "../sim/world";
 import {
+  ASHEN_GATE_SLICE_MODULE_ID,
   ECONOMY_STEP_TICKS,
+  isAshenGateSliceState,
   type QueuedWaypoint,
   sliceState,
 } from "./sliceState";
@@ -39,7 +41,8 @@ export function queuedWaypoints(
 
 /**
  * Drops every waiting leg for these units. Any order given without Shift
- * replaces the queue, as in other RTS games.
+ * replaces the queue, as in other RTS games. Safe to call on worlds without
+ * the slice module mounted.
  * @param world - Sim world
  * @param unitIds - Units whose queues to clear
  */
@@ -47,7 +50,9 @@ export function clearWaypoints(
   world: SimWorldState,
   unitIds: readonly string[],
 ): void {
-  const queues = sliceState(world).waypoints;
+  const state = world.meta[ASHEN_GATE_SLICE_MODULE_ID];
+  if (!isAshenGateSliceState(state)) return;
+  const queues = state.waypoints;
   if (queues === undefined) return;
   for (const unitId of unitIds) delete queues[unitId];
 }
@@ -91,12 +96,26 @@ export function isUnitTravelling(
 /**
  * Starts the next leg for every unit that finished its last one. Villagers
  * that took another job, and dead or missing units, lose their queue.
+ * Soldiers advancing on the same tick are batched by move kind with
+ * `keepPace: true` so formations stay together across waypoint legs.
  * @param world - Sim world
  */
 export function advanceWaypoints(world: SimWorldState): void {
-  const queues = sliceState(world).waypoints;
+  const state = sliceState(world);
+  const queues = state.waypoints;
   if (queues === undefined) return;
   const host = economyHost(world, ECONOMY_STEP_TICKS);
+  const moveBatch: {
+    destinations: Record<string, { x: number; y: number }>;
+    first?: QueuedWaypoint;
+    unitIds: string[];
+  } = { destinations: {}, unitIds: [] };
+  const attackMoveBatch: {
+    destinations: Record<string, { x: number; y: number }>;
+    first?: QueuedWaypoint;
+    unitIds: string[];
+  } = { destinations: {}, unitIds: [] };
+
   for (const [unitId, queue] of Object.entries(queues)) {
     const unit = world.units.find((entry) => entry.id === unitId);
     if (unit === undefined || !isEconomyUnit(unit) || unit.hp <= 0) {
@@ -115,11 +134,33 @@ export function advanceWaypoints(world: SimWorldState): void {
       orderVillagersMove(host, [unit.id], next);
       continue;
     }
-    sliceState(world).combat.pendingOrders.push({
-      type: next.attack ? "order_attack_move" : "order_move",
-      unitIds: [unit.id],
-      x: next.x,
-      y: next.y,
+    const batch = next.attack ? attackMoveBatch : moveBatch;
+    batch.first ??= next;
+    batch.unitIds.push(unit.id);
+    batch.destinations[unit.id] = { x: next.x, y: next.y };
+  }
+
+  if (moveBatch.unitIds.length > 0 && moveBatch.first !== undefined) {
+    state.combat.pendingOrders.push({
+      destinations: moveBatch.destinations,
+      keepPace: true,
+      type: "order_move",
+      unitIds: moveBatch.unitIds,
+      x: moveBatch.first.x,
+      y: moveBatch.first.y,
+    });
+  }
+  if (
+    attackMoveBatch.unitIds.length > 0 &&
+    attackMoveBatch.first !== undefined
+  ) {
+    state.combat.pendingOrders.push({
+      destinations: attackMoveBatch.destinations,
+      keepPace: true,
+      type: "order_attack_move",
+      unitIds: attackMoveBatch.unitIds,
+      x: attackMoveBatch.first.x,
+      y: attackMoveBatch.first.y,
     });
   }
 }
@@ -129,6 +170,9 @@ export function advanceWaypoints(world: SimWorldState): void {
  * @returns Whether it was given a job other than walking
  */
 function isOnOtherJob(unit: EconomyUnit): boolean {
+  if (unit.preferredNodeId !== null || unit.workplaceId !== null) {
+    return true;
+  }
   return unit.task !== null && unit.task.kind !== "move";
 }
 

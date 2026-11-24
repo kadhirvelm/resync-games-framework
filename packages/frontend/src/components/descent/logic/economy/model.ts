@@ -4,7 +4,7 @@
  * them with the world.
  */
 
-import type { CircleVolume } from "../layers/layerTypes";
+import type { CircleVolume, TerrainHill } from "../layers/layerTypes";
 import type {
   BuildingState,
   ClassId,
@@ -36,9 +36,13 @@ export interface UnitModifier {
   untilTick: number;
 }
 
-/** Resources a villager is walking back to a drop-off. */
+/** Resources a villager or Qi cultivator is walking back to a drop-off. */
 export interface CarryLoad {
   amount: number;
+  /** Exploration camp whose non-resource prize settles at a drop-off. */
+  explorationCacheId?: string;
+  /** Exact cache node backing this load; omitted only by legacy saves. */
+  explorationCacheNodeId?: string;
   resourceId: ResourceId;
 }
 
@@ -81,6 +85,8 @@ export interface EconomyUnit extends UnitState {
   workplaceId?: string | null;
   /** Whether this builder keeps taking sites from a shift-placement batch. */
   queuedBuild?: boolean;
+  /** Fractional movement credit accumulated while walking up or down hill slopes. */
+  slopeBudget?: number;
   /** Nodes and buildings this villager could not path to, skipped until `untilTick`. */
   unreachable?: UnreachableTarget[];
 }
@@ -129,7 +135,11 @@ export interface EconomyBuildingView extends BuildingState {
 
 /** A finite surface node. Good nodes sit farther from Camp; the map decides where. */
 export interface ResourceNode {
+  /** Set when this node is a one-time guarded cache, not an ordinary deposit. */
+  explorationCacheId?: string;
   id: string;
+  /** Optional player-facing name for special nodes such as caches. */
+  label?: string;
   nodeType: string;
   remaining: number;
   resourceId: ResourceId;
@@ -178,8 +188,21 @@ export interface HoldUpgrade {
   ticksLeft: number;
 }
 
+/** A cache delivered to storage, waiting for its camp bonus to be settled. */
+export interface ExplorationCacheClaim {
+  /** Amount already credited by the shared deposit path. */
+  amount?: number;
+  campId: string;
+  dropOffId: string;
+  /** Exact delivered node; legacy bundle claims omit delivery details. */
+  nodeId?: string;
+  resourceId?: ResourceId;
+}
+
 /** Saved economy bag under `world.meta.economy`. */
 export interface EconomyMeta {
+  /** Delivered caches whose rewards have not yet been settled. */
+  explorationClaims: ExplorationCacheClaim[];
   /** Number of allied Holds sharing the base population allowance. */
   playerCount: number;
   items: Record<string, number>;
@@ -209,6 +232,8 @@ export interface EconomyHost {
   readonly economy: EconomyMeta;
   /** @returns The current layer id, or null before the first descent. */
   getLayerId(): string | null;
+  /** @returns Walkable hills on the current map, if any. */
+  getTerrainHills?: () => readonly TerrainHill[];
   /** @returns Static impassable terrain disks on the current map, if any. */
   getTerrainObstacles?: () => readonly CircleVolume[];
   /** @returns Vent disks that burn in this world; empty when none are active. */
@@ -240,6 +265,8 @@ export interface UnitInit {
   hp?: number;
   id: string;
   maxHp?: number;
+  /** Unique personal name assigned to named units such as cultivators. */
+  name?: string;
   /** Owning player id in multiplayer matches; omitted in solo play. */
   ownerId?: string;
   popKind?: PopKind;

@@ -3,21 +3,17 @@ import {
   buildProgressScale,
   MIN_CONSTRUCTION_SCALE,
   PLACEMENT_INVALID_TINT,
-  PLACEMENT_NEUTRAL_TINT,
   PLACEMENT_VALID_TINT,
   placementPreviewTint,
 } from "../preview";
 
 describe("construction and placement preview presentation", () => {
-  test("keeps the ghost neutral until validity is known", () => {
-    expect(placementPreviewTint(undefined)).toBe(PLACEMENT_NEUTRAL_TINT);
-    expect(placementPreviewTint(null)).toBe(PLACEMENT_NEUTRAL_TINT);
-    expect(PLACEMENT_NEUTRAL_TINT).toBe("#7fd1df");
-  });
-
-  test("turns valid ghosts green and invalid ghosts red", () => {
+  test("only shows blue when placement is confirmed valid, and red otherwise", () => {
     expect(placementPreviewTint(true)).toBe(PLACEMENT_VALID_TINT);
+    expect(PLACEMENT_VALID_TINT).toBe("#7fd1df");
     expect(placementPreviewTint(false)).toBe(PLACEMENT_INVALID_TINT);
+    expect(placementPreviewTint(undefined)).toBe(PLACEMENT_INVALID_TINT);
+    expect(placementPreviewTint(null)).toBe(PLACEMENT_INVALID_TINT);
     expect(PLACEMENT_VALID_TINT).not.toBe(PLACEMENT_INVALID_TINT);
   });
 
